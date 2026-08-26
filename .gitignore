@@ -1,0 +1,95 @@
+# Build outputs
+/build/
+/build-*/
+/out/
+/dist/
+/target/
+/vcpkg_installed/
+/install/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+*.ninja
+.ninja_deps
+.ninja_log
+
+# Compiled binaries and libraries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.pdb
+*.obj
+*.o
+
+# Local dependency builds
+/third_party/src/
+/third_party/build-*/
+/third_party/libvpx/
+
+# Libretro cores: binaries are supplied by the developer
+/third_party/cores/*
+!/third_party/cores/core.lock
+
+# ROMs and copyrighted game media
+/roms/
+*.rom
+*.smd
+*.gen
+*.nes
+*.sfc
+*.gba
+*.iso
+*.cue
+*.nds
+*.3ds
+
+# Runtime and test-local state
+/tests/test_config.toml
+*.log
+*.tmp
+*.bak
+*.arp
+*.sav
+*.srm
+*.state
+*.ini
+
+# Local environment and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+/private_keys/
+
+# Local CMake configuration
+CMakeUserPresets.json
+
+# IDE and editor state
+/.vscode/
+/.idea/
+/.vs/
+*.user
+*.suo
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Generated knowledge graphs and caches
+/graphify-out/
+/.cache/
+/.pytest_cache/
+__pycache__/
+*.pyc

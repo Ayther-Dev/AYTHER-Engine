@@ -1,0 +1,49 @@
+# Normalize text to LF independently of each developer's Git configuration.
+* text=auto eol=lf
+
+# Source and configuration
+*.c       text eol=lf
+*.cc      text eol=lf
+*.cpp     text eol=lf
+*.h       text eol=lf
+*.hh      text eol=lf
+*.hpp     text eol=lf
+*.rs      text eol=lf
+*.toml    text eol=lf
+*.json    text eol=lf
+*.cmake   text eol=lf
+CMakeLists.txt text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.md      text eol=lf
+*.txt     text eol=lf
+*.ps1     text eol=lf
+*.sh      text eol=lf
+*.vert    text eol=lf
+*.frag    text eol=lf
+*.comp    text eol=lf
+*.glsl    text eol=lf
+*.svg     text eol=lf
+
+# Binary formats
+*.ay      binary
+*.arp     binary
+*.spv     binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.webp    binary
+*.ogg     binary
+*.wav     binary
+*.flac    binary
+*.ttf     binary
+*.otf     binary
+*.zip     binary
+*.dll     binary
+*.so      binary
+*.dylib   binary
+*.a       binary
+*.lib     binary
+
+# Vendored source is intentionally part of the repository.
+third_party/** linguist-vendored
