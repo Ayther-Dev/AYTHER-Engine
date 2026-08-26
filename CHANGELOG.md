@@ -12,6 +12,7 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - Initial repository documentation structure.
 - Contribution and security policies, attributes, and ignore rules.
 - Reproducible Windows and Linux development environment setup guide.
+- Root Rust workspace manifest and minimal `ayther_core` crate scaffold.
 
 ### Changed
 
