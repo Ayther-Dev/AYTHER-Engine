@@ -22,19 +22,20 @@ released until the first build, test, and installation cycle is complete.
 | `tests/` | Rust/C++ | Unit, ABI/FFI, integration, and conformance tests |
 | `sdk/` | C/C++/Rust | Examples, fixtures, and public API reference |
 
-## Planned environment
+## Development environment
 
 - CMake 3.21 or later.
 - Ninja.
-- Stable Rust, pinned by `rust-toolchain.toml` once the core is added.
+- Rust 1.95.0, pinned by `rust-toolchain.toml`.
 - LLVM/Clang 18; `clang-cl` on Windows.
 - vcpkg with a versioned baseline.
-- Vulkan SDK for the renderer.
+- Vulkan SDK for the renderer and GPU tests.
 - PowerShell 7 for development and packaging scripts.
 
-Reproducible setup, build, and installation instructions will be added
-alongside each component. Do not add absolute paths or dependencies on a
-checkout outside the repository.
+Follow the [development environment setup guide](docs/DEVELOPMENT_ENVIRONMENT.md)
+for platform-specific installation, vcpkg setup, toolchain verification, and
+CMake preset usage. Do not add absolute paths or dependencies on a checkout
+outside the repository.
 
 ## Development
 

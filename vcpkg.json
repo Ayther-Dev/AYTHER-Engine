@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "ayther-engine",
+  "version-semver": "0.1.0",
+  "description": "AYTHER Core and Engine dependencies",
+  "license": "MPL-2.0",
+  "builtin-baseline": "15cd15b0da3c48a0c7720e4c87e0b6030334feed",
+  "supports": "windows | linux",
+  "dependencies": [
+    {
+      "name": "sdl3",
+      "features": [
+        "vulkan"
+      ]
+    },
+    "tomlplusplus",
+    "stb",
+    "drlibs",
+    "zstd",
+    "vulkan",
+    "vulkan-memory-allocator",
+    "vk-bootstrap"
+  ]
+}

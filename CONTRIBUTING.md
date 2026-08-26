@@ -17,16 +17,18 @@ reproducible, and accompanied by the corresponding test oracle.
 
 ## Development environment
 
-The reproducible environment will be defined through `rust-toolchain.toml`,
+Set up and validate the toolchain using the
+[development environment guide](docs/DEVELOPMENT_ENVIRONMENT.md). The
+reproducible environment is defined through `rust-toolchain.toml`,
 `CMakePresets.json`, and `vcpkg.json`. Do not commit `CMakeUserPresets.json` or
 machine-specific paths.
 
-Planned requirements:
+Required tools:
 
 - Git;
 - CMake 3.21 or later;
 - Ninja;
-- stable Rust;
+- Rust 1.95.0;
 - LLVM/Clang 18;
 - vcpkg;
 - Vulkan SDK for the renderer;
