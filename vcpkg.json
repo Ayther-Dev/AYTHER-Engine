@@ -7,18 +7,25 @@
   "builtin-baseline": "15cd15b0da3c48a0c7720e4c87e0b6030334feed",
   "supports": "windows | linux",
   "dependencies": [
-    {
-      "name": "sdl3",
-      "features": [
-        "vulkan"
-      ]
-    },
     "tomlplusplus",
     "stb",
     "drlibs",
-    "zstd",
-    "vulkan",
-    "vulkan-memory-allocator",
-    "vk-bootstrap"
-  ]
+    "zstd"
+  ],
+  "features": {
+    "renderer": {
+      "description": "Vulkan renderer and SDL3 window and audio backends",
+      "dependencies": [
+        {
+          "name": "sdl3",
+          "features": [
+            "vulkan"
+          ]
+        },
+        "vulkan",
+        "vulkan-memory-allocator",
+        "vk-bootstrap"
+      ]
+    }
+  }
 }

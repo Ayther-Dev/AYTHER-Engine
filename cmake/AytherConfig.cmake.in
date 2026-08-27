@@ -1,0 +1,38 @@
+@PACKAGE_INIT@
+
+# ---------------------------------------------------------------------------
+# AytherConfig.cmake - consume an installed AYTHER Engine.
+#
+#     find_package(Ayther REQUIRED)
+#     target_link_libraries(my_app PRIVATE Ayther::core)
+#
+# ayther_core is produced by cargo rather than by CMake, so this package
+# recreates the IMPORTED target directly from the installed archive instead of
+# loading an exported target file.
+# ---------------------------------------------------------------------------
+
+set_and_check(AYTHER_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_and_check(AYTHER_LIB_DIR     "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+
+set(_ayther_core_archive
+    "${AYTHER_LIB_DIR}/@CMAKE_STATIC_LIBRARY_PREFIX@ayther_core@CMAKE_STATIC_LIBRARY_SUFFIX@")
+
+if(NOT EXISTS "${_ayther_core_archive}")
+    set(Ayther_FOUND FALSE)
+    set(Ayther_NOT_FOUND_MESSAGE
+        "The installed ayther_core archive is missing: ${_ayther_core_archive}")
+    return()
+endif()
+
+if(NOT TARGET Ayther::core)
+    add_library(Ayther::core STATIC IMPORTED)
+    set_target_properties(Ayther::core PROPERTIES
+        IMPORTED_LOCATION                 "${_ayther_core_archive}"
+        IMPORTED_LINK_INTERFACE_LANGUAGES "CXX"
+        INTERFACE_INCLUDE_DIRECTORIES     "${AYTHER_INCLUDE_DIR}"
+        INTERFACE_LINK_LIBRARIES          "@AYTHER_CORE_SYSTEM_LIBS@")
+endif()
+
+unset(_ayther_core_archive)
+
+check_required_components(Ayther)
