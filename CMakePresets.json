@@ -16,10 +16,7 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
         "AYTHER_BUILD_TESTS": "ON",
-        "AYTHER_BUILD_EXAMPLES": "ON",
-        "AYTHER_BUILD_RENDERER": "OFF",
-        "AYTHER_BUILD_GPU_TESTS": "OFF",
-        "AYTHER_ENABLE_VPX": "OFF"
+        "AYTHER_CARGO_LOCKED": "ON"
       }
     },
     {
@@ -31,11 +28,9 @@
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       },
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang-cl",
-        "CMAKE_CXX_COMPILER": "clang-cl",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
+        "CMAKE_CXX_COMPILER": "clang-cl"
       }
     },
     {
@@ -47,122 +42,62 @@
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
       },
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "VCPKG_TARGET_TRIPLET": "x64-linux"
-      }
-    },
-    {
-      "name": "windows-dev",
-      "displayName": "Windows Development",
-      "description": "Development with renderer, examples, and CPU tests",
-      "inherits": "windows-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "AYTHER_BUILD_RENDERER": "ON"
+        "CMAKE_CXX_COMPILER": "clang++"
       }
     },
     {
       "name": "windows-headless",
       "displayName": "Windows Headless",
-      "description": "Development and CI without renderer or GPU tests",
+      "description": "Core, bridge, and ABI tests without native engine dependencies",
       "inherits": "windows-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
-      "name": "windows-gpu",
-      "displayName": "Windows GPU Tests",
-      "description": "Development with renderer and GPU-required tests",
-      "inherits": "windows-dev",
-      "cacheVariables": {
-        "AYTHER_BUILD_GPU_TESTS": "ON"
-      }
-    },
-    {
       "name": "windows-release",
-      "displayName": "Windows Release",
-      "description": "Optimized build for distribution",
+      "displayName": "Windows Core Release",
+      "description": "Optimized pre-release core package",
       "inherits": "windows-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AYTHER_BUILD_TESTS": "OFF",
-        "AYTHER_BUILD_EXAMPLES": "OFF",
-        "AYTHER_BUILD_RENDERER": "ON"
-      }
-    },
-    {
-      "name": "linux-dev",
-      "displayName": "Linux Development",
-      "description": "Development with renderer, examples, and CPU tests",
-      "inherits": "linux-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "AYTHER_BUILD_RENDERER": "ON"
+        "AYTHER_BUILD_TESTS": "OFF"
       }
     },
     {
       "name": "linux-headless",
       "displayName": "Linux Headless",
-      "description": "Development and CI without renderer or GPU tests",
+      "description": "Core, bridge, and ABI tests without native engine dependencies",
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
-      "name": "linux-gpu",
-      "displayName": "Linux GPU Tests",
-      "description": "Development with renderer and GPU-required tests",
-      "inherits": "linux-dev",
-      "cacheVariables": {
-        "AYTHER_BUILD_GPU_TESTS": "ON"
-      }
-    },
-    {
       "name": "linux-release",
-      "displayName": "Linux Release",
-      "description": "Optimized build for distribution",
+      "displayName": "Linux Core Release",
+      "description": "Optimized pre-release core package",
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AYTHER_BUILD_TESTS": "OFF",
-        "AYTHER_BUILD_EXAMPLES": "OFF",
-        "AYTHER_BUILD_RENDERER": "ON"
+        "AYTHER_BUILD_TESTS": "OFF"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "windows-dev",
-      "configurePreset": "windows-dev"
-    },
-    {
       "name": "windows-headless",
       "configurePreset": "windows-headless"
-    },
-    {
-      "name": "windows-gpu",
-      "configurePreset": "windows-gpu"
     },
     {
       "name": "windows-release",
       "configurePreset": "windows-release"
     },
     {
-      "name": "linux-dev",
-      "configurePreset": "linux-dev"
-    },
-    {
       "name": "linux-headless",
       "configurePreset": "linux-headless"
-    },
-    {
-      "name": "linux-gpu",
-      "configurePreset": "linux-gpu"
     },
     {
       "name": "linux-release",
@@ -170,16 +105,6 @@
     }
   ],
   "testPresets": [
-    {
-      "name": "windows-dev",
-      "configurePreset": "windows-dev",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
-    },
     {
       "name": "windows-headless",
       "configurePreset": "windows-headless",
@@ -191,38 +116,8 @@
       }
     },
     {
-      "name": "windows-gpu",
-      "configurePreset": "windows-gpu",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
-    },
-    {
-      "name": "linux-dev",
-      "configurePreset": "linux-dev",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
-    },
-    {
       "name": "linux-headless",
       "configurePreset": "linux-headless",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
-    },
-    {
-      "name": "linux-gpu",
-      "configurePreset": "linux-gpu",
       "output": {
         "outputOnFailure": true
       },

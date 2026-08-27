@@ -1,65 +1,46 @@
-# ---------------------------------------------------------------------------
-# AYTHER Engine - root build.
-#
-# This project builds the Rust `ayther_core` static library through cargo,
-# publishes it as the `Ayther::core` target together with the public C header
-# in `include/`, and adds the C++ suites that exercise that boundary.
-#
-# Configure through the shared presets rather than by hand:
-#
-#     cmake --preset windows-headless
-#     cmake --build --preset windows-headless
-#     ctest --preset windows-headless
-#
-# See docs/DEVELOPMENT_ENVIRONMENT.md for toolchain prerequisites and
-# docs/PROJECT_STATUS.md for what this repository does and does not contain.
-# ---------------------------------------------------------------------------
+# AYTHER Engine — standalone root build.
 cmake_minimum_required(VERSION 3.21)
 
-# ---------------------------------------------------------------------------
-# Options.
-#
-# Declared before project() because AYTHER_BUILD_RENDERER selects the vcpkg
-# manifest features, and the vcpkg toolchain file reads VCPKG_MANIFEST_FEATURES
-# while project() runs.
-# ---------------------------------------------------------------------------
-option(AYTHER_BUILD_TESTS     "Build the AYTHER test suites"           ON)
-option(AYTHER_BUILD_EXAMPLES  "Build the AYTHER examples"              ON)
-option(AYTHER_BUILD_RENDERER  "Build the Vulkan renderer"              OFF)
-option(AYTHER_BUILD_GPU_TESTS "Build tests that require a Vulkan GPU"  OFF)
-option(AYTHER_ENABLE_VPX      "Enable VPX video decoding"              OFF)
-option(AYTHER_CARGO_LOCKED    "Pass --locked to cargo (reproducible)"  ON)
+# These options precede project() because renderer-related selections may be
+# consumed by a vcpkg toolchain while CMake enables the project languages.
+option(AYTHER_BUILD_TESTS     "Build the AYTHER test suites"          ON)
+option(AYTHER_BUILD_EXAMPLES  "Build the AYTHER examples"             ON)
+option(AYTHER_BUILD_RENDERER  "Build the Vulkan renderer"             OFF)
+option(AYTHER_BUILD_GPU_TESTS "Build tests that require a Vulkan GPU" OFF)
+option(AYTHER_ENABLE_VPX      "Enable VPX video decoding"             OFF)
+option(AYTHER_CARGO_LOCKED    "Pass --locked to Cargo"                ON)
 
 if(AYTHER_BUILD_RENDERER OR AYTHER_BUILD_GPU_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "renderer")
 endif()
 
 project(Ayther
-    VERSION     0.1.0
-    DESCRIPTION "AYTHER Engine - retro asset identity and substitution"
+    VERSION      0.1.0
+    DESCRIPTION  "AYTHER Engine - retro asset identity and substitution"
     HOMEPAGE_URL "https://github.com/Ayther-Dev/AYTHER-Engine"
-    LANGUAGES   C CXX)
+    LANGUAGES    C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR
-        "In-source builds are not supported. Configure with a preset, which "
-        "places each build under build/<preset>.")
+        "In-source builds are not supported. Configure with a preset; shared "
+        "presets place their output under build/<preset>.")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(GNUInstallDirs)
 
-# ---------------------------------------------------------------------------
-# Language and runtime settings.
-# ---------------------------------------------------------------------------
 set(CMAKE_C_STANDARD            11)
 set(CMAKE_C_STANDARD_REQUIRED   ON)
 set(CMAKE_CXX_STANDARD          20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS        OFF)
 
-# Rust MSVC targets always link the dynamic release CRT (msvcrt), so the C++
-# half must do the same or the two halves pull in conflicting runtimes.
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(WARNING
+        "AYTHER uses Clang/LLVM for its native builds. Current compiler: "
+        "${CMAKE_CXX_COMPILER_ID}")
+endif()
+
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
 get_property(AYTHER_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -71,26 +52,61 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
 
-# ---------------------------------------------------------------------------
-# ayther_core: the Rust static library plus the public C header.
-# ---------------------------------------------------------------------------
-include(AytherCargo)
-ayther_add_rust_core()
+# Cargo is authoritative for the Rust workspace. Corrosion is the only adapter
+# between Cargo and the CMake target graph.
+include(FetchContent)
+FetchContent_Declare(
+    Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_TAG        v0.5.1
+    GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(Corrosion)
 
-# ---------------------------------------------------------------------------
-# Components that have not been migrated into this repository yet.
-# See docs/PROJECT_STATUS.md, "Release blockers".
-# ---------------------------------------------------------------------------
+set(_ayther_corrosion_options "")
+if(AYTHER_CARGO_LOCKED)
+    list(APPEND _ayther_corrosion_options LOCKED)
+endif()
+
+corrosion_import_crate(
+    MANIFEST_PATH "${PROJECT_SOURCE_DIR}/Cargo.toml"
+    CRATES        ayther_core
+    ${_ayther_corrosion_options})
+unset(_ayther_corrosion_options)
+
+corrosion_add_cxxbridge(ayther_cxx
+    CRATE ayther_core
+    FILES ffi.rs)
+
+target_include_directories(ayther_core INTERFACE
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+add_library(Ayther::core ALIAS ayther_core)
+
+# The C++ source and shader trees already live at the repository root. They are
+# deliberately not exposed as Ayther::engine until all declared native
+# dependencies are present and the complete target can pass its link oracles.
+if(EXISTS "${PROJECT_SOURCE_DIR}/src/ayther_session.cpp")
+    set(AYTHER_ENGINE_SOURCES_PRESENT ON)
+else()
+    set(AYTHER_ENGINE_SOURCES_PRESENT OFF)
+endif()
+
 if(AYTHER_BUILD_RENDERER)
     message(WARNING
-        "AYTHER_BUILD_RENDERER is ON but no engine/ directory exists in this "
-        "checkout, so no renderer target is produced. Use a headless preset.")
+        "AYTHER_BUILD_RENDERER is ON, but the native engine target is not "
+        "integrated yet; no renderer target will be produced.")
+endif()
+
+if(AYTHER_BUILD_GPU_TESTS)
+    message(WARNING
+        "AYTHER_BUILD_GPU_TESTS is ON, but GPU test targets are not integrated "
+        "yet; no GPU tests will be produced.")
 endif()
 
 if(AYTHER_ENABLE_VPX)
     message(WARNING
-        "AYTHER_ENABLE_VPX is ON but no video decoding target exists in this "
-        "checkout; the option has no effect.")
+        "AYTHER_ENABLE_VPX is ON, but the native video target is not integrated "
+        "yet; VPX decoding will not be enabled.")
 endif()
 
 if(AYTHER_BUILD_EXAMPLES)
@@ -101,55 +117,20 @@ if(AYTHER_BUILD_EXAMPLES)
     endif()
 endif()
 
-# ---------------------------------------------------------------------------
-# Tests.
-# ---------------------------------------------------------------------------
 if(AYTHER_BUILD_TESTS)
     enable_testing()
-    add_subdirectory(test)
+    add_subdirectory(tests)
 endif()
 
-# ---------------------------------------------------------------------------
-# Install and package.
-#
-# Installs the cargo-produced archive and the public header, and generates an
-# AytherConfig.cmake that recreates Ayther::core for out-of-tree consumers.
-# ---------------------------------------------------------------------------
-include(CMakePackageConfigHelpers)
+include(AytherInstall)
 
-install(FILES "${PROJECT_SOURCE_DIR}/include/ayther_core_ffi.h"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-
-install(FILES "${AYTHER_CORE_STATIC_LIB}"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-
-set(AYTHER_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/Ayther")
-
-configure_package_config_file(
-    "${PROJECT_SOURCE_DIR}/cmake/AytherConfig.cmake.in"
-    "${PROJECT_BINARY_DIR}/AytherConfig.cmake"
-    INSTALL_DESTINATION "${AYTHER_INSTALL_CMAKEDIR}"
-    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
-
-write_basic_package_version_file(
-    "${PROJECT_BINARY_DIR}/AytherConfigVersion.cmake"
-    VERSION       ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion)
-
-install(FILES
-            "${PROJECT_BINARY_DIR}/AytherConfig.cmake"
-            "${PROJECT_BINARY_DIR}/AytherConfigVersion.cmake"
-        DESTINATION "${AYTHER_INSTALL_CMAKEDIR}")
-
-# ---------------------------------------------------------------------------
-# Configuration summary.
-# ---------------------------------------------------------------------------
 message(STATUS "AYTHER ${PROJECT_VERSION} configuration")
-message(STATUS "  build type ....... ${CMAKE_BUILD_TYPE}")
-message(STATUS "  C++ compiler ..... ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-message(STATUS "  cargo ............ ${AYTHER_CARGO_EXECUTABLE}")
-message(STATUS "  cargo profile .... ${AYTHER_CARGO_PROFILE_DIR}")
-message(STATUS "  tests ............ ${AYTHER_BUILD_TESTS}")
-message(STATUS "  examples ......... ${AYTHER_BUILD_EXAMPLES}")
-message(STATUS "  renderer ......... ${AYTHER_BUILD_RENDERER}")
-message(STATUS "  gpu tests ........ ${AYTHER_BUILD_GPU_TESTS}")
+message(STATUS "  build type ............ ${CMAKE_BUILD_TYPE}")
+message(STATUS "  C++ compiler .......... ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+message(STATUS "  tests ................. ${AYTHER_BUILD_TESTS}")
+message(STATUS "  examples .............. ${AYTHER_BUILD_EXAMPLES}")
+message(STATUS "  renderer .............. ${AYTHER_BUILD_RENDERER}")
+message(STATUS "  gpu tests ............. ${AYTHER_BUILD_GPU_TESTS}")
+message(STATUS "  VPX decoding .......... ${AYTHER_ENABLE_VPX}")
+message(STATUS "  C++ sources present ... ${AYTHER_ENGINE_SOURCES_PRESENT}")
+message(STATUS "  installed targets ..... Ayther::core")

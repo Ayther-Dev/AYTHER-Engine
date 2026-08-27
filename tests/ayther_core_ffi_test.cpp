@@ -11,7 +11,7 @@
 //
 // No SDL3 or Vulkan dependency — links only against ayther_core.lib.
 // ---------------------------------------------------------------------------
-#include "ayther_core_ffi.h"
+#include <ayther/ayther_core_ffi.h>
 
 #include <cstdio>
 #include <cstring>
@@ -50,7 +50,7 @@ static_assert(sizeof(AytherTileSub)          == 264,
 static_assert(sizeof(AytherSpriteOccurrence) == 32,
     "ABI: AytherSpriteOccurrence size mismatch with Rust repr(C)");
 
-// #149: + sub-rect UV (4×f32, align 4) tras ref_rgb → 272 (offset alineado) + 16
+// : + sub-rect UV (4×f32, align 4) tras ref_rgb → 272 (offset alineado) + 16
 // = 288; in-betweens: + pose_key (u64 al FINAL, alineado a 288) → 296;
 // Vestuario: + mask_path[256] al FINAL → 552 (296 + 256, align 8 intacto).
 static_assert(sizeof(AytherSpriteSub)        == 552,
@@ -410,7 +410,7 @@ static void test_pack_builder() {
     const uint8_t png[8] = { 0x89, 'P', 'N', 'G', 1, 2, 3, 4 };
     EXPECT(ayther_pack_builder_add_bytes(b, "hero.png", png, sizeof(png)));
 
-    // #375: un `.ivf` de 70000 bytes — pasa los 64 KiB del trozo minimo, asi
+    // : un `.ivf` de 70000 bytes — pasa los 64 KiB del trozo minimo, asi
     // que ejercita VARIOS trozos y el ultimo corto. No es un video valido y no
     // hace falta que lo sea: aca se prueba el transporte por rango, no el codec.
     BEGIN_TEST("pack_builder/add_video_bytes");
@@ -443,7 +443,7 @@ static void test_pack_builder() {
         EXPECT_EQ(n, (int64_t)sizeof(png));
         EXPECT(std::memcmp(buf, png, sizeof(png)) == 0);
 
-        // ---- #375: lectura por rango --------------------------------------
+        // ---- : lectura por rango --------------------------------------
         BEGIN_TEST("pack_range/streamable_only_for_stored");
         EXPECT(ayther_pack_entry_streamable(pack, "video/clip.ivf"));
         EXPECT(!ayther_pack_entry_streamable(pack, "hero.png"));   // deflateado
@@ -595,7 +595,7 @@ static void test_geo_tween() {
 }
 
 // ---------------------------------------------------------------------------
-// SoundFont: normalización .sfz → SF2 a través del FFI (#261 ampliado)
+// SoundFont: normalización .sfz → SF2 a través del FFI ( ampliado)
 //
 // El camino que el Lab usa de verdad: un .sfz con su sample al lado entra por
 // ayther_soundfont_normalize_file y el resultado tiene que LISTAR un preset,
@@ -675,7 +675,7 @@ static void test_soundfont_normalize() {
 }
 
 // ---------------------------------------------------------------------------
-// #292/#294 — la lista de subsistemas, que existe DOS veces
+// / — la lista de subsistemas, que existe DOS veces
 // ---------------------------------------------------------------------------
 //
 // El core la publica por FFI (es la que viaja en el `[systems]` del manifest) y
@@ -712,7 +712,7 @@ static void test_subsystem_list_parity() {
     BEGIN_TEST("subsystems/out of range is NULL, not garbage");
     EXPECT_NULL(ayther_subsystem_name(kEngineCount));
 
-    BEGIN_TEST("manifest/schema supported is >= 2 (#294)");
+    BEGIN_TEST("manifest/schema supported is >= 2 ()");
     EXPECT(ayther_manifest_schema_supported() >= 2u);
 }
 
