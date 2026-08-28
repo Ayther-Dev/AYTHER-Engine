@@ -23,9 +23,11 @@ cargo test --workspace --all-targets --locked
 cargo doc --workspace --no-deps --locked
 ```
 
-On 2026-08-27, formatting, linting, documentation, and tests passed; tests
-reported 360 passed, zero failed, and one ignored archive benchmark. An ignored
-benchmark is not a functional test failure, but must remain visible.
+On 2026-08-28, linting, documentation, and tests passed; tests reported 360
+passed, zero failed, and one ignored archive benchmark. Formatting currently
+reports pre-existing drift and is a visible CI advisory until the baseline is
+normalized. An ignored benchmark is not a functional test failure, but must
+remain visible.
 
 ## Headless native build
 
@@ -143,6 +145,18 @@ headers are promised as public surfaces.
 | `*-native-gpu` | eight Vulkan GPU oracles | Windows 8/8 verified; Linux and broader GPU matrix pending |
 
 ## CI expectations
+
+The checkout now includes `.github/workflows/ci.yml`. On pushes to `main`, pull
+requests, and manual dispatches it runs repository-boundary checks, locked Rust
+lint/tests/docs, dependency-notice verification, and the Windows/Linux headless
+configure/build/test/install sequence. Pull requests additionally validate that
+individual commits do not mix the closed Lab boundary with FOSS paths.
+
+Rust formatting is intentionally visible as a temporary advisory because the
+current source tree has pre-existing `rustfmt` drift. It must become a required
+gate after that baseline is normalized. Native engine, VPX, Vulkan GPU,
+installed-engine consumer, security scanning, artifact signing, and publication
+are not represented by the baseline workflow and remain release blockers.
 
 A release-capable pipeline must run on every supported platform and retain:
 

@@ -11,13 +11,15 @@ today. It separates observed checkout state from the target architecture.
 
 ## Executive status
 
-The Rust core is substantial, documented at the crate level, and green under
-its local quality gates. The root build now provides an installable,
+The Rust core is substantial and documented at the crate level. Its tests,
+lint, and documentation gates are green; existing formatting drift remains
+visible as migration debt. The root build now provides an installable,
 out-of-tree-consumable `Ayther::core` and a complete 24-source
 `Ayther::engine`, with manifest-mode native dependencies, ymfm, and optional
-libvpx. The repository is nevertheless incomplete as a release distribution:
-renderer/audio behavior oracles, engine-owned tools, CI workflows, and
-production trust configuration are not available.
+libvpx. The repository is nevertheless incomplete as a release distribution. A
+baseline CI workflow now covers repository policy, Rust quality, and headless
+Windows/Linux builds, but native, VPX, GPU, package-consumer, and protected
+release automation remain open, as does production trust configuration.
 
 The current checkout is appropriate for core development and documentation
 work. It is not appropriate for a public binary release, a production pack
@@ -30,7 +32,7 @@ trust decision, or a compatibility promise to third-party integrators.
 | Rust workspace | Present | Workspace version `0.1.0`, edition 2024, resolver 3 |
 | `ayther_core` | Present | Builds as `rlib` and `staticlib` |
 | Rust unit tests | Passing | 360 passed; one optional archive benchmark ignored on 2026-08-27 |
-| Rust formatting | Passing | `cargo fmt --all -- --check` |
+| Rust formatting | Migration debt | `cargo fmt --all -- --check` reports existing drift; CI exposes it as a temporary advisory rather than a gate |
 | Rust linting | Passing | `cargo clippy --workspace --all-targets --locked -- -D warnings` |
 | Rust documentation gates | Enforced in source | Missing docs, broken intra-doc links, and unsafe operations in unsafe functions are denied |
 | CXX bridge declarations | Present | Rust side in `core/src/ffi.rs`; generated C++ consumer tree is absent |
@@ -38,9 +40,9 @@ trust decision, or a compatibility promise to third-party integrators.
 | Public C header | Present | `include/ayther/ayther_core_ffi.h` declares the current flat C ABI; the C++ test checks representative layout and lifecycle contracts |
 | C++ engine | Buildable, pre-release | `Ayther::engine` owns all 24 sources; Windows native and native-VPX builds pass |
 | Root CMake project | Implemented, pre-release | Corrosion owns Cargo integration; CMake exposes core, engine, ymfm, and optional VPX targets |
-| Engine tests and tools | Partial | The cross-language ABI test runs under the headless presets; renderer, audio, and integration tests are absent |
+| Engine tests and tools | Partial | Headless ABI tests and native CPU/audio/renderer integration probes are present; real-emulator, cross-platform, and broader hardware coverage remain incomplete |
 | Installable package | Pre-release | Core and native packages install namespaced targets, headers, shaders, and notices; external Windows consumers pass with VPX disabled and enabled |
-| CI and release workflows | Missing | No checkout-local workflow currently proves clean builds or packaging |
+| CI and release workflows | Baseline present | `.github/workflows/ci.yml` checks repository boundaries, locked Rust gates, dependency notices, and headless configure/build/test/install on Windows and Linux; native and release pipelines remain pending |
 | Third-party inventory | Implemented for validated builds | Cargo graph, vcpkg ports, vendored revisions, and shipped license material are recorded; release CI enforcement remains pending |
 | Production pack trust | Missing | The code embeds a public RFC test key; no production key registry or rotation path is present |
 

@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+
+jobs:
+  repository-policy:
+    name: Repository policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository and its history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check component boundaries
+        run: >-
+          cmake
+          -DAYTHER_ROOT=${{ github.workspace }}
+          -P tools/check_repo_boundary.cmake
+
+      - name: Check pull-request commit boundaries
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: >-
+          ./tools/check_commit_boundary.ps1
+          -Base '${{ github.event.pull_request.base.sha }}'
+          -Head '${{ github.event.pull_request.head.sha }}'
+
+  rust:
+    name: Rust quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Cache Cargo inputs and outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # Formatting debt predates this workflow. Keep it visible without making
+      # the first CI run permanently red; remove continue-on-error once clean.
+      - name: Check Rust formatting (migration advisory)
+        id: rustfmt
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: Report formatting debt
+        if: steps.rustfmt.outcome == 'failure'
+        run: >-
+          echo '::warning::cargo fmt --check failed; formatting remains a
+          migration advisory until the baseline is normalized.'
+
+      - name: Lint Rust targets
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test Rust targets
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Build Rust documentation
+        run: cargo doc --workspace --no-deps --locked
+
+      - name: Verify the Rust dependency notice
+        shell: pwsh
+        run: ./tools/gen_notice.ps1 -Check
+
+  headless:
+    name: Headless (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+            preset: linux-headless
+          - platform: Windows
+            os: windows-latest
+            preset: windows-headless
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Cache Cargo inputs and outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-headless-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'CMakeLists.txt', 'CMakePresets.json') }}
+          restore-keys: |
+            ${{ runner.os }}-headless-
+            ${{ runner.os }}-cargo-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Install the core package
+        run: >-
+          cmake --install build/${{ matrix.preset }}
+          --prefix '${{ runner.temp }}/ayther-install'
+
+      - name: Retain CTest diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 7
