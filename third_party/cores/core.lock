@@ -1,0 +1,38 @@
+# El core del fork que este árbol espera (#415).
+#
+# Las DLL no se commitean —9,5 MB cada una, y `third_party/cores/` está en
+# .gitignore— así que en una máquina nueva (CI incluida) no están, y los siete
+# oráculos que hablan con el core se saltean. Este archivo es lo que permite
+# recuperarlas sin adivinar: dice de dónde salen, cuál es la versión esperada y
+# con qué hash se verifica que sea ESA y no otra.
+#
+# El binario se publica como release en el repo del fork, que es público:
+#   gh release create <tag> <dll> --repo davidlazarte/Genesis-Plus-GX
+#
+# Cuando el core del fork cambie, este archivo cambia con él — y el commit que
+# lo toca es el registro de qué versión del core corresponde a qué versión del
+# Engine. Hoy eso vive sólo en la memoria de quien compiló.
+
+repo     = davidlazarte/Genesis-Plus-GX
+tag      = ayther-abi-1.10
+build_id = Genesis Plus GX AYTHER ABI 1.10; core v1.7.4 752a6ff7
+
+# El del fork: expone VDP, memoria y estado de audio (el que usan los oráculos).
+# Las claves siguen llamándose `vram_*` aunque el archivo ya no: renombrarlas
+# rompería el paso del CI que las lee (.github/workflows/ci.yml), y el nombre de
+# la clave es el ROL —el core que expone la VRAM— no el del archivo.
+vram_file   = genesis_plus_gx_libretro_ayther_x64.dll
+vram_sha256 = 4F7048733A465B26E7C5944D61BCCF9E77310201902A82FCE32DA46C736E870D
+
+# El STOCK, sin la ABI. No es un extra: es el caso NEGATIVO de abi_negociacion
+# —que un core sin ABI carga igual, porque la negociación es aditiva— y sin él
+# ese oráculo mide la mitad.
+stock_file   = genesis_plus_gx_libretro_stock_x64.dll
+stock_sha256 = D94A4EB853267DCF29C803A24B0A746B4C7659EF2F09C11E23C83F17A6CA8289
+
+# El fork en 32 bits. Se registra para que el release quede completo y auditable,
+# pero NO entra al paso de descarga del CI: el árbol se construye x64 (vcpkg
+# x64-windows) y bajar una DLL que nada carga sólo agrega una forma de fallar.
+# Si algún día hay un consumidor de 32 bits, se agrega ahí y acá está el hash.
+ayther_x86_file   = genesis_plus_gx_libretro_ayther_x86.dll
+ayther_x86_sha256 = 278CE480A84D4800C516AEDCF0C2F80D63A46F64E308734C2D99E0A943C8EA29
