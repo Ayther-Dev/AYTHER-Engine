@@ -1,0 +1,19 @@
+# Mode 3 anchor profile — Sonic The Hedgehog 2 (World).
+# Where the playable characters live in the 68000 work RAM, for ram_anchor.
+# Loaded by tools/mode3_spike (and, later, by the engine's Mode 3 resolver).
+
+word_swap = true          # Genesis: 68k words are byte-swapped in the retro
+                          # work-RAM buffer on little-endian hosts.
+
+# Sonic (0xFFB000) and Tails (0xFFB040) are one "kind": identical object layout,
+# 0x40 bytes apart. count=2 + stride=0x40 reads both from a single rule — the
+# two near-identical entities Mode 3 disambiguates by world_pos.
+[[anchor]]
+name   = "player"
+base   = 0xB000           # object struct address of Sonic → entity id
+x_off  = 0x08             # world X word (0xB008), relative to base
+y_off  = 0x0C             # world Y word (0xB00C)
+count  = 2                # Sonic + Tails
+stride = 0x40             # Tails object = base + 0x40
+pivot  = [0, 0]           # object origin ≈ metasprite center
+half   = [40, 40]         # Sonic's metasprite spans ~±24px; 40 tolerates the pivot
