@@ -1,0 +1,178 @@
+# Build, test, and release
+
+**Status:** Rust, Windows headless, native, native-VPX, and package consumption verified
+
+**Last verified:** 2026-08-27
+
+This guide separates commands that work in the current checkout from release
+gates that remain open. Tool installation is covered by
+[Development environment](DEVELOPMENT_ENVIRONMENT.md).
+
+> [!WARNING]
+> No stable or supported artifact exists. A green Rust suite or headless CMake
+> build is not sufficient evidence for an engine release.
+
+## Rust quality gates
+
+Run from the repository root:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
+cargo doc --workspace --no-deps --locked
+```
+
+On 2026-08-27, formatting, linting, documentation, and tests passed; tests
+reported 360 passed, zero failed, and one ignored archive benchmark. An ignored
+benchmark is not a functional test failure, but must remain visible.
+
+## Headless native build
+
+Windows:
+
+```powershell
+cmake --preset windows-headless
+cmake --build --preset windows-headless
+ctest --preset windows-headless
+cmake --install build/windows-headless
+```
+
+Linux uses the equivalent `linux-headless` names. These presets intentionally
+build only the Rust core, CXX bridge, flat-ABI test, and the no-asset SF2 FFI
+smoke. SDL3, Vulkan, ymfm, and libvpx are not required because
+`Ayther::engine` remains excluded unless `AYTHER_BUILD_ENGINE=ON`.
+
+## Complete native engine build
+
+Set `VCPKG_ROOT` as described in the development-environment guide, then run:
+
+```powershell
+cmake --preset windows-native
+cmake --build --preset windows-native
+ctest --preset windows-native
+cmake --install build/windows-native --prefix install/windows-native
+```
+
+This compiles all 24 explicit `ayther_engine` translation units plus the nine
+ymfm units and Rust core. The Windows workflow above passed on 2026-08-27 with
+Clang 22.1.6 and the pinned vcpkg baseline. Linux has not been verified in this
+checkout.
+
+For VP9, first run `pwsh tools/build_libvpx.ps1`, then replace every preset and
+directory name above with `windows-native-vpx`. That configure/build/test/install
+path also passed on 2026-08-27.
+
+GPU oracles are opt-in and selected by their own preset. They synthesize their
+inputs and require a working Vulkan device, but no ROM or recording:
+
+```powershell
+cmake --preset windows-native-gpu
+cmake --build --preset windows-native-gpu
+ctest --preset windows-native-gpu
+```
+
+The test preset filters on the `gpu` label. All eight GPU tests passed on
+Windows on 2026-08-27. Linux uses the corresponding `linux-native-gpu` names
+and remains unverified.
+
+Regenerate and verify the dependency notice against the exact vcpkg status
+selected by the native-VPX build:
+
+```powershell
+pwsh tools/gen_notice.ps1 -BuildDir build/windows-native-vpx
+pwsh tools/gen_notice.ps1 -BuildDir build/windows-native-vpx -Check
+```
+
+The check fails when the committed `NOTICE.md` differs from the generated
+inventory, so it belongs in the release pipeline after dependency resolution.
+
+## What CTest proves
+
+The headless preset registers two tests: `ayther.core.ffi` covers representative
+layout, handle, pack, script, identity, and audio entry points; `sf2_synth`
+covers the null-handle SoundFont contract without external assets.
+
+The normal native preset registers 38 tests: 25 isolated engine unit/contract
+executables, the two core/FFI tests, ten integration smokes for ABI, audio,
+render output, subsystem routing, and voice routing, plus the installed-header
+closure guard. Tests that require an unshipped emulator core use CTest skip code
+77. The VPX preset adds three tests, and the GPU preset adds eight
+hardware-labelled tests. These suites do not prove complete symbol coverage,
+all emulator/game combinations, thread safety, or cross-platform behavior.
+
+## Installed package
+
+The headless install produces the core archive and C header. A native install
+adds the engine and ymfm archives, the explicit engine-header allowlist,
+shaders, CMake exports, the project notices, and the exact vcpkg license files
+selected by that build. Renderer, audio implementation, libretro-host, and
+Vulkan-backend headers remain source-tree internals and are not installed.
+The VPX install also includes `vpxmd.lib`, headers, version, BSD license, patent
+grant, and authors.
+
+A core-only consumer can use:
+
+```cmake
+find_package(Ayther REQUIRED)
+target_link_libraries(my_app PRIVATE Ayther::core)
+```
+
+An engine consumer declares the renderer dependencies in its own package-manager
+environment and uses:
+
+```cmake
+find_package(Ayther 0.1 CONFIG REQUIRED COMPONENTS engine)
+target_link_libraries(my_app PRIVATE Ayther::engine)
+```
+
+The native export also provides `Ayther::ymfm`; a VPX-enabled package provides
+`Ayther::vpx`. `tests/package_consumer/` compiles only the installed C facade,
+C++ session facade, and version header, then links and executes outside the
+producer tree. No frontend, renderer implementation, or generated CXX bridge
+headers are promised as public surfaces.
+
+## Configuration matrix
+
+| Preset family | Intended role | Current confidence |
+|---|---|---|
+| `*-headless` | core, bridge, and CPU/ABI checks | Windows verified; Linux pending |
+| `*-release` | optimized core package | Pre-release core only; not an engine distribution |
+| `*-native` | complete engine without VP9 | Windows build and 38 CTests verified; Linux pending |
+| `*-native-vpx` | complete engine with VP9 | Windows build/install/consume verified; decoder fixtures and Linux pending |
+| `*-native-gpu` | eight Vulkan GPU oracles | Windows 8/8 verified; Linux and broader GPU matrix pending |
+
+## CI expectations
+
+A release-capable pipeline must run on every supported platform and retain:
+
+- locked Rust formatting, lint, tests, and documentation;
+- C and C++ header compilation plus exhaustive ABI/layout checks;
+- headless emulator/session integration tests with legally distributable
+  fixtures;
+- renderer tests separated into deterministic CPU and GPU-required groups;
+- install, package discovery, link, and execution from outside the source tree;
+- dependency, license, vulnerability, secret, and artifact-content scans;
+- checksums and signatures generated only by protected release infrastructure.
+
+Skipped tests must be reported as skipped. Missing hardware, ROMs, cores, or
+fixtures must never be represented as a passing oracle.
+
+## Release gate
+
+Do not publish a stable build until all items in
+[Project status](PROJECT_STATUS.md#release-blockers) are closed and the following
+evidence is archived:
+
+1. clean configure/build/test/install/consume logs for every supported platform;
+2. logs proving the release/protocol version contract and baselines agree;
+3. production key registry, rotation and revocation procedure, and acceptance
+   tests for signed and unsigned packs;
+4. complete transitive notices and source-offer obligations for shipped code;
+5. security review of pack parsing, paths, limits, scripting, FFI, and dynamic
+   library loading;
+6. release notes, checksums, provenance, rollback instructions, and a supported
+   version matrix.
+
+Release artifacts must not contain ROMs, BIOS images, commercial game assets,
+private keys, or emulator cores that the project is not authorized to ship.
