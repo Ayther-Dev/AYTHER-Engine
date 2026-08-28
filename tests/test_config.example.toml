@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# test_config.example.toml — PLANTILLA de configuración para las pruebas de
+# INTEGRACIÓN (smoke) que cargan un core + ROM reales.
+#
+# No se pueden commitear ni los ROMs (copyright) ni las rutas locales de cada
+# máquina, así que:
+#   · ESTA plantilla (test_config.example.toml) SÍ se commitea.
+#   · El archivo real (test_config.toml) está en .gitignore → NO se commitea.
+#
+# USO
+#   1. Copiá este archivo a  tests/test_config.toml
+#   2. Completá las rutas de TU entorno (abajo).
+#
+# Lo consumen los smokes de integración (session_smoke, split_smoke y el futuro
+# smoke de vista previa de audio). Rutas absolutas o relativas a la raíz del
+# repo; usá "/" como separador también en Windows.
+# ---------------------------------------------------------------------------
+
+# DLL del core libretro — el fork de Genesis Plus GX con VRAM expuesta (BYOC).
+# Por convención se despliega en third_party/cores/ (gitignored); ajustá si lo
+# tenés en otro lado.
+core = "third_party/cores/genesis_plus_gx_libretro_ayther_x64.dll"   # el archivo que nombra core.lock
+
+# ROMs de Mega Drive para las pruebas. Podés listar varias; cada smoke toma la
+# que necesite por `name` (o la primera si no especifica). Para el smoke de audio
+# conviene una ROM con efectos de sonido claros.
+[[rom]]
+name = "default"
+path = "C:/ruta/a/tu/rom.md"
+
+# [[rom]]
+# name = "aladdin"
+# path = "C:/ruta/a/Aladdin (USA).md"
