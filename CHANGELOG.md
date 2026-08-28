@@ -21,8 +21,9 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Project documentation now distinguishes implemented, specified, and planned
-  behavior and records the current version-axis divergence.
+- Cargo, CMake, vcpkg, SDK, engine validation, and Lua now share the `0.1.0`
+  release version; ABI and pack-schema values are explicitly independent
+  protocol revisions.
 
 ### Deprecated
 

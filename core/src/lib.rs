@@ -62,6 +62,16 @@ pub mod tile_substitutor;
 pub mod vram_sprite;
 pub mod widescreen_gate; // Map game timbres to presets from instruments.toml.
 
+/// AYTHER product release shared by Cargo, CMake, the native SDK, pack
+/// compatibility checks, and the Lua API.
+pub const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Revision of the legacy flat C ABI.
+///
+/// This counter is independent from [`RELEASE_VERSION`] and changes only when
+/// that ABI contract changes.
+pub const CORE_C_ABI_REVISION: u32 = 5;
+
 use audio_hasher::{AudioHasher, AudioOccurrence, AudioSubstitutor};
 use vram_sprite::{SpriteHasher, SpriteSubstitutor};
 
@@ -75,9 +85,9 @@ use tile_substitutor::TileSubstitutor;
 // ===========================================================================
 
 #[unsafe(no_mangle)]
-/// Returns the numeric version of the exported core ABI.
+/// Returns the revision of the exported flat C ABI.
 pub extern "C" fn ayther_core_version() -> u32 {
-    5
+    CORE_C_ABI_REVISION
 }
 
 // ===========================================================================
@@ -876,14 +886,14 @@ pub extern "C" fn ayther_manifest_schema_supported() -> u32 {
     archive_vfs::MANIFEST_SCHEMA
 }
 
-/// Returns the engine version used to validate a pack's `engine_min` value.
+/// Returns the AYTHER release version used to validate a pack's `ayther_min` value.
 ///
 /// The returned string is static and null-terminated. Keeping the value in the
 /// core prevents native clients from reporting a version that differs from the
 /// one that actually built the pack.
 #[unsafe(no_mangle)]
 pub extern "C" fn ayther_engine_version() -> *const std::os::raw::c_char {
-    concat!("0.9.0", "\0").as_ptr() as *const std::os::raw::c_char
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const std::os::raw::c_char
 }
 
 /// Returns the schema declared by this pack.

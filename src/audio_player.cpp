@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // audio_player.cpp — SDL3 audio device: emulator passthrough + HD WAV playback.
 //
-// v0.9.0: Implements AudioPlayer (see audio_player.h).
+// Implements AudioPlayer (see audio_player.h).
 // v0.9.1: Mute-on-substitution (set_mute_hashes / should_mute).
 // v0.9.7: Deferred passthrough (buffer_emulator / flush_emulator) — mutes a hash
 //         on its first appearance, removing the 1-tick bleed.

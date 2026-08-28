@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // audio_player.h — SDL3 audio device: emulator passthrough + HD WAV playback.
 //
-// v0.9.0:  PCM passthrough via continuous emu_stream_ + one-shot HD SFX streams.
+// PCM passthrough via continuous emu_stream_ + one-shot HD SFX streams.
 // v0.9.1:  Mute-on-substitution — emulator PCM is suppressed for any hash that
 //          had a resolved HD substitution in the previous tick.  This left a
 //          1-tick (~16 ms) bleed on the first appearance of a new substitution,

@@ -491,7 +491,7 @@ public:
     using VideoCb = std::function<void(const void*, unsigned, unsigned, size_t)>;
     void set_video_callback(VideoCb cb) { video_cb_ = std::move(cb); }
 
-    // Optional audio callback (wired to AudioHasher in v0.9.0).
+    // Optional audio callback wired to AudioHasher.
     // Signature mirrors retro_audio_sample_batch_t: returns frames consumed.
     using AudioCb = std::function<size_t(const int16_t*, size_t)>;
     void set_audio_callback(AudioCb cb) { audio_cb_ = std::move(cb); }

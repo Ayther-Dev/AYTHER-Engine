@@ -20,6 +20,18 @@ project(Ayther
     HOMEPAGE_URL "https://github.com/Ayther-Dev/AYTHER-Engine"
     LANGUAGES    C CXX)
 
+# The package-manager manifest is another published release-version surface.
+# Reject drift during configure instead of shipping contradictory metadata.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json" _ayther_vcpkg_manifest)
+string(JSON _ayther_vcpkg_version GET "${_ayther_vcpkg_manifest}" version-semver)
+if(NOT _ayther_vcpkg_version STREQUAL PROJECT_VERSION)
+    message(FATAL_ERROR
+        "Version contract mismatch: CMake=${PROJECT_VERSION}, "
+        "vcpkg=${_ayther_vcpkg_version}")
+endif()
+unset(_ayther_vcpkg_manifest)
+unset(_ayther_vcpkg_version)
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR
         "In-source builds are not supported. Configure with a preset; shared "
@@ -179,6 +191,7 @@ list(TRANSFORM AYTHER_ENGINE_PUBLIC_HEADERS
 
 set(AYTHER_INSTALLED_PUBLIC_HEADER_NAMES
     ayther_core_ffi.h
+    ayther_version.h
     ${AYTHER_ENGINE_PUBLIC_HEADER_NAMES})
 
 set_source_files_properties(${AYTHER_ENGINE_PUBLIC_HEADERS}

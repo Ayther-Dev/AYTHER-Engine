@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include <ayther/ayther_version.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,7 +29,7 @@ extern "C" {
 // Version
 // ---------------------------------------------------------------------------
 
-/// Returns the ayther_core library version integer (5 = v0.5.0).
+/// Returns AYTHER_CORE_C_ABI_REVISION, not the AYTHER SemVer release number.
 uint32_t ayther_core_version();
 
 // ---------------------------------------------------------------------------
@@ -454,7 +456,7 @@ bool ayther_pack_watcher_poll(AytherPackWatcher* w);
 void ayther_pack_watcher_free(AytherPackWatcher* w);
 
 // ---------------------------------------------------------------------------
-// ScriptEnv — sandboxed Lua 5.4 runtime  (v0.5.0)
+// ScriptEnv — sandboxed Lua 5.4 runtime
 //
 // API available to pack scripts:
 //   ayther.version()           → string
@@ -1011,7 +1013,7 @@ bool ayther_asset_id(const char* fs_path, char* out, size_t cap);
 bool ayther_asset_id_bytes(const uint8_t* data, size_t len, char* out, size_t cap);
 
 // ---------------------------------------------------------------------------
-// AudioHasher — PCM batch fingerprinting  (v0.9.0)
+// AudioHasher — PCM batch fingerprinting
 //
 // Fingerprints each retro_audio_sample_batch call using xxHash3-64 over the
 // raw i16 stereo buffer.  Silent batches (all zeros) are skipped.
@@ -1053,7 +1055,7 @@ void ayther_audio_hasher_end_tick(AytherAudioHasher* h);
 uint32_t ayther_audio_hasher_unique_count(const AytherAudioHasher* h);
 
 // ---------------------------------------------------------------------------
-// Audio substitution — POD structs  (v0.9.0)
+// Audio substitution — POD structs
 // ---------------------------------------------------------------------------
 
 /// One raw write to a sound chip's bus this frame, in temporal (bus) order.
@@ -1423,7 +1425,7 @@ uint32_t ayther_audio_events_format(const AytherEventSub* subs, uint32_t n,
 uint32_t ayther_audio_events_parse(const char* text, AytherEventSub* out, uint32_t cap);
 
 // ---------------------------------------------------------------------------
-// AudioSubstitutor — hash-to-HD-asset mapping engine  (v0.9.0)
+// AudioSubstitutor — hash-to-HD-asset mapping engine
 //
 // Two sources of substitution (same priority model as SpriteSubstitutor):
 //   1. catalog  — loaded from audio_substitutions.toml at startup.

@@ -80,7 +80,8 @@ set(_ayther_english_documented_headers
     ayther_mode3.h
     ayther_result.h
     ayther_sdk.h
-    ayther_sdk_version.h)
+    ayther_sdk_version.h
+    ayther_version.h)
 add_test(
     NAME ayther.quality.documentation_language
     COMMAND "${CMAKE_COMMAND}"

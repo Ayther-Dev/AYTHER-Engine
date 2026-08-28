@@ -23,12 +23,12 @@ is not modified or redistributed.
 |---|---|---|
 | `ayther_core` Rust library | Implemented | `core/`; 360 unit tests pass and one benchmark is ignored |
 | Typed Rust/C++ bridge | Implemented on the Rust side | `core/src/ffi.rs`; generated through `cxx` |
-| Legacy flat C ABI | Implemented, unstable | `core/src/lib.rs`; ABI probe currently returns `5` |
+| Legacy flat C ABI | Implemented, unstable | `core/src/lib.rs`; independent ABI revision currently returns `5` |
 | `.ay` pack VFS, validation, and signing | Implemented with development trust only | Manifest schema `2`; embedded RFC test key, no production key registry |
 | C++ `ayther_engine` | Buildable, pre-release | `Ayther::engine` declares all 24 sources and links the manifest-mode SDL3/Vulkan stack, core, and ymfm |
 | C++/ABI/integration tests | Partial | One headless C++ ABI test is present; renderer, audio, and full integration suites are pending |
 | Installable SDK surface | Pre-release | `find_package(Ayther)` exposes `Ayther::core`, `Ayther::engine`, and `Ayther::ymfm`; VPX builds also expose `Ayther::vpx` |
-| Stable release | Not available | Versioning and release gates remain open |
+| Stable release | Not available | The version contract is aligned; remaining release gates stay open |
 
 The authoritative, date-stamped assessment is in
 [Project status](docs/PROJECT_STATUS.md). It deliberately distinguishes working
@@ -118,7 +118,7 @@ Start at the [documentation index](docs/README.md). The most useful entry points
 are:
 
 - [Project status](docs/PROJECT_STATUS.md) — what works, what is missing, and
-  which version axes currently disagree;
+  how release and protocol versions are governed;
 - [Architecture](docs/ARCHITECTURE.md) — components, data flow, dependencies,
   and invariants;
 - [API and compatibility](docs/API_COMPATIBILITY.md) — Rust, CXX, C ABI, schema,

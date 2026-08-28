@@ -33,10 +33,11 @@ use crate::archive_vfs::MANIFEST_SCHEMA;
 use serde::Deserialize;
 use std::io::Read;
 
-/// Published AYTHER Engine product version compared with pack `ayther_min`.
+/// AYTHER release version compared with pack `ayther_min`.
 ///
-/// This is intentionally distinct from the Rust crate version.
-pub const ENGINE_VERSION: &str = "0.9.0";
+/// This alias preserves the validation API while sourcing the value from the
+/// canonical Cargo package version.
+pub const ENGINE_VERSION: &str = crate::RELEASE_VERSION;
 
 /// Operational severity of a validation finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -806,7 +807,7 @@ mod tests {
 name         = "Test"
 version    = "1.0.0"
 game_id    = "crc32:7b905383"
-ayther_min = "0.9.0"
+ayther_min = "0.1.0"
 schema     = 2
 
 [compat]
@@ -856,7 +857,7 @@ platform  = "megadrive"
 name         = "Test"
 version    = "1.0.0"
 game_id    = "sonic2"
-ayther_min = "0.9.0"
+ayther_min = "0.1.0"
 "#,
         );
         let ctx = SessionCtx {

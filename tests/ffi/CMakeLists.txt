@@ -9,6 +9,9 @@ add_executable(ayther_core_ffi_tests ayther_core_ffi_test.cpp)
 
 target_link_libraries(ayther_core_ffi_tests PRIVATE Ayther::core)
 
+target_compile_definitions(ayther_core_ffi_tests PRIVATE
+    "AYTHER_CMAKE_PROJECT_VERSION=\"${PROJECT_VERSION}\"")
+
 if(MSVC)
     target_compile_options(ayther_core_ffi_tests PRIVATE /W4)
 else()

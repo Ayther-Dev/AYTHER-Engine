@@ -14,7 +14,7 @@
 //
 // ## API surface (available to pack scripts)
 //
-//   ayther.version()                       → "0.5.0"
+//   ayther.version()                       → current AYTHER release version
 //   ayther.log(msg)                        → prints to stdout
 //
 //   ayther.ram.read_u8(offset)             → u8
@@ -357,7 +357,10 @@ impl ScriptEnv {
         let ayther: Table = lua.create_table()?;
 
         // ---- ayther.version() ----------------------------------------------
-        ayther.set("version", lua.create_function(|_, ()| Ok("0.5.0"))?)?;
+        ayther.set(
+            "version",
+            lua.create_function(|_, ()| Ok(crate::RELEASE_VERSION))?,
+        )?;
 
         // ---- ayther.log(msg) -----------------------------------------------
         ayther.set(
@@ -758,10 +761,8 @@ mod tests {
     #[test]
     fn version_returns_string() {
         let env = ScriptEnv::new().unwrap();
-        env.lua
-            .load("assert(ayther.version() == '0.5.0')")
-            .exec()
-            .unwrap();
+        let version: String = env.lua.load("return ayther.version()").eval().unwrap();
+        assert_eq!(version, crate::RELEASE_VERSION);
     }
 
     #[test]

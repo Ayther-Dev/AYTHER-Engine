@@ -153,8 +153,13 @@ static const char* g_test = "?";
 // version
 // ---------------------------------------------------------------------------
 static void test_version() {
-    BEGIN_TEST("version/nonzero");
-    EXPECT(ayther_core_version() > 0u);
+    BEGIN_TEST("version/release_contract");
+    EXPECT(std::strcmp(ayther_engine_version(), AYTHER_VERSION_STRING) == 0);
+    EXPECT(std::strcmp(ayther_engine_version(), AYTHER_CMAKE_PROJECT_VERSION) == 0);
+
+    BEGIN_TEST("version/independent_protocol_revisions");
+    EXPECT_EQ(ayther_core_version(), AYTHER_CORE_C_ABI_REVISION);
+    EXPECT_EQ(ayther_manifest_schema_supported(), AYTHER_PACK_MANIFEST_SCHEMA);
 }
 
 // ---------------------------------------------------------------------------

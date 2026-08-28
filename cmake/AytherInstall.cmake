@@ -31,7 +31,9 @@ if(TARGET ayther_core-static)
 endif()
 list(REMOVE_DUPLICATES AYTHER_CORE_SYSTEM_LIBS)
 
-install(FILES "${PROJECT_SOURCE_DIR}/include/ayther/ayther_core_ffi.h"
+install(FILES
+        "${PROJECT_SOURCE_DIR}/include/ayther/ayther_core_ffi.h"
+        "${PROJECT_SOURCE_DIR}/include/ayther/ayther_version.h"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther")
 install(FILES "${AYTHER_CORE_ARCHIVE}"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}")

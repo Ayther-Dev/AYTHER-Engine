@@ -24,7 +24,7 @@
 // stereo i16 samples.  Genesis Plus GX emitting at 44100 Hz × 60 fps
 // produces roughly 735 stereo frames (~2940 bytes) per call.
 //
-// We hash the **entire raw batch** (no amplitude normalization in v0.9.0):
+// We hash the **entire raw batch** without amplitude normalization:
 //   hash = xxHash3_64(bytes of the i16 stereo buffer)
 //
 // This works reliably for SFX because the Z80 sound processor replays
@@ -42,7 +42,7 @@
 //
 // ## v0.9.x changelog
 //
-// v0.9.0: raw batch hash, WAV substitution, SFX focus.
+// Raw batch hash, WAV substitution, and SFX focus.
 // v0.9.1: mute-on-substitution (suppress emulator PCM when HD asset plays).
 // v0.9.2: Lua audio API (ayther.audio.list/replace/clear), OGG + FLAC decode.
 // ---------------------------------------------------------------------------
