@@ -11,9 +11,12 @@ reproducible, and accompanied by the corresponding test oracle.
 3. Every bug fix must add or update a test that fails before the fix.
 4. Do not add ROMs, binary libretro cores, private keys, or third-party
    copyrighted material without explicit authorization.
-5. Do not add dependencies through absolute paths or sibling checkouts.
+5. Do not add dependencies through absolute paths or directories outside the
+   repository.
 6. A change to shared types must update Rust, C++, the bridge, and the ABI tests
-   in the same commit.
+   in the same change.
+7. Public documentation must describe only current evidence, clearly labeling
+   specified and planned behavior.
 
 ## Development environment
 
@@ -55,18 +58,42 @@ Required tools:
 
 ## Quality checks
 
-As components are added, the expected minimum will be:
+The current minimum is:
 
-- Rust: `cargo fmt --check`, `cargo clippy`, and `cargo test`.
-- C++: configuration and build with CMake/Ninja.
-- ABI/FFI: tests for sizes, offsets, and handle lifecycles.
-- CTest: unit tests and headless integration tests.
+- Rust: the four locked commands in
+  [Build, test, and release](docs/BUILD_TEST_RELEASE.md).
+- C++ boundary: configuration and build with a headless CMake/Ninja preset.
+  This currently verifies `Ayther::core`; do not report the engine as built.
+- ABI/FFI: `ayther.core.ffi`, including layout and handle-lifecycle checks.
+- Install: consume `Ayther::core` from a project outside the source tree when
+  changing packaging or public headers.
+
+As the corresponding components become available, the minimum expands to:
+
+- CTest unit and headless session integration tests;
 - Renderer: shader compilation and separate GPU tests.
 - SDK: installation and use from a project outside the checkout.
 - Documentation: valid links and executable examples.
 
 Do not report a test as passing if it was skipped because a core, ROM, or GPU
 was unavailable. Skips must remain visible in CI.
+
+## C++ documentation
+
+Write all new first-party C++ comments and API documentation in English. Use
+Doxygen-compatible comments for public declarations, but document only
+information the declaration cannot express clearly:
+
+- ownership and whether pointers or references are borrowed;
+- preconditions, postconditions, invalidation, and lifetime;
+- thread safety, thread affinity, and callback reentrancy;
+- units, coordinate systems, byte order, and ABI layout;
+- failure behavior and the meaning of status or empty results;
+- non-obvious invariants, security boundaries, and measured performance costs.
+
+Prefer precise names, strong types, RAII, and small interfaces over comments
+that restate implementation steps. Keep third-party headers under their
+controlling upstream documentation and license.
 
 ## Pull requests
 
@@ -81,6 +108,7 @@ Each pull request must include:
 
 ## Licenses and dependencies
 
-The project code uses MPL-2.0. Every new dependency must declare a compatible
-license and update `NOTICE.md` when appropriate. Vendored code must retain its
-original license and attribution.
+The project code uses MPL-2.0. Every new dependency must declare terms
+compatible with the intended distribution and update `NOTICE.md`. Vendored code
+must retain its controlling license and attribution. See
+[Legal and distribution boundaries](docs/LEGAL_AND_DISTRIBUTION.md).

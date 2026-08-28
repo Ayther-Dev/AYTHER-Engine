@@ -149,7 +149,7 @@ license = "CC-BY-NC-4.0"
 "#;
 
     #[test]
-    fn lee_creditos_y_procedencia() {
+    fn reads_credits_and_provenance() {
         let c = Credits::parse(SAMPLE.as_bytes()).unwrap();
         assert_eq!(c.credits.len(), 2);
         assert_eq!(c.credits[0].author, "Ana Ruiz");
@@ -162,7 +162,7 @@ license = "CC-BY-NC-4.0"
     }
 
     #[test]
-    fn la_atribucion_cae_al_autor_cuando_no_hay_texto() {
+    fn attribution_falls_back_to_author() {
         let c = Credits::parse(SAMPLE.as_bytes()).unwrap();
         assert_eq!(c.attribution_of("aaaa"), Some("Ana Ruiz, CC BY 4.0"));
         // Sin `attribution`: decir quién lo hizo sigue siendo mejor que nada.
@@ -174,7 +174,7 @@ license = "CC-BY-NC-4.0"
     /// informativos y el juego tiene que seguir andando. Lo que no puede es
     /// inventar una atribución, y `None` es exactamente eso.
     #[test]
-    fn un_archivo_roto_da_none_y_no_un_panic() {
+    fn broken_file_returns_none() {
         assert!(Credits::parse(b"[[credit] esto no es toml").is_none());
         assert!(Credits::parse(&[0xFF, 0xFE, 0x00]).is_none());
         // Vacío es válido y no es lo mismo que roto: un pack puede traer el

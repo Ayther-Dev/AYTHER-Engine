@@ -643,7 +643,7 @@ mod tests {
     /// Un SF2 de origen con DOS presets, para poder verificar que el horneado
     /// se lleva uno y deja el otro. Con un solo preset el test no distinguiría
     /// «filtra bien» de «copia todo».
-    fn fuente_dos_presets() -> Vec<u8> {
+    fn two_preset_fixture() -> Vec<u8> {
         const SR: u32 = 22050;
         const N: usize = 512;
         let mut smpl: Vec<u8> = Vec::new();
@@ -757,8 +757,8 @@ mod tests {
     }
 
     #[test]
-    fn hornea_solo_el_preset_pedido() {
-        let src = fuente_dos_presets();
+    fn bakes_only_requested_preset() {
+        let src = two_preset_fixture();
         let (out, rep) = bake(&src, &[(0, 7)], "Horneado").expect("horneado");
         assert_eq!(rep.presets, 1);
         assert_eq!(rep.instruments, 1);
@@ -779,8 +779,8 @@ mod tests {
     }
 
     #[test]
-    fn el_horneado_suena() {
-        let src = fuente_dos_presets();
+    fn baked_soundfont_renders() {
+        let src = two_preset_fixture();
         let (out, _) = bake(&src, &[(0, 7)], "Horneado").unwrap();
         let mut s = Sf2Synth::new(&out, 48000).unwrap();
         s.note_on(0, 60, 100);
@@ -794,8 +794,8 @@ mod tests {
     }
 
     #[test]
-    fn los_dos_presets_entran_si_se_piden_los_dos() {
-        let src = fuente_dos_presets();
+    fn both_requested_presets_are_included() {
+        let src = two_preset_fixture();
         let (out, rep) = bake(&src, &[(0, 0), (0, 7)], "Ambos").unwrap();
         assert_eq!(rep.presets, 2);
         assert_eq!(rep.samples, 2);
@@ -807,16 +807,16 @@ mod tests {
     /// quedar apuntando a algo que el artista borró, y tirar el pack entero por
     /// eso sería desproporcionado.
     #[test]
-    fn un_preset_ausente_se_reporta_y_no_aborta() {
-        let src = fuente_dos_presets();
+    fn missing_preset_is_reported() {
+        let src = two_preset_fixture();
         let (_, rep) = bake(&src, &[(0, 7), (9, 99)], "Con hueco").unwrap();
         assert_eq!(rep.presets, 1);
         assert_eq!(rep.missing, vec![(9, 99)]);
     }
 
     #[test]
-    fn si_no_hay_ninguno_si_falla() {
-        let src = fuente_dos_presets();
+    fn no_matching_presets_fails() {
+        let src = two_preset_fixture();
         assert!(bake(&src, &[(9, 99)], "Nada").is_err());
     }
 
@@ -826,8 +826,8 @@ mod tests {
     /// igual que un archivo malo), así que se compara contra la versión en
     /// memoria: las dos tienen que dar EXACTAMENTE lo mismo.
     #[test]
-    fn listar_presets_por_seek_da_lo_mismo_que_en_memoria() {
-        let src = fuente_dos_presets();
+    fn file_and_memory_preset_lists_match() {
+        let src = two_preset_fixture();
         let en_memoria = list_presets(&src).expect("listar en memoria");
         assert_eq!(en_memoria.len(), 2, "la fuente tiene dos presets");
 
@@ -842,8 +842,8 @@ mod tests {
     /// El terminal "EOP" de phdr NO es un preset. Si se colara, la biblioteca
     /// mostraría una entrada fantasma al final de cada SoundFont.
     #[test]
-    fn el_terminal_eop_no_se_lista() {
-        let src = fuente_dos_presets();
+    fn terminal_eop_is_not_listed() {
+        let src = two_preset_fixture();
         let l = list_presets(&src).unwrap();
         assert!(
             !l.iter().any(|(_, _, n)| n == "EOP"),
@@ -853,7 +853,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tests_con_sf2_real {
+mod tests_with_real_sf2 {
     use super::*;
     use crate::sf2::Sf2Synth;
 
@@ -868,7 +868,7 @@ mod tests_con_sf2_real {
     /// Se activa con AYTHER_SF2_TEST=<ruta>; sin eso se saltea, porque un test
     /// no puede depender de la colección de nadie.
     #[test]
-    fn hornea_un_sf2_real() {
+    fn bakes_real_sf2() {
         let Ok(path) = std::env::var("AYTHER_SF2_TEST") else {
             eprintln!("[skip] sin AYTHER_SF2_TEST=<ruta a un .sf2>");
             return;

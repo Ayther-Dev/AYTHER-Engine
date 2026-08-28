@@ -338,7 +338,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn carga_un_soundfont_y_lista_sus_presets() {
+    fn loads_soundfont_and_lists_presets() {
         let sf2 = minimal_sf2();
         let s = Sf2Synth::new(&sf2, 48000).expect("el SF2 mínimo tiene que cargar");
         let p = s.presets();
@@ -349,7 +349,7 @@ mod tests {
     /// EL oráculo: que SUENE. Cargar el font y no fallar no prueba nada — un
     /// SF2 mal armado puede cargar y renderizar silencio.
     #[test]
-    fn una_nota_produce_senal() {
+    fn note_produces_signal() {
         let sf2 = minimal_sf2();
         let mut s = Sf2Synth::new(&sf2, 48000).unwrap();
 
@@ -391,7 +391,7 @@ mod tests {
     /// replay — que es la razón por la que exigía este oráculo antes de
     /// integrar nada.
     #[test]
-    fn el_render_es_determinista() {
+    fn render_is_deterministic() {
         let sf2 = minimal_sf2();
         let run = || {
             let mut s = Sf2Synth::new(&sf2, 48000).unwrap();

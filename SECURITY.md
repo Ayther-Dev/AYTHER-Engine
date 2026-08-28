@@ -6,6 +6,10 @@ AYTHER Engine has not yet published a stable version. During initial
 development, reports will be evaluated against the `main` branch. This section
 will be replaced with a version matrix after the first stable release.
 
+No security-support lifetime or production pack trust guarantee is currently
+offered. The implemented development model and its known gaps are documented in
+[Pack and security model](docs/PACK_SECURITY_MODEL.md).
+
 ## Reporting a vulnerability
 
 Do not open a public issue for an unpatched vulnerability.
@@ -36,6 +40,9 @@ The following areas are considered especially sensitive:
 - unsafe loading of cores or dynamic libraries;
 - exposure of keys, certificates, or private data;
 - denial of service through malformed packs or files.
+- archive path ambiguity, decompression bombs, and resource-limit bypasses;
+- acceptance of unknown, expired, revoked, or development signing keys in a
+  production policy.
 
 ## Response process
 

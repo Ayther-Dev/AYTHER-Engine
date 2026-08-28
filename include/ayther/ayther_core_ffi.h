@@ -275,7 +275,7 @@ float    ayther_tile_brightness_factor(const uint8_t* tile, const uint8_t* refer
 /// El parche se aplica al BUFFER que se le pasa al core, nunca al archivo del
 /// disco: la misma doctrina que el resto del proyecto, y acá además protege al
 /// usuario de quedarse sin su ROM original por probar un hack.
-bool    ayther_is_rom_patch(const uint8_t* datos, uint32_t n);
+bool    ayther_is_rom_patch(const uint8_t* data, uint32_t size);
 /// Bytes escritos, o negativo: -1 args · -2 no es parche · -3 no entra
 /// (el tamaño necesario queda en `out_needed`) · -4 fallo (ver el error).
 int64_t ayther_apply_rom_patch(const uint8_t* rom, uint32_t rom_n,
@@ -1517,7 +1517,7 @@ void ayther_script_get_shader_params(const AytherScriptEnv* env,
 // it: the nametable wraps). observe() each visible cell in LEVEL space; the
 // caller turns on-screen cells into absolute level tiles using the VDP scroll,
 // unwrapping the wrapped Hscroll via ScrollUnwrapper (game-agnostic). Validated
-// against Sonic 2 EHZ in tools/fondos_spike (0 conflicts over 1033px of scroll).
+// against Sonic 2 EHZ in tools/background_spike (0 conflicts over 1033px of scroll).
 // The engine-side consumer is BackgroundExporter (ayther_background_export.h).
 // ---------------------------------------------------------------------------
 struct AytherBgStitcher;  // opaque

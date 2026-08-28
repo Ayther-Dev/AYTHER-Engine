@@ -206,8 +206,8 @@ fn pcm_pitch(fd: u16) -> u8 {
     if fd == 0 {
         return NO_PITCH;
     } // canal parado: no hay nota que mostrar
-    let semitonos = 12.0 * (fd as f64 / PCM_FD_UNITY as f64).log2();
-    let n = PCM_PITCH_UNITY + semitonos.round() as i32;
+    let semitones = 12.0 * (fd as f64 / PCM_FD_UNITY as f64).log2();
+    let n = PCM_PITCH_UNITY + semitones.round() as i32;
     if !(0..=127).contains(&n) {
         NO_PITCH
     } else {
@@ -1288,7 +1288,7 @@ mod tests {
     }
 
     #[test]
-    fn keyoff_sin_keyon_sintetiza_evento_residual() {
+    fn keyoff_without_keyon_synthesizes_residual_event() {
         // FM: nota que venía sonando desde el ESTADO INICIAL de la toma — el
         // primer comando que llega del canal es el key-OFF. Debe sintetizarse
         // un evento residual [0, off-1] (con frecuencia escrita en la toma, el
@@ -1477,7 +1477,7 @@ mod tests {
     }
 
     #[test]
-    fn instrument_ignora_frecuencia_y_distingue_patch() {
+    fn instrument_ignores_frequency_and_distinguishes_patch() {
         // La misma voz tocando dos notas → firmas DISTINTAS, instrument IGUAL;
         // cambiar el patch (MUL) → instrument distinto.
         let mut d = AudioEventDetector::new();
@@ -1517,7 +1517,7 @@ mod tests {
     }
 
     #[test]
-    fn instrument_igual_entre_canales() {
+    fn instrument_is_equal_across_channels() {
         // El mismo patch en FM0 y FM1 (rotación del driver): firmas distintas
         // (el canal entra en la firma) pero el MISMO instrument.
         let mut d = AudioEventDetector::new();
@@ -1542,7 +1542,7 @@ mod tests {
     }
 
     #[test]
-    fn instrument_fm_ignora_pan() {
+    fn instrument_fm_ignores_pan() {
         // El mismo patch con pan L vs pan R (bits 6-7 de 0xB4) es el MISMO
         // instrumento (firma sí cambia).
         let mut d = AudioEventDetector::new();
@@ -1566,7 +1566,7 @@ mod tests {
     }
 
     #[test]
-    fn psg_instrument_tono_constante_ruido_por_control() {
+    fn psg_instrument_distinguishes_tone_and_noise() {
         // Tonos distintos en canales distintos → mismo instrument (cuadrada pura);
         // ruido → instrument propio, distinto por control de ruido.
         let mut d = AudioEventDetector::new();
@@ -1818,7 +1818,7 @@ mod tests {
     ///  el BUS va y vuelve. Sin esto el Lab lo escribe y el runtime lo
     /// tira, que es lo que hacía que en el juego los buses no separaran nada.
     #[test]
-    fn el_bus_va_y_vuelve() {
+    fn bus_round_trips() {
         let mut a = sub(0xAA, "m.ogg", 0x3F, 0, true);
         a.bus = 1; // música
         let mut b = sub(0xBB, "s.ogg", 0x01, 0, false);
@@ -1838,28 +1838,28 @@ mod tests {
     /// todos los packs viejos. El default de «Efectos» vive en el Lab, para las
     /// asignaciones sueltas del autor; acá la ausencia es un dato.
     #[test]
-    fn un_pack_viejo_no_queda_en_efectos() {
-        let viejo = r#"
+    fn legacy_pack_does_not_default_to_effects() {
+        let legacy_toml = r#"
 [[event]]
 signature = "0x00000000000000aa"
 asset = "m.ogg"
 channels = "0x0000003f"
 "#;
-        let back = events_from_toml(viejo);
+        let back = events_from_toml(legacy_toml);
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].bus, 0, "sin clasificar, no Efectos");
 
         // Y sin bus el TOML sale BYTE-IDÉNTICO al formato previo: un pack que
         // no clasifica nada no cambia de shape al re-hornearse.
-        let sin = sub(0xAA, "m.ogg", 0x3F, 0, false);
-        assert!(!events_to_toml(&[sin]).contains("bus"));
+        let without_bus = sub(0xAA, "m.ogg", 0x3F, 0, false);
+        assert!(!events_to_toml(&[without_bus]).contains("bus"));
     }
 
     /// Un nombre desconocido cae a 0 y no a Efectos: un pack de mañana puede
     /// traer un bus nuevo, y meterlo en Efectos lo haría bajar con un slider
     /// que no es el suyo.
     #[test]
-    fn un_bus_desconocido_no_cae_en_efectos() {
+    fn unknown_bus_does_not_default_to_effects() {
         let raro = r#"
 [[event]]
 signature = "0x00000000000000aa"
@@ -2367,7 +2367,7 @@ mod batch_tests {
 }
 
 #[cfg(test)]
-mod velocity_e_instrumento_tests {
+mod velocity_and_instrument_tests {
     use super::*;
 
     fn fm(addr: u16, data: u8) -> AudioWrite {
@@ -2400,14 +2400,14 @@ mod velocity_e_instrumento_tests {
     /// timbre. Medido sobre Sonic, incluir el TL del portador daba 43
     /// identidades donde hay 30 — y en un canal, dieciséis donde hay una.
     #[test]
-    fn el_volumen_no_cambia_el_instrumento() {
+    fn volume_does_not_change_instrument() {
         // Algoritmo 0: sólo el operador 3 (bit 3) es portador.
-        let inst_de = |tl_portador: u8| -> u64 {
+        let instrument_for_carrier_tl = |carrier_tl: u8| -> u64 {
             let mut d = AudioEventDetector::new();
             let mut w = Vec::new();
             set_alg(&mut w, 0);
             set_tl(&mut w, 0, 20); // modulador: timbre
-            set_tl(&mut w, 3, tl_portador); // portador: volumen
+            set_tl(&mut w, 3, carrier_tl); // portador: volumen
             key_on(&mut w);
             d.process_frame(0, &w);
             let mut off = Vec::new();
@@ -2417,8 +2417,8 @@ mod velocity_e_instrumento_tests {
             d.events()[0].instrument
         };
         assert_eq!(
-            inst_de(0),
-            inst_de(64),
+            instrument_for_carrier_tl(0),
+            instrument_for_carrier_tl(64),
             "el TL del PORTADOR es volumen: no debe cambiar el instrumento"
         );
     }
@@ -2427,12 +2427,12 @@ mod velocity_e_instrumento_tests {
     /// modulación), así que ahí la identidad TIENE que cambiar. Sin este caso,
     /// el test de arriba pasaría también con una firma que ignore todos los TL.
     #[test]
-    fn el_timbre_del_modulador_si_cambia_el_instrumento() {
-        let inst_de = |tl_modulador: u8| -> u64 {
+    fn modulator_timbre_changes_instrument() {
+        let instrument_for_modulator_tl = |modulator_tl: u8| -> u64 {
             let mut d = AudioEventDetector::new();
             let mut w = Vec::new();
             set_alg(&mut w, 0);
-            set_tl(&mut w, 0, tl_modulador);
+            set_tl(&mut w, 0, modulator_tl);
             set_tl(&mut w, 3, 10);
             key_on(&mut w);
             d.process_frame(0, &w);
@@ -2443,20 +2443,20 @@ mod velocity_e_instrumento_tests {
             d.events()[0].instrument
         };
         assert_ne!(
-            inst_de(0),
-            inst_de(40),
+            instrument_for_modulator_tl(0),
+            instrument_for_modulator_tl(40),
             "el TL de un MODULADOR es timbre: tiene que cambiar el instrumento"
         );
     }
 
     /// El volumen no se pierde: se va a `velocity`, que es donde corresponde.
     #[test]
-    fn el_volumen_sale_por_velocity() {
-        let vel_de = |tl_portador: u8| -> u8 {
+    fn volume_maps_to_velocity() {
+        let velocity_for_carrier_tl = |carrier_tl: u8| -> u8 {
             let mut d = AudioEventDetector::new();
             let mut w = Vec::new();
             set_alg(&mut w, 0);
-            set_tl(&mut w, 3, tl_portador);
+            set_tl(&mut w, 3, carrier_tl);
             key_on(&mut w);
             d.process_frame(0, &w);
             let mut off = Vec::new();
@@ -2465,13 +2465,13 @@ mod velocity_e_instrumento_tests {
             d.finish();
             d.events()[0].velocity
         };
-        let fuerte = vel_de(0); // TL 0 = máximo
-        let flojo = vel_de(96);
+        let loud = velocity_for_carrier_tl(0); // TL 0 = máximo
+        let quiet = velocity_for_carrier_tl(96);
         assert!(
-            fuerte > flojo,
-            "menos TL = más fuerte: {fuerte} tendría que ser > {flojo}"
+            loud > quiet,
+            "menos TL = más fuerte: {loud} tendría que ser > {quiet}"
         );
-        assert_eq!(fuerte, 127, "TL 0 es el máximo de la escala MIDI");
+        assert_eq!(loud, 127, "TL 0 es el máximo de la escala MIDI");
     }
 
     // -----------------------------------------------------------------------
@@ -2503,7 +2503,7 @@ mod velocity_e_instrumento_tests {
     }
 
     #[test]
-    fn pcm_abre_y_cierra_un_bloque_por_canal() {
+    fn pcm_opens_and_closes_block_per_channel() {
         let mut d = AudioEventDetector::new();
         d.process_frame_ex(10, &[], &[pcm_on(3, 0x2A, 0xBEEF, 0x0800, 0xC0)]);
         d.process_frame_ex(11, &[], &[]);
@@ -2527,7 +2527,7 @@ mod velocity_e_instrumento_tests {
     /// El chip no tiene tono: transporta el sample leyéndolo más rápido o más
     /// lento, igual que un sampler. La razón contra 1:1 ES el intervalo.
     #[test]
-    fn la_velocidad_del_pcm_se_lee_como_nota() {
+    fn pcm_rate_maps_to_note() {
         assert_eq!(
             pcm_pitch(0x0800),
             60,
@@ -2555,8 +2555,8 @@ mod velocity_e_instrumento_tests {
     /// Lo que el pitch habilita: la regla de match instrumento+nota puede
     /// separar dos disparos del MISMO sample a velocidades distintas.
     #[test]
-    fn el_mismo_sample_a_otra_velocidad_es_otra_nota() {
-        let de = |fd: u16| -> (u64, u64, u8) {
+    fn same_sample_at_other_rate_is_other_note() {
+        let identity_for = |fd: u16| -> (u64, u64, u8) {
             let mut d = AudioEventDetector::new();
             d.process_frame_ex(0, &[], &[pcm_on(0, 0x2A, 0x1000, fd, 0xC0)]);
             d.process_frame_ex(1, &[], &[pcm_off(0)]);
@@ -2564,8 +2564,8 @@ mod velocity_e_instrumento_tests {
             let e = d.events()[0];
             (e.instrument, e.signature, e.pitch)
         };
-        let (inst_a, sig_a, pitch_a) = de(0x0800);
-        let (inst_b, sig_b, pitch_b) = de(0x1000);
+        let (inst_a, sig_a, pitch_a) = identity_for(0x0800);
+        let (inst_b, sig_b, pitch_b) = identity_for(0x1000);
         assert_eq!(inst_a, inst_b, "mismo sample = mismo instrumento");
         assert_ne!(sig_a, sig_b, "…pero la velocidad sí entra en la firma");
         assert_ne!(
@@ -2579,20 +2579,20 @@ mod velocity_e_instrumento_tests {
     /// distinto: si la identidad no mirara st/ls, estos dos serían el mismo
     /// sonido y una sustitución asignada a uno dispararía con el otro.
     #[test]
-    fn dos_samples_distintos_al_mismo_volumen_y_velocidad_no_se_confunden() {
-        let firma_de = |st: u8, ls: u16| -> (u64, u64) {
+    fn different_samples_do_not_collide() {
+        let signature_for = |st: u8, ls: u16| -> (u64, u64) {
             let mut d = AudioEventDetector::new();
             d.process_frame_ex(0, &[], &[pcm_on(0, st, ls, 0x0800, 0xC0)]);
             d.process_frame_ex(1, &[], &[pcm_off(0)]);
             d.finish();
             (d.events()[0].signature, d.events()[0].instrument)
         };
-        let (sig_a, inst_a) = firma_de(0x2A, 0x1000);
-        let (sig_b, inst_b) = firma_de(0x71, 0x1000);
+        let (sig_a, inst_a) = signature_for(0x2A, 0x1000);
+        let (sig_b, inst_b) = signature_for(0x71, 0x1000);
         assert_ne!(sig_a, sig_b, "otro sample = otra firma");
         assert_ne!(inst_a, inst_b, "otro sample = otro instrumento");
         // y el loop también distingue: dos samples pueden arrancar igual
-        let (_, inst_c) = firma_de(0x2A, 0x2000);
+        let (_, inst_c) = signature_for(0x2A, 0x2000);
         assert_ne!(inst_a, inst_c, "el loop también forma parte del sample");
     }
 
@@ -2600,8 +2600,8 @@ mod velocity_e_instrumento_tests {
     /// exactamente el criterio de FM, donde la frecuencia entra en la firma
     /// pero no en el instrumento.
     #[test]
-    fn el_mismo_sample_a_otra_velocidad_comparte_instrumento() {
-        let de = |fd: u16, env: u8, ch: u8| -> (u64, u64, u8) {
+    fn same_sample_at_other_rate_shares_instrument() {
+        let identity_for = |fd: u16, env: u8, ch: u8| -> (u64, u64, u8) {
             let mut d = AudioEventDetector::new();
             d.process_frame_ex(0, &[], &[pcm_on(ch, 0x2A, 0x1000, fd, env)]);
             d.process_frame_ex(1, &[], &[pcm_off(ch)]);
@@ -2609,29 +2609,29 @@ mod velocity_e_instrumento_tests {
             let e = d.events()[0];
             (e.signature, e.instrument, e.velocity)
         };
-        let (sig_grave, inst_grave, _) = de(0x0400, 0xC0, 0);
-        let (sig_agudo, inst_agudo, _) = de(0x0C00, 0xC0, 0);
-        assert_ne!(sig_grave, sig_agudo, "otra velocidad = otra firma");
+        let (low_signature, low_instrument, _) = identity_for(0x0400, 0xC0, 0);
+        let (high_signature, high_instrument, _) = identity_for(0x0C00, 0xC0, 0);
+        assert_ne!(low_signature, high_signature, "otra velocidad = otra firma");
         assert_eq!(
-            inst_grave, inst_agudo,
+            low_instrument, high_instrument,
             "…pero el mismo sample = el mismo instrumento"
         );
 
         // el volumen tampoco es identidad: se va a velocity
-        let (_, inst_fuerte, vel_fuerte) = de(0x0400, 0xFF, 0);
-        let (_, inst_flojo, vel_flojo) = de(0x0400, 0x20, 0);
+        let (_, loud_instrument, loud_velocity) = identity_for(0x0400, 0xFF, 0);
+        let (_, quiet_instrument, quiet_velocity) = identity_for(0x0400, 0x20, 0);
         assert_eq!(
-            inst_fuerte, inst_flojo,
+            loud_instrument, quiet_instrument,
             "el volumen no es identidad de timbre"
         );
         assert!(
-            vel_fuerte > vel_flojo,
-            "…pero sale por velocity: {vel_fuerte} > {vel_flojo}"
+            loud_velocity > quiet_velocity,
+            "…pero sale por velocity: {loud_velocity} > {quiet_velocity}"
         );
 
         // el canal no fragmenta el instrumento: el driver los rota
-        let (_, inst_ch0, _) = de(0x0400, 0xC0, 0);
-        let (_, inst_ch7, _) = de(0x0400, 0xC0, 7);
+        let (_, inst_ch0, _) = identity_for(0x0400, 0xC0, 0);
+        let (_, inst_ch7, _) = identity_for(0x0400, 0xC0, 7);
         assert_eq!(
             inst_ch0, inst_ch7,
             "el mismo sample desde otro canal es el mismo instrumento"
@@ -2641,7 +2641,7 @@ mod velocity_e_instrumento_tests {
     /// El driver reapunta un canal a otro sample SIN apagarlo. Sin cerrar el
     /// bloque en el re-disparo, dos sonidos quedarían dentro de uno solo.
     #[test]
-    fn el_redisparo_sin_key_off_cierra_el_bloque_anterior() {
+    fn reattack_without_keyoff_closes_previous_block() {
         let mut d = AudioEventDetector::new();
         d.process_frame_ex(5, &[], &[pcm_on(1, 0x2A, 0x1000, 0x0800, 0xC0)]);
         d.process_frame_ex(9, &[], &[pcm_on(1, 0x71, 0x1000, 0x0800, 0xC0)]);
@@ -2655,7 +2655,7 @@ mod velocity_e_instrumento_tests {
     }
 
     #[test]
-    fn el_pcm_vivo_aparece_en_active_channels() {
+    fn live_pcm_appears_in_active_channels() {
         let mut d = AudioEventDetector::new();
         d.process_frame_ex(0, &[], &[pcm_on(6, 0x2A, 0x1000, 0x0800, 0xC0)]);
         let act = d.active_channels();
@@ -2678,7 +2678,7 @@ mod velocity_e_instrumento_tests {
     /// la identidad es la del momento del disparo (mismo criterio que en FM,
     /// donde un fundido no fragmenta el instrumento).
     #[test]
-    fn volumen_y_pitch_a_mitad_no_cambian_la_identidad() {
+    fn mid_volume_and_pitch_do_not_change_identity() {
         let mut d = AudioEventDetector::new();
         d.process_frame_ex(0, &[], &[pcm_on(2, 0x2A, 0x1000, 0x0800, 0xC0)]);
         let sig_al_disparo = d.active_channels()[0].signature;
@@ -2711,7 +2711,7 @@ mod velocity_e_instrumento_tests {
     /// El chip queda fuera del camino de FM/PSG y viceversa: process_frame sin
     /// eventos de PCM no puede inventar bloques de un chip que no habló.
     #[test]
-    fn sin_eventos_de_pcm_no_hay_bloques_de_pcm() {
+    fn no_pcm_events_means_no_pcm_blocks() {
         let mut d = AudioEventDetector::new();
         let mut w = Vec::new();
         set_alg(&mut w, 0);
@@ -2730,7 +2730,7 @@ mod velocity_e_instrumento_tests {
     }
 
     #[test]
-    fn finish_cierra_el_pcm_que_quedo_sonando() {
+    fn finish_closes_active_pcm() {
         let mut d = AudioEventDetector::new();
         d.process_frame_ex(7, &[], &[pcm_on(0, 0x2A, 0x1000, 0x0800, 0xC0)]);
         d.process_frame_ex(20, &[], &[]);
@@ -2853,7 +2853,7 @@ asset = "bb"
 "#;
 
     #[test]
-    fn sin_condiciones_no_entra_al_gate() {
+    fn missing_conditions_do_not_enter_gate() {
         let g = AudioEventGate::from_toml(DOC);
         let ram = vec![0u8; 64];
         let ctx = FrameCtx::new(0, RamView::linear(&ram));
@@ -2862,7 +2862,7 @@ asset = "bb"
     }
 
     #[test]
-    fn la_condicion_decide() {
+    fn condition_controls_gate() {
         let g = AudioEventGate::from_toml(DOC);
         let mut ram = vec![0u8; 64];
 
@@ -2876,7 +2876,7 @@ asset = "bb"
     }
 
     #[test]
-    fn condicion_rota_descarta_la_entrada() {
+    fn broken_condition_discards_entry() {
         // `op` inválido: la entrada se ignora en vez de volverse incondicional.
         let doc = "[[event]]\nsignature = \"0x1\"\nasset = \"aa\"\n\
                    [[event.condition]]\nkind = \"memory_const\"\naddr = 1\n\
@@ -2886,7 +2886,7 @@ asset = "bb"
     }
 
     #[test]
-    fn documento_roto_no_crashea() {
+    fn broken_document_does_not_crash() {
         assert!(AudioEventGate::from_toml("[[event").is_empty());
     }
 }

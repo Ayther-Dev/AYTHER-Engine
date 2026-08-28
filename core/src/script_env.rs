@@ -1123,7 +1123,7 @@ mod safe_area_tests {
     }
 
     #[test]
-    fn sin_llamada_no_hay_area() {
+    fn no_call_means_no_safe_area() {
         let e = env();
         e.load_string("ayther.on_frame(function() end)", "t")
             .unwrap();
@@ -1134,7 +1134,7 @@ mod safe_area_tests {
     }
 
     #[test]
-    fn el_script_fija_el_area() {
+    fn script_sets_safe_area() {
         let e = env();
         e.load_string(
             "ayther.on_frame(function() ayther.screen.safe_area(39, 359) end)",
@@ -1146,7 +1146,7 @@ mod safe_area_tests {
     }
 
     #[test]
-    fn area_invertida_se_ignora() {
+    fn inverted_area_is_ignored() {
         let e = env();
         e.load_string(
             "ayther.on_frame(function() ayther.screen.safe_area(300, 100) end)",
@@ -1160,7 +1160,7 @@ mod safe_area_tests {
     }
 
     #[test]
-    fn se_puede_limpiar() {
+    fn safe_area_can_be_cleared() {
         let e = env();
         e.load_string(
             "ayther.on_frame(function() ayther.screen.safe_area(10, 20) end)",
@@ -1181,7 +1181,7 @@ mod safe_area_tests {
     /// El caso que motiva la feature: en un beat 'em up la camara se fija y el
     /// personaje recorre la pantalla, asi que el area SIGUE su posicion.
     #[test]
-    fn el_area_puede_seguir_al_personaje() {
+    fn safe_area_can_follow_character() {
         let e = env();
         e.load_string(
             "px = 100\n\

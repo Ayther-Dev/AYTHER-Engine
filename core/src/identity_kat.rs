@@ -1,4 +1,4 @@
-//! Canonical identity functions and known-answer test vectors.
+//! Canonical identity functions and known-answer test vectores.
 //!
 //! These helpers provide bit-exact tile, sprite, and audio identities so SDK
 //! consumers do not need to reimplement the pack identity specification.
@@ -118,71 +118,71 @@ pub struct Kat {
     /// Identity family: `sprite`, `plane_tile`, or `fm_event`.
     pub id: &'static str,
     /// Short description of the covered input case.
-    pub caso: &'static str,
+    pub case_description: &'static str,
     /// Expected 64-bit identity.
-    pub esperado: u64,
+    pub expected: u64,
 }
 
 /// Generates deterministic synthetic VRAM for identity conformance tests.
 ///
 /// Byte `i` is `(i * 37 + 11) & 0xFF`, making adjacent byte swaps observable.
-pub fn vram_sintetica(n: usize) -> Vec<u8> {
+pub fn synthetic_vram(n: usize) -> Vec<u8> {
     (0..n).map(|i| ((i * 37 + 11) & 0xFF) as u8).collect()
 }
 
 /// Generates deterministic synthetic YM2612 register state.
-pub fn fm_regs_sinteticos() -> Vec<u8> {
+pub fn synthetic_fm_registers() -> Vec<u8> {
     (0..0x200).map(|i| ((i * 53 + 7) & 0xFF) as u8).collect()
 }
 
-/// Returns the canonical known-answer vectors.
+/// Returns the canonical known-answer vectores.
 ///
 /// Expected values are part of the public pack-identity contract.
-pub fn vectores() -> Vec<Kat> {
+pub fn vectors() -> Vec<Kat> {
     vec![
         Kat {
             id: "sprite",
-            caso: "1×1 tile en el índice 0",
-            esperado: sprite_hash(&vram_sintetica(4096), 0, 1, 1),
+            case_description: "1×1 tile en el índice 0",
+            expected: sprite_hash(&synthetic_vram(4096), 0, 1, 1),
         },
         Kat {
             id: "sprite",
-            caso: "4×4 tiles (el máximo) desde el índice 3",
-            esperado: sprite_hash(&vram_sintetica(4096), 3, 4, 4),
+            case_description: "4×4 tiles (el máximo) desde el índice 3",
+            expected: sprite_hash(&synthetic_vram(4096), 3, 4, 4),
         },
         Kat {
             id: "sprite",
-            caso: "fuera de VRAM: rellena con ceros, no trunca",
-            esperado: sprite_hash(&vram_sintetica(64), 1, 2, 2),
+            case_description: "fuera de VRAM: rellena con ceros, no trunca",
+            expected: sprite_hash(&synthetic_vram(64), 1, 2, 2),
         },
         Kat {
             id: "plane_tile",
-            caso: "patrón 1, línea de paleta 0",
-            esperado: plane_tile_hash(&vram_sintetica(4096), 1, 0),
+            case_description: "patrón 1, línea de paleta 0",
+            expected: plane_tile_hash(&synthetic_vram(4096), 1, 0),
         },
         Kat {
             id: "plane_tile",
-            caso: "mismo patrón, línea de paleta 2",
-            esperado: plane_tile_hash(&vram_sintetica(4096), 1, 2),
+            case_description: "mismo patrón, línea de paleta 2",
+            expected: plane_tile_hash(&synthetic_vram(4096), 1, 2),
         },
         Kat {
             id: "fm_event",
-            caso: "canal 0 (banco 0)",
-            esperado: fm_signature(&fm_regs_sinteticos(), 0),
+            case_description: "canal 0 (banco 0)",
+            expected: fm_signature(&synthetic_fm_registers(), 0),
         },
         Kat {
             id: "fm_event",
-            caso: "canal 4 (banco 1)",
-            esperado: fm_signature(&fm_regs_sinteticos(), 4),
+            case_description: "canal 4 (banco 1)",
+            expected: fm_signature(&synthetic_fm_registers(), 4),
         },
     ]
 }
 
-/// Serializes the known-answer vectors as SDK-friendly TOML.
-pub fn vectores_toml() -> String {
+/// Serializes the known-answer vectores as SDK-friendly TOML.
+pub fn vectors_toml() -> String {
     let mut s = String::new();
     s.push_str(
-        "# AYTHER identity test vectors\n\
+        "# AYTHER identity test vectores\n\
                 #\n\
                 # GENERADO. Regenerar: `cargo run -p ay_pack -- kat`.\n\
                 #\n\
@@ -197,10 +197,10 @@ pub fn vectores_toml() -> String {
     );
     s.push_str("seed_fnv  = \"0x14650fb0739d0383\"   # NO es el basis canonico\n");
     s.push_str("prime_fnv = \"0x00000100000001b3\"\n\n");
-    for k in vectores() {
+    for k in vectors() {
         s.push_str(&format!(
             "[[vector]]\nidentidad = \"{}\"\ncaso      = \"{}\"\nhash      = \"0x{:016x}\"\n\n",
-            k.id, k.caso, k.esperado
+            k.id, k.case_description, k.expected
         ));
     }
     s
@@ -218,13 +218,13 @@ mod tests {
     /// Si este test falla, la pregunta NO es «qué número hay que actualizar»:
     /// es «qué identidad cambió y cuántos packs publicados acaba de romper».
     #[test]
-    fn los_hashes_son_los_de_siempre() {
-        let vram = vram_sintetica(4096);
+    fn hashes_match_published_values() {
+        let vram = synthetic_vram(4096);
         assert_eq!(sprite_hash(&vram, 0, 1, 1), 0x4157_3b47_53ea_aeb4);
         assert_eq!(sprite_hash(&vram, 3, 4, 4), 0xadba_9fc9_e8c7_21a7);
         assert_eq!(plane_tile_hash(&vram, 1, 0), 0x98d3_6be2_cd04_adb9);
         assert_eq!(
-            fm_signature(&fm_regs_sinteticos(), 0),
+            fm_signature(&synthetic_fm_registers(), 0),
             0xab38_7bbb_7090_249b
         );
     }
@@ -234,11 +234,11 @@ mod tests {
     /// pruebe algo — con VRAM de ceros, las dos versiones coinciden y el
     /// vector pasaría con la implementación equivocada.
     #[test]
-    fn el_word_swap_cambia_el_hash_del_tile() {
-        let vram = vram_sintetica(4096);
-        let con = plane_tile_hash(&vram, 1, 0);
+    fn word_swap_changes_tile_hash() {
+        let vram = synthetic_vram(4096);
+        let with_palette = plane_tile_hash(&vram, 1, 0);
         // La misma cuenta SIN el `^1`, que es el error de re-implementación.
-        let sin = {
+        let without_palette = {
             let mut h = AY_FNV_SEED;
             for b in 0..VRAM_TILE_BYTES {
                 h = ay_fnv_mix(h, vram[32 + b]);
@@ -246,7 +246,7 @@ mod tests {
             ay_fnv_mix(h, 0)
         };
         assert_ne!(
-            con, sin,
+            with_palette, without_palette,
             "la VRAM sintética no distingue el swap: el vector no probaría nada"
         );
     }
@@ -255,8 +255,8 @@ mod tests {
     /// más veces produce un pack que no matchea, y acá queda fijada: la línea
     /// de paleta mueve un hash y no el otro.
     #[test]
-    fn la_paleta_entra_en_el_tile_y_no_en_el_sprite() {
-        let vram = vram_sintetica(4096);
+    fn palette_affects_tile_but_not_sprite() {
+        let vram = synthetic_vram(4096);
         assert_ne!(plane_tile_hash(&vram, 1, 0), plane_tile_hash(&vram, 1, 2));
         // El sprite no recibe paleta ni por parámetro: la ceguera es
         // estructural, no una decisión que se pueda olvidar en el call site.
@@ -266,10 +266,10 @@ mod tests {
     /// El basis canónico de FNV no reproduce nada. Es el error de la spec
     /// §9 y el más fácil de cometer: está en todos los tutoriales.
     #[test]
-    fn el_basis_canonico_de_fnv_no_sirve() {
+    fn canonical_fnv_basis_is_rejected() {
         const CANONICO: u64 = 0xCBF2_9CE4_8422_2325;
         assert_ne!(AY_FNV_SEED, CANONICO);
-        let vram = vram_sintetica(4096);
+        let vram = synthetic_vram(4096);
         let mal = {
             let mut h = CANONICO;
             for b in 0..VRAM_TILE_BYTES {
@@ -284,22 +284,22 @@ mod tests {
     /// cargar da un hash estable en vez de uno que depende de cuánta VRAM mandó
     /// el caller.
     #[test]
-    fn fuera_de_vram_rellena_y_no_trunca() {
-        let corta = vram_sintetica(64);
-        let h = sprite_hash(&corta, 1, 2, 2);
+    fn out_of_vram_is_zero_filled_not_truncated() {
+        let short_vram = synthetic_vram(64);
+        let h = sprite_hash(&short_vram, 1, 2, 2);
         // El mismo cálculo con más VRAM de la que se lee NO puede coincidir:
         // si coincidiera, el relleno estaría tapando bytes reales.
-        assert_ne!(h, sprite_hash(&vram_sintetica(4096), 1, 2, 2));
+        assert_ne!(h, sprite_hash(&synthetic_vram(4096), 1, 2, 2));
         // Y es determinista: dos llamadas con la misma VRAM corta dan lo mismo.
-        assert_eq!(h, sprite_hash(&corta, 1, 2, 2));
+        assert_eq!(h, sprite_hash(&short_vram, 1, 2, 2));
     }
 
     /// El TOML publicable trae todos los vectores y el seed, que es el dato sin
     /// el cual ninguno se puede reproducir.
     #[test]
-    fn el_toml_publicable_es_completo() {
-        let t = vectores_toml();
-        assert_eq!(t.matches("[[vector]]").count(), vectores().len());
+    fn published_toml_is_complete() {
+        let t = vectors_toml();
+        assert_eq!(t.matches("[[vector]]").count(), vectors().len());
         assert!(
             t.contains("0x14650fb0739d0383"),
             "sin el seed no se reproduce nada"
@@ -310,7 +310,7 @@ mod tests {
         // Y los hashes van con el mismo formato que el resto del ecosistema.
         assert!(t.contains(&format!(
             "0x{:016x}",
-            sprite_hash(&vram_sintetica(4096), 0, 1, 1)
+            sprite_hash(&synthetic_vram(4096), 0, 1, 1)
         )));
     }
 
@@ -328,12 +328,12 @@ mod tests {
         clippy::identity_op,
         reason = "the zero offset is explicit because the test documents the SAT word layout"
     )]
-    fn el_hash_de_sprite_coincide_con_el_del_motor() {
+    fn sprite_hash_matches_engine() {
         use crate::vram_sprite::SpriteHasher;
 
         // VRAM con la SAT en un offset conocido, después de los tiles.
         const SAT: usize = 0xC000;
-        let mut vram = vram_sintetica(0x10000);
+        let mut vram = synthetic_vram(0x10000);
 
         // Una entrada SAT: 4 words del 68k, y el buffer llega WORD-SWAPPED —
         // por eso cada word se escribe en little-endian, que es exactamente la
@@ -381,8 +381,8 @@ mod tests {
     /// escribir la misma definición coinciden, el error de transcripción
     /// tendría que estar en las dos.
     #[test]
-    fn el_hash_de_tile_reproduce_la_definicion_de_la_spec() {
-        let vram = vram_sintetica(4096);
+    fn tile_hash_matches_specification() {
+        let vram = synthetic_vram(4096);
         let pattern: u16 = 7;
         let pal: u8 = 1;
 
@@ -403,7 +403,7 @@ mod tests {
     /// reojo, y produce hashes que no matchean nada. Pasó escribiendo este
     /// archivo, y lo agarró el test de la definición paso a paso.
     #[test]
-    fn el_primo_fnv_es_el_del_motor() {
+    fn fnv_prime_matches_engine() {
         assert_eq!(AY_FNV_PRIME, 1_099_511_628_211u64);
         assert_eq!(AY_FNV_SEED, 0x14650FB0739D0383u64);
     }
@@ -417,8 +417,8 @@ mod tests {
         clippy::identity_op,
         reason = "xor with zero is explicit because the test reproduces every FNV mixing step"
     )]
-    fn la_firma_fm_reproduce_la_definicion_de_la_spec() {
-        let regs = fm_regs_sinteticos();
+    fn fm_signature_matches_specification() {
+        let regs = synthetic_fm_registers();
         for (ch, bank, idx) in [(0usize, 0usize, 0usize), (4, 0x100, 1)] {
             let mut h = AY_FNV_SEED;
             h = (h ^ 0u64).wrapping_mul(1_099_511_628_211);

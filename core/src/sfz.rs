@@ -727,7 +727,7 @@ mod tests {
     /// rango de teclas se respete (nota fuera de rango = silencio), que es
     /// donde un builder con los generadores mal ordenados falla SIN error.
     #[test]
-    fn un_sfz_minimo_suena_y_respeta_rangos() {
+    fn minimal_sfz_renders_and_respects_ranges() {
         let d = tmpdir("min");
         write_wav(&d.join("tono.wav"), 22050, 440.0);
         std::fs::write(
@@ -766,7 +766,7 @@ mod tests {
     /// parser (cortar `sample=` en el primer espacio) rompería justo las
     /// bibliotecas reales, que nombran samples como «Piano C4 v2.wav».
     #[test]
-    fn sample_con_espacios_y_default_path() {
+    fn sample_with_spaces_and_default_path() {
         let d = tmpdir("esp");
         std::fs::create_dir_all(d.join("wavs")).unwrap();
         write_wav(&d.join("wavs/piano C4 v2.wav"), 8192, 261.6);
@@ -789,7 +789,7 @@ mod tests {
     /// grandes. El include es textual y el define es macro — si cualquiera
     /// falla, regiones enteras desaparecen sin error.
     #[test]
-    fn include_define_y_herencia() {
+    fn include_define_and_inheritance() {
         let d = tmpdir("inc");
         write_wav(&d.join("a.wav"), 4096, 440.0);
         write_wav(&d.join("b.wav"), 4096, 880.0);
@@ -826,7 +826,7 @@ mod tests {
     /// sin loop tiene que agotarse. Es el observable de que loop_start/end
     /// llegaron al shdr y sampleModes a la zona.
     #[test]
-    fn el_loop_se_conserva() {
+    fn loop_is_preserved() {
         let d = tmpdir("loop");
         write_wav(&d.join("corto.wav"), 4410, 440.0); // 0,1 s
         std::fs::write(
@@ -862,7 +862,7 @@ mod tests {
     /// Una región con el sample ausente se saltea; el resto del instrumento
     /// sobrevive — rescatar lo sano, igual que el horneador.
     #[test]
-    fn una_region_rota_no_tira_el_instrumento() {
+    fn broken_region_does_not_discard_instrument() {
         let d = tmpdir("rota");
         write_wav(&d.join("ok.wav"), 4096, 440.0);
         std::fs::write(
@@ -885,7 +885,7 @@ mod tests {
     }
 
     #[test]
-    fn notas_por_nombre() {
+    fn notes_by_name() {
         assert_eq!(parse_note("c4"), Some(60));
         assert_eq!(parse_note("C#4"), Some(61));
         assert_eq!(parse_note("db4"), Some(61));

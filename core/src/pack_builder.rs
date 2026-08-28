@@ -296,7 +296,7 @@ mod tests {
     ///   · add_file         — inferido del ORIGEN, que es el unico que conserva
     ///                        la extension cuando el destino ya es un hash
     #[test]
-    fn una_entrada_sin_extension_puede_ser_streameable() {
+    fn extensionless_entry_can_be_streamable() {
         let data: Vec<u8> = (0..70000u32).map(|i| (i % 251) as u8).collect();
         let hash_name = "assets/a3f9c1d2e5b8"; // Content-derived destination name.
 

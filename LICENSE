@@ -374,26 +374,22 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 --------------------------------------------------------------------------
 
-AVISO POR ARCHIVO (Exhibit A) — dónde aplica esta licencia
+PROJECT NOTICE — SCOPE OF COVERED SOFTWARE
 
-Esta licencia cubre el MOTOR y las herramientas abiertas de AYTHER:
+Unless a file states different terms, the source files in this repository are
+Covered Software under MPL-2.0. This includes the Rust core, native engine
+source when present, public headers, build modules, project tests, tools, and
+source-form documentation.
 
-    core/   engine/   runtime/   play/   tools/   sdk/   tests/
+Third-party software and assets retain their own terms; see NOTICE.md and the
+license material distributed with each dependency. AYTHER Lab and the AYTHER
+Runtime, SDK, Play, and Hub products are separate works or services and are not
+licensed merely by this repository. ROMs, BIOS images, emulator cores, content
+packs, game assets, trademarks, service marks, and logos are not covered by
+MPL-2.0 unless their rights holder expressly says otherwise.
 
-y las fuentes vendorizadas de third_party/ conservan cada una la suya
-(ver NOTICE.md).
-
-`lab/` — AYTHER Lab — es software PROPIETARIO y NO está cubierto: ver
-lab/LICENSE. `hub/` publica su contrato de API; su infraestructura no se
-distribuye.
-
-El aviso va acá y no repetido en cada archivo por lo que la propia MPL
-permite en su Exhibit A: «If it is not possible or desirable to put the
-notice in a particular file, then You may include the notice in a location
-(such as a LICENSE file in a relevant directory) where a recipient would be
-likely to look for such a notice.» La frontera por directorio está declarada
-en docs/architecture/ecosystem.md §1.1 y la verifica, sobre cada artefacto
-publicado, tools/check_sdk_leak.cmake.
+The notice is centralized here as permitted by Exhibit A. Individual files may
+include additional accurate notices or controlling license terms.
 
     This Source Code Form is subject to the terms of the Mozilla Public
     License, v. 2.0. If a copy of the MPL was not distributed with this

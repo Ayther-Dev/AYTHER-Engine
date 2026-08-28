@@ -1,7 +1,7 @@
 //! Brightness-independent shape identities for VDP tiles.
 //!
 //! Relative palette-index ordering separates geometry from fade level, allowing
-//! visually identical fade steps to share one authored asset family.
+//! visually identical fade pasos to share one authored asset family.
 
 // shape_hash.rs — familias de tiles por FORMA, con el brillo aparte.
 //
@@ -73,18 +73,18 @@ pub fn shape_hash(tile: &[u8]) -> u64 {
     for &v in idx.iter() {
         presentes[v as usize] = true;
     }
-    let mut rango = [0u8; 16];
-    let mut siguiente = 1u8;
+    let mut rank_map = [0u8; 16];
+    let mut next_rank = 1u8;
     for v in 1..16usize {
         // el 0 se queda en 0: la silueta entra al hash
         if presentes[v] {
-            rango[v] = siguiente;
-            siguiente += 1;
+            rank_map[v] = next_rank;
+            next_rank += 1;
         }
     }
 
-    let normalizado: Vec<u8> = idx.iter().map(|&v| rango[v as usize]).collect();
-    xxh3_64(&normalizado)
+    let normalized: Vec<u8> = idx.iter().map(|&v| rank_map[v as usize]).collect();
+    xxh3_64(&normalized)
 }
 
 /// Returns the mean non-transparent palette index in the range `0..=15`.
@@ -92,14 +92,14 @@ pub fn shape_hash(tile: &[u8]) -> u64 {
 /// A fully transparent tile returns `None`.
 pub fn mean_level(tile: &[u8]) -> Option<f32> {
     let idx = tile_indices(tile);
-    let (suma, n) = idx
+    let (sum, n) = idx
         .iter()
         .filter(|&&v| v != 0)
         .fold((0u32, 0u32), |(s, n), &v| (s + v as u32, n + 1));
     if n == 0 {
         None
     } else {
-        Some(suma as f32 / n as f32)
+    Some(sum as f32 / n as f32)
     }
 }
 
@@ -179,11 +179,11 @@ mod tests {
 
     /// Un tile con un patrón conocido: una diagonal de nivel `alto` sobre fondo
     /// de nivel `bajo`, con una esquina transparente.
-    fn tile(alto: u8, bajo: u8) -> Vec<u8> {
+    fn tile(high: u8, low: u8) -> Vec<u8> {
         let mut px = [0u8; TILE_PIXELS];
         for y in 0..8usize {
             for x in 0..8usize {
-                px[y * 8 + x] = if x == y { alto } else { bajo };
+                px[y * 8 + x] = if x == y { high } else { low };
             }
         }
         px[0] = 0; // la esquina transparente: define la SILUETA
@@ -200,11 +200,11 @@ mod tests {
 
     /// An eight-step synthetic fade forms one family with eight brightness factors.
     #[test]
-    fn un_fade_de_ocho_pasos_es_una_familia() {
+    fn eight_step_fade_forms_family() {
         // Ocho pasos: el par (alto, bajo) baja parejo, que es lo que hace un
         // fade por contenido.
-        let pasos: Vec<Vec<u8>> = (0..8).map(|i| tile(15 - i, 8 - i / 2)).collect();
-        let refs: Vec<&[u8]> = pasos.iter().map(|v| v.as_slice()).collect();
+        let steps: Vec<Vec<u8>> = (0..8).map(|i| tile(15 - i, 8 - i / 2)).collect();
+        let refs: Vec<&[u8]> = steps.iter().map(|v| v.as_slice()).collect();
         let fams = group_by_shape(&refs);
 
         assert_eq!(fams.len(), 1, "los ocho pasos son la MISMA forma");
@@ -225,7 +225,7 @@ mod tests {
 
     /// La otra mitad del criterio: dos formas distintas NO se agrupan.
     #[test]
-    fn dos_formas_distintas_no_se_agrupan() {
+    fn different_shapes_do_not_group() {
         let diagonal = tile(15, 8);
         // Misma paleta de niveles, disposición distinta: barras horizontales.
         let mut px = [0u8; TILE_PIXELS];
@@ -252,13 +252,13 @@ mod tests {
     /// con el tile vacío — y peor, dos dibujos con distinto contorno se
     /// tratarían como el mismo si sus colores rankean igual.
     #[test]
-    fn la_silueta_cuenta() {
-        let con_hueco = tile(15, 8); // px[0] = 0
-        let mut sin_hueco = con_hueco.clone();
-        sin_hueco[0] = (8 << 4) | (sin_hueco[0] & 0x0F); // tapar el transparente
+    fn silhouette_matters() {
+        let with_hole = tile(15, 8); // px[0] = 0
+        let mut without_hole = with_hole.clone();
+        without_hole[0] = (8 << 4) | (without_hole[0] & 0x0F); // tapar el transparente
         assert_ne!(
-            shape_hash(&con_hueco),
-            shape_hash(&sin_hueco),
+            shape_hash(&with_hole),
+            shape_hash(&without_hole),
             "tapar el transparente cambia la forma"
         );
     }
@@ -267,7 +267,7 @@ mod tests {
     /// familia son tiles DISTINTOS, y el motor los tiene que seguir
     /// distinguiendo.
     #[test]
-    fn la_familia_no_borra_la_identidad() {
+    fn family_preserves_identity() {
         let claro = tile(15, 8);
         let oscuro = tile(7, 4);
         assert_eq!(shape_hash(&claro), shape_hash(&oscuro), "misma familia");
@@ -279,7 +279,7 @@ mod tests {
     /// sobre el paso más oscuro y aclarado después inventa detalle que no
     /// estaba.
     #[test]
-    fn la_referencia_es_el_mas_claro() {
+    fn reference_selects_lightest_asset() {
         let oscuro = tile(6, 3);
         let claro = tile(15, 8);
         let refs: Vec<&[u8]> = vec![&oscuro, &claro]; // el claro va segundo
@@ -294,11 +294,11 @@ mod tests {
     /// ni brillo que medir, y agruparlo arrastraría a cualquier otro vacío como
     /// si fueran variantes del mismo dibujo.
     #[test]
-    fn un_tile_vacio_no_forma_familia() {
-        let vacio = vec![0u8; TILE_BYTES];
-        assert_eq!(mean_level(&vacio), None);
-        let otro_vacio = vec![0u8; TILE_BYTES];
-        let refs: Vec<&[u8]> = vec![&vacio, &otro_vacio];
+    fn empty_tile_does_not_form_family() {
+        let empty_tile = vec![0u8; TILE_BYTES];
+        assert_eq!(mean_level(&empty_tile), None);
+        let other_empty_tile = vec![0u8; TILE_BYTES];
+        let refs: Vec<&[u8]> = vec![&empty_tile, &other_empty_tile];
         assert!(group_by_shape(&refs).is_empty());
     }
 
@@ -306,13 +306,13 @@ mod tests {
     /// distintos. Si `tile()` devolviera lo mismo para todos, el test de la
     /// familia pasaría sin probar nada.
     #[test]
-    fn los_pasos_del_fade_son_distintos_de_verdad() {
-        let pasos: Vec<Vec<u8>> = (0..8).map(|i| tile(15 - i, 8 - i / 2)).collect();
+    fn fade_steps_are_distinct() {
+        let steps: Vec<Vec<u8>> = (0..8).map(|i| tile(15 - i, 8 - i / 2)).collect();
         for i in 1..8 {
-            assert_ne!(pasos[i], pasos[i - 1], "el paso {i} es igual al anterior");
+            assert_ne!(steps[i], steps[i - 1], "el paso {i} es igual al anterior");
         }
         // Y sus niveles medios bajan de verdad.
-        let niveles: Vec<f32> = pasos.iter().map(|t| mean_level(t).unwrap()).collect();
-        assert!(niveles[7] < niveles[0]);
+        let levels: Vec<f32> = steps.iter().map(|t| mean_level(t).unwrap()).collect();
+        assert!(levels[7] < levels[0]);
     }
 }

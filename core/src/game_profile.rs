@@ -19,7 +19,7 @@
 // deterministic and unit-testable, and the same code serves the live engine and
 // offline `.arp` replay.
 //
-// ## Format (see tools/modo3_spike/sonic2.toml)
+// ## Format (see tools/mode3_spike/sonic2.toml)
 //
 //     word_swap = true          # Genesis: 68k words are byte-swapped in the
 //                               # retro work-RAM buffer on little-endian hosts

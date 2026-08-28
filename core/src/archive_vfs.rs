@@ -1183,7 +1183,7 @@ supported = ["NTSC", "JP"]
     /// `[compat]`. Es el caso que más veces se rompe al extender un formato, y
     /// por eso va primero.
     #[test]
-    fn manifest_legacy_sigue_abriendo() {
+    fn legacy_manifest_still_opens() {
         let a = open_with_manifest(MANIFEST).expect("un pack legacy tiene que abrir");
         assert_eq!(a.schema, 1, "sin campo, el esquema es 1");
         assert!(!a.systems_declared, "no declaró [systems]");
@@ -1198,7 +1198,7 @@ supported = ["NTSC", "JP"]
 
     /// El manifest nuevo entero, ida y vuelta.
     #[test]
-    fn manifest_nuevo_se_lee_completo() {
+    fn new_manifest_is_fully_read() {
         let m = r#"
 [pack]
 name         = "Test Pack"
@@ -1236,7 +1236,7 @@ platform  = "megadrive"
     /// se ignoran. Es lo que permite publicar metadatos nuevos sin partir el
     /// parque de Engines instalados.
     #[test]
-    fn campos_desconocidos_no_rompen() {
+    fn unknown_fields_do_not_break_parsing() {
         let m = r#"
 [pack]
 name       = "Test Pack"
@@ -1260,7 +1260,7 @@ lo_que_sea = 42
     /// éxito — el modo de fallo que este repo ya pagó con dos días de audio
     /// mudo en verde.
     #[test]
-    fn schema_mayor_se_rechaza_con_los_numeros() {
+    fn higher_schema_is_rejected_with_versions() {
         let m = format!(
             r#"
 [pack]
@@ -1315,7 +1315,7 @@ default = true
     /// remasterizar es la operación fundamental del producto: hacerla depender
     /// de que el autor la declare sería hacerla depender de un olvido.
     #[test]
-    fn original_es_implicito_y_siempre_primero() {
+    fn original_profile_is_implicit_and_first() {
         let a = open_with_manifest(WITH_PROFILES).unwrap();
         let ps = a.profiles();
         assert_eq!(ps[0].id, ORIGINAL_PROFILE);
@@ -1329,7 +1329,7 @@ default = true
     /// hacía —encender todo— así que nombrarlo no cambia el comportamiento y en
     /// cambio deja que la UI hable de perfiles siempre y no a veces.
     #[test]
-    fn un_pack_sin_perfiles_igual_ofrece_dos() {
+    fn pack_without_profiles_offers_two() {
         let a = open_with_manifest(MANIFEST).unwrap();
         let ps = a.profiles();
         assert_eq!(ps.len(), 2);
@@ -1347,7 +1347,7 @@ default = true
     /// remasterizar. Lo encontró el oráculo de sobre un pack de Sonic 2
     /// real — un test del parser solo no lo habría visto.
     #[test]
-    fn un_pack_legacy_enciende_todo_no_nada() {
+    fn legacy_pack_enables_all_systems() {
         let a = open_with_manifest(MANIFEST).unwrap();
         assert!(
             !a.systems_declared,
@@ -1378,7 +1378,7 @@ default = true
     /// El default es EXACTAMENTE uno. Ninguno dejaría al runtime eligiendo; dos
     /// harían que el pack se viera distinto según cómo se recorra la lista.
     #[test]
-    fn hay_exactamente_un_default() {
+    fn exactly_one_default_exists() {
         let a = open_with_manifest(WITH_PROFILES).unwrap();
         assert_eq!(a.default_profile().id, "enhanced");
         assert_eq!(a.profiles().iter().filter(|p| p.default).count(), 1);
@@ -1404,7 +1404,7 @@ default = true
     /// comprobación, y el que se la olvide aplica una máscara vacía y muestra
     /// el juego sin remasterizar sin que nada avise.
     #[test]
-    fn los_perfiles_rotos_se_descartan_al_abrir() {
+    fn broken_profiles_are_discarded() {
         let m = format!(
             r#"{}
 [[profile]]
@@ -1435,7 +1435,7 @@ systems = ["tiles"]
     /// A profile filters the pack's content rather than multiplying it: the mask
     /// is derived from subsystem names, guarding against accidental duplication.
     #[test]
-    fn la_mascara_del_perfil_sale_de_nombres_conocidos() {
+    fn profile_mask_uses_known_names() {
         let a = open_with_manifest(WITH_PROFILES).unwrap();
         let f = a.profile("faithful").unwrap();
         assert_eq!(f.systems_mask(), 0b11, "sprites + metasprites");
@@ -1487,7 +1487,7 @@ systems = ["tiles"]
     /// campo del manifest se puede editar sin que nada se entere. Aca no hay
     /// campo — se recalcula de `integrity.toml`, que es lo que firma la firma.
     #[test]
-    fn build_id_es_derivado_y_estable() {
+    fn build_id_is_derived_and_stable() {
         let bake = |path: &std::path::Path, asset: &[u8]| {
             let mut b = PackBuilder::new();
             b.add_bytes("manifest.toml", MANIFEST.as_bytes().to_vec());

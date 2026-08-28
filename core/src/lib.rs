@@ -158,7 +158,7 @@ pub unsafe extern "C" fn ayther_sonic_read_velocity(
 }
 
 // ===========================================================================
-// Mode 3 (RAM anchoring) — C entry point for the modo3_spike harness
+// Mode 3 (RAM anchoring) — C entry point for the mode3_spike harness
 // ===========================================================================
 //
 // Thin raw-pointer wrapper over `ram_anchor::assign_sprites` (kept out of the
@@ -385,9 +385,9 @@ pub unsafe extern "C" fn ayther_game_profile_kind_of_id(p: *const GameProfile, i
     }
 }
 
-/// Copy anchor-kind `idx`'s name into `buf` (NUL-terminated, up to `cap`).
-/// Returns the name's byte length (may exceed cap-1 → grow and retry), or 0.
-/// Copies an anchor name into `buf` and returns its full byte length.
+/// Copy anchor-kind `idx`'s nombre into `buf` (NUL-terminated, up to `cap`).
+/// Returns the nombre's byte length (may exceed cap-1 → grow and retry), or 0.
+/// Copies an anchor nombre into `buf` and returns its full byte length.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -912,7 +912,7 @@ pub extern "C" fn ayther_subsystem_count() -> u32 {
     archive_vfs::SUBSYSTEMS.len() as u32
 }
 
-/// Returns the canonical, static, null-terminated name of subsystem `i`.
+/// Returns the canonical, static, null-terminated nombre of subsystem `i`.
 ///
 /// Returns null when `i` is out of range. Native clients use this list to keep
 /// their subsystem enumerations synchronized with the core.
@@ -975,7 +975,7 @@ pub unsafe extern "C" fn ayther_pack_declares_systems(ptr: *const AyArchive) -> 
 
 /// Returns an authoring or `[compat]` field as a null-terminated C string.
 ///
-/// Supported field names are `rom_crc32`, `platform`, `core_min`, `license`, and
+/// Supported field nombres are `rom_crc32`, `platform`, `core_min`, `license`, and
 /// `contributors`; contributors are comma-separated. The function returns null
 /// for an undeclared field, which remains distinct from an explicitly empty
 /// value. The pointer remains valid until the next call for the same pack.
@@ -1033,7 +1033,7 @@ pub struct AytherValidateCtx {
     pub rom_crc32: u32,
     /// Whether [`Self::rom_crc32`] is available.
     pub has_rom: bool,
-    /// Null-terminated platform name, or null when unknown.
+    /// Null-terminated platform nombre, or null when unknown.
     pub platform: *const std::os::raw::c_char,
     /// Null-terminated emulator-core build identifier, or null.
     pub core_build_id: *const std::os::raw::c_char,
@@ -1187,7 +1187,7 @@ pub unsafe extern "C" fn ayther_pack_report_code(
 }
 
 #[unsafe(no_mangle)]
-/// Returns the human-readable message of finding `i`, or null when unavailable.
+/// Returns the human-readable mensaje of finding `i`, or null when unavailable.
 /// # Safety
 ///
 /// The caller must uphold the crate-level FFI safety contract documented at the
@@ -1396,7 +1396,7 @@ pub unsafe extern "C" fn ayther_compat_unverified_count(c: *const AytherCompat) 
 }
 
 #[unsafe(no_mangle)]
-/// Returns the name of unavailable session fact `i`, or null.
+/// Returns the nombre of unavailable session fact `i`, or null.
 /// # Safety
 ///
 /// The caller must uphold the crate-level FFI safety contract documented at the
@@ -1461,7 +1461,7 @@ pub unsafe extern "C" fn ayther_compat_free(c: *mut AytherCompat) {
 /// Returns the number of profiles offered by the pack.
 ///
 /// A valid pack always exposes at least the implicit `original` profile and one
-/// content profile.
+/// contenido profile.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -1478,7 +1478,7 @@ pub unsafe extern "C" fn ayther_pack_profile_count(ptr: *const AyArchive) -> u32
     }
 }
 
-/// Returns field `id`, `name`, or `description` from profile `i`.
+/// Returns field `id`, `nombre`, or `description` from profile `i`.
 ///
 /// The returned string is backed by a shared Rust-side cache and remains valid
 /// only until the next profile-field query; callers should copy it as needed.
@@ -1509,7 +1509,7 @@ pub unsafe extern "C" fn ayther_pack_profile_field(
         };
         let v = match f {
             "id" => p.id.clone(),
-            "name" => p.display_name().to_string(),
+            "nombre" => p.display_name().to_string(),
             "description" => p.description.clone().unwrap_or_default(),
             _ => return std::ptr::null(),
         };
@@ -1593,7 +1593,7 @@ pub unsafe extern "C" fn ayther_pack_profile_index(
 /// Returns the audio buses muted by profile `i` as a bit mask.
 ///
 /// Bits use the engine's canonical `AudioBus` order: 0 `Unclassified`, 1
-/// `Music`, 2 `Sfx`, and 3 `Voice`. Unknown bus names are ignored.
+/// `Music`, 2 `Sfx`, and 3 `Voice`. Unknown bus nombres are ignored.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -1642,7 +1642,7 @@ pub struct AytherCredits {
 /// Reads `credits.toml` from a pack.
 ///
 /// Returns null when the file is absent or malformed. Credits are optional, so
-/// either case leaves the pack usable without inventing attribution data.
+/// either case leaves the pack usable without inventing attribution datos.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -1700,7 +1700,7 @@ pub unsafe extern "C" fn ayther_credits_count(c: *const AytherCredits) -> u32 {
 }
 
 #[unsafe(no_mangle)]
-/// Returns the contributor name at index `i`, or null.
+/// Returns the contributor nombre at index `i`, or null.
 /// # Safety
 ///
 /// The caller must uphold the crate-level FFI safety contract documented at the
@@ -1801,7 +1801,7 @@ pub unsafe extern "C" fn ayther_credits_assets(c: *const AytherCredits, i: u32) 
 
 /// Returns attribution for `asset_id`, or null when the asset has no provenance.
 ///
-/// The ID is the content-derived entry name without the `assets/` directory or
+/// The ID is the contenido-derived entry nombre without the `assets/` directory or
 /// tier prefix, so all resolution tiers of one image share one attribution.
 #[unsafe(no_mangle)]
 /// # Safety
@@ -1874,7 +1874,7 @@ pub unsafe extern "C" fn ayther_pack_tiers(ptr: *const AyArchive) -> u8 {
 ///
 /// The smallest included tier at least as large as `ideal` is preferred, falling
 /// back to the largest included tier. Later lookups transparently resolve
-/// `tiers/<active>/<name>`. Legacy packs are unchanged.
+/// `tiers/<active>/<nombre>`. Legacy packs are unchanged.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -2029,7 +2029,7 @@ pub unsafe extern "C" fn ayther_pack_entry_count(ptr: *const AyArchive) -> u32 {
     }
 }
 
-/// Copies the name of entry `i` into the caller-provided buffer.
+/// Copies the nombre of entry `i` into the caller-provided buffer.
 ///
 /// Returns the number of bytes written, excluding the null terminator; zero for
 /// an invalid index; or the negative required length when the buffer is too
@@ -2052,9 +2052,9 @@ pub unsafe extern "C" fn ayther_pack_entry_name(
         if ptr.is_null() || dst.is_null() {
             return 0;
         }
-        let mut nombres: Vec<&str> = (*ptr).iter_paths().collect();
-        nombres.sort_unstable();
-        let Some(n) = nombres.get(i as usize) else {
+        let mut names: Vec<&str> = (*ptr).iter_paths().collect();
+        names.sort_unstable();
+        let Some(n) = names.get(i as usize) else {
             return 0;
         };
         let bytes = n.as_bytes();
@@ -2156,9 +2156,9 @@ pub unsafe extern "C" fn ayther_pack_build_id(
     }
 }
 
-/// Computes the asset ID used as a file's extension-free name inside a pack.
+/// Computes the asset ID used as a file's extension-free nombre inside a pack.
 ///
-/// The ID is the first 32 hexadecimal characters of the content SHA-256 digest,
+/// The ID is the first 32 hexadecimal characters of the contenido SHA-256 digest,
 /// shared with `integrity.toml` verification. Files are hashed incrementally so
 /// large cinematic masters are not loaded in full. `out` receives 32 characters
 /// plus a null terminator and therefore requires 33 bytes. Returns false on an
@@ -2473,7 +2473,7 @@ pub unsafe extern "C" fn ayther_script_on_frame(
 }
 
 /// Push the current frame's tile occurrences so `ayther.tiles.list()` returns
-/// correct data inside on_frame callbacks.
+/// correct datos inside on_frame callbacks.
 ///
 /// Call this before [`ayther_script_on_frame`] each frame.
 #[unsafe(no_mangle)]
@@ -2547,7 +2547,7 @@ pub unsafe extern "C" fn ayther_script_get_tile_overrides(
 }
 
 /// Push the current frame's sprite occurrences so `ayther.sprites.list()` returns
-/// correct data inside on_frame callbacks.
+/// correct datos inside on_frame callbacks.
 ///
 /// Call this before [`ayther_script_on_frame`] each frame.
 #[unsafe(no_mangle)]
@@ -2639,7 +2639,7 @@ pub unsafe extern "C" fn ayther_script_get_sprite_overrides(
 }
 
 /// Push the current tick's audio occurrences so `ayther.audio.list()` returns
-/// correct data inside on_frame callbacks.
+/// correct datos inside on_frame callbacks.
 ///
 /// Call this before [`ayther_script_on_frame`] each tick.
 #[unsafe(no_mangle)]
@@ -3416,7 +3416,7 @@ pub unsafe extern "C" fn ayther_audio_evdet_get_events(
             for (i, e) in events[..n].iter().enumerate() {
                 *out_buf.add(i) = AytherAudioEvent {
                     signature: e.signature,
-                    instrument: e.signature, // PCM detection has no patch; use the signature.
+                    instrument: e.signature, // PCM detection has no parche; use the signature.
                     start_frame: e.start_frame as u32,
                     end_frame: e.end_frame as u32,
                     chip: 255, // 255 identifies batch detection without a source channel.
@@ -4062,7 +4062,7 @@ pub unsafe extern "C" fn ayther_pose_sub_add_override_variants(
     var_hf: *const i8,
     var_vf: *const i8,
     var_slots: *const u16, // Per-candidate slot bitmask, or null.
-    var_sig: *const u64,   // Per-candidate content signature, or null.
+    var_sig: *const u64,   // Per-candidate contenido signature, or null.
     var_assets: *const *const std::os::raw::c_char,
     n_var: u32,
     mask: *const std::os::raw::c_char, // Costume mask; null or empty means none.
@@ -4175,7 +4175,7 @@ pub unsafe extern "C" fn ayther_pose_sub_clear_overrides(ptr: *mut PoseSetSubsti
 /// Supplies the frame's live CRAM words packed as R0–2/G3–5/B6–8.
 ///
 /// At least 64 words are required. The substitutor tracks line stability and
-/// latches content signatures from stable states. Call before resolution on each
+/// latches contenido signatures from stable states. Call before resolution on each
 /// frame.
 #[unsafe(no_mangle)]
 /// # Safety
@@ -4196,7 +4196,7 @@ pub unsafe extern "C" fn ayther_pose_sub_set_cram(
         (*ptr).set_cram(std::slice::from_raw_parts(words, n as usize));
     }
 }
-/// Computes a palette-line content signature.
+/// Computes a palette-line contenido signature.
 ///
 /// The result is xxHash3 over the raw 9-bit colors in the selected `slots`. Both
 /// authoring and runtime latching use this function to keep signatures identical.
@@ -4441,7 +4441,7 @@ pub unsafe extern "C" fn ayther_tween_resolve(
     }
 }
 
-/// Clears per-instance transition state after seeks or content changes.
+/// Clears per-instance transition state after seeks or contenido changes.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -4642,7 +4642,7 @@ pub unsafe extern "C" fn ayther_pack_builder_count(ptr: *const PackBuilder) -> u
 }
 
 /// Write the pack to `out_path`, dev-signing when `sign` is true. On failure
-/// copies a message into `err_buf` (NUL-terminated, capped at `err_cap`) and
+/// copies a mensaje into `err_buf` (NUL-terminated, capped at `err_cap`) and
 /// returns false.
 #[unsafe(no_mangle)]
 /// # Safety
@@ -4705,7 +4705,7 @@ pub unsafe extern "C" fn ayther_pack_builder_finish(
 //
 // Typical per-frame call sequence:
 //   // inside retro_audio_sample_batch callback:
-//   ayther_audio_hasher_process_batch(h, data, frames);
+//   ayther_audio_hasher_process_batch(h, datos, frames);
 //
 //   // once at the end of run_frame():
 //   ayther_audio_hasher_end_tick(h);
@@ -4759,7 +4759,7 @@ pub unsafe extern "C" fn ayther_audio_hasher_free(ptr: *mut AudioHasher) {
 
 /// Fingerprint one stereo PCM batch from `retro_audio_sample_batch`.
 ///
-/// `data`   — pointer to the stereo-interleaved i16 buffer (L₀,R₀,L₁,R₁,…).
+/// `datos`   — pointer to the stereo-interleaved i16 buffer (L₀,R₀,L₁,R₁,…).
 /// `frames` — number of stereo frames (as passed by libretro; len = frames × 2).
 ///
 /// Returns the hash, or `0` if the batch was silent and was skipped.
@@ -4870,7 +4870,7 @@ pub unsafe extern "C" fn ayther_audio_hasher_get_occurrences(
 pub struct AytherAudioEvent {
     /// Stable hash of the channel state at key-on.
     pub signature: u64,
-    /// Instrument identity: a frequency- and channel-independent patch hash, or
+    /// Instrument identity: a frequency- and channel-independent parche hash, or
     /// the full signature for DAC events. It groups the same sound across notes
     /// and channels for DAW export.
     pub instrument: u64,
@@ -5833,7 +5833,7 @@ mod engine_version_ffi_tests {
     /// The FFI must append a null terminator, so the value is written twice. This
     /// test keeps both copies synchronized so reports identify the actual build.
     #[test]
-    fn el_ffi_devuelve_exactamente_engine_version() {
+    fn ffi_returns_exact_engine_version() {
         // SAFETY: The version function returns a static null-terminated string.
         let s = unsafe { std::ffi::CStr::from_ptr(ayther_engine_version()) };
         assert_eq!(s.to_str().unwrap(), pack_validate::ENGINE_VERSION);
@@ -5851,9 +5851,9 @@ mod asset_id_tests {
     }
 
     #[test]
-    fn el_nombre_sale_del_contenido_y_no_del_archivo() {
+    fn asset_name_comes_from_content() {
         let d = tmp("contenido");
-        // Equal content must produce one identifier regardless of filename or
+        // Equal contenido must produce one identifier regardless of filename or
         // extension, allowing identities to deduplicate the same artwork.
         let a = d.join("heroe.png");
         let b = d.join("otro_nombre.bin");
@@ -5865,7 +5865,7 @@ mod asset_id_tests {
         assert_eq!(id_a.len(), 32, "32 hex, sin extension");
         assert!(id_a.chars().all(|c| c.is_ascii_hexdigit()));
 
-        // Equal basenames with different content must not collide.
+        // Equal basenames with different contenido must not collide.
         let c = tmp("colision_1").join("pose.png");
         let e = tmp("colision_2").join("pose.png");
         std::fs::write(&c, b"arte de Avanza").unwrap();
@@ -5876,7 +5876,7 @@ mod asset_id_tests {
     }
 
     #[test]
-    fn el_id_por_bytes_coincide_con_el_del_archivo() {
+    fn byte_and_file_ids_match() {
         // In-memory and file-backed assets must use the same hash so a trimmed
         // SoundFont cannot enter a pack twice under different identifiers.
         let d = tmp("bytes");
@@ -5885,7 +5885,7 @@ mod asset_id_tests {
         std::fs::write(&f, &data).unwrap();
         assert_eq!(asset_id_of_bytes(&data), asset_id_of_file(&f).unwrap());
 
-        // Empty content is valid and still has a stable identifier.
+        // Empty contenido is valid and still has a stable identifier.
         assert_eq!(asset_id_of_bytes(&[]).len(), 32);
         // SAFETY: Every pointer comes from a live local buffer whose reported
         // length matches its allocation.
@@ -5899,18 +5899,18 @@ mod asset_id_tests {
             ));
             let got = std::ffi::CStr::from_ptr(out.as_ptr()).to_str().unwrap();
             assert_eq!(got, asset_id_of_bytes(&data));
-            let mut corto = [0i8; 32];
+        let mut short_buffer = [0i8; 32];
             assert!(!ayther_asset_id_bytes(
                 data.as_ptr(),
                 data.len(),
-                corto.as_mut_ptr(),
-                corto.len()
+                short_buffer.as_mut_ptr(),
+                short_buffer.len()
             ));
         }
     }
 
     #[test]
-    fn el_ffi_devuelve_el_mismo_id_y_rechaza_buffer_corto() {
+    fn ffi_returns_same_id_and_rejects_short_buffer() {
         let d = tmp("ffi");
         let f = d.join("a.png");
         std::fs::write(&f, b"contenido").unwrap();
@@ -5925,11 +5925,11 @@ mod asset_id_tests {
             assert_eq!(got, want);
             // A 32-digit identifier plus its null terminator needs 33 bytes.
             // Reject smaller buffers instead of returning a collision-prone prefix.
-            let mut corto = [0i8; 32];
+        let mut short_buffer = [0i8; 32];
             assert!(!ayther_asset_id(
                 c.as_ptr(),
-                corto.as_mut_ptr(),
-                corto.len()
+                short_buffer.as_mut_ptr(),
+                short_buffer.len()
             ));
         }
     }
@@ -6062,7 +6062,7 @@ pub unsafe extern "C" fn ayther_sf2_new(
     }
 }
 
-/// Opens a SoundFont while sharing parsed data among instances with the same key.
+/// Opens a SoundFont while sharing parsed datos among instances with the same key.
 ///
 /// The key is normally derived from the source path. Sharing avoids duplicating
 /// large SoundFonts when the engine creates one synthesizer instance per timbre.
@@ -6267,11 +6267,11 @@ pub unsafe extern "C" fn ayther_sf2_list_presets(
     }
 }
 
-/// Lists named presets from an SF2 file, one per line as `bank:preset|name`.
+/// Lists named presets from an SF2 file, one per line as `bank:preset|nombre`.
 ///
 /// The function reads only the RIFF `pdta` chunk from the supplied path, avoiding
 /// full-file loads for large libraries. Plain text keeps string ownership out of
-/// the ABI; names are sanitized to remove `|` and line breaks. Because only the
+/// the ABI; nombres are sanitized to remove `|` and line breaks. Because only the
 /// preset table is parsed, partially damaged SoundFonts may still be listed even
 /// if the synthesizer rejects them. Returns bytes written, or zero for `cap = 0`,
 /// insufficient capacity, or failure.
@@ -6535,27 +6535,27 @@ pub unsafe extern "C" fn ayther_sf2_bake(
 // User-supplied IPS/BPS patches applied in memory.
 // ---------------------------------------------------------------------------
 
-/// Returns whether the bytes contain an IPS or BPS patch, based on file magic.
+/// Returns whether the bytes contain an IPS or BPS parche, based on file magic.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
 /// The caller must uphold the crate-level FFI safety contract documented at the
 /// crate root, including all pointer, buffer, lifetime, and ownership requirements.
-pub unsafe extern "C" fn ayther_is_rom_patch(datos: *const u8, n: u32) -> bool {
+pub unsafe extern "C" fn ayther_is_rom_patch(data: *const u8, n: u32) -> bool {
     // SAFETY: The caller upholds the pointer, lifetime, and ownership invariants
     // documented for this FFI function.
     unsafe {
-        if datos.is_null() || n == 0 {
+        if data.is_null() || n == 0 {
             return false;
         }
-        crate::rom_patch::es_parche(std::slice::from_raw_parts(datos, n as usize))
+        crate::rom_patch::is_patch(std::slice::from_raw_parts(data, n as usize))
     }
 }
 
-/// Applies `patch` to `rom` and writes the result to caller-owned `out` storage.
+/// Applies `parche` to `rom` and writes the result to caller-owned `out` storage.
 ///
 /// Returns bytes written, or a negative status: -1 invalid arguments, -2 unknown
-/// patch format, -3 insufficient output capacity, or -4 patch failure. Detailed
+/// parche format, -3 insufficient output capacity, or -4 parche failure. Detailed
 /// failure text is available from [`ayther_rom_patch_error`]. With `out_cap = 0`,
 /// the function reports -3 and writes the required size to `out_needed`.
 #[unsafe(no_mangle)]
@@ -6566,8 +6566,8 @@ pub unsafe extern "C" fn ayther_is_rom_patch(datos: *const u8, n: u32) -> bool {
 pub unsafe extern "C" fn ayther_apply_rom_patch(
     rom: *const u8,
     rom_n: u32,
-    parche: *const u8,
-    parche_n: u32,
+    patch: *const u8,
+    patch_size: u32,
     out: *mut u8,
     out_cap: u32,
     out_needed: *mut u32,
@@ -6575,15 +6575,15 @@ pub unsafe extern "C" fn ayther_apply_rom_patch(
     // SAFETY: The caller upholds the pointer, lifetime, and ownership invariants
     // documented for this FFI function.
     unsafe {
-        if rom.is_null() || parche.is_null() {
+        if rom.is_null() || patch.is_null() {
             return -1;
         }
         let r = std::slice::from_raw_parts(rom, rom_n as usize);
-        let p = std::slice::from_raw_parts(parche, parche_n as usize);
-        if !crate::rom_patch::es_parche(p) {
+        let p = std::slice::from_raw_parts(patch, patch_size as usize);
+        if !crate::rom_patch::is_patch(p) {
             return -2;
         }
-        match crate::rom_patch::aplicar(r, p) {
+        match crate::rom_patch::apply(r, p) {
             Ok(v) => {
                 if !out_needed.is_null() {
                     *out_needed = v.len() as u32;
@@ -6595,7 +6595,7 @@ pub unsafe extern "C" fn ayther_apply_rom_patch(
                 v.len() as i64
             }
             Err(e) => {
-                ULTIMO_ERROR_PATCH.with(|c| *c.borrow_mut() = e.mensaje());
+                LAST_PATCH_ERROR.with(|c| *c.borrow_mut() = e.message());
                 -4
             }
         }
@@ -6603,11 +6603,11 @@ pub unsafe extern "C" fn ayther_apply_rom_patch(
 }
 
 thread_local! {
-    static ULTIMO_ERROR_PATCH: std::cell::RefCell<String> =
+    static LAST_PATCH_ERROR: std::cell::RefCell<String> =
         const { std::cell::RefCell::new(String::new()) };
 }
 
-/// Returns a display-ready explanation of the latest ROM-patch failure.
+/// Returns a display-ready explanation of the latest ROM-parche failure.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -6620,7 +6620,7 @@ pub unsafe extern "C" fn ayther_rom_patch_error(buf: *mut u8, cap: u32) -> u32 {
         if buf.is_null() || cap == 0 {
             return 0;
         }
-        ULTIMO_ERROR_PATCH.with(|c| {
+    LAST_PATCH_ERROR.with(|c| {
             let m = c.borrow();
             let n = m.len().min(cap as usize - 1);
             std::ptr::copy_nonoverlapping(m.as_ptr(), buf, n);

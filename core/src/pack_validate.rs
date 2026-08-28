@@ -96,7 +96,7 @@ impl Report {
             .iter()
             .filter(|f| f.severity == Severity::Error)
     }
-    /// Iterates over warning findings.
+    /// Iterates over advertencia findings.
     pub fn warnings(&self) -> impl Iterator<Item = &Finding> {
         self.findings
             .iter()
@@ -169,7 +169,7 @@ impl Report {
 
 // -- Manifest tolerante ------------------------------------------------------
 // TODO opcional, incluido lo que `AyArchive` exige. Un manifest al que le falta
-// `name` es un hallazgo que hay que REPORTAR, no un parseo que falla y deja al
+// `nombre` es un hallazgo que hay que REPORTAR, no un parseo que falla y deja al
 // usuario con «no se pudo abrir el pack».
 
 #[derive(Deserialize, Default)]
@@ -249,8 +249,8 @@ fn semver(s: &str) -> (u32, u32, u32) {
 /// Returns whether a finding code affects pack/session compatibility.
 ///
 /// Keeping the classification in one place ensures all consumers assign the
-/// same compatibility grade.
-pub fn es_de_compatibilidad(code: &str) -> bool {
+/// same compatibility grado.
+pub fn affects_compatibility(code: &str) -> bool {
     matches!(
         code.split('.').next().unwrap_or(""),
         // La sesión concreta: la ROM, la plataforma, el core, el motor.
@@ -260,7 +260,7 @@ pub fn es_de_compatibilidad(code: &str) -> bool {
     )
 }
 
-/// Compatibility grade between a pack and a concrete runtime session.
+/// Compatibility grado between a pack and a concrete runtime session.
 ///
 /// Declaration order is best to worst and forms part of the comparison contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -293,7 +293,7 @@ impl CompatGrade {
     }
 }
 
-/// Compatibility grade together with its rationale and supporting report.
+/// Compatibility grado together with its rationale and supporting report.
 #[derive(Debug, Clone)]
 pub struct CompatVerdict {
     /// Overall compatibility classification.
@@ -329,7 +329,7 @@ impl CompatVerdict {
     }
 }
 
-/// Computes the compatibility grade of a pack for one runtime session.
+/// Computes the compatibility grado of a pack for one runtime session.
 ///
 /// The function validates archive metadata without loading the pack for play.
 pub fn compat_grade(path: &str, ctx: &SessionCtx) -> CompatVerdict {
@@ -356,27 +356,27 @@ pub fn compat_grade(path: &str, ctx: &SessionCtx) -> CompatVerdict {
     // pack que anda perfecto y entrenaría a ignorarlo.
     let n_err = report
         .errors()
-        .filter(|f| es_de_compatibilidad(f.code))
+        .filter(|f| affects_compatibility(f.code))
         .count();
     let n_warn = report
         .warnings()
-        .filter(|f| es_de_compatibilidad(f.code))
+        .filter(|f| affects_compatibility(f.code))
         .count();
 
     // El ORDEN de las ramas es el contrato. Un error gana sobre cualquier cosa
     // que no se haya podido comprobar: si ya sabemos que no corre, decir
     // «experimental» sería suavizar un no.
     let (grade, reason) = if n_err > 0 {
-        let primero = report
+        let first_message = report
             .errors()
-            .find(|f| es_de_compatibilidad(f.code))
+            .find(|f| affects_compatibility(f.code))
             .map(|f| f.message.clone())
             .unwrap_or_default();
         (
             CompatGrade::Incompatible,
             format!(
                 "{} error(es) impiden usar el pack en esta sesión: {}",
-                n_err, primero
+                n_err, first_message
             ),
         )
     } else if !unverified.is_empty() {
@@ -408,7 +408,7 @@ pub fn compat_grade(path: &str, ctx: &SessionCtx) -> CompatVerdict {
     }
 }
 
-/// Validates an `.ay` file without opening it for play.
+/// Validates an `.ay` archivo without opening it for play.
 ///
 /// Every failure becomes a structured finding in the returned report.
 pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
@@ -473,7 +473,7 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
 
     // -- campos obligatorios -------------------------------------------------
     if m.pack.name.as_deref().unwrap_or("").is_empty() {
-        r.error("pack.name", "el manifest no declara `name`".to_string());
+        r.error("pack.nombre", "el manifest no declara `nombre`".to_string());
     }
     if m.pack.version.as_deref().unwrap_or("").is_empty() {
         r.warn(
@@ -695,8 +695,8 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
         // LICENCIA. Es advertencia y no recomendación: sin licencia declarada,
         // quien lo descargue no sabe qué puede hacer con él — y eso no es un
         // detalle de presentación.
-        let licencia = m.pack.license.as_deref().unwrap_or("").trim().to_string();
-        if licencia.is_empty() {
+        let license = m.pack.license.as_deref().unwrap_or("").trim().to_string();
+        if license.is_empty() {
             r.warn(
                 "meta.license",
                 "el manifest no declara `license`: nadie que lo descargue sabe \
@@ -707,19 +707,19 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
 
         // Require provenance when the license requires attribution. Declaring
         // CC BY without naming a recipient describes an unusable permission.
-        let exige_atribucion = licencia.to_uppercase().contains("BY");
-        let tiene_creditos = names.iter().any(|n| n == "credits.toml");
-        if exige_atribucion && !tiene_creditos {
+        let requires_attribution = license.to_uppercase().contains("BY");
+        let has_credits = names.iter().any(|n| n == "credits.toml");
+        if requires_attribution && !has_credits {
             r.error(
                 "provenance.missing",
                 format!(
                     "la licencia declarada ({}) exige atribución y el pack \
                          no trae credits.toml: es un permiso que nadie puede \
                          cumplir",
-                    licencia
+                    license
                 ),
             );
-        } else if !tiene_creditos {
+        } else if !has_credits {
             r.info(
                 "provenance.absent",
                 "el pack no trae credits.toml: no se puede mostrar quién hizo \
@@ -803,7 +803,7 @@ mod tests {
 
     const OK_MANIFEST: &str = r#"
 [pack]
-name       = "Test"
+name         = "Test"
 version    = "1.0.0"
 game_id    = "crc32:7b905383"
 ayther_min = "0.9.0"
@@ -817,7 +817,7 @@ platform  = "megadrive"
     /// El caso bueno no genera NINGÚN error. Va primero porque un validador que
     /// se queja de todo es tan inútil como uno que no se queja de nada.
     #[test]
-    fn un_pack_correcto_no_da_errores() {
+    fn valid_pack_has_no_errors() {
         let p = bake("ok", OK_MANIFEST);
         let ctx = SessionCtx {
             rom_crc32: Some(0x7b905383),
@@ -830,7 +830,7 @@ platform  = "megadrive"
 
     /// Rejects a pack authored for a different game.
     #[test]
-    fn rom_distinta_es_error_y_lo_dice() {
+    fn wrong_rom_is_reported_as_error() {
         let p = bake("rom", OK_MANIFEST);
         let ctx = SessionCtx {
             rom_crc32: Some(0xDEADBEEF),
@@ -848,12 +848,12 @@ platform  = "megadrive"
     /// …y NO poder verificarlo es una advertencia, no un error. Si fuera error,
     /// ningún pack sin `rom_crc32` (todos los de antes de ) abriría.
     #[test]
-    fn rom_sin_declarar_es_advertencia() {
+    fn undeclared_rom_is_warning() {
         let p = bake(
-            "sin_rom",
+            "without_rom",
             r#"
 [pack]
-name       = "Test"
+name         = "Test"
 version    = "1.0.0"
 game_id    = "sonic2"
 ayther_min = "0.9.0"
@@ -869,12 +869,12 @@ ayther_min = "0.9.0"
     }
 
     #[test]
-    fn engine_viejo_para_el_pack_es_error() {
+    fn old_engine_is_error() {
         let p = bake(
             "engine",
             r#"
 [pack]
-name       = "Del futuro"
+name         = "Del futuro"
 version    = "1.0.0"
 game_id    = "sonic2"
 ayther_min = "99.0.0"
@@ -891,13 +891,13 @@ ayther_min = "99.0.0"
     /// Un esquema más nuevo se REPORTA en vez de reventar. Es la diferencia
     /// entre esta función y `AyArchive::open`, que devuelve None sin explicar.
     #[test]
-    fn schema_mas_nuevo_se_reporta_sin_fallar() {
+    fn newer_schema_is_reported_without_crash() {
         let p = bake(
             "schema",
             &format!(
                 r#"
 [pack]
-name       = "Del futuro"
+name         = "Del futuro"
 version    = "1.0.0"
 game_id    = "sonic2"
 schema     = {}
@@ -916,12 +916,12 @@ schema     = {}
     /// Un subsistema desconocido NO impide correr: es degradación opcional, y
     /// tratarla como error dejaría fuera packs perfectamente usables.
     #[test]
-    fn subsistema_desconocido_es_advertencia() {
+    fn unknown_subsystem_is_warning() {
         let p = bake(
             "sys",
             r#"
 [pack]
-name       = "Test"
+name         = "Test"
 version    = "1.0.0"
 game_id    = "sonic2"
 schema     = 2
@@ -938,7 +938,7 @@ included = ["sprites", "holograma"]
     /// Un archivo que no es un pack no puede tirar la sesión: sale como
     /// hallazgo, igual que todo lo demás.
     #[test]
-    fn un_archivo_cualquiera_no_revienta() {
+    fn arbitrary_file_does_not_crash() {
         let dir = std::env::temp_dir().join("ay_validate_tests");
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("basura.ay");
@@ -953,7 +953,7 @@ included = ["sprites", "holograma"]
     }
 
     #[test]
-    fn un_pack_inexistente_tampoco() {
+    fn missing_pack_does_not_crash() {
         let r = validate_path("no/existe/nada.ay", &SessionCtx::default());
         assert!(r.errors().any(|f| f.code == "io"));
     }
@@ -964,7 +964,7 @@ included = ["sprites", "holograma"]
     // Un enum de cuatro variantes donde `Experimental` nunca sale es un enum
     // de tres.
 
-    fn ctx_completo<'a>() -> SessionCtx<'a> {
+    fn complete_context<'a>() -> SessionCtx<'a> {
         SessionCtx {
             rom_crc32: Some(0x7b90_5383),
             platform: Some("megadrive"),
@@ -977,9 +977,9 @@ included = ["sprites", "holograma"]
     /// Contexto completo y sin hallazgos: exacta. Es el único camino a `Exact`,
     /// y por eso va primero.
     #[test]
-    fn contexto_completo_y_sin_hallazgos_es_exacta() {
+    fn complete_clean_context_is_exact() {
         let p = bake("grade_exact", OK_MANIFEST);
-        let v = compat_grade(&p, &ctx_completo());
+        let v = compat_grade(&p, &complete_context());
         assert_eq!(
             v.grade,
             CompatGrade::Exact,
@@ -1000,13 +1000,13 @@ included = ["sprites", "holograma"]
     /// decir «exacta» sin haber mirado — de eso depende la métrica del Hub
     /// «incompatibilidades bloqueadas antes de descargar = 100 %».
     #[test]
-    fn sin_contexto_no_es_exacta_sino_experimental() {
+    fn missing_context_is_experimental() {
         let p = bake("grade_exp", OK_MANIFEST);
         let v = compat_grade(
             &p,
             &SessionCtx {
                 rom_crc32: None,
-                ..ctx_completo()
+                ..complete_context()
             },
         );
         assert_eq!(v.grade, CompatGrade::Experimental);
@@ -1025,7 +1025,7 @@ included = ["sprites", "holograma"]
     /// Un error gana sobre cualquier cosa que no se haya podido comprobar: si
     /// ya sabemos que no corre, decir «experimental» sería suavizar un no.
     #[test]
-    fn un_error_gana_sobre_lo_no_comprobado() {
+    fn error_overrides_unverified_state() {
         let p = bake("grade_bad", OK_MANIFEST);
         // ROM que no es la del pack Y sin plataforma ni core: hay error y hay
         // cosas sin verificar a la vez.
@@ -1046,7 +1046,7 @@ included = ["sprites", "holograma"]
     /// El orden del enum es contrato: un consumidor compara grados para decidir
     /// («<= Warnings» = se puede jugar sin sorpresas grandes).
     #[test]
-    fn el_orden_de_los_grados_es_de_mejor_a_peor() {
+    fn grades_are_ordered_best_to_worst() {
         assert!(CompatGrade::Exact < CompatGrade::Warnings);
         assert!(CompatGrade::Warnings < CompatGrade::Experimental);
         assert!(CompatGrade::Experimental < CompatGrade::Incompatible);
@@ -1055,7 +1055,7 @@ included = ["sprites", "holograma"]
     /// El JSON lleva el grado, si se puede correr, el motivo, lo que faltó y el
     /// informe entero — para que una herramienta no tenga que validar dos veces.
     #[test]
-    fn el_json_es_estable_y_trae_el_informe() {
+    fn json_is_stable_and_contains_report() {
         let p = bake("grade_json", OK_MANIFEST);
         let j = compat_grade(&p, &SessionCtx::default()).to_json();
         assert!(j.contains("\"grado\":\"experimental\""));
@@ -1069,7 +1069,7 @@ included = ["sprites", "holograma"]
     /// Los cuatro ids son estables y distintos: son lo que las herramientas
     /// comparan, y dos iguales harían indistinguibles dos grados.
     #[test]
-    fn los_cuatro_ids_son_distintos() {
+    fn four_grade_ids_are_distinct() {
         let ids = [
             CompatGrade::Exact.id(),
             CompatGrade::Warnings.id(),
@@ -1095,11 +1095,11 @@ included = ["sprites", "holograma"]
 // otros es de la rotura y no del molde.
 // ---------------------------------------------------------------------------
 #[cfg(test)]
-mod fixtures_rotas {
+mod broken_fixtures {
     use super::*;
     use std::io::Write as _;
 
-    const MANIFEST_SANO: &str = r#"
+    const VALID_MANIFEST: &str = r#"
 [pack]
 name = "Pack Sano"
 version = "1.0.0"
@@ -1118,61 +1118,61 @@ supported = ["NTSC"]
     /// Escribe un `.ay` con las entradas dadas. Sin firmar y sin
     /// `integrity.toml` salvo que se pidan: lo que se prueba acá es el
     /// VALIDADOR, no el sellado.
-    fn pack(dir: &std::path::Path, nombre: &str, entradas: &[(&str, &[u8])]) -> String {
-        let ruta = dir.join(nombre);
-        let f = std::fs::File::create(&ruta).unwrap();
+    fn pack(dir: &std::path::Path, name: &str, entries: &[(&str, &[u8])]) -> String {
+        let path = dir.join(name);
+        let f = std::fs::File::create(&path).unwrap();
         let mut z = zip::ZipWriter::new(f);
         let opts: zip::write::FileOptions<()> = zip::write::FileOptions::default();
-        for (n, d) in entradas {
+        for (n, d) in entries {
             z.start_file(*n, opts).unwrap();
             z.write_all(d).unwrap();
         }
         z.finish().unwrap();
-        ruta.to_string_lossy().into_owned()
+        path.to_string_lossy().into_owned()
     }
 
-    fn sano(dir: &std::path::Path, nombre: &str) -> String {
+    fn valid_pack(dir: &std::path::Path, name: &str) -> String {
         pack(
             dir,
-            nombre,
+            name,
             &[
-                ("manifest.toml", MANIFEST_SANO.as_bytes()),
+                ("manifest.toml", VALID_MANIFEST.as_bytes()),
                 ("assets/a.png", &[1, 2, 3]),
             ],
         )
     }
 
-    fn codigos(r: &Report) -> Vec<&'static str> {
+    fn codes(r: &Report) -> Vec<&'static str> {
         r.findings.iter().map(|f| f.code).collect()
     }
 
     /// EL CONTROL. Sin esto, los tests de abajo pasarían aunque el validador
     /// marcara todo mal siempre.
     #[test]
-    fn el_pack_sano_no_da_errores() {
+    fn valid_pack_fixture_has_no_errors() {
         let d = tempfile::tempdir().unwrap();
-        let r = validate_path(&sano(d.path(), "sano.ay"), &SessionCtx::default());
+        let r = validate_path(&valid_pack(d.path(), "sano.ay"), &SessionCtx::default());
         assert!(
             !r.has_errors(),
             "el pack sano no puede dar errores: {:?}",
-            codigos(&r)
+            codes(&r)
         );
     }
 
     #[test]
-    fn manifest_ausente() {
+    fn missing_manifest() {
         let d = tempfile::tempdir().unwrap();
         let p = pack(d.path(), "sin_manifest.ay", &[("assets/a.png", &[1])]);
         let r = validate_path(&p, &SessionCtx::default());
         assert!(
-            codigos(&r).contains(&"manifest.missing"),
+            codes(&r).contains(&"manifest.missing"),
             "{:?}",
-            codigos(&r)
+            codes(&r)
         );
     }
 
     #[test]
-    fn toml_invalido() {
+    fn invalid_toml() {
         let d = tempfile::tempdir().unwrap();
         let p = pack(
             d.path(),
@@ -1181,17 +1181,17 @@ supported = ["NTSC"]
         );
         let r = validate_path(&p, &SessionCtx::default());
         assert!(
-            codigos(&r).contains(&"manifest.malformed"),
+            codes(&r).contains(&"manifest.malformed"),
             "{:?}",
-            codigos(&r)
+            codes(&r)
         );
     }
 
     /// Rejects a license that requires attribution when no contributor exists.
     #[test]
-    fn procedencia_faltante_con_licencia_que_la_exige() {
+    fn missing_required_provenance() {
         let d = tempfile::tempdir().unwrap();
-        let man = MANIFEST_SANO.replace("CC0-1.0", "CC-BY-4.0");
+        let man = VALID_MANIFEST.replace("CC0-1.0", "CC-BY-4.0");
         let p = pack(
             d.path(),
             "sin_creditos.ay",
@@ -1199,9 +1199,9 @@ supported = ["NTSC"]
         );
         let r = validate_path(&p, &SessionCtx::default());
         assert!(
-            codigos(&r).contains(&"provenance.missing"),
+            codes(&r).contains(&"provenance.missing"),
             "{:?}",
-            codigos(&r)
+            codes(&r)
         );
         assert!(r.has_errors());
 
@@ -1218,40 +1218,40 @@ supported = ["NTSC"]
         );
         let r2 = validate_path(&p2, &SessionCtx::default());
         assert!(
-            !codigos(&r2).contains(&"provenance.missing"),
+            !codes(&r2).contains(&"provenance.missing"),
             "{:?}",
-            codigos(&r2)
+            codes(&r2)
         );
     }
 
     #[test]
-    fn catalogo_ilegible() {
+    fn unreadable_catalog() {
         let d = tempfile::tempdir().unwrap();
         let p = pack(
             d.path(),
             "catalogo.ay",
             &[
-                ("manifest.toml", MANIFEST_SANO.as_bytes()),
+                ("manifest.toml", VALID_MANIFEST.as_bytes()),
                 ("assets/a.png", &[1]),
-                ("acetatos.toml", b"[[acetato]] name = ROTO sin comillas ["),
+                ("acetatos.toml", b"[[acetato]] nombre = ROTO sin comillas ["),
             ],
         );
         let r = validate_path(&p, &SessionCtx::default());
         assert!(
-            codigos(&r).contains(&"catalog.malformed"),
+            codes(&r).contains(&"catalog.malformed"),
             "{:?}",
-            codigos(&r)
+            codes(&r)
         );
     }
 
     #[test]
-    fn indice_declara_un_archivo_que_no_esta() {
+    fn index_declares_missing_file() {
         let d = tempfile::tempdir().unwrap();
         let p = pack(
             d.path(),
             "indice.ay",
             &[
-                ("manifest.toml", MANIFEST_SANO.as_bytes()),
+                ("manifest.toml", VALID_MANIFEST.as_bytes()),
                 (
                     "integrity.toml",
                     b"[[entry]]\npath = \"assets/fantasma.png\"\nsha256 = \"00\"\nsize = 1\n",
@@ -1260,19 +1260,19 @@ supported = ["NTSC"]
         );
         let r = validate_path(&p, &SessionCtx::default());
         assert!(
-            codigos(&r).contains(&"integrity.missing_entry"),
+            codes(&r).contains(&"integrity.missing_entry"),
             "{:?}",
-            codigos(&r)
+            codes(&r)
         );
     }
 
     #[test]
-    fn sin_autor_y_sin_assets_avisa_pero_no_es_error() {
+    fn missing_author_and_assets_warns() {
         let d = tempfile::tempdir().unwrap();
-        let man = MANIFEST_SANO.replace("author = \"Alguien\"", "author = \"\"");
+        let man = VALID_MANIFEST.replace("author = \"Alguien\"", "author = \"\"");
         let p = pack(d.path(), "flaco.ay", &[("manifest.toml", man.as_bytes())]);
         let r = validate_path(&p, &SessionCtx::default());
-        let c = codigos(&r);
+        let c = codes(&r);
         assert!(c.contains(&"meta.author"), "{c:?}");
         assert!(c.contains(&"assets.empty"), "{c:?}");
         // Un proyecto a medio hacer se tiene que poder empaquetar y probar.
@@ -1283,9 +1283,9 @@ supported = ["NTSC"]
     /// una promesa del documento: bastaría con que todo saliera como Warning
     /// para que los demás tests siguieran pasando.
     #[test]
-    fn los_tres_niveles_se_distinguen() {
+    fn three_severity_levels_are_distinct() {
         let d = tempfile::tempdir().unwrap();
-        let man = MANIFEST_SANO
+        let man = VALID_MANIFEST
             .replace("description = \"Un pack de prueba\"", "description = \"\"")
             .replace("license = \"CC0-1.0\"", "license = \"\"");
         let p = pack(
@@ -1298,23 +1298,23 @@ supported = ["NTSC"]
             ],
         );
         let r = validate_path(&p, &SessionCtx::default());
-        assert!(r.errors().count() > 0, "falta un error: {:?}", codigos(&r));
+        assert!(r.errors().count() > 0, "falta un error: {:?}", codes(&r));
         assert!(
             r.warnings().count() > 0,
             "falta una advertencia: {:?}",
-            codigos(&r)
+            codes(&r)
         );
         assert!(
             r.infos().count() > 0,
             "falta una recomendación: {:?}",
-            codigos(&r)
+            codes(&r)
         );
     }
 
     /// El JSON lleva el código, la severidad y el veredicto — que es lo que
     /// deja a una herramienta reaccionar por código y no por texto.
     #[test]
-    fn el_json_es_consumible_por_una_herramienta() {
+    fn json_is_machine_consumable() {
         let d = tempfile::tempdir().unwrap();
         let p = pack(d.path(), "json.ay", &[("assets/a.png", &[1])]);
         let j = validate_path(&p, &SessionCtx::default()).to_json();
@@ -1322,7 +1322,7 @@ supported = ["NTSC"]
         assert!(j.contains("\"severidad\": \"error\""), "{j}");
         assert!(j.contains("\"valido\": false"), "{j}");
 
-        let js = validate_path(&sano(d.path(), "ok.ay"), &SessionCtx::default()).to_json();
+        let js = validate_path(&valid_pack(d.path(), "ok.ay"), &SessionCtx::default()).to_json();
         assert!(js.contains("\"valido\": true"), "{js}");
     }
 }

@@ -185,7 +185,7 @@ width = 0
 "#;
 
     #[test]
-    fn gameplay_ensancha_y_el_menu_vuelve_a_4_3() {
+    fn gameplay_widens_and_menu_returns_to_4_3() {
         let g = WidescreenGate::from_toml(TOML);
         assert_eq!(g.len(), 2, "las dos reglas compilan");
 
@@ -202,7 +202,7 @@ width = 0
     }
 
     #[test]
-    fn sin_declaracion_el_gate_no_opina() {
+    fn missing_declaration_leaves_gate_undecided() {
         // Un pack ya horneado no trae `[[widescreen]]`. Tiene que dar None y no
         // Some(0): con Some(0) el gate apagaría el ensanchado manual del Lab en
         // todos los packs existentes.
@@ -212,7 +212,7 @@ width = 0
     }
 
     #[test]
-    fn una_condicion_rota_descarta_su_entrada_no_la_vuelve_incondicional() {
+    fn broken_condition_discards_entry() {
         // Es la trampa que este gate NO puede permitirse: una entrada rota que
         // matchea siempre ensancha en los menús, justo donde no hay lámina.
         let g = WidescreenGate::from_toml(
@@ -235,7 +235,7 @@ width = 0
     }
 
     #[test]
-    fn gana_la_primera_regla_que_matchea() {
+    fn first_matching_rule_wins() {
         let g = WidescreenGate::from_toml(
             r#"
 [[widescreen]]
@@ -276,7 +276,7 @@ width = 0
     }
 
     #[test]
-    fn width_ausente_no_es_cero_implicito() {
+    fn missing_width_is_not_implicit_zero() {
         // Un `width` olvidado tomado como 0 apagaría el ensanchado sin que
         // nadie lo pidiera, y el autor vería «no anda» en vez de un error.
         let g = WidescreenGate::from_toml("[[widescreen]]\n");
@@ -284,13 +284,13 @@ width = 0
     }
 
     #[test]
-    fn width_fuera_de_rango_se_descarta() {
+    fn out_of_range_width_is_discarded() {
         let g = WidescreenGate::from_toml("[[widescreen]]\nwidth = 999999\n");
         assert!(g.is_empty());
     }
 
     #[test]
-    fn el_toml_invalido_da_gate_vacio_y_no_panic() {
+    fn invalid_toml_yields_empty_gate() {
         let g = WidescreenGate::from_toml("[[widescreen\nwidth =");
         assert!(g.is_empty());
         assert_eq!(g.width_for(&FrameCtx::frame_only(0)), None);

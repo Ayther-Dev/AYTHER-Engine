@@ -1,8 +1,13 @@
 @PACKAGE_INIT@
 
 # Installed AYTHER package. Consumers need neither Cargo nor Corrosion.
+include(CMakeFindDependencyMacro)
+
 set_and_check(AYTHER_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
 set_and_check(AYTHER_LIB_DIR     "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+
+set(Ayther_core_FOUND TRUE)
+set(Ayther_engine_FOUND @AYTHER_PACKAGE_HAS_ENGINE@)
 
 set(_ayther_core_archive
     "${AYTHER_LIB_DIR}/@AYTHER_CORE_ARCHIVE_NAME@")
@@ -33,8 +38,78 @@ if(NOT TARGET Ayther::core)
     endif()
 endif()
 
+if(Ayther_engine_FOUND)
+    find_dependency(Threads)
+    find_dependency(SDL3 CONFIG)
+    find_dependency(Vulkan)
+    find_dependency(VulkanMemoryAllocator CONFIG)
+    find_dependency(vk-bootstrap CONFIG)
+    find_dependency(tomlplusplus CONFIG)
+    find_dependency(zstd CONFIG)
+
+    set(_ayther_package_dependency_targets
+        Threads::Threads
+        SDL3::SDL3
+        Vulkan::Vulkan
+        GPUOpen::VulkanMemoryAllocator
+        vk-bootstrap::vk-bootstrap
+        tomlplusplus::tomlplusplus
+        zstd::libzstd)
+    foreach(_ayther_dependency_target IN LISTS
+            _ayther_package_dependency_targets)
+        if(NOT TARGET "${_ayther_dependency_target}")
+            set(Ayther_FOUND FALSE)
+            set(Ayther_NOT_FOUND_MESSAGE
+                "A native dependency did not provide its required CMake "
+                "target: ${_ayther_dependency_target}")
+            return()
+        endif()
+    endforeach()
+
+    if(@AYTHER_PACKAGE_HAS_VPX@)
+        if(@AYTHER_PACKAGE_VPX_BUNDLED@)
+            set(_ayther_vpx_archive
+                "${AYTHER_LIB_DIR}/@AYTHER_VPX_ARCHIVE_NAME@")
+            if(NOT EXISTS "${_ayther_vpx_archive}")
+                set(Ayther_FOUND FALSE)
+                set(Ayther_NOT_FOUND_MESSAGE
+                    "The installed AYTHER libvpx archive is missing: "
+                    "${_ayther_vpx_archive}")
+                return()
+            endif()
+
+            if(NOT TARGET Ayther::vpx)
+                add_library(Ayther::vpx STATIC IMPORTED)
+                set_target_properties(Ayther::vpx PROPERTIES
+                    IMPORTED_LOCATION             "${_ayther_vpx_archive}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${AYTHER_INCLUDE_DIR}")
+            endif()
+        else()
+            find_dependency(PkgConfig)
+            pkg_check_modules(AytherSystemVpx REQUIRED IMPORTED_TARGET vpx)
+            if(NOT TARGET Ayther::vpx)
+                add_library(Ayther::vpx INTERFACE IMPORTED)
+                set_property(TARGET Ayther::vpx PROPERTY
+                    INTERFACE_LINK_LIBRARIES PkgConfig::AytherSystemVpx)
+            endif()
+        endif()
+    endif()
+
+    include("${CMAKE_CURRENT_LIST_DIR}/AytherEngineTargets.cmake")
+
+    # Corrosion's build-tree target is installed as a plain archive and
+    # reconstructed above. Attach that installed target after loading the
+    # generated export so Ayther::engine consumers inherit the core archive
+    # without leaking the non-exportable build-tree alias.
+    set_property(TARGET Ayther::engine APPEND PROPERTY
+        INTERFACE_LINK_LIBRARIES Ayther::core)
+endif()
+
 unset(_ayther_core_archive)
 unset(_ayther_core_system_libs)
 unset(_ayther_core_link_options)
+unset(_ayther_vpx_archive)
+unset(_ayther_dependency_target)
+unset(_ayther_package_dependency_targets)
 
 check_required_components(Ayther)

@@ -316,7 +316,7 @@ mod tests {
     /// conversión conserva un archivo tocable. No se puede fabricar un Vorbis
     /// de verdad acá — no hay encoder en las deps, y no debería haberlo: el
     /// camino de decode real se cubre con AYTHER_SF3_TEST.
-    fn sf3_estructural() -> Vec<u8> {
+    fn structural_sf3() -> Vec<u8> {
         // Arranca del SF2 mínimo compartido del módulo sf2 y le sube la
         // versión — la estructura RIFF no se duplica acá.
         let mut v = crate::sf2::minimal_sf2();
@@ -328,15 +328,15 @@ mod tests {
     }
 
     #[test]
-    fn un_sf2_plano_no_es_sf3() {
+    fn plain_sf2_is_not_sf3() {
         let sf2 = crate::sf2::minimal_sf2();
         assert!(!is_sf3(&sf2));
         assert!(to_sf2(&sf2).unwrap().is_none(), "SF2 plano = passthrough");
     }
 
     #[test]
-    fn la_version_3_se_detecta_y_convierte_a_un_sf2_que_suena() {
-        let sf3 = sf3_estructural();
+    fn sf3_is_detected_and_converted() {
+        let sf3 = structural_sf3();
         assert!(is_sf3(&sf3), "ifil 3.x tiene que detectarse");
         let out = to_sf2(&sf3).unwrap().expect("convierte");
         assert!(!is_sf3(&out), "el resultado ya no es SF3");
@@ -354,8 +354,8 @@ mod tests {
     }
 
     #[test]
-    fn un_ogg_roto_deja_el_sample_mudo_pero_no_aborta() {
-        let mut sf3 = sf3_estructural();
+    fn broken_ogg_mutes_sample_without_aborting() {
+        let mut sf3 = structural_sf3();
         // Marcar el sample como comprimido: sus bytes de PCM no son un Ogg
         // válido, así que el decode falla — el archivo tiene que salir igual.
         let pos = sf3.windows(4).position(|w| w == b"shdr").expect("shdr");
@@ -372,10 +372,10 @@ mod tests {
     }
 
     /// Contra un SF3 REAL (MuseScore u otro), activado por env — mismo criterio
-    /// que `hornea_un_sf2_real`: un test no puede depender de la colección de
+    /// que `bakes_real_sf2`: un test no puede depender de la colección de
     /// nadie. Verifica el decode Vorbis de verdad y que el resultado suena.
     #[test]
-    fn convierte_un_sf3_real() {
+    fn converts_real_sf3() {
         let Ok(path) = std::env::var("AYTHER_SF3_TEST") else {
             eprintln!("[skip] sin AYTHER_SF3_TEST=<ruta a un .sf3>");
             return;

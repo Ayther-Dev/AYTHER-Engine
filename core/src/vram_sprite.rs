@@ -560,7 +560,7 @@ impl SpriteHasher {
         // (actualizado al ESCRIBIR la SAT); la copia en VRAM puede quedar stale:
         // Sonic 2 EHZ deja una cadena CÍCLICA (17→68→49→17…) que atrapa a un
         // chain-walk en 3 sprites y nunca llega al jugador (validado contra ROM
-        // en tools/modo3_spike). Los slots no usados quedan parqueados fuera de
+        // en tools/mode3_spike). Los slots no usados quedan parqueados fuera de
         // pantalla (Y crudo = 0 → screen −128) → el filtro de abajo los descarta.
         for slot in 0..MAX_SPRITES_H40 {
             let entry_off = sat_base + slot * SAT_ENTRY_SIZE;
@@ -574,7 +574,7 @@ impl SpriteHasher {
             // word-swapped en hosts LE (byte lógico en off^1): leer cada word en
             // LITTLE-ENDIAN reconstruye el word big-endian del bus — la MISMA
             // convención que los lectores de nametables (ayther_session rd16) y
-            // el escaneo SAT de tools/modo3_spike (vrd16), validada contra ROM.
+            // el escaneo SAT de tools/mode3_spike (vrd16), validada contra ROM.
             let rdw = |o: usize| -> u16 { (entry[o] as u16) | ((entry[o + 1] as u16) << 8) };
             let w0 = rdw(0); // Y (bits 9:0)
             let w1 = rdw(2); // vsize (11:10) · hsize (9:8) · link (6:0)
@@ -3207,13 +3207,13 @@ mod tests {
             "pose.png".to_string(),
         );
         // Cara derecha (arreglo capturado): 0xaa a la izq, 0xbb a la der.
-        let der = vec![mk(0xaa, 100, 50, 0), mk(0xbb, 116, 50, 0)];
+        let right = vec![mk(0xaa, 100, 50, 0), mk(0xbb, 116, 50, 0)];
         let mut c = vec![false; 2];
-        assert_eq!(sub.resolve(&der, &mut c).len(), 1);
+        assert_eq!(sub.resolve(&right, &mut c).len(), 1);
         // Cara izquierda (ESPEJO H): 0xbb a la izq, 0xaa a la der, con hflip=1.
-        let izq = vec![mk(0xbb, 100, 50, 1), mk(0xaa, 116, 50, 1)];
+        let left = vec![mk(0xbb, 100, 50, 1), mk(0xaa, 116, 50, 1)];
         let mut c2 = vec![false; 2];
-        let subs = sub.resolve(&izq, &mut c2);
+        let subs = sub.resolve(&left, &mut c2);
         assert_eq!(
             subs.len(),
             1,
@@ -3222,9 +3222,9 @@ mod tests {
         assert_eq!(subs[0].screen_x, 100);
         assert!(c2[0] && c2[1]);
         // Arreglo que NO es ni el capturado ni ningún espejo → no matchea.
-        let roto = vec![mk(0xaa, 100, 50, 0), mk(0xbb, 140, 80, 0)];
+        let broken_input = vec![mk(0xaa, 100, 50, 0), mk(0xbb, 140, 80, 0)];
         let mut c3 = vec![false; 2];
-        assert_eq!(sub.resolve(&roto, &mut c3).len(), 0);
+        assert_eq!(sub.resolve(&broken_input, &mut c3).len(), 0);
 
         // Espejo VERTICAL: pose vertical (rel [(0,0),(0,16)]) matchea la instancia
         // con los miembros invertidos en Y.
@@ -3237,9 +3237,9 @@ mod tests {
             "v.png".to_string(),
         );
         // Capturado: 0xaa arriba, 0xbb abajo.
-        let arriba = vec![mk(0xaa, 50, 100, 0), mk(0xbb, 50, 116, 0)];
+        let top = vec![mk(0xaa, 50, 100, 0), mk(0xbb, 50, 116, 0)];
         let mut cv = vec![false; 2];
-        assert_eq!(subv.resolve(&arriba, &mut cv).len(), 1);
+        assert_eq!(subv.resolve(&top, &mut cv).len(), 1);
         // Espejo V: 0xbb arriba, 0xaa abajo (vflip=... da igual, matchea por posición).
         let invertido = vec![mk(0xbb, 50, 100, 0), mk(0xaa, 50, 116, 0)];
         let mut cv2 = vec![false; 2];

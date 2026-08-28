@@ -212,17 +212,17 @@ mod tests {
     /// Los defaults NO se escriben: agregar `transpose`/`gain` no puede cambiar
     /// un byte de un proyecto que no los usa.
     #[test]
-    fn los_defaults_no_se_escriben() {
+    fn defaults_are_not_serialized() {
         let t = instruments_to_toml(&[InstrumentSub::new(1, "a.sf2", 0, 0)]);
         // Por LÍNEA y no por subcadena: buscar "name" suelto matchea
         // «basename» del comentario de cabecera, y el test pasaría a medir el
         // texto de la documentación en vez del formato.
-        let campo = |k: &str| t.lines().any(|l| l.starts_with(&format!("{k} = ")));
-        assert!(!campo("transpose"), "transpose 0 no se escribe");
-        assert!(!campo("gain"), "gain 1.0 no se escribe");
-        assert!(!campo("name"), "nombre vacío no se escribe");
+        let has_field = |k: &str| t.lines().any(|l| l.starts_with(&format!("{k} = ")));
+        assert!(!has_field("transpose"), "transpose 0 no se escribe");
+        assert!(!has_field("gain"), "gain 1.0 no se escribe");
+        assert!(!has_field("name"), "nombre vacío no se escribe");
         assert!(
-            campo("patch") && campo("soundfont") && campo("preset"),
+            has_field("patch") && has_field("soundfont") && has_field("preset"),
             "lo obligatorio sí se escribe"
         );
         // Y aun así vuelve con los defaults correctos.
@@ -236,7 +236,7 @@ mod tests {
     /// timbre pierde su asignación, el juego suena con su chip original — que es
     /// una degradación aceptable. Perder las otras 29 no lo sería.
     #[test]
-    fn una_entrada_rota_no_tira_las_demas() {
+    fn broken_entry_does_not_discard_others() {
         let t = r#"
 [[instrument]]
 patch = "0x0000000000000001"
@@ -272,7 +272,7 @@ preset = 15
 
     /// Un TOML basura devuelve vacío en vez de romper.
     #[test]
-    fn un_toml_invalido_no_rompe() {
+    fn invalid_toml_does_not_crash() {
         assert!(instruments_from_toml("esto no es toml [[[").is_empty());
         assert!(instruments_from_toml("").is_empty());
         assert!(instruments_from_toml("[[otra_cosa]]\nx = 1").is_empty());
@@ -281,7 +281,7 @@ preset = 15
     /// El agrupado por SoundFont es lo que el horneado consume: un recorte por
     /// archivo de origen, con los presets que le tocan.
     #[test]
-    fn agrupa_por_soundfont_sin_repetir() {
+    fn groups_by_soundfont_without_duplicates() {
         let subs = vec![
             InstrumentSub::new(1, "gm.sf2", 0, 33),
             InstrumentSub::new(2, "cave.sf2", 0, 80),
@@ -303,7 +303,7 @@ preset = 15
     /// Valores fuera de rango se acotan en vez de propagarse: un `preset` de 999
     /// no existe en SF2, y un `gain` de 1e9 reventaría la mezcla.
     #[test]
-    fn los_valores_absurdos_se_acotan_o_descartan() {
+    fn absurd_values_are_clamped_or_discarded() {
         let t = r#"
 [[instrument]]
 patch = "0x1"

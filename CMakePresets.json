@@ -28,9 +28,15 @@
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       },
+      "environment": {
+        "PATH": "$env{ProgramFiles}/LLVM/bin;$penv{PATH}"
+      },
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang-cl",
-        "CMAKE_CXX_COMPILER": "clang-cl"
+        "CMAKE_C_COMPILER": "$env{ProgramFiles}/LLVM/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "$env{ProgramFiles}/LLVM/bin/clang-cl.exe",
+        "CMAKE_LINKER": "lld-link.exe",
+        "CMAKE_MT": "llvm-mt.exe",
+        "CMAKE_RC_COMPILER": "llvm-rc.exe"
       }
     },
     {
@@ -48,12 +54,24 @@
       }
     },
     {
+      "name": "native-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "AYTHER_BUILD_ENGINE": "ON",
+        "AYTHER_BUILD_RENDERER": "ON"
+      }
+    },
+    {
       "name": "windows-headless",
       "displayName": "Windows Headless",
       "description": "Core, bridge, and ABI tests without native engine dependencies",
       "inherits": "windows-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "AYTHER_BUILD_ENGINE": "OFF",
+        "AYTHER_BUILD_RENDERER": "OFF"
       }
     },
     {
@@ -63,7 +81,36 @@
       "inherits": "windows-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AYTHER_BUILD_TESTS": "OFF"
+        "AYTHER_BUILD_TESTS": "OFF",
+        "AYTHER_BUILD_ENGINE": "OFF",
+        "AYTHER_BUILD_RENDERER": "OFF"
+      }
+    },
+    {
+      "name": "windows-native",
+      "displayName": "Windows Native Engine",
+      "description": "Complete C++ engine with manifest-mode native dependencies",
+      "inherits": ["windows-base", "native-base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "windows-native-vpx",
+      "displayName": "Windows Native Engine + VPX",
+      "description": "Complete C++ engine with the locally built VP9 decoder",
+      "inherits": "windows-native",
+      "cacheVariables": {
+        "AYTHER_ENABLE_VPX": "ON"
+      }
+    },
+    {
+      "name": "windows-native-gpu",
+      "displayName": "Windows Native Engine + GPU Tests",
+      "description": "Complete C++ engine with Vulkan GPU test executables",
+      "inherits": "windows-native",
+      "cacheVariables": {
+        "AYTHER_BUILD_GPU_TESTS": "ON"
       }
     },
     {
@@ -72,7 +119,9 @@
       "description": "Core, bridge, and ABI tests without native engine dependencies",
       "inherits": "linux-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "AYTHER_BUILD_ENGINE": "OFF",
+        "AYTHER_BUILD_RENDERER": "OFF"
       }
     },
     {
@@ -82,7 +131,36 @@
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AYTHER_BUILD_TESTS": "OFF"
+        "AYTHER_BUILD_TESTS": "OFF",
+        "AYTHER_BUILD_ENGINE": "OFF",
+        "AYTHER_BUILD_RENDERER": "OFF"
+      }
+    },
+    {
+      "name": "linux-native",
+      "displayName": "Linux Native Engine",
+      "description": "Complete C++ engine with manifest-mode native dependencies",
+      "inherits": ["linux-base", "native-base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "linux-native-vpx",
+      "displayName": "Linux Native Engine + VPX",
+      "description": "Complete C++ engine with the system libvpx decoder",
+      "inherits": "linux-native",
+      "cacheVariables": {
+        "AYTHER_ENABLE_VPX": "ON"
+      }
+    },
+    {
+      "name": "linux-native-gpu",
+      "displayName": "Linux Native Engine + GPU Tests",
+      "description": "Complete C++ engine with Vulkan GPU test executables",
+      "inherits": "linux-native",
+      "cacheVariables": {
+        "AYTHER_BUILD_GPU_TESTS": "ON"
       }
     }
   ],
@@ -96,12 +174,36 @@
       "configurePreset": "windows-release"
     },
     {
+      "name": "windows-native",
+      "configurePreset": "windows-native"
+    },
+    {
+      "name": "windows-native-vpx",
+      "configurePreset": "windows-native-vpx"
+    },
+    {
+      "name": "windows-native-gpu",
+      "configurePreset": "windows-native-gpu"
+    },
+    {
       "name": "linux-headless",
       "configurePreset": "linux-headless"
     },
     {
       "name": "linux-release",
       "configurePreset": "linux-release"
+    },
+    {
+      "name": "linux-native",
+      "configurePreset": "linux-native"
+    },
+    {
+      "name": "linux-native-vpx",
+      "configurePreset": "linux-native-vpx"
+    },
+    {
+      "name": "linux-native-gpu",
+      "configurePreset": "linux-native-gpu"
     }
   ],
   "testPresets": [
@@ -123,6 +225,76 @@
       },
       "execution": {
         "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-native",
+      "configurePreset": "windows-native",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-native-vpx",
+      "configurePreset": "windows-native-vpx",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-native-gpu",
+      "configurePreset": "windows-native-gpu",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "include": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "linux-native",
+      "configurePreset": "linux-native",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-native-vpx",
+      "configurePreset": "linux-native-vpx",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-native-gpu",
+      "configurePreset": "linux-native-gpu",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "include": {
+          "label": "gpu"
+        }
       }
     }
   ]
