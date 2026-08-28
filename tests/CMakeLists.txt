@@ -1,26 +1,49 @@
 # ---------------------------------------------------------------------------
-# C++ suites that exercise the ayther_core boundary.
+# Test suites, grouped by what they exercise:
 #
-# These link only against Ayther::core, so they build and run under the
-# headless presets with no SDL3, Vulkan, or GPU present.
+#   ffi/          the ayther_core ABI and handle lifecycle
+#   unit/         pure logic and header-only components
+#   integration/  session, audio, recording, and pack documents
+#   renderer/     Vulkan and shader contracts
+#
+# Only ffi/ builds in headless configurations; the rest need Ayther::engine.
+# Each group's CTest names and labels carry its directory, so `ctest -L unit`
+# and friends select exactly one group.
 # ---------------------------------------------------------------------------
 
-add_executable(ayther_core_ffi_tests ayther_core_ffi_test.cpp)
+# Native unit/contract tests are standalone executables with a tiny local test
+# harness. Give each one an isolated working directory because several create
+# temporary WAV, pack, or recording files using fixed names.
+function(ayther_add_native_test _source _category)
+    get_filename_component(_name "${_source}" NAME_WE)
+    set(_target "ayther_${_name}")
+    set(_workdir "${CMAKE_CURRENT_BINARY_DIR}/${_name}")
 
-target_link_libraries(ayther_core_ffi_tests PRIVATE Ayther::core)
+    add_executable("${_target}" "${_source}")
+    target_link_libraries("${_target}" PRIVATE
+        Ayther::engine
+        Ayther::core)
+    target_include_directories("${_target}" PRIVATE
+        "${PROJECT_SOURCE_DIR}/include/ayther")
+    target_compile_features("${_target}" PRIVATE cxx_std_20)
 
-if(MSVC)
-    target_compile_options(ayther_core_ffi_tests PRIVATE /W4)
-else()
-    target_compile_options(ayther_core_ffi_tests PRIVATE -Wall -Wextra)
-endif()
+    if(MSVC)
+        target_compile_options("${_target}" PRIVATE /W4)
+    else()
+        target_compile_options("${_target}" PRIVATE -Wall -Wextra)
+    endif()
 
-add_test(NAME ayther.core.ffi COMMAND ayther_core_ffi_tests)
+    file(MAKE_DIRECTORY "${_workdir}")
+    add_test(NAME "ayther.${_category}.${_name}" COMMAND "${_target}")
+    set_tests_properties("ayther.${_category}.${_name}" PROPERTIES
+        WORKING_DIRECTORY "${_workdir}"
+        TIMEOUT           120
+        LABELS            "engine;native;${_category}")
+endfunction()
 
-set_tests_properties(ayther.core.ffi PROPERTIES
-    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    TIMEOUT           120
-    LABELS            "core;abi;headless")
+# The ABI suite links only Ayther::core, so it builds and runs under the
+# headless presets with no SDL3, Vulkan, or GPU present.
+add_subdirectory(ffi)
 
 # The SF2 boundary smoke only exercises Ayther::core and remains available in
 # headless configurations. Its no-argument mode validates the null-handle
@@ -68,72 +91,9 @@ set_tests_properties(ayther.quality.documentation_language PROPERTIES
     TIMEOUT 30
     LABELS  "engine;native;quality")
 
-# Native unit/contract tests are standalone executables with a tiny local test
-# harness. Give each one an isolated working directory because several create
-# temporary WAV, pack, or recording files using fixed names.
-set(_ayther_native_test_sources
-    audio_asset_fallback_test.cpp
-    audio_bus_balance_test.cpp
-    audio_fade_test.cpp
-    audio_level_test.cpp
-    audio_live_resume_test.cpp
-    audio_match_identity_test.cpp
-    audio_match_rule_test.cpp
-    audio_player_pause_test.cpp
-    audio_seq_anchor_test.cpp
-    audio_tail_test.cpp
-    audio_unified_mix_test.cpp
-    ayther_recording_test.cpp
-    cram_palette_test.cpp
-    elements_toml_test.cpp
-    failure_escalation_test.cpp
-    gain_source_test.cpp
-    loop_region_test.cpp
-    output_profile_test.cpp
-    pano_bands_test.cpp
-    panorama_cover_test.cpp
-    parallax_bands_test.cpp
-    plane_hash_variants_test.cpp
-    video_bt601_test.cpp
-    widescreen_test.cpp
-    xbr_ref_test.cpp)
-
-foreach(_ayther_native_test_source IN LISTS _ayther_native_test_sources)
-    get_filename_component(_ayther_native_test_name
-        "${_ayther_native_test_source}" NAME_WE)
-    set(_ayther_native_test_target
-        "ayther_${_ayther_native_test_name}")
-    set(_ayther_native_test_workdir
-        "${CMAKE_CURRENT_BINARY_DIR}/${_ayther_native_test_name}")
-
-    add_executable("${_ayther_native_test_target}"
-        "${_ayther_native_test_source}")
-    target_link_libraries("${_ayther_native_test_target}" PRIVATE
-        Ayther::engine
-        Ayther::core)
-    target_include_directories("${_ayther_native_test_target}" PRIVATE
-        "${PROJECT_SOURCE_DIR}/include/ayther")
-    target_compile_features("${_ayther_native_test_target}" PRIVATE
-        cxx_std_20)
-
-    if(MSVC)
-        target_compile_options("${_ayther_native_test_target}" PRIVATE /W4)
-    else()
-        target_compile_options("${_ayther_native_test_target}" PRIVATE
-            -Wall -Wextra)
-    endif()
-
-    file(MAKE_DIRECTORY "${_ayther_native_test_workdir}")
-    add_test(
-        NAME "ayther.native.${_ayther_native_test_name}"
-        COMMAND "${_ayther_native_test_target}")
-    set_tests_properties(
-        "ayther.native.${_ayther_native_test_name}"
-        PROPERTIES
-            WORKING_DIRECTORY "${_ayther_native_test_workdir}"
-            TIMEOUT           120
-            LABELS            "engine;native;unit")
-endforeach()
+add_subdirectory(unit)
+add_subdirectory(integration)
+add_subdirectory(renderer)
 
 # Pass optional local core/ROM paths to ABI probes without making them required
 # on clean checkouts. The executables report CTest's conventional skip code 77
@@ -201,11 +161,6 @@ if(AYTHER_BUILD_GPU_TESTS)
 endif()
 
 unset(_ayther_gpu_test)
-unset(_ayther_native_test_name)
-unset(_ayther_native_test_source)
-unset(_ayther_native_test_sources)
-unset(_ayther_native_test_target)
-unset(_ayther_native_test_workdir)
 unset(_ayther_native_tool_tests)
 unset(_ayther_tool_test)
 unset(_ayther_vpx_test)
