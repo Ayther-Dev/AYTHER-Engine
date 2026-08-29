@@ -1,42 +1,43 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// audio_seq_anchor.h — anclas de las Secuencias en replay, con RECLAMO entre
-// Secuencias (). Header-only y puro: testeable sin SDL, sin core, sin GPU.
+// audio_seq_anchor.h — replay Sequence anchors with CLAIMS between Sequences.
+// Header-only and pure: testable without SDL, a core, or a GPU.
 //
-// Una Secuencia (sub) abre una ventana en cada ocurrencia de su firma
-// DISPARADORA dentro de los eventos detectados de la toma. Reglas:
+// A Sequence (substitution) opens a window at every occurrence of its TRIGGER
+// signature among the events detected in the take. Rules:
 //
-//  1. Segmentación greedy (reporte 2026-07-23): el paso es el SPAN de los
-//     eventos; una ocurrencia del disparador que cae dentro del paso de la
-//     ventana anterior es INTERNA (la melodía repite su primera nota) y no
-//     re-ancla. Una repetición REAL (tras el paso) sí re-ancla y re-dispara.
+//  1. Greedy segmentation (2026-07-23 report): the step is the event SPAN. A
+//     trigger occurrence inside the previous window's step is INTERNAL (the
+//     melody repeats its first note) and does not re-anchor. A REAL repetition
+//     after the step does re-anchor and retrigger.
 //
-//  2. RECLAMO (, reporte 2026-08-21): una ocurrencia del disparador de S
-//     que cae dentro de la ventana (con HD) de OTRA Secuencia T que tiene esa
-//     firma como MIEMBRO es de T — S no ancla ni dispara. «La que se estaba
-//     escuchando gana.» Caso real (Golden Axe): «The Battle - Intro» y
-//     «- Loop» comparten 26 firmas; el hi-hat que abre la Intro reaparece
-//     cada 63 frames dentro del Loop, y el bajo que abre el Loop aparece
-//     dentro de la Intro → sonaban las dos a la vez.
+//  2. CLAIM (2026-08-21 report): an occurrence of S's trigger inside ANOTHER
+//     Sequence T's window (with HD), where T contains that signature as a
+//     MEMBER, belongs to T. S neither anchors nor triggers: "the one already
+//     playing wins." In Golden Axe, "The Battle - Intro" and "- Loop" share
+//     26 signatures; the hi-hat that opens the Intro reappears every 63 frames
+//     inside the Loop, while the bass that opens the Loop appears in the Intro,
+//     causing both to play at once.
 //
-//  3. CABEZA (reporte 2026-08-21, 2ª vuelta): el disparador solo es frágil —
-//     en la 3ª pasada del Loop el bajo que lo abre es OTRA firma (variante)
-//     y los otros 5 canales arrancan idénticos; sin disparador el Loop no
-//     re-anclaba, su ventana vencía y la Intro se colaba (intro, loop,
-//     intro, loop…). La cabeza = las firmas que arrancan en el MISMO frame
-//     que el disparador; una Secuencia también ancla cuando arranca la
-//     MAYORÍA de su cabeza (≥ ⌈n/2⌉, con n ≥ 2) aunque falte el disparador.
+//  3. HEAD (2026-08-21 report, second pass): a lone trigger is fragile. On the
+//     third Loop pass, the opening bass uses ANOTHER signature (a variant),
+//     while the other five channels start identically. Without the trigger,
+//     the Loop failed to re-anchor, its window expired, and the Intro leaked in
+//     (intro, loop, intro, loop...). The head is the set of signatures that
+//     start on the SAME frame as the trigger. A Sequence also anchors when a
+//     MAJORITY of its head starts (>= ceil(n/2), with n >= 2), even without the
+//     trigger.
 //
-//  4. Empate de frame (dos Secuencias arrancan en el MISMO frame): primero
-//     la CONTINUACIÓN — una en loop cuya ventana vence justo en ese frame
-//     sigue («siempre la que viene sonando, salvo que haya terminado o
-//     cambien los eventos»); después la más ESPECÍFICA (menos firmas
-//     miembro); desempate por id. Determinista.
+//  4. Frame tie (two Sequences start on the SAME frame): CONTINUATION wins
+//     first—a looping Sequence whose window expires on that frame continues
+//     ("always keep the one already playing unless it ended or the events
+//     changed"). Next comes the most SPECIFIC Sequence (fewest member
+//     signatures), then ID as a deterministic tie-breaker.
 //
-// Los eventos se recorren en orden ascendente de start_frame — el detector
-// NO los entrega ordenados (los emite por canal), así que la tabla los ordena
-// (estable). El mismo recorrido alimenta el playback, el mute de los frames
-// bare y el mixdown del export: UNA tabla, un solo criterio.
+// Events are traversed in ascending `start_frame` order. The detector does NOT
+// return them sorted (it emits them per channel), so the table applies a stable
+// sort. The same traversal drives playback, bare-frame muting, and export
+// mixdown: ONE table and one policy.
 // ---------------------------------------------------------------------------
 #include <algorithm>
 #include <cstddef>
@@ -47,51 +48,52 @@
 
 namespace ayther {
 
-/// Vista mínima de una sub para el anclaje (copiada de AudioSeqSub: las
-/// pruebas no necesitan la sesión entera).
+/// Minimal view of a substitution for anchoring (copied from AudioSeqSub: the
+/// tests do not need the whole session).
 struct SeqAnchorSub {
     uint64_t              key = 0;
     uint64_t              trigger_signature = 0;
-    uint32_t              duration_frames = 1;   ///< ventana (con el HD)
-    uint32_t              span_frames = 0;       ///< paso de segmentación (0 = duration)
-    bool                  enabled = true;        ///< asset asignado
-    bool                  looping = false;       ///< HD en loop (continuación)
-    std::vector<uint64_t> signatures;            ///< firmas miembro
-    std::vector<uint64_t> head;                  ///< firmas que arrancan con el disparador
+    uint32_t              duration_frames = 1;   ///< window (with the HD)
+    uint32_t              span_frames = 0;       ///< segmentation step (0 = duration)
+    bool                  enabled = true;        ///< asset assigned
+    bool                  looping = false;       ///< looping HD (continuation)
+    std::vector<uint64_t> signatures;            ///< member signatures
+    std::vector<uint64_t> head;                  ///< signatures starting with the trigger
 };
 
-/// ¿Cuántas firmas de la cabeza hacen falta para anclar sin el disparador?
-/// 0 = nunca (cabeza de una sola firma: sólo el disparador).
+/// How many head signatures are needed to anchor without the trigger?
+/// 0 = never (a single-signature head: the trigger only).
 inline size_t seq_head_quorum(const SeqAnchorSub& s) {
     return s.head.size() >= 2 ? (s.head.size() + 1) / 2 : 0;
 }
 
-/// ¿`claimer` reclama una ocurrencia de `sig`? Sí si es su disparador o una
-/// firma miembro.
+/// Does `claimer` claim an occurrence of `sig`? Yes if it is its trigger or a
+/// member signature.
 inline bool seq_sub_claims(const SeqAnchorSub& claimer, uint64_t sig) {
     if (claimer.trigger_signature == sig) return true;
     return std::find(claimer.signatures.begin(), claimer.signatures.end(), sig)
            != claimer.signatures.end();
 }
 
-/// Prioridad en el empate de frame (sin continuación): la más específica.
+/// Priority on a frame tie (without continuation): the most specific one.
 inline bool seq_sub_before(const SeqAnchorSub& a, const SeqAnchorSub& b) {
     if (a.signatures.size() != b.signatures.size())
         return a.signatures.size() < b.signatures.size();
     return a.key < b.key;
 }
 
-/// Estado por sub entre frames (replay: local a la tabla; vivo: lo guarda la
-/// sesión y lo sincroniza con sus ventanas).
+/// Per-substitution state across frames (replay: local to the table; live: the
+/// session holds it and keeps it in sync with its windows).
 struct SeqAnchorState {
-    uint32_t next_free = 0;    ///< paso de segmentación: antes de esto = interna
-    uint32_t win_start = 0, win_end = 0;   ///< ventana vigente [start, end)
+    uint32_t next_free = 0;    ///< segmentation step: before this = internal
+    uint32_t win_start = 0, win_end = 0;   ///< current window [start, end)
     bool     open = false;
 };
 
-/// UN frame: dadas las firmas que ARRANCAN en `f` (key-ons), decide qué subs
-/// anclan (en orden de prioridad) y actualiza `st`. Vale para el replay (la
-/// tabla) y para el vivo (el flanco de subida del detector) — un solo criterio.
+/// ONE frame: given the signatures that START at `f` (key-ons), decides which
+/// substitutions anchor (in priority order) and updates `st`. It serves replay
+/// (the table) and live playback (the detector rising edge) — one single
+/// criterion.
 inline std::vector<size_t>
 seq_anchor_frame(uint32_t f, const std::vector<uint64_t>& sigs,
                  const std::vector<SeqAnchorSub>& subs, std::vector<SeqAnchorState>& st) {
@@ -104,7 +106,7 @@ seq_anchor_frame(uint32_t f, const std::vector<uint64_t>& sigs,
         for (size_t i = 0; i < subs.size(); ++i) {
             const SeqAnchorSub& sq = subs[i];
             if (!sq.enabled) continue;
-            if (f < st[i].next_free) continue;   // ocurrencia interna
+            if (f < st[i].next_free) continue;   // internal occurrence
             const bool is_trig = sq.trigger_signature == sig;
             const bool is_head = is_trig ||
                 std::find(sq.head.begin(), sq.head.end(), sig) != sq.head.end();
@@ -120,7 +122,7 @@ seq_anchor_frame(uint32_t f, const std::vector<uint64_t>& sigs,
         }
     }
     if (cand.empty()) return anchored;
-    // Disparador presente, o quórum de la cabeza.
+    // Trigger present, or head quorum.
     for (size_t k = 0; k < cand.size();) {
         const size_t i = cand[k];
         const size_t q = seq_head_quorum(subs[i]);
@@ -131,7 +133,7 @@ seq_anchor_frame(uint32_t f, const std::vector<uint64_t>& sigs,
     if (cand.empty()) return anchored;
     order.resize(cand.size());
     for (size_t k = 0; k < order.size(); ++k) order[k] = k;
-    auto continues = [&](size_t i) {   // en loop y su ventana vence acá
+    auto continues = [&](size_t i) {   // looping and its window expires here
         return subs[i].looping && st[i].open && st[i].win_end == f;
     };
     std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
@@ -159,8 +161,8 @@ seq_anchor_frame(uint32_t f, const std::vector<uint64_t>& sigs,
     return anchored;
 }
 
-/// Tabla de anclas: key de la sub → starts de sus ventanas (ascendentes).
-/// `sig_of(i)` / `start_of(i)` leen el evento i de los `n` detectados.
+/// Anchor table: substitution key → the starts of its windows (ascending).
+/// `sig_of(i)` / `start_of(i)` read event i out of the `n` detected.
 template <class SigOf, class StartOf>
 inline std::unordered_map<uint64_t, std::vector<uint32_t>>
 seq_anchor_table(size_t n, SigOf sig_of, StartOf start_of,
@@ -169,7 +171,7 @@ seq_anchor_table(size_t n, SigOf sig_of, StartOf start_of,
     std::vector<SeqAnchorState> st(subs.size());
     std::vector<uint64_t>       sigs;
     for (const auto& s : subs) out[s.key];
-    // Orden ascendente de frame, estable (el detector emite por canal).
+    // Ascending frame order, stable (the detector emits per channel).
     std::vector<size_t> idx(n);
     for (size_t i = 0; i < n; ++i) idx[i] = i;
     std::stable_sort(idx.begin(), idx.end(),

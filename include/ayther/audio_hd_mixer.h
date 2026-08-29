@@ -1,93 +1,94 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// audio_hd_mixer.h — mezclador de voces HD sobre la línea de tiempo de
-// MUESTRAS del stream principal ().
+// audio_hd_mixer.h — HD voice mixer on the main stream's SAMPLE timeline.
 //
-// EL PROBLEMA QUE CIERRA. Los reemplazos HD corrían en streams SDL propios:
-// arrancaban «ya» respecto del reloj de pared, mientras el original viajaba
-// por emu_stream_ con ~70 ms de colchón DRC — o sea que la fase entre original
-// y HD dependía del backlog, de los stalls y del tamaño del catch-up. Acá cada
-// voz se COLOCA en un sample absoluto de la línea de tiempo del bloque staged
-// y se suma DENTRO de ese bloque: un disparo en el frame N cae en el mismo
-// sample ejecutando 1×1 o catch-up 16, y todo —original, router, HD— cruza el
-// MISMO DRC/backlog. La pausa corta un solo stream y corta todo ().
+// THE PROBLEM IT SOLVES. HD replacements used to run in their own SDL streams:
+// they started "now" according to wall-clock time while the original traveled
+// through `emu_stream_` with a ~70 ms DRC cushion. The phase between original
+// and HD therefore depended on backlog, stalls, and catch-up size. Here every
+// voice is PLACED at an absolute sample on the staged block timeline and mixed
+// INSIDE that block: a trigger at frame N lands on the same sample under 1x1
+// execution or catch-up 16, and everything—original, router, and HD—crosses
+// the SAME DRC/backlog. Pausing one stream pauses everything.
 //
-// QUÉ ES ESTE MÓDULO. Sólo la mezcla: voces con PCM ya decodificado y
-// convertido (S16 estéreo 44100 — lo garantiza el cache del AudioPlayer),
-// colocación por muestra, loops con fase, ganancia, fade de corte y el
-// contrato de vida por frame de  (end + tail). NO toca SDL: la mezcla es
-// una función pura sobre un buffer, y por eso el oráculo de identidad
-// 1×1-vs-catch-up puede ser exacto, byte a byte, sin device.
+// WHAT THIS MODULE IS. Mixing only: voices with already decoded and converted
+// PCM (S16 stereo at 44100 Hz, guaranteed by the AudioPlayer cache), sample
+// placement, phase-preserving loops, gain, cut fades, and the per-frame
+// lifetime contract (end + tail). It does NOT touch SDL: mixing is a pure
+// function over a buffer, so the 1x1-vs-catch-up identity oracle can be exact,
+// byte for byte, without a device.
 //
-// El ciclo de vida por FRAME (end_frame/cut_frame) se mantiene en frames a
-// propósito: es el mismo contrato que tick_events y que las ventanas de la
-// sesión (/) — la conversión frame→sample vive en UN solo lugar (la
-// colocación del arranque), no repartida por todos los sweeps.
+// The FRAME-based lifecycle (`end_frame`/`cut_frame`) deliberately remains in
+// frames: it is the same contract used by `tick_events` and session windows.
+// Frame-to-sample conversion lives in ONE place (start placement), rather than
+// being scattered across every sweep.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
 #include <memory>
 #include <vector>
 
-/// PCM mix-ready compartido: S16 estéreo intercalado a 44100 Hz. Compartido
-/// (shared_ptr) porque N voces del mismo asset no deben duplicar el decode, y
-/// porque la voz debe sobrevivir a una invalidación del cache sin colgar.
+/// Shared mix-ready PCM: interleaved stereo S16 at 44100 Hz. Shared
+/// (shared_ptr) because N voices of the same asset must not duplicate the
+/// decode, and because a voice must survive a cache invalidation without
+/// dangling.
 using HdMixPcm = std::shared_ptr<const std::vector<int16_t>>;
 
 class HdMixer {
 public:
-    /// Fade de corte, en CUADROS a 44100 (~60 ms — el mismo criterio audible
-    /// que el fade de stop_sfx_by_key en el camino de streams).
+    /// Cut fade, in FRAMES at 44100 (~60 ms — the same audible criterion as
+    /// the stop_sfx_by_key fade in the stream path).
     static constexpr uint32_t kFadeFrames = 2646;
 
     struct Voice {
         uint64_t key          = 0;
-        HdMixPcm pcm;                       ///< S16 estéreo 44100 (mix-ready)
-        uint64_t start_sample = 0;          ///< sample ABSOLUTO de arranque
-        size_t   pos          = 0;          ///< cursor en CUADROS dentro del pcm
+        HdMixPcm pcm;                       ///< stereo S16 44100 (mix-ready)
+        uint64_t start_sample = 0;          ///< ABSOLUTE start sample
+        size_t   pos          = 0;          ///< cursor in FRAMES within the pcm
         float    gain         = 1.0f;
         bool     looping      = false;
-        bool     event        = false;      ///< contrato de play_event_hd ()
-        uint64_t end_frame    = UINT64_MAX; ///< fin de ventana (dominio FRAME)
-        uint64_t cut_frame    = UINT64_MAX; ///< end + tail (); MAX = drena
-        /// > 0 = cuadros de fade restantes (la voz muere al llegar a 0).
+        bool     event        = false;      ///< the play_event_hd contract
+        uint64_t end_frame    = UINT64_MAX; ///< end of window (FRAME domain)
+        uint64_t cut_frame    = UINT64_MAX; ///< end + tail; MAX = drains
+        /// > 0 = fade frames remaining (the voice dies on reaching 0).
         uint32_t fade_left    = 0;
-        /// Cuadros con los que ARRANCO el fade en curso — el denominador de la
-        /// rampa. Sin esto, un fade autorado de 30 000 cuadros se dividiria por
-        /// `kFadeFrames` y saldria clavado en ganancia > 1 hasta el final.
+        /// The number of frames the current fade STARTED with — the denominator
+        /// of the ramp. Without this, an authored fade of 30,000 frames would be
+        /// divided by `kFadeFrames` and would sit pinned at gain > 1 until the
+        /// end.
         uint32_t fade_span    = kFadeFrames;
-        /// : politica de fin FADE_OUT, en cuadros a 44100. 0 = sin fade
-        /// (hard_cut o tail, segun ). La rampa arranca al pasar
-        /// `end_frame` y llega a silencio `fade_frames` despues — que es lo
-        /// que el autor pidio: «termina en silencio a los N frames del limite».
+        /// FADE_OUT end policy, in frames at 44100. 0 = no fade (hard_cut or
+        /// tail, as configured). The ramp starts on passing `end_frame` and
+        /// reaches silence `fade_frames` later — which is what the author asked
+        /// for: "end in silence N frames after the limit".
         uint32_t fade_frames  = 0;
-        /// : REGIÓN de loop dentro del asset, en CUADROS. `loop_end == 0`
-        /// = sin región: se repite el asset entero, que es lo único que había.
+        /// Loop REGION within the asset, in FRAMES. `loop_end == 0` = no
+        /// region: the whole asset repeats, which was the only option before.
         ///
-        /// Sólo aplica cuando `looping`: una región en un one-shot no querría
-        /// decir nada, y recortarlo por ella sería cortar el sonido a la mitad.
+        /// It only applies when `looping`: a region on a one-shot would mean
+        /// nothing, and trimming it by that region would cut the sound in half.
         size_t   loop_begin   = 0;
         size_t   loop_end     = 0;
-        /// Telemetría: cuántas muestras tarde llegó el arranque (0 = en fase).
+        /// Telemetry: how many samples late the start arrived (0 = in phase).
         uint64_t late_samples = 0;
     };
 
-    /// Arranca (o re-dispara) una voz. `start_sample` = posición ABSOLUTA en
-    /// la línea de tiempo del stream donde cae su primer cuadro — el caller la
-    /// calcula como (timeline + offset del frame actual dentro del bloque
-    /// staged), que es lo que hace la colocación inmune al catch-up.
-    /// `offset_frames` arranca desde el medio del asset (reanudación ,
-    /// disparo tardío): para un loop entra por el módulo (fase conservada).
-    /// Un re-disparo de la misma key hace fade de la voz anterior (el
-    /// contrato del retrigger de siempre). Devuelve false sin PCM utilizable.
+    /// Starts (or retriggers) a voice. `start_sample` = ABSOLUTE position on
+    /// the stream timeline where its first frame falls — the caller computes it
+    /// as (timeline + offset of the current frame within the staged block),
+    /// which is what makes the placement immune to catch-up.
+    /// `offset_frames` starts from the middle of the asset (resume, late
+    /// trigger): for a loop it enters through the modulo (phase preserved).
+    /// Retriggering the same key fades the previous voice out (the usual
+    /// retrigger contract). Returns false with no usable PCM.
     bool start(uint64_t key, HdMixPcm pcm, uint64_t start_sample,
                uint64_t offset_frames, float gain, bool looping, bool event,
                uint64_t end_frame, uint64_t cut_frame,
                uint32_t fade_frames = 0,
-               // : región de loop en CUADROS (0,0 = el asset entero).
+               // loop region in FRAMES (0,0 = the whole asset).
                size_t loop_begin = 0, size_t loop_end = 0) {
         if (!pcm || pcm->size() < 2) return false;
-        stop(key);   // retrigger: la anterior sale con fade, no superpuesta
+        stop(key);   // retrigger: the previous one fades out, not overlapped
         Voice v;
         v.key = key;
         v.start_sample = start_sample;
@@ -98,54 +99,55 @@ public:
         v.cut_frame = cut_frame;
         v.fade_frames = fade_frames;
         const size_t frames = pcm->size() / 2;
-        // La región se SANEA acá y no al mezclar: un `loop_end` mayor que el
-        // asset o invertido leería fuera del buffer, y comprobarlo por muestra
-        // sería pagar el chequeo 44 100 veces por segundo para algo que no
-        // cambia en toda la vida de la voz.
+        // The region is SANITISED here and not while mixing: a `loop_end`
+        // larger than the asset or inverted would read past the buffer, and
+        // checking it per sample would mean paying that check 44,100 times a
+        // second for something that never changes over the life of the voice.
         if (loop_end > frames) loop_end = frames;
         if (loop_begin >= loop_end) { loop_begin = 0; loop_end = 0; }
         v.loop_begin = loop_begin;
         v.loop_end   = loop_end;
         v.pos = looping ? static_cast<size_t>(offset_frames % frames)
                         : static_cast<size_t>(offset_frames);
-        // Reanudar () dentro de un loop con región: si el offset cae fuera
-        // del ciclo, entra por su fase DENTRO de la región. Dejarlo antes del
-        // inicio haría que la reanudación se comiera la intro otra vez.
+        // Resuming inside a loop that has a region: if the offset falls
+        // outside the cycle, it enters at its phase WITHIN the region. Leaving
+        // it before the start would make the resume replay the intro again.
         if (v.loop_end && v.pos >= v.loop_end) {
             const size_t span = v.loop_end - v.loop_begin;
             v.pos = v.loop_begin + ((v.pos - v.loop_begin) % span);
         }
         v.pcm = std::move(pcm);
-        // Non-loop con el offset pasado el final: nada que mezclar — éxito
-        // sin voz, el mismo contrato que el camino de streams ().
+        // Non-loop with the offset past the end: nothing to mix — success
+        // without a voice, the same contract as the stream path.
         if (!v.looping && v.pos >= frames) return true;
         voices_.push_back(std::move(v));
         ++started_;
         return true;
     }
 
-    /// Corte con fade (~60 ms) de todas las voces de una key. true si alcanzó
-    /// a alguna que no estuviera ya en fade — el mismo contrato observable que
-    /// stop_sfx_by_key (: distinguir «corté a mitad» de «no había nada»).
+    /// Fade cut (~60 ms) of every voice of a key. true if it reached one that
+    /// was not already fading — the same observable contract as
+    /// stop_sfx_by_key (telling "I cut it short" apart from "there was
+    /// nothing").
     bool stop(uint64_t key) {
         bool cut = false;
         for (Voice& v : voices_)
             if (v.key == key && v.fade_left == 0) {
                 v.fade_left = kFadeFrames;
-                v.fade_span = kFadeFrames;   // el de corte, no el autorado
+                v.fade_span = kFadeFrames;   // the cut one, not the authored one
                 cut = true;
             }
         return cut;
     }
 
-    /// Corte DURO inmediato (pausa  / seek): sin fade, sin residuo — el
-    /// staging se descarta entero en esos caminos y la voz no debe drenar.
+    /// Immediate HARD cut (pause / seek): no fade, no residue — the staging is
+    /// discarded whole on those paths and the voice must not drain.
     void cut_all() { voices_.clear(); }
 
-    /// Corte duro filtrado por clase: los caminos de la sesión distinguen
-    /// one-shots (stop_all_sfx) de event-streams (stop_all_events) y el modo
-    /// unificado tiene que respetar esa frontera — un seek que invalida los
-    /// eventos de la toma no debe callar un one-shot ajeno.
+    /// Hard cut filtered by class: the session paths distinguish one-shots
+    /// (stop_all_sfx) from event streams (stop_all_events) and the unified mode
+    /// has to respect that boundary — a seek that invalidates the take events
+    /// must not silence an unrelated one-shot.
     void cut_all_of(bool event) {
         for (size_t i = voices_.size(); i-- > 0; )
             if (voices_[i].event == event)
@@ -160,7 +162,7 @@ public:
         return voices_.size() != n;
     }
 
-    /// Ganancia en vivo de una key (slider de Secuencia sonando).
+    /// Live gain of a key (the slider of a Sequence while it plays).
     bool set_gain(uint64_t key, float gain) {
         bool any = false;
         for (Voice& v : voices_)
@@ -168,23 +170,24 @@ public:
         return any;
     }
 
-    /// El contrato de vida por FRAME — espejo exacto de tick_events ():
-    /// pasado cut_frame la voz muere aunque le quede PCM; un loop pasado su
-    /// end_frame muere (sin tail) o deja de loopear y drena hasta cut (tail).
+    /// The per-FRAME lifetime contract — an exact mirror of tick_events: past
+    /// cut_frame the voice dies even with PCM left; a loop past its end_frame
+    /// dies (no tail) or stops looping and drains until cut (tail).
     void tick_frame(uint64_t frame) {
         for (size_t i = voices_.size(); i-- > 0; ) {
             Voice& v = voices_[i];
-            // : FADE_OUT. Al pasar el límite la voz no muere de golpe:
-            // arranca una rampa de `fade_frames` cuadros y se apaga sola al
-            // llegar a silencio. Es una política de fin ALTERNATIVA a tail —
-            // no se acumulan— y por eso se evalúa ANTES que cut_frame: el
-            // corte duro de la ventana no debe interrumpir la rampa que el
-            // autor pidió. Un fade ya en curso no se re-arranca.
+            // FADE_OUT. On passing the limit the voice does not die abruptly:
+            // it starts a ramp of `fade_frames` frames and switches itself off
+            // on reaching silence. It is an end policy ALTERNATIVE to tail
+            // —they do not stack— and that is why it is evaluated BEFORE
+            // cut_frame: the hard cut of the window must not interrupt the ramp
+            // the author asked for. A fade already in progress is not
+            // restarted.
             if (v.fade_frames && frame > v.end_frame) {
                 if (v.fade_left == 0) {
                     v.fade_left = v.fade_frames;
                     v.fade_span = v.fade_frames;
-                    v.looping   = false;   // deja de re-alimentarse: se apaga
+                    v.looping   = false;   // stops re-feeding itself: it fades out
                 }
                 continue;
             }
@@ -196,29 +199,30 @@ public:
                 if (v.cut_frame == UINT64_MAX || v.cut_frame <= v.end_frame)
                     voices_.erase(voices_.begin() + static_cast<std::ptrdiff_t>(i));
                 else
-                    v.looping = false;   // tail: drena el resto hasta cut
+                    v.looping = false;   // tail: drains the rest until cut
             }
         }
     }
 
-    /// SUMA las voces sobre `out` (S16 estéreo intercalado, `frames` cuadros),
-    /// que representa las muestras [block_start, block_start + frames) de la
-    /// línea de tiempo. Colocación por muestra: una voz cuyo start cae DENTRO
-    /// del bloque entra en su offset exacto — eso es lo que hace idéntico el
-    /// resultado entre 1×1 y catch-up. Una voz programada para un bloque que
-    /// ya pasó entra al principio y registra su atraso (telemetría skew).
+    /// ADDS the voices onto `out` (interleaved stereo S16, `frames` frames),
+    /// which represents samples [block_start, block_start + frames) of the
+    /// timeline. Per-sample placement: a voice whose start falls WITHIN the
+    /// block enters at its exact offset — that is what makes the result
+    /// identical between 1×1 and catch-up. A voice scheduled for a block that
+    /// already passed enters at the beginning and records its lateness (skew
+    /// telemetry).
     void mix_into(int16_t* out, size_t frames, uint64_t block_start) {
         if (!out || frames == 0) return;
         for (size_t i = voices_.size(); i-- > 0; ) {
             Voice& v = voices_[i];
-            if (v.start_sample >= block_start + frames) continue;   // futuro
-            size_t at = 0;   // offset en CUADROS dentro del bloque
+            if (v.start_sample >= block_start + frames) continue;   // future
+            size_t at = 0;   // offset in FRAMES within the block
             if (v.start_sample > block_start) {
                 at = static_cast<size_t>(v.start_sample - block_start);
             } else if (v.start_sample < block_start && v.pos == 0 &&
                        v.late_samples == 0 && !v.looping) {
-                // Primer bloque de una voz que llegó TARDE (p.ej. programada
-                // durante un stall): registrar el atraso una vez.
+                // First block of a voice that arrived LATE (e.g. scheduled
+                // during a stall): record the lateness once.
                 v.late_samples = block_start - v.start_sample;
                 skew_samples_ += v.late_samples;
                 if (v.late_samples > max_skew_) max_skew_ = v.late_samples;
@@ -226,16 +230,16 @@ public:
             const std::vector<int16_t>& pcm = *v.pcm;
             const size_t pcm_frames = pcm.size() / 2;
             bool done = false;
-            // : dónde termina el ciclo y a dónde vuelve. Sin región es el
-            // asset entero, que es el comportamiento de siempre.
+            // Where the cycle ends and where it returns to. With no region it
+            // is the whole asset, which is the long-standing behaviour.
             const size_t cycle_end = (v.looping && v.loop_end) ? v.loop_end : pcm_frames;
             const size_t cycle_beg = (v.looping && v.loop_end) ? v.loop_begin : 0;
             for (size_t f = at; f < frames && !done; ++f) {
                 if (v.pos >= cycle_end) {
                     if (!v.looping) { done = true; break; }
-                    // Se vuelve al INICIO DE LA REGIÓN, no al del archivo: eso
-                    // es lo que deja que un tema tenga intro y después cicle
-                    // sin exportar dos archivos.
+                    // It returns to the START OF THE REGION, not of the file:
+                    // that is what lets a track have an intro and then cycle
+                    // without exporting two files.
                     v.pos = cycle_beg;
                 }
                 float g = v.gain;
@@ -269,12 +273,12 @@ public:
         return n;
     }
 
-    // ---- Telemetría ( Fase 0) ------------------------------------------
+    // ---- Telemetry (Phase 0) --------------------------------------------
     uint64_t started() const { return started_; }
     uint64_t mixed_samples() const { return mixed_samples_; }
-    /// Muestras de atraso acumuladas de voces que llegaron a un bloque ya
-    /// pasado (0 sostenido = la colocación funciona; crece = hay un camino
-    /// que programa contra una línea de tiempo que ya se flusheó).
+    /// Accumulated lateness samples from voices that reached an already-past
+    /// block (a sustained 0 = the placement works; growing = some path is
+    /// scheduling against a timeline that was already flushed).
     uint64_t skew_samples() const { return skew_samples_; }
     uint64_t max_skew_samples() const { return max_skew_; }
 

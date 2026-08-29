@@ -1,24 +1,25 @@
 // ---------------------------------------------------------------------------
-// PsgSynth — SN76489 (PSG) propio, con salida POR CANAL. Fase 1 de .
+// PsgSynth — our own SN76489 (PSG), with PER-CHANNEL output. Phase 1.
 //
-// POR QUÉ PROPIO. ymfm cubre el YM2612 pero no el SN76489, y las
-// implementaciones que andan dando vueltas (MAME, el propio GPGX) son GPL:
-// ayther_engine es una lib ESTÁTICA y meterle GPL la contamina entera. El chip
-// es chico de verdad —tres generadores de onda cuadrada y un LFSR— así que
-// escribirlo sale más barato que discutir licencias.
+// WHY OUR OWN. ymfm covers the YM2612 but not the SN76489, and the
+// implementations in circulation (MAME, GPGX itself) are GPL: ayther_engine is
+// a STATIC library and adding GPL contaminates the whole of it. The chip is
+// genuinely small —three square-wave generators and an LFSR— so writing it is
+// cheaper than arguing about licences.
 //
-// `gpgx-src/core/sound/psg.c` es la referencia de COMPORTAMIENTO (constantes,
-// tabla de volumen, red de realimentación del ruido), no de código.
+// `gpgx-src/core/sound/psg.c` is the reference for BEHAVIOUR (constants, volume
+// table, noise feedback network), not for code.
 //
-// TASA INTERNA. El chip corre a MCLK/15 y divide por 16, o sea un tick cada
-// 15*16 = 240 M-cycles → 223721,56 Hz con el reloj NTSC. Es exactamente 4,2×
-// la tasa del YM2612 (MCLK/1008), y no es casualidad: 1008/240 = 4,2.
+// INTERNAL RATE. The chip runs at MCLK/15 and divides by 16, i.e. one tick
+// every 15*16 = 240 M-cycles → 223721.56 Hz with the NTSC clock. That is
+// exactly 4.2× the YM2612 rate (MCLK/1008), and it is no coincidence:
+// 1008/240 = 4.2.
 //
-// Ese detalle importa. TODOS los incrementos de frecuencia del PSG son
-// múltiplos de 240 M-cycles, así que cada transición de la onda cae JUSTO en un
-// borde de tick — muestrear a 223721 Hz es exacto, sin jitter de sub-muestra y
-// sin necesidad de síntesis band-limited acá. El aliasing se maneja después, al
-// decimar a la tasa de salida con el resampler.
+// That detail matters. ALL PSG frequency increments are multiples of 240
+// M-cycles, so every wave transition lands EXACTLY on a tick boundary —
+// sampling at 223721 Hz is exact, with no sub-sample jitter and no need for
+// band-limited synthesis here. Aliasing is handled later, when decimating to
+// the output rate with the resampler.
 // ---------------------------------------------------------------------------
 
 #pragma once
@@ -29,33 +30,33 @@ namespace ayther {
 
 class PsgSynth {
 public:
-    static constexpr int      kChannels       = 4;        // 3 tonos + ruido
+    static constexpr int      kChannels       = 4;        // 3 tones + noise
     static constexpr uint32_t kMCyclesPerTick = 15 * 16;  // 240
 
     PsgSynth() { reset(); }
 
     void reset();
 
-    /// Un byte al puerto del PSG, tal como lo registra el fork (chip == PSG,
-    /// addr == 0). El chip tiene un solo puerto de escritura: el byte se
-    /// auto-describe (bit 7 = latch de registro, o dato de continuación).
+    /// One byte to the PSG port, exactly as the fork records it (chip == PSG,
+    /// addr == 0). The chip has a single write port: the byte is
+    /// self-describing (bit 7 = register latch, otherwise continuation data).
     void write(uint8_t data);
 
-    /// Avanza un tick interno y deja en `out` la salida de los 4 canales,
-    /// normalizada al mismo orden de magnitud que ymfm.
+    /// Advances one internal tick and leaves the output of the 4 channels in
+    /// `out`, normalised to the same order of magnitude as ymfm.
     ///
-    /// Cada canal sale UNIPOLAR (0 o volumen), igual que el modelo del chip.
-    /// Eso mete continua, y el que la saca es el bloqueo de continua del router
-    /// — la misma corrección que necesita el FM aislado y por el mismo motivo:
-    /// una voz que arranca o para sería un escalón, o sea un clic.
+    /// Each channel comes out UNIPOLAR (0 or volume), just like the chip model.
+    /// That introduces DC, and what removes it is the DC blocker in the router
+    /// — the same correction the isolated FM needs, and for the same reason: a
+    /// voice starting or stopping would be a step, that is, a click.
     void tick(float out[kChannels]);
 
 private:
     void shift_noise();
 
-    int regs_[8]      = {};   // 0/2/4 = período de tono · 1/3/5/7 = volumen · 6 = control de ruido
+    int regs_[8]      = {};   // 0/2/4 = tone period · 1/3/5/7 = volume · 6 = noise control
     int latch_        = 3;
-    int inc_[4]       = {};   // período en TICKS (no en M-cycles)
+    int inc_[4]       = {};   // period in TICKS (not in M-cycles)
     int counter_[4]   = {};
     int polarity_[3]  = {};
     int noise_pol_    = 0;

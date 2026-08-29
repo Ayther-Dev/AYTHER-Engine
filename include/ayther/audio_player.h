@@ -51,7 +51,7 @@
 
 #include <SDL3/SDL.h>
 #include "audio_hd_mixer.h"
-#include "audio_asset_level.h"   // 
+#include "audio_asset_level.h"
 #include "ayther_core_ffi.h"
 
 #include <cstdint>
@@ -117,7 +117,7 @@ public:
     void set_mute_hashes(const AytherAudioSub* subs, uint32_t count);
 
     /// Persistent per-hash mute requested by the author (timeline AUDIO rows in
-    /// Editar). Independent of HD substitutions — survives between frames and is
+    /// Edit). Independent of HD substitutions — survives between frames and is
     /// OR'd into should_mute(). Pass n == 0 to clear (all sounds audible again).
     void set_user_mute_hashes(const uint64_t* hashes, size_t n);
 
@@ -176,256 +176,263 @@ public:
     /// Immediately stop and destroy all active one-shot streams.
     void stop_all_sfx();
 
-    /// Corta YA los one-shot marcados `preview` (2026-08-22: cerrar la
-    /// Biblioteca de Audios con un ▶ sonando). INMEDIATO y sin fade a
-    /// propósito: el fade lo progresa tick(), que solo corre dentro del flush
-    /// audible del produce — con el transporte en PAUSA (el caso típico con un
-    /// diálogo abierto) un fade jamás termina y el preview drena entero.
+    /// Cuts the one-shots marked `preview` IMMEDIATELY (2026-08-22: closing the
+    /// Audio Library with a ▶ still playing). Immediate and deliberately
+    /// without a fade: the fade is progressed by tick(), which only runs inside
+    /// the audible flush of produce — with the transport PAUSED (the typical
+    /// case with a dialog open) a fade never finishes and the preview drains in
+    /// full.
     void stop_preview_sfx();
 
-    /// : corte TOTAL del audio de GAMEPLAY al pausar el transporte.
-    /// - detiene los SFX one-shot y event-streams del gameplay (los one-shot
-    ///   marcados `preview` — previews de autoría — siguen sonando);
-    /// - descarta el staging (pending_pcm_/pending_batches_);
-    /// - vacía el PCM ya encolado en emu_stream_ y synth_stream_;
-    /// - resetea el estado DRC (EMA, ratio, last_flush) para que el primer
-    ///   flush tras reanudar entre por el camino de stall y re-cebe el colchón.
-    /// Idempotente (repetir en pausa no hace nada nuevo ni filtra handles).
-    /// Devuelve los CUADROS estéreo descartados (staging + emu + synth) y los
-    /// acumula en pause_cut_frames() — telemetría de la pausa.
+    /// TOTAL cut of GAMEPLAY audio when the transport is paused.
+    /// - stops the gameplay one-shot SFX and event streams (the one-shots
+    ///   marked `preview` — authoring previews — keep playing);
+    /// - discards the staging (pending_pcm_/pending_batches_);
+    /// - drains the PCM already queued in emu_stream_ and synth_stream_;
+    /// - resets the DRC state (EMA, ratio, last_flush) so the first flush after
+    ///   resuming takes the stall path and re-primes the cushion.
+    /// Idempotent (repeating it while paused does nothing new and leaks no
+    /// handles). Returns the stereo FRAMES discarded (staging + emu + synth)
+    /// and accumulates them in pause_cut_frames() — pause telemetry.
     uint64_t cut_transport_audio();
 
-    /// Telemetría : cuadros descartados por cortes de pausa (acumulado) y
-    /// cuántos cortes efectivos hubo (llamadas que descartaron algo).
+    /// Telemetry: frames discarded by pause cuts (accumulated) and how many
+    /// effective cuts there were (calls that discarded something).
     uint64_t pause_cut_frames() const { return pause_cut_frames_; }
     uint64_t pause_cuts()       const { return pause_cuts_; }
 
-    // ---- HD por EVENTO (C-A2, Componentes) ----------------------------------
+    // ---- Per-EVENT HD (C-A2, Components) ------------------------------------
 
-    /// Arranca el asset HD (WAV/OGG/FLAC del pack) de un EVENTO sustituido,
-    /// alineado a su start_frame. Un retrigger de la misma `signature` REINICIA
-    /// el stream (el evento volvió a detectarse). `looping`: el PCM se
-    /// re-alimenta en tick_events() hasta que el frame pase `end_frame`; un
-    /// asset no-loop suena una vez y su stream se recoge al drenar.
-    /// : devuelve true solo si el stream quedó SONANDO en el device — el
-    /// caller decide el mute del original con esta respuesta, no con la
-    /// existencia de la asignación.
-    /// : `cut_frame` = frame ABSOLUTO tras el cual tick_events destruye el
-    /// stream aunque tenga PCM encolado (end_frame + tail de la política).
-    /// UINT64_MAX = drena entero (contrato legacy de los non-loop). Un loop
-    /// deja de re-alimentarse en end_frame y su resto drena hasta cut_frame.
-    /// : `start_offset_seconds` arranca DESDE EL MEDIO del asset — la
-    /// reanudación tras una pausa recrea el stream en el punto que dicta el
-    /// reloj emulado. Para un loop el offset es módulo del asset (la fase se
-    /// conserva); para un non-loop pasado el final devuelve true SIN crear
-    /// stream (nada que sonar, no es un fallo — mismo contrato que el
-    /// one-shot, ).
-    /// : `fade_frames` > 0 = política de fin FADE_OUT — pasado end_frame
-    /// la voz se desvanece en esos cuadros (44100/s) y muere en silencio, en
-    /// vez de cortarse seco. Es ALTERNATIVA a tail, no acumulable: con fade,
-    /// `cut_frame` no interrumpe la rampa. 0 = comportamiento de .
+    /// Starts the HD asset (WAV/OGG/FLAC from the pack) of a substituted EVENT,
+    /// aligned to its start_frame. A retrigger of the same `signature` RESTARTS
+    /// the stream (the event was detected again). `looping`: the PCM is re-fed
+    /// in tick_events() until the frame passes `end_frame`; a non-loop asset
+    /// plays once and its stream is reaped once drained.
+    /// Returns true only if the stream ended up PLAYING on the device — the
+    /// caller decides whether to mute the original from this answer, not from
+    /// the existence of the assignment.
+    /// `cut_frame` = the ABSOLUTE frame after which tick_events destroys the
+    /// stream even with PCM queued (end_frame + the policy tail).
+    /// UINT64_MAX = drains in full (the legacy contract of non-loops). A loop
+    /// stops re-feeding at end_frame and its remainder drains until cut_frame.
+    /// `start_offset_seconds` starts FROM THE MIDDLE of the asset — resuming
+    /// after a pause recreates the stream at the point dictated by the emulated
+    /// clock. For a loop the offset is modulo the asset (phase is preserved);
+    /// for a non-loop past the end it returns true WITHOUT creating a stream
+    /// (nothing to play, not a failure — the same contract as the one-shot).
+    /// `fade_frames` > 0 = FADE_OUT end policy — past end_frame the voice fades
+    /// over those frames (44100/s) and dies in silence, instead of being cut
+    /// dead. It is an ALTERNATIVE to tail, not cumulative: with a fade,
+    /// `cut_frame` does not interrupt the ramp. 0 = the previous behaviour.
     bool play_event_hd(AyArchive* pack, const char* asset_path, bool looping,
                        uint64_t signature, uint64_t end_frame,
                        uint64_t cut_frame = UINT64_MAX,
                        double start_offset_seconds = 0.0,
                        uint32_t fade_frames = 0,
-                       // : ganancia AUTORADA de la Secuencia. Va al final y
-                       // con default neutro para que ningun llamador cambie: la
-                       // ausencia del dato es 1.0, igual que en el TOML.
+                       // The AUTHORED gain of the Sequence. It goes last and
+                       // with a neutral default so no caller has to change:
+                       // the absence of the value is 1.0, just as in the TOML.
                        float gain = 1.0f,
-                       // : region de loop en CUADROS del asset. (0,0) = el
-                       // asset entero, que es lo que se hacia siempre. El mixer
-                       // ya sabe ciclarla con modulo sobre el span; lo que
-                       // faltaba era que el dato llegara hasta aca.
+                       // Loop region in asset FRAMES. (0,0) = the whole asset,
+                       // which is what was always done. The mixer already knows
+                       // how to cycle it with a modulo over the span; what was
+                       // missing was for the value to reach here.
                        size_t loop_begin = 0, size_t loop_end = 0);
 
-    /// Mantenimiento por frame de los event-streams: corta los loops que
-    /// pasaron su end_frame, re-alimenta los activos que van quedando sin
-    /// datos, y recoge los no-loop ya drenados. Llamar con el frame actual.
+    /// Per-frame maintenance of the event streams: cuts the loops that passed
+    /// their end_frame, re-feeds the active ones running out of data, and reaps
+    /// the non-loops already drained. Call it with the current frame.
     void tick_events(uint64_t frame);
 
-    /// Corta TODOS los event-streams ya (stop / scrub / cambio de toma).
+    /// Cuts ALL event streams right now (stop / scrub / take change).
     void stop_all_events();
 
-    /// Reproduce un buffer PCM (S16 stereo, 44100 Hz) como one-shot — la vista
-    /// previa de un audio del juego capturado por hash (panel Capas). Reemplaza
-    /// el preview en curso. `frames` = cuadros estéreo (samples = frames×2).
-    /// Encola PCM del sintetizador SoundFont (): estéreo INTERCALADO f32 a
-    /// 44100, que es lo que entrega RustySynth y la misma tasa del emulador —
-    /// así «un frame de juego = N muestras» es la misma cuenta para los dos.
+    /// Plays a PCM buffer (S16 stereo, 44100 Hz) as a one-shot — the preview of
+    /// a game audio captured by hash (Layers panel). It replaces the preview in
+    /// progress. `frames` = stereo frames (samples = frames×2).
+    /// Queues PCM from the SoundFont synthesiser: INTERLEAVED f32 stereo at
+    /// 44100, which is what RustySynth delivers and the same rate as the
+    /// emulator — that way "one game frame = N samples" is the same arithmetic
+    /// for both.
     ///
-    /// Es un stream CONTINUO, no un one-shot: se llama una vez por frame con
-    /// exactamente las muestras de ese frame. Un `play_oneshot_pcm` por frame
-    /// abriría un stream nuevo cada vez y se solaparían.
+    /// It is a CONTINUOUS stream, not a one-shot: it is called once per frame
+    /// with exactly that frame's samples. A `play_oneshot_pcm` per frame would
+    /// open a new stream every time and they would overlap.
     void feed_synth(const float* interleaved, size_t frames);
 
-    /// Cuántas muestras de PCM tiene STAGEADAS el emulador para este frame.
+    /// How many PCM samples the emulator has STAGED for this frame.
     ///
-    /// Es la medida correcta de «cuánto audio vale este frame», y por eso la
-    /// usa el sintetizador en vez de 44100/fps: si el Lab corre más lento que
-    /// el tiempo real —y lo hace— un número fijo alimenta de menos y el stream
-    /// del sintetizador se muere de hambre, mientras el del emulador se salva
-    /// porque tiene DRC. Atándolos al mismo número, los dos derivan igual y no
-    /// se separan.
+    /// It is the correct measure of "how much audio this frame is worth", and
+    /// that is why the synthesiser uses it instead of 44100/fps: if the Lab
+    /// runs slower than real time —and it does— a fixed number under-feeds and
+    /// the synthesiser stream starves, while the emulator one is saved by its
+    /// DRC. Tying them to the same number makes both drift alike and never
+    /// separate.
     size_t pending_frames() const { return pending_pcm_.size() / 2; }
 
-    /// Muestras que le quedan al stream del SINTETIZADOR sin consumir.
+    /// Samples the SYNTHESISER stream still has unconsumed.
     ///
-    /// Importa desde que el router () lo usa para TODO el audio. Con el
-    /// SoundFont daba igual: entregaba notas sueltas y un hueco era silencio.
-    /// El router entrega audio CONTINUO, y el Lab lo hace a tirones de 90-150 ms
-    /// —no a 16,7— así que si el stream no lleva colchón, SDL lo vacía entre
-    /// tirón y tirón y cada hueco es un corte audible.
+    /// It has mattered ever since the router uses it for ALL audio. With the
+    /// SoundFont it made no difference: it delivered isolated notes and a gap
+    /// was silence. The router delivers CONTINUOUS audio, and the Lab does it
+    /// in bursts of 90-150 ms —not at 16.7— so if the stream carries no
+    /// cushion, SDL drains it between bursts and every gap is an audible cut.
     size_t synth_queued_frames() const;
 
-    /// Mete `frames` muestras de silencio en el stream del sintetizador para
-    /// armar ese colchón antes de empezar a entregar.
+    /// Pushes `frames` samples of silence into the synthesiser stream to build
+    /// that cushion before it starts delivering.
     void prime_synth(size_t frames);
 
-    /// SUMA audio en el PCM del emulador todavía sin flushear.
+    /// ADDS audio into the emulator PCM that has not been flushed yet.
     ///
-    /// Es el camino del router (), y la diferencia con feed_synth no es
-    /// cosmética: el stream del emulador tiene DRC —estira su ritmo cuando el
-    /// Lab no llega a tiempo, que es lo que costó diez causas raíz en — y
-    /// el del sintetizador no tiene nada. Con stream propio, el router entrega
-    /// menos audio del que el device consume y SDL lo vacía: medido,
-    /// cola_stream=0 en casi todos los ticks, o sea un corte por tirón.
+    /// It is the router path, and the difference from feed_synth is not
+    /// cosmetic: the emulator stream has DRC —it stretches its pace when the
+    /// Lab cannot keep up, which is what ten root causes cost us— and the
+    /// synthesiser one has nothing. With its own stream, the router delivers
+    /// less audio than the device consumes and SDL drains it: measured,
+    /// stream_queue=0 on almost every tick, i.e. one cut per burst.
     ///
-    /// Montado en el PCM del emulador hereda todo el pacing ya resuelto.
+    /// Riding on the emulator PCM it inherits all the pacing already solved.
     ///
-    /// `mix_over_chip` decide qué pasa con lo que el chip dejó staged:
+    /// `mix_over_chip` decides what happens to what the chip left staged:
     ///
-    ///   false — el bloque OCUPA SU LUGAR (lo staged se descarta). Es el caso
-    ///           del cartucho: el router espeja los diez canales que suenan, así
-    ///           que el PCM del core no aporta nada que no venga en el bloque, y
-    ///           el chip puede seguir sonando entero para el hasher.
-    ///   true  — el bloque se SUMA sobre el frame actual, conservando lo staged.
-    ///           Es el caso del Sega CD (): ahí el buffer del core lleva el
-    ///           chip PCM y el CDDA, que el router no espeja. Lo que el router
-    ///           sí rinde ya vino callado del core por máscara, así que nada se
-    ///           oye dos veces.
+    ///   false — the block TAKES ITS PLACE (the staged data is discarded). It is
+    ///           the cartridge case: the router mirrors the ten channels that
+    ///           play, so the core PCM contributes nothing the block does not
+    ///           carry, and the chip may keep playing in full for the hasher.
+    ///   true  — the block is ADDED over the current frame, keeping the staged
+    ///           data. It is the Sega CD case: there the core buffer carries the
+    ///           chip PCM and the CDDA, which the router does not mirror. What
+    ///           the router does render already came silenced from the core by
+    ///           mask, so nothing is heard twice.
     void buffer_router(const float* interleaved, size_t frames,
                        bool mix_over_chip = false);
 
-    /// Hash del lote del router. Reservado: el set de mute se arma con hashes
-    /// de audio del juego, así que éste nunca cae ahí.
+    /// Hash of the router batch. Reserved: the mute set is built from game
+    /// audio hashes, so this one never lands in it.
     static constexpr uint64_t kRouterHash = 0xA17E'2600'0000'0001ull;
 
-    /// Descarta lo encolado del sintetizador. Para los cortes: un seek deja
-    /// notas en vuelo que sonarían sobre la escena nueva.
+    /// Discards what the synthesiser has queued. For the cuts: a seek leaves
+    /// notes in flight that would play over the new scene.
     void clear_synth();
 
     void play_oneshot_pcm(const int16_t* pcm, size_t frames);
-    /// Detiene la vista previa one-shot (botón Detener / al cerrar el diálogo).
+    /// Stops the one-shot preview (the Stop button / on closing the dialog).
     void stop_oneshot();
 
-    /// Reproduce un ASSET HD SUELTO (de disco, no del pack) como one-shot SFX —
-    /// la sustitución de audio por evento en autoría (workspace Audios, C-A4):
-    /// decodifica WAV/OGG/FLAC del path, lo bindea al device (resample por SDL) y
-    /// lo deduplica por `key` (la firma del evento) para no reiniciarlo mientras
-    /// suena. `offset_seconds` arranca DESDE EL MEDIO del asset (play que
-    /// comienza dentro de la ventana de una Secuencia → HD en sync con el
-    /// cabezal). Se reapea en tick() como cualquier SFX. No-op sin device.
-    /// `gain`: volumen del stream (1 = original) — el slider de la Secuencia.
-    /// `preview`: pedido EXPLÍCITO de autoría (botón Reproducir de Mezclar) —
-    /// no pertenece al gameplay y el corte de pausa () no lo alcanza.
-    /// : devuelve true solo si el stream quedó SONANDO en el device (o el
-    /// offset cayó pasado el final, que no es un fallo). false = el original
-    /// debe sonar en su lugar.
+    /// Plays a LOOSE HD ASSET (from disk, not from the pack) as a one-shot SFX
+    /// — the per-event audio substitution during authoring (Audio workspace,
+    /// C-A4): it decodes WAV/OGG/FLAC from the path, binds it to the device
+    /// (resampled by SDL) and deduplicates it by `key` (the event signature) so
+    /// it is not restarted while playing. `offset_seconds` starts FROM THE
+    /// MIDDLE of the asset (a play that begins inside a Sequence window → HD in
+    /// sync with the playhead). It is reaped in tick() like any SFX. No-op
+    /// without a device.
+    /// `gain`: stream volume (1 = original) — the Sequence slider.
+    /// `preview`: an EXPLICIT authoring request (the Play button in Mix) — it
+    /// does not belong to gameplay and the pause cut does not reach it.
+    /// Returns true only if the stream ended up PLAYING on the device (or the
+    /// offset fell past the end, which is not a failure). false = the original
+    /// must play in its place.
     bool play_oneshot_asset_file(const std::string& path, uint64_t key,
                                  double offset_seconds = 0.0, float gain = 1.0f,
                                  bool preview = false);
 
-    // ---- Disponibilidad de assets () ------------------------------------
+    // ---- Asset availability -------------------------------------------------
 
-    /// ¿El asset HD de DISCO está decodificado y listo para sonar? Es LA
-    /// pregunta previa a silenciar el original: asignado ≠ reproducible.
-    /// Sobre una entrada fallida re-verifica el fingerprint (mtime+tamaño) con
-    /// rate-limit — un archivo que aparece o se reemplaza vuelve a intentarse
-    /// sin reiniciar la sesión, y uno que sigue mal no loguea 60 veces/s.
+    /// Is the HD asset from DISK decoded and ready to play? It is THE question
+    /// that precedes silencing the original: assigned ≠ playable.
+    /// On a failed entry it re-verifies the fingerprint (mtime+size) with a
+    /// rate limit — a file that appears or is replaced is retried without
+    /// restarting the session, and one that is still broken does not log 60
+    /// times a second.
     bool asset_ready_disk(const std::string& abs_path);
-    /// Ídem para un asset DEL PACK. La negativa es permanente: el pack es
-    /// inmutable por contenido, lo que falló una vez falla siempre.
+    /// Same for an asset FROM THE PACK. The negative is permanent: the pack is
+    /// immutable by content, so what failed once fails always.
     bool asset_ready_pack(AyArchive* pack, const std::string& asset_path);
-    /// Diagnóstico para el Lab/telemetría: por qué no está listo ("missing",
-    /// "empty", "unsupported", "corrupt") o nullptr si está listo / nunca se
-    /// intentó. No dispara IO.
+    /// Diagnostic for the Lab/telemetry: why it is not ready ("missing",
+    /// "empty", "unsupported", "corrupt") or nullptr if it is ready / was never
+    /// attempted. It triggers no IO.
     const char* asset_error_name(const std::string& path) const;
 
-    /// : intentos de arranque de HD que FALLARON con el asset ya listo
-    /// (crear/bindear el stream SDL) — la clase rara; los fallos de asset se
-    /// ven en asset_error_name y en el fallback del caller.
+    /// HD start attempts that FAILED with the asset already ready (creating or
+    /// binding the SDL stream) — the rare class; asset failures show up in
+    /// asset_error_name and in the caller's fallback.
     uint64_t hd_start_fails() const { return hd_start_fails_; }
-    // -- Análisis de nivel () ---------------------------------------------
+    // -- Level analysis -------------------------------------------------------
     //
-    // Lo que un autor necesita saber ANTES de publicar: si el asset clipea, si
-    // se va a perder en la mezcla, y cuánto habría que corregirlo.
+    // What an author needs to know BEFORE publishing: whether the asset clips,
+    // whether it will get lost in the mix, and how much it would need
+    // correcting.
     //
-    // Se mide sobre el PCM YA DECODIFICADO —el mismo `wav_cache_` que usa la
-    // reproducción— así que analizar un asset que ya sonó no cuesta decode, y
-    // analizar uno nuevo lo deja cacheado para cuando suene. Nunca se toca el
-    // archivo fuente: todas las correcciones de AYTHER son ganancia en la
-    // reproducción, no reescritura.
-    /// La struct vive en audio_asset_level.h: la comparten este player (que
-    /// mide) y AytherSession (por donde el Lab la consulta), y esos dos headers
-    /// no se pueden incluir entre sí.
+    // It is measured over the ALREADY DECODED PCM —the same `wav_cache_`
+    // playback uses— so analysing an asset that already played costs no decode,
+    // and analysing a new one leaves it cached for when it plays. The source
+    // file is never touched: every AYTHER correction is gain at playback, not a
+    // rewrite.
+    /// The struct lives in audio_asset_level.h: it is shared by this player
+    /// (which measures) and AytherSession (through which the Lab queries it),
+    /// and those two headers cannot include each other.
     using AssetLevel = ayther::AudioAssetLevel;
-    /// Mide un asset de disco (WAV/OGG/FLAC). El resultado se cachea por ruta —
-    /// recorrer las muestras de un asset largo no es gratis y el Lab lo pregunta
-    /// por frame mientras el panel está abierto.
+    /// Measures a disk asset (WAV/OGG/FLAC). The result is cached by path —
+    /// walking the samples of a long asset is not free and the Lab asks for it
+    /// per frame while the panel is open.
     const AssetLevel& asset_level(const std::string& abs_path);
 
-    /// : la ENVOLVENTE del asset — mínimo y máximo por columna, en -1..1.
+    /// The asset ENVELOPE — minimum and maximum per column, in -1..1.
     ///
-    /// Devuelve `bins` pares (min, max) intercalados: `[min0, max0, min1, …]`.
-    /// Min y max y no un solo valor absoluto: una forma de onda dibujada sólo
-    /// con el máximo no muestra la asimetría, y ahí es donde se ve el offset de
-    /// DC y el recorte de un solo lado — que es la mitad de para qué se mira.
+    /// Returns `bins` interleaved (min, max) pairs: `[min0, max0, min1, …]`.
+    /// Min and max rather than a single absolute value: a waveform drawn only
+    /// from the maximum does not show asymmetry, and asymmetry is where DC
+    /// offset and one-sided clipping become visible — which is half of what one
+    /// looks at it for.
     ///
-    /// Se mide sobre el MISMO PCM que la mezcla (S16 44,1 estéreo), igual que
-    /// `asset_level`: lo que el autor quiere ver es lo que va a sonar.
+    /// It is measured over the SAME PCM as the mix (S16 44.1 stereo), like
+    /// `asset_level`: what the author wants to see is what is going to play.
     ///
-    /// Se cachea por (ruta, bins). El Lab la pide por frame mientras el panel
-    /// está abierto y recorrer un asset largo no es gratis.
+    /// It is cached by (path, bins). The Lab asks for it per frame while the
+    /// panel is open and walking a long asset is not free.
     const std::vector<float>& asset_waveform(const std::string& abs_path,
                                              uint32_t bins);
 
-    /// Duración en SEGUNDOS de un asset HD de disco (WAV/OGG/FLAC) — decodifica (y
-    /// cachea) el archivo y la calcula del PCM. 0 si no se puede leer/decodificar.
-    /// NO necesita device de audio abierto (sólo decodifica). Para dimensionar el
-    /// span del timeline de Secuencia (el HD puede ser más largo que los eventos).
+    /// Duration in SECONDS of an HD asset from disk (WAV/OGG/FLAC) — it decodes
+    /// (and caches) the file and computes it from the PCM. 0 if it cannot be
+    /// read/decoded. It does NOT need an open audio device (it only decodes).
+    /// Used to size the span of the Sequence timeline (the HD may be longer
+    /// than the events).
     double asset_duration_seconds(const std::string& abs_path);
-    /// Decodifica un asset de DISCO a PCM S16 estéreo 44100 (el formato del
-    /// mixdown del export MP4). Devuelve la cantidad de CUADROS estéreo (out
-    /// tiene frames×2 samples); 0 si no se pudo leer/convertir. No necesita
-    /// device; el decode crudo se cachea (wav_cache_), la conversión no.
+    /// Decodes a DISK asset to S16 stereo 44100 PCM (the format of the MP4
+    /// export mixdown). Returns the number of stereo FRAMES (out holds
+    /// frames×2 samples); 0 if it could not be read/converted. It needs no
+    /// device; the raw decode is cached (wav_cache_), the conversion is not.
     size_t decode_asset_pcm_s16_44k(const std::string& abs_path,
                                     std::vector<int16_t>& out);
-    /// PREWARM: decodifica y cachea un asset HD de disco SIN reproducirlo (no
-    /// necesita device). Se llama al abrir el proyecto / setear las subs para que
-    /// el PRIMER disparo no pague el decode en pleno playback — el stall hacía
-    /// catch-up y se salteaban triggers (reporte 2026-07-23: «la primera vez
-    /// algunos sonidos no se escucharon, la segunda sí»). Idempotente (cache).
+    /// PREWARM: decodes and caches an HD disk asset WITHOUT playing it (no
+    /// device needed). It is called when opening the project / setting the subs
+    /// so the FIRST trigger does not pay for the decode mid-playback — the
+    /// stall caused catch-up and triggers were skipped (report 2026-07-23: "the
+    /// first time some sounds were not heard, the second time they were").
+    /// Idempotent (cached).
     void prewarm_asset_file(const std::string& path);
-    /// Corta (con el fade-out rápido de tick) los SFX one-shot con esta `key` —
-    /// p.ej. el preview HD de la lane de Secuencia al pausar. No-op sin match.
-    /// Devuelve true si CORTÓ algo: silenciar a mitad de un asset largo tiene
-    /// que poder distinguirse de silenciar entre disparos (), y llamar cada
-    /// frame mientras dura el mute es idempotente (el fade ya iniciado no se
-    /// reinicia) pero sólo el primero devuelve true.
+    /// Cuts (with tick's fast fade-out) the one-shot SFX with this `key` —
+    /// e.g. the HD preview of the Sequence lane when pausing. No-op with no
+    /// match. Returns true if it CUT something: silencing halfway through a
+    /// long asset has to be distinguishable from silencing between triggers,
+    /// and calling it every frame while the mute lasts is idempotent (a fade
+    /// already started is not restarted) but only the first returns true.
     bool stop_sfx_by_key(uint64_t key);
-    /// Cambia el volumen de un one-shot YA SONANDO. Sin esto, la ganancia sólo
-    /// se aplica al crear el stream y arrastrar el slider no se oiría hasta la
-    /// próxima re-sincronización — o sea nunca, durante una reproducción
-    /// continua, que es justo cuando se quiere ajustar. No toca los que están
-    /// en fade-out. Devuelve true si tocó alguno.
+    /// Changes the volume of a one-shot ALREADY PLAYING. Without this, the gain
+    /// is only applied when the stream is created and dragging the slider would
+    /// not be heard until the next re-sync — that is, never, during continuous
+    /// playback, which is exactly when one wants to adjust it. It does not
+    /// touch the ones fading out. Returns true if it touched any.
     bool set_sfx_gain_by_key(uint64_t key, float gain);
-    /// Corta el event-stream de una firma (el camino de play_event_hd, que es
-    /// otro stream distinto del one-shot). Devuelve true si cortó algo.
+    /// Cuts the event stream of a signature (the play_event_hd path, which is a
+    /// different stream from the one-shot). Returns true if it cut something.
     bool stop_event(uint64_t signature);
-    /// True mientras la vista previa one-shot tiene PCM sin drenar (el device la
-    /// sigue reproduciendo). El diálogo conmuta Reproducir/Detener con esto, y se
-    /// auto-resetea a Reproducir cuando el sonido termina.
+    /// True while the one-shot preview still has undrained PCM (the device is
+    /// still playing it). The dialog toggles Play/Stop from this, and it
+    /// auto-resets to Play when the sound ends.
     bool preview_playing() const {
         return preview_stream_ && SDL_GetAudioStreamAvailable(preview_stream_) > 0;
     }
@@ -434,47 +441,47 @@ public:
 
     bool              is_open()   const { return device_ != 0; }
     SDL_AudioDeviceID device_id() const { return device_;      }
-    /// Streams SDL de one-shot vivos. : tras retirar el camino viejo esto
-    /// son SÓLO los previews explícitos de autoría () — los one-shot del
-    /// gameplay son voces del mixer y se cuentan con `hd_voice_count()`. Se
-    /// deja separado a propósito: sumarlos borraría la distinción que 
-    /// necesita afirmar (que el gameplay ya no abre streams propios).
+    /// Live SDL one-shot streams. After retiring the old path these are ONLY
+    /// the explicit authoring previews — the gameplay one-shots are mixer
+    /// voices and are counted with `hd_voice_count()`. It is deliberately kept
+    /// separate: adding them together would erase the distinction that has to
+    /// be assertable (that gameplay no longer opens streams of its own).
     size_t            sfx_count() const { return sfx_streams_.size(); }
-    /// : eventos HD vivos (sustituciones por evento del pack) — el
-    /// observable de «¿la ventana lo cortó?» sin oído, hermano de sfx_count().
-    /// : sale del mixer — el camino de streams SDL por evento se retiró y
-    /// `event_streams_` con él. La cuenta significa lo
-    /// mismo que antes (cuántas sustituciones por evento están sonando), así
-    /// que los oráculos de  y  siguen midiendo lo que medían.
+    /// Live HD events (per-event substitutions from the pack) — the observable
+    /// for "did the window cut it?" without listening, sibling of sfx_count().
+    /// It comes from the mixer — the per-event SDL stream path was retired and
+    /// `event_streams_` with it. The count means the same as before (how many
+    /// per-event substitutions are playing), so the existing oracles keep
+    /// measuring what they measured.
     size_t            event_count() const { return hd_mixer_.event_voice_count(); }
 
-    // ---- Camino UNIFICADO () --------------------------------------------
-    // Los HD del gameplay son voces del HdMixer, sumadas dentro del bloque
-    // staged del emulador en su sample exacto: un solo stream, un solo DRC,
-    // fase independiente de stalls y catch-up. Los previews EXPLÍCITOS de
-    // autoría siguen en streams propios (no son del transporte, ).
+    // ---- UNIFIED path -------------------------------------------------------
+    // The gameplay HD sounds are HdMixer voices, summed inside the emulator's
+    // staged block at their exact sample: one stream, one DRC, phase
+    // independent of stalls and catch-up. EXPLICIT authoring previews stay in
+    // their own streams (they do not belong to the transport).
     //
-    //  retiró el switch `set_unified()` y con él el camino de streams por
-    // evento. Era la salida de emergencia mientras el mixer era nuevo; ya no
-    // hay dos caminos que mantener ni un A/B que hacer sin recompilar.
-    /// Marca que ACÁ empieza el PCM del próximo frame emulado dentro del
-    /// bloque staged. La sesión la llama antes de cada run_frame audible: es
-    /// lo que coloca un disparo del frame k de un catch-up en SU offset y no
-    /// al principio del bloque.
+    // The `set_unified()` switch was retired, and with it the per-event stream
+    // path. It was the emergency exit while the mixer was new; there are no
+    // longer two paths to maintain nor an A/B to run without recompiling.
+    /// Marks that HERE begins the PCM of the next emulated frame within the
+    /// staged block. The session calls it before every audible run_frame: it is
+    /// what places a trigger from frame k of a catch-up at ITS offset and not
+    /// at the start of the block.
     void mark_frame_boundary() { frame_mark_ = pending_pcm_.size() / 2; }
-    /// Cursor ABSOLUTO de la línea de tiempo (cuadros ya flusheados).
+    /// ABSOLUTE timeline cursor (frames already flushed).
     uint64_t timeline_samples() const { return timeline_samples_; }
     size_t   hd_voice_count() const { return hd_mixer_.voice_count(); }
-    /// Telemetría  Fase 0: voces arrancadas, atraso acumulado/máximo de
-    /// colocación (0 sostenido = la fase es exacta).
+    /// Phase 0 telemetry: voices started, accumulated/maximum placement
+    /// lateness (a sustained 0 = the phase is exact).
     uint64_t hd_voices_started() const { return hd_mixer_.started(); }
     uint64_t hd_mix_skew() const { return hd_mixer_.skew_samples(); }
     uint64_t hd_mix_max_skew() const { return hd_mixer_.max_skew_samples(); }
 
-    // ---- Mute global --------------------------------------------------------
-    /// Silencia/restaura TODA la salida poniendo el gain del device a 0/1
-    /// (afecta el passthrough del emulador + los SFX HD). Idempotente y seguro
-    /// si el device no abrió.
+    // ---- Global mute --------------------------------------------------------
+    /// Silences/restores ALL output by setting the device gain to 0/1 (it
+    /// affects the emulator passthrough + the HD SFX). Idempotent and safe if
+    /// the device never opened.
     void set_muted(bool m);
     bool is_muted() const { return muted_; }
 
@@ -483,9 +490,10 @@ public:
     void  set_drc_enabled(bool on) { drc_enabled_ = on; }
     /// Last frequency ratio applied to emu_stream_ (1.0 = neutral; ~±0.5%).
     float drc_ratio() const { return drc_ratio_; }
-    /// : frames de flush con backlog < 1/4 del target (starvation) — telemetria.
+    /// Flush frames with a backlog < 1/4 of the target (starvation) —
+    /// telemetry.
     uint64_t starved_frames() const { return starved_frames_; }
-    /// : backlog promedio (EMA) en frames del stream del emulador.
+    /// Average backlog (EMA) in frames of the emulator stream.
     float drc_queue_avg() const { return drc_queue_avg_; }
 
 private:
@@ -493,14 +501,14 @@ private:
 
     SDL_AudioDeviceID device_     = 0;        ///< logical audio device
     SDL_AudioStream*  emu_stream_ = nullptr;  ///< continuous emulator passthrough
-    float             game_gain_  = 1.0f;     ///< ducking de la banda sonora (Cinemática)
-    /// Stream del sintetizador SoundFont (). SEPARADO del emulador a
-    /// propósito: `flush_emulator` saltea el lote entero cuyo hash está
-    /// muteado, así que un timbre mezclado ahí se iría al silencio junto con la
-    /// voz que viene a reemplazar. Con stream propio, SDL los mezcla en el
-    /// device y la mute del original no lo alcanza.
+    float             game_gain_  = 1.0f;     ///< soundtrack ducking (Kinematic)
+    /// The SoundFont synthesiser stream. Deliberately SEPARATE from the
+    /// emulator one: `flush_emulator` skips the whole batch whose hash is
+    /// muted, so a timbre mixed in there would go silent along with the voice
+    /// it comes to replace. With its own stream, SDL mixes them at the device
+    /// and the mute of the original does not reach it.
     SDL_AudioStream*  synth_stream_ = nullptr;
-    bool              muted_      = false;    ///< gain del device a 0 (mute global)
+    bool              muted_      = false;    ///< device gain at 0 (global mute)
 
     // ---- Dynamic rate control -----------------------------------------------
     // Keep emu_stream_'s backlog near a target by nudging its resample ratio
@@ -508,42 +516,43 @@ private:
     // no drift underrun (crackle) / overrun (latency). See ayther-engine.md §6.2.
     bool  drc_enabled_   = true;
     float drc_queue_avg_ = 0.0f;   ///< EMA of queued frames (jitter filter)
-    // : diagnostico de starvation — backlog < 1/4 del target = el device va
-    // a raspar el fondo (crackle audible). Contador + log rate-limited (1/s).
-    /// : target de backlog del stream del emulador (frames @44.1 kHz).
-    /// 3072 ≈ 70 ms — colchón que absorbe el dip de una escena densa (~10 ms)
-    /// incluso tras un stall, con latencia imperceptible para autoría.
+    // Starvation diagnostic — a backlog < 1/4 of the target means the device
+    // is about to scrape the bottom (audible crackle). Counter + rate-limited
+    // log (1/s).
+    /// Backlog target of the emulator stream (frames @44.1 kHz).
+    /// 3072 ≈ 70 ms — a cushion that absorbs the dip of a dense scene (~10 ms)
+    /// even after a stall, with latency imperceptible for authoring.
     static constexpr float kDrcTargetFrames = 3072.0f;
     uint64_t starved_frames_    = 0;
     uint64_t last_starve_log_ms_ = 0;
-    // : telemetría de la pausa — cuadros descartados por cut_transport_audio
-    // (staging + emu + synth) y cuántos cortes descartaron algo.
+    // Pause telemetry — frames discarded by cut_transport_audio (staging + emu
+    // + synth) and how many cuts discarded something.
     uint64_t pause_cut_frames_  = 0;
     uint64_t pause_cuts_        = 0;
-    uint64_t last_flush_ms_      = 0;   // : detector de stall (re-cebado)
-    // : tee del PCM del emulador a WAV (env AYTHER_AUDIO_DUMP=<ruta>) — lo
-    // que se ENCOLA al device (post-mute, pre-DRC). Discriminador objetivo:
-    // WAV limpio + oido degradado = problema de ENTREGA (device/pacing);
-    // WAV con clicks = problema de CONTENIDO (upstream del encolado).
-    void* dump_ = nullptr;            // FILE* (void* para no incluir cstdio aca)
+    uint64_t last_flush_ms_      = 0;   // stall detector (re-priming)
+    // Tee of the emulator PCM to a WAV (env AYTHER_AUDIO_DUMP=<path>) — what is
+    // QUEUED to the device (post-mute, pre-DRC). An objective discriminator: a
+    // clean WAV + degraded listening = a DELIVERY problem (device/pacing); a
+    // WAV with clicks = a CONTENT problem (upstream of the queueing).
+    void* dump_ = nullptr;            // FILE* (void* so cstdio is not included here)
     uint64_t dump_data_bytes_ = 0;
     float drc_ratio_     = 1.0f;   ///< last applied frequency ratio (telemetry)
 
     struct SfxStream {
         SDL_AudioStream* stream = nullptr;
         uint64_t         hash   = 0;   ///< source audio hash (for dedup)
-        /// 0 = sonando normal. != 0 = ms de SDL_GetTicks() en que empezó su
-        /// fade-out (lo pisó un disparo nuevo con la MISMA key) — tick() le baja
-        /// la ganancia hasta silencio y lo destruye, en vez de dejarlo sonar
-        /// entero superpuesto con el nuevo.
+        /// 0 = playing normally. != 0 = the SDL_GetTicks() ms at which its
+        /// fade-out started (a new trigger with the SAME key overrode it) —
+        /// tick() lowers its gain to silence and destroys it, instead of
+        /// letting it play in full overlapped with the new one.
         uint64_t         fade_start_ms = 0;
-        /// : preview EXPLÍCITO de autoría — el corte de pausa del
-        /// transporte (cut_transport_audio) no lo toca.
+        /// An EXPLICIT authoring preview — the transport pause cut
+        /// (cut_transport_audio) does not touch it.
         bool             preview = false;
     };
     std::vector<SfxStream> sfx_streams_;
 
-    SDL_AudioStream* preview_stream_ = nullptr;  ///< one-shot de la vista previa de audio
+    SDL_AudioStream* preview_stream_ = nullptr;  ///< one-shot of the audio preview
 
     // ---- Deferred emulator passthrough (v0.9.7) -----------------------------
 
@@ -566,46 +575,47 @@ private:
     struct WavEntry {
         SDL_AudioSpec        spec = {};
         std::vector<uint8_t> pcm;           ///< decoded PCM bytes (SDL_LoadWAV_IO)
-        // : estado del intento. `None` con pcm lleno = listo; cualquier
-        // otro valor = cache NEGATIVA con el fingerprint del archivo que falló
-        // (0/0 si no existía) — se reintenta solo cuando el fingerprint cambia.
+        // Attempt state. `None` with pcm filled = ready; any other value = a
+        // NEGATIVE cache entry with the fingerprint of the file that failed
+        // (0/0 if it did not exist) — retried only when the fingerprint
+        // changes.
         AssetError err           = AssetError::None;
-        int64_t    fp_mtime      = 0;   ///< mtime del intento fallido (disco)
-        uint64_t   fp_size       = 0;   ///< tamaño del intento fallido (disco)
-        uint64_t   last_check_ms = 0;   ///< rate-limit del re-stat (disco)
+        int64_t    fp_mtime      = 0;   ///< mtime of the failed attempt (disk)
+        uint64_t   fp_size       = 0;   ///< size of the failed attempt (disk)
+        uint64_t   last_check_ms = 0;   ///< rate limit of the re-stat (disk)
     };
     std::unordered_map<std::string, WavEntry> wav_cache_;
-    /// : nivel medido por ruta. Se invalida junto con `wav_cache_`.
+    /// Measured level per path. It is invalidated along with `wav_cache_`.
     std::unordered_map<std::string, AssetLevel> level_cache_;
-    /// : envolventes ya calculadas, por (ruta, cantidad de columnas).
-    /// La cantidad entra en la clave porque redimensionar el panel cambia las
-    /// columnas, y devolver la envolvente de otro ancho dibujaría una forma de
-    /// onda que no corresponde al asset que se está mirando.
+    /// Already-computed envelopes, by (path, column count).
+    /// The count is part of the key because resizing the panel changes the
+    /// columns, and returning the envelope of another width would draw a
+    /// waveform that does not correspond to the asset being looked at.
     std::unordered_map<std::string, std::vector<float>> wave_cache_;
-    /// : PCM MIX-READY por asset — el WavEntry convertido UNA vez a
-    /// S16 estéreo 44100 (el formato del bloque staged), compartido entre
-    /// voces por shared_ptr. La conversión usa SDL_ConvertAudioSamples y no
-    /// necesita device.
+    /// MIX-READY PCM per asset — the WavEntry converted ONCE to S16 stereo
+    /// 44100 (the format of the staged block), shared between voices via
+    /// shared_ptr. The conversion uses SDL_ConvertAudioSamples and needs no
+    /// device.
     std::unordered_map<std::string, HdMixPcm> mix_cache_;
-    /// Convierte (y cachea) el PCM de un WavEntry al formato de mezcla.
-    /// nullptr si la conversión falla.
+    /// Converts (and caches) the PCM of a WavEntry into the mix format.
+    /// nullptr if the conversion fails.
     HdMixPcm get_mix_pcm(const WavEntry* wav, const std::string& cache_key);
-    /// : cada cuánto como MUCHO se re-statea un asset de disco fallido
-    /// para ver si apareció/cambió. Balance: hot-reload perceptible (<1 s)
-    /// sin pagar un stat por frame por cada asignación rota.
+    /// How often AT MOST a failed disk asset is re-stat'ed to see whether it
+    /// appeared or changed. A balance: perceptible hot-reload (<1 s) without
+    /// paying one stat per frame for every broken assignment.
     static constexpr uint64_t kAssetRecheckMs = 400;
-    uint64_t hd_start_fails_ = 0;   ///< : stream-create/bind fallidos
+    uint64_t hd_start_fails_ = 0;   ///< failed stream create/bind
 
     // ---- Event streams (C-A2) -----------------------------------------------
 
-    /// Stream de un EVENTO sustituido: vive del start_frame al end_frame (si
-    /// loopea) o hasta drenar (one-shot). `wav` apunta al cache de assets
-    /// (estable: wav_cache_ no borra entradas hasta shutdown).
+    /// Stream of a substituted EVENT: it lives from start_frame to end_frame
+    /// (if it loops) or until drained (one-shot). `wav` points into the asset
+    /// cache (stable: wav_cache_ deletes no entries until shutdown).
 
-    // ---- Camino unificado () --------------------------------------------
-    HdMixer  hd_mixer_;                  ///< voces HD sumadas al bloque staged
-    uint64_t timeline_samples_ = 0;      ///< cuadros ya flusheados (línea de tiempo)
-    size_t   frame_mark_       = 0;      ///< offset del frame actual en el staging
+    // ---- Unified path -------------------------------------------------------
+    HdMixer  hd_mixer_;                  ///< HD voices summed into the staged block
+    uint64_t timeline_samples_ = 0;      ///< frames already flushed (timeline)
+    size_t   frame_mark_       = 0;      ///< offset of the current frame in the staging
 
     // ---- Helpers ------------------------------------------------------------
 
@@ -613,12 +623,13 @@ private:
     /// Returns nullptr if the asset is missing, corrupt, or pack is null.
     const WavEntry* get_wav(AyArchive* pack, const std::string& asset_path);
 
-    /// Idem pero leyendo de DISCO (asset suelto de autoría) en vez del pack.
+    /// Same but reading from DISK (a loose authoring asset) instead of the
+    /// pack.
     const WavEntry* get_wav_disk(const std::string& abs_path);
 
-    /// Decodifica WAV/OGG/FLAC (por extensión `ext`) desde `raw` a `out`
-    /// (spec + pcm). true si decodificó algo usable. Compartido por get_wav (pack)
-    /// y get_wav_disk (disco).
+    /// Decodes WAV/OGG/FLAC (by extension `ext`) from `raw` into `out`
+    /// (spec + pcm). true if it decoded something usable. Shared by get_wav
+    /// (pack) and get_wav_disk (disk).
     bool decode_audio_bytes(WavEntry& out, const std::vector<uint8_t>& raw,
                             const std::string& ext);
 };

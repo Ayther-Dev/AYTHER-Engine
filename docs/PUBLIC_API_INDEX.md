@@ -1,67 +1,69 @@
-# AYTHER Engine — índice de headers instalados
+# AYTHER Engine — index of installed headers
 
-> **GENERADO — no editar a mano.** `pwsh tools/gen_api_reference.ps1`.
-> Sale de `include/ayther/**/*.h`, la misma raíz que instala
-> `cmake/AytherInstall.cmake`: si un header entra
-> o sale de la superficie, esta página lo refleja sin que nadie edite una
-> lista paralela.
+> **GENERATED — do not edit by hand.** `pwsh tools/gen_api_reference.ps1`.
+> Derived from `include/ayther/**/*.h`, the same root that
+> `cmake/AytherInstall.cmake` installs: if a header enters
+> or leaves the surface, this page reflects it without anyone editing a
+> parallel list.
 
-La superficie instalada y su estabilidad se describen en
+The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
-Aparecer en este índice no implica por sí solo una garantía de estabilidad.
+Appearing in this index does not by itself imply a stability guarantee.
 
-## Los 46 headers
+## The 46 headers
 
-| header | qué aporta |
+| header | what it provides |
 |---|---|
-| [`audio_asset_level.h`](#audio-asset-level-h) | Header público instalado. |
-| [`audio_bus_balance.h`](#audio-bus-balance-h) | Header público instalado. |
-| [`audio_hd_mixer.h`](#audio-hd-mixer-h) | Header público instalado. |
-| [`audio_live_resume.h`](#audio-live-resume-h) | Header público instalado. |
-| [`audio_match_rule.h`](#audio-match-rule-h) | Header público instalado. |
-| [`audio_player.h`](#audio-player-h) | Header público instalado. |
-| [`audio_seq_anchor.h`](#audio-seq-anchor-h) | Header público instalado. |
-| [`ayther_animation.h`](#ayther-animation-h) | Header público instalado. |
-| [`ayther_audio_events.h`](#ayther-audio-events-h) | Header público instalado. |
-| [`ayther_background_export.h`](#ayther-background-export-h) | Header público instalado. |
-| [`ayther_components_toml.h`](#ayther-components-toml-h) | Header público instalado. |
-| [`ayther_config.h`](#ayther-config-h) | Header público instalado. |
-| [`ayther_core_ffi.h`](#ayther-core-ffi-h) | Header público instalado. |
-| [`ayther_env.h`](#ayther-env-h) | Header público instalado. |
-| [`ayther_layers.h`](#ayther-layers-h) | Header público instalado. |
-| [`ayther_mode3.h`](#ayther-mode3-h) | Header público instalado. |
-| [`ayther_rank.h`](#ayther-rank-h) | Header público instalado. |
-| [`ayther_recording.h`](#ayther-recording-h) | Header público instalado. |
-| [`ayther_renderer.h`](#ayther-renderer-h) | Header público instalado. |
-| [`ayther_result.h`](#ayther-result-h) | Header público instalado. |
-| [`ayther_sdk_version.h`](#ayther-sdk-version-h) | Header público instalado. |
-| [`ayther_sdk.h`](#ayther-sdk-h) | Header público instalado. |
-| [`ayther_session.h`](#ayther-session-h) | Header público instalado. |
-| [`ayther_unique_handle.h`](#ayther-unique-handle-h) | Header público instalado. |
-| [`ayther_version.h`](#ayther-version-h) | Header público instalado. |
-| [`ayther_video.h`](#ayther-video-h) | Header público instalado. |
-| [`cram_palette.h`](#cram-palette-h) | Header público instalado. |
-| [`failure_escalation.h`](#failure-escalation-h) | Header público instalado. |
-| [`libretro_host/ayther_api.h`](#libretro-host-ayther-api-h) | Header público instalado. |
-| [`libretro_host/core_loader.h`](#libretro-host-core-loader-h) | Header público instalado. |
-| [`libretro_host/libretro.h`](#libretro-host-libretro-h) | Header público instalado. |
-| [`libretro_host/retro_runner.h`](#libretro-host-retro-runner-h) | Header público instalado. |
-| [`output_profile.h`](#output-profile-h) | Header público instalado. |
-| [`pano_bands.h`](#pano-bands-h) | Header público instalado. |
-| [`panorama_cover.h`](#panorama-cover-h) | Header público instalado. |
-| [`parallax_bands.h`](#parallax-bands-h) | Header público instalado. |
-| [`psg_synth.h`](#psg-synth-h) | Header público instalado. |
-| [`rewind_buffer.h`](#rewind-buffer-h) | Header público instalado. |
-| [`voice_router.h`](#voice-router-h) | Header público instalado. |
-| [`vulkan_backend/tile_tex_cache.h`](#vulkan-backend-tile-tex-cache-h) | Header público instalado. |
-| [`vulkan_backend/vk_context.h`](#vulkan-backend-vk-context-h) | Header público instalado. |
-| [`vulkan_backend/vk_indexed_plane.h`](#vulkan-backend-vk-indexed-plane-h) | Header público instalado. |
-| [`vulkan_backend/vk_render_target.h`](#vulkan-backend-vk-render-target-h) | Header público instalado. |
-| [`vulkan_backend/vk_sprite.h`](#vulkan-backend-vk-sprite-h) | Header público instalado. |
-| [`vulkan_backend/vk_texture.h`](#vulkan-backend-vk-texture-h) | Header público instalado. |
-| [`widescreen.h`](#widescreen-h) | Header público instalado. |
+| [`audio_asset_level.h`](#audio_asset_levelh) | Installed public header. |
+| [`audio_bus_balance.h`](#audio_bus_balanceh) | Installed public header. |
+| [`audio_hd_mixer.h`](#audio_hd_mixerh) | Installed public header. |
+| [`audio_live_resume.h`](#audio_live_resumeh) | Installed public header. |
+| [`audio_match_rule.h`](#audio_match_ruleh) | Installed public header. |
+| [`audio_player.h`](#audio_playerh) | Installed public header. |
+| [`audio_seq_anchor.h`](#audio_seq_anchorh) | Installed public header. |
+| [`ayther_animation.h`](#ayther_animationh) | Installed public header. |
+| [`ayther_audio_events.h`](#ayther_audio_eventsh) | Installed public header. |
+| [`ayther_background_export.h`](#ayther_background_exporth) | Installed public header. |
+| [`ayther_components_toml.h`](#ayther_components_tomlh) | Installed public header. |
+| [`ayther_config.h`](#ayther_configh) | Installed public header. |
+| [`ayther_core_ffi.h`](#ayther_core_ffih) | Installed public header. |
+| [`ayther_env.h`](#ayther_envh) | Installed public header. |
+| [`ayther_layers.h`](#ayther_layersh) | Installed public header. |
+| [`ayther_mode3.h`](#ayther_mode3h) | Installed public header. |
+| [`ayther_rank.h`](#ayther_rankh) | Installed public header. |
+| [`ayther_recording.h`](#ayther_recordingh) | Installed public header. |
+| [`ayther_renderer.h`](#ayther_rendererh) | Installed public header. |
+| [`ayther_result.h`](#ayther_resulth) | Installed public header. |
+| [`ayther_sdk_version.h`](#ayther_sdk_versionh) | Installed public header. |
+| [`ayther_sdk.h`](#ayther_sdkh) | Installed public header. |
+| [`ayther_session.h`](#ayther_sessionh) | Installed public header. |
+| [`ayther_unique_handle.h`](#ayther_unique_handleh) | Installed public header. |
+| [`ayther_version.h`](#ayther_versionh) | Installed public header. |
+| [`ayther_video.h`](#ayther_videoh) | Installed public header. |
+| [`cram_palette.h`](#cram_paletteh) | Installed public header. |
+| [`failure_escalation.h`](#failure_escalationh) | Installed public header. |
+| [`libretro_host/ayther_api.h`](#libretro_hostayther_apih) | Installed public header. |
+| [`libretro_host/core_loader.h`](#libretro_hostcore_loaderh) | Installed public header. |
+| [`libretro_host/libretro.h`](#libretro_hostlibretroh) | Installed public header. |
+| [`libretro_host/retro_runner.h`](#libretro_hostretro_runnerh) | Installed public header. |
+| [`output_profile.h`](#output_profileh) | Installed public header. |
+| [`pano_bands.h`](#pano_bandsh) | Installed public header. |
+| [`panorama_cover.h`](#panorama_coverh) | Installed public header. |
+| [`parallax_bands.h`](#parallax_bandsh) | Installed public header. |
+| [`psg_synth.h`](#psg_synthh) | Installed public header. |
+| [`rewind_buffer.h`](#rewind_bufferh) | Installed public header. |
+| [`voice_router.h`](#voice_routerh) | Installed public header. |
+| [`vulkan_backend/tile_tex_cache.h`](#vulkan_backendtile_tex_cacheh) | Installed public header. |
+| [`vulkan_backend/vk_context.h`](#vulkan_backendvk_contexth) | Installed public header. |
+| [`vulkan_backend/vk_indexed_plane.h`](#vulkan_backendvk_indexed_planeh) | Installed public header. |
+| [`vulkan_backend/vk_render_target.h`](#vulkan_backendvk_render_targeth) | Installed public header. |
+| [`vulkan_backend/vk_sprite.h`](#vulkan_backendvk_spriteh) | Installed public header. |
+| [`vulkan_backend/vk_texture.h`](#vulkan_backendvk_textureh) | Installed public header. |
+| [`widescreen.h`](#widescreenh) | Installed public header. |
 
 ---
+
+<a id="audio_asset_levelh"></a>
 
 ## audio_asset_level.h
 
@@ -75,112 +77,120 @@ Values answer three pre-publication questions: whether the asset clips,
 whether it will be masked by native audio, and which non-destructive gain
 adjustment is appropriate.
 
-**Declara:** `AudioAssetLevel`, `ayther`
+**Declares:** `AudioAssetLevel`, `ayther`
 
-_El header instalado (`include/ayther/audio_asset_level.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/audio_asset_level.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="audio_bus_balanceh"></a>
 
 ## audio_bus_balance.h
 
-audio_bus_balance.h — normalización ENTRE BUSES (, segunda mitad).
+audio_bus_balance.h — BETWEEN-BUS normalization (second half).
 
-La primera mitad —medir cada asset (peak, RMS, clipping, corrección
-sugerida)— ya está en `audio_asset_level.h` y se ve en Mezclar. Con eso el
-autor arregla un asset que clipea o uno que se pierde. Lo que no arregla es
-el problema que aparece recién cuando el pack está completo: **la música y
-los efectos, cada uno bien por su cuenta, no se llevan bien entre sí**. Un
-pack donde cada golpe tapa el tema está compuesto de assets impecables.
+The first half—measuring each asset (peak, RMS, clipping, and suggested
+correction)—already lives in `audio_asset_level.h` and is visible in Mix.
+It lets the author fix an asset that clips or gets masked. It does not fix
+the problem that appears only once the pack is complete: **music and sound
+effects can each be correct on their own yet clash with each other**. A pack
+where every hit masks the music may still contain flawless individual assets.
 
-Por qué es un cálculo aparte y no «el mismo, promediado»:
+Why this is a separate calculation rather than "the same one, averaged":
 
-  · Se promedia ENERGÍA, no decibeles. El promedio de dB de -6 y -30 da -18,
-    que no es el nivel que se oye: el de -6 domina. Promediar la energía y
-    recién ahí pasar a dB es lo que da un número que corresponde a lo que
-    suena.
-  · Se pondera por DURACIÓN. Un tema de tres minutos y un golpe de 200 ms
-    no aportan lo mismo a la sensación de volumen de su bus, y contarlos
-    igual haría que un pack con muchos efectos cortos pareciera fuerte.
-  · Cuenta la ganancia YA AUTORADA. El autor pudo bajar un asset a mano; el
-    balance tiene que mirar lo que se va a oír, no lo que dice el archivo.
+  · It averages ENERGY, not decibels. Averaging -6 dB and -30 dB gives
+    -18 dB, which is not the perceived level because -6 dB dominates.
+    Averaging energy first and then converting to dB yields a value that
+    corresponds to what is actually heard.
+  · It is weighted by DURATION. A three-minute track and a 200 ms hit do not
+    contribute equally to the perceived bus volume; counting them equally
+    would make a pack with many short effects appear loud.
+  · It includes the ALREADY-AUTHORED gain. The author may have lowered an
+    asset manually; balance must consider what will be heard, not merely
+    what the file contains.
 
-LA REFERENCIA ES LA MÚSICA. Es el material continuo: es contra lo que el
-oído fija el nivel de la escena, y es lo que sigue sonando cuando no pasa
-nada. Sin música clasificada, la referencia es el bus con más material
-medido — y si sólo hay uno, no hay nada que balancear y se dice.
+MUSIC IS THE REFERENCE. It is continuous material: the ear uses it to set
+the scene level, and it keeps playing when nothing else happens. Without
+classified music, the reference is the bus with the most measured material;
+if there is only one bus, there is nothing to balance and that is reported.
 
-Lo que este cálculo NO hace: tocar el archivo, ni la ganancia por asset. Su
-salida es una corrección POR BUS, que es exactamente lo que
-`AytherSession::set_bus_volume` aplica en vivo y el proyecto persiste.
-Corregir por bus y no por asset también es lo honesto con el dato: lo que se
-midió desbalanceado es el bus.
+What this calculation does NOT do: modify the file or the per-asset gain.
+Its output is a PER-BUS correction, exactly what
+`AytherSession::set_bus_volume` applies live and the project persists.
+Correcting the bus rather than each asset also reflects the measurement
+honestly: the bus is what was found to be unbalanced.
 
-Sin estado y en el header público —con su oráculo, `audio_bus_balance`—
-porque la regla es del CÁLCULO y así se prueba sin motor de audio.
+This is stateless and defined in the public header—with its oracle,
+`audio_bus_balance`—because the rule belongs to the CALCULATION and can
+therefore be tested without an audio engine.
 
-**Declara:** `audio_bus_balance`, `AudioBusBalance`, `AudioBusLevel`, `AudioBusSample`, `ay_db_to_lin`, `ay_lin_to_db`, `ayther`
+**Declares:** `audio_bus_balance`, `AudioBusBalance`, `AudioBusLevel`, `AudioBusSample`, `ay_db_to_lin`, `ay_lin_to_db`, `ayther`
 
-_El header instalado (`include/ayther/audio_bus_balance.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/audio_bus_balance.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="audio_hd_mixerh"></a>
 
 ## audio_hd_mixer.h
 
-audio_hd_mixer.h — mezclador de voces HD sobre la línea de tiempo de
-MUESTRAS del stream principal ().
+audio_hd_mixer.h — HD voice mixer on the main stream's SAMPLE timeline.
 
-EL PROBLEMA QUE CIERRA. Los reemplazos HD corrían en streams SDL propios:
-arrancaban «ya» respecto del reloj de pared, mientras el original viajaba
-por emu_stream_ con ~70 ms de colchón DRC — o sea que la fase entre original
-y HD dependía del backlog, de los stalls y del tamaño del catch-up. Acá cada
-voz se COLOCA en un sample absoluto de la línea de tiempo del bloque staged
-y se suma DENTRO de ese bloque: un disparo en el frame N cae en el mismo
-sample ejecutando 1×1 o catch-up 16, y todo —original, router, HD— cruza el
-MISMO DRC/backlog. La pausa corta un solo stream y corta todo ().
+THE PROBLEM IT SOLVES. HD replacements used to run in their own SDL streams:
+they started "now" according to wall-clock time while the original traveled
+through `emu_stream_` with a ~70 ms DRC cushion. The phase between original
+and HD therefore depended on backlog, stalls, and catch-up size. Here every
+voice is PLACED at an absolute sample on the staged block timeline and mixed
+INSIDE that block: a trigger at frame N lands on the same sample under 1x1
+execution or catch-up 16, and everything—original, router, and HD—crosses
+the SAME DRC/backlog. Pausing one stream pauses everything.
 
-QUÉ ES ESTE MÓDULO. Sólo la mezcla: voces con PCM ya decodificado y
-convertido (S16 estéreo 44100 — lo garantiza el cache del AudioPlayer),
-colocación por muestra, loops con fase, ganancia, fade de corte y el
-contrato de vida por frame de  (end + tail). NO toca SDL: la mezcla es
-una función pura sobre un buffer, y por eso el oráculo de identidad
-1×1-vs-catch-up puede ser exacto, byte a byte, sin device.
+WHAT THIS MODULE IS. Mixing only: voices with already decoded and converted
+PCM (S16 stereo at 44100 Hz, guaranteed by the AudioPlayer cache), sample
+placement, phase-preserving loops, gain, cut fades, and the per-frame
+lifetime contract (end + tail). It does NOT touch SDL: mixing is a pure
+function over a buffer, so the 1x1-vs-catch-up identity oracle can be exact,
+byte for byte, without a device.
 
-El ciclo de vida por FRAME (end_frame/cut_frame) se mantiene en frames a
-propósito: es el mismo contrato que tick_events y que las ventanas de la
-sesión (/) — la conversión frame→sample vive en UN solo lugar (la
-colocación del arranque), no repartida por todos los sweeps.
+The FRAME-based lifecycle (`end_frame`/`cut_frame`) deliberately remains in
+frames: it is the same contract used by `tick_events` and session windows.
+Frame-to-sample conversion lives in ONE place (start placement), rather than
+being scattered across every sweep.
 
-**Declara:** `HdMixer`, `voices_`
+**Declares:** `HdMixer`, `voices_`
 
-_El header instalado (`include/ayther/audio_hd_mixer.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/audio_hd_mixer.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="audio_live_resumeh"></a>
 
 ## audio_live_resume.h
 
-audio_live_resume.h — decisión PURA de reanudación de un reemplazo live
-().
+audio_live_resume.h — PURE resume decision for a live replacement.
 
-Una pausa corta físicamente los streams HD (), pero la instancia LÓGICA
-del reemplazo —qué asset, anclado a qué frame, hasta cuándo— sigue viva en
-la sesión. Al reanudar hay que volver a sonar DESDE EL OFFSET que dicta el
-reloj emulado, no desde cero: limpiar los flancos y re-disparar corrige el
-silencio pero introduce desfase, y eso está explícitamente prohibido.
+A pause physically stops the HD streams, but the LOGICAL replacement
+instance—which asset, anchored to which frame, and until when—remains alive
+in the session. On resume, playback must continue FROM THE OFFSET dictated
+by the emulated clock, not from zero: clearing edges and retriggering removes
+the silence but introduces drift, which is explicitly forbidden.
 
-La estrategia elegida es RECREAR el stream desde el offset (no congelar el
-stream físico): es la misma aritmética que ya usa el camino de toma
-((f - anclaje) / fps), sobrevive a Assets OFF/ON y al cambio de workspace
-con el mismo código, y es compatible con la migración futura al mixer
-unificado () — la instancia lógica no sabe nada de SDL.
+The chosen strategy is to RECREATE the stream at the offset rather than
+freeze the physical stream. It uses the same arithmetic as the take path
+(`(f - anchor) / fps`), survives Assets OFF/ON and workspace changes through
+the same code, and is compatible with a future unified mixer: the logical
+instance knows nothing about SDL.
 
-Este header es PURO (sin SDL, sin core) para que la decisión sea testeable
-sin sesión ni ROM — mismo criterio que transport_gate.h ().
+This header is PURE (no SDL and no core), so the decision can be tested
+without a session or ROM, following the same criterion as transport_gate.h.
 
-**Declara:** `ayther`, `live_instance_over`, `live_resume_decide`, `live_resume_offset_bytes`, `LiveResumeDecision`, `uint8_t`
+**Declares:** `ayther`, `live_instance_over`, `live_resume_decide`, `live_resume_offset_bytes`, `LiveResumeDecision`, `uint8_t`
 
-_El header instalado (`include/ayther/audio_live_resume.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/audio_live_resume.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="audio_match_ruleh"></a>
 
 ## audio_match_rule.h
 
@@ -194,11 +204,13 @@ persisted primary key is still `signature`.
 This header has no SDL dependency. Its deterministic table lookup is covered
 by tests/audio_match_rule_test.cpp.
 
-**Declara:** `AudioMatchIndex`, `AudioMatchRuleInfo`, `ayther`, `clear`, `Entry`, `uint8_t`
+**Declares:** `AudioMatchIndex`, `AudioMatchRuleInfo`, `ayther`, `clear`, `Entry`, `uint8_t`
 
-_El header instalado (`include/ayther/audio_match_rule.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/audio_match_rule.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="audio_playerh"></a>
 
 ## audio_player.h
 
@@ -250,57 +262,62 @@ Typical per-tick call sequence:
   // end of frame:
   audio_player.tick();
 
-**Declara:** `AudioPlayer`
+**Declares:** `AudioPlayer`
 
-_El header instalado (`include/ayther/audio_player.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/audio_player.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="audio_seq_anchorh"></a>
 
 ## audio_seq_anchor.h
 
-audio_seq_anchor.h — anclas de las Secuencias en replay, con RECLAMO entre
-Secuencias (). Header-only y puro: testeable sin SDL, sin core, sin GPU.
+audio_seq_anchor.h — replay Sequence anchors with CLAIMS between Sequences.
+Header-only and pure: testable without SDL, a core, or a GPU.
 
-Una Secuencia (sub) abre una ventana en cada ocurrencia de su firma
-DISPARADORA dentro de los eventos detectados de la toma. Reglas:
+A Sequence (substitution) opens a window at every occurrence of its TRIGGER
+signature among the events detected in the take. Rules:
 
- 1. Segmentación greedy (reporte 2026-07-23): el paso es el SPAN de los
-    eventos; una ocurrencia del disparador que cae dentro del paso de la
-    ventana anterior es INTERNA (la melodía repite su primera nota) y no
-    re-ancla. Una repetición REAL (tras el paso) sí re-ancla y re-dispara.
+ 1. Greedy segmentation (2026-07-23 report): the step is the event SPAN. A
+    trigger occurrence inside the previous window's step is INTERNAL (the
+    melody repeats its first note) and does not re-anchor. A REAL repetition
+    after the step does re-anchor and retrigger.
 
- 2. RECLAMO (, reporte 2026-08-21): una ocurrencia del disparador de S
-    que cae dentro de la ventana (con HD) de OTRA Secuencia T que tiene esa
-    firma como MIEMBRO es de T — S no ancla ni dispara. «La que se estaba
-    escuchando gana.» Caso real (Golden Axe): «The Battle - Intro» y
-    «- Loop» comparten 26 firmas; el hi-hat que abre la Intro reaparece
-    cada 63 frames dentro del Loop, y el bajo que abre el Loop aparece
-    dentro de la Intro → sonaban las dos a la vez.
+ 2. CLAIM (2026-08-21 report): an occurrence of S's trigger inside ANOTHER
+    Sequence T's window (with HD), where T contains that signature as a
+    MEMBER, belongs to T. S neither anchors nor triggers: "the one already
+    playing wins." In Golden Axe, "The Battle - Intro" and "- Loop" share
+    26 signatures; the hi-hat that opens the Intro reappears every 63 frames
+    inside the Loop, while the bass that opens the Loop appears in the Intro,
+    causing both to play at once.
 
- 3. CABEZA (reporte 2026-08-21, 2ª vuelta): el disparador solo es frágil —
-    en la 3ª pasada del Loop el bajo que lo abre es OTRA firma (variante)
-    y los otros 5 canales arrancan idénticos; sin disparador el Loop no
-    re-anclaba, su ventana vencía y la Intro se colaba (intro, loop,
-    intro, loop…). La cabeza = las firmas que arrancan en el MISMO frame
-    que el disparador; una Secuencia también ancla cuando arranca la
-    MAYORÍA de su cabeza (≥ ⌈n/2⌉, con n ≥ 2) aunque falte el disparador.
+ 3. HEAD (2026-08-21 report, second pass): a lone trigger is fragile. On the
+    third Loop pass, the opening bass uses ANOTHER signature (a variant),
+    while the other five channels start identically. Without the trigger,
+    the Loop failed to re-anchor, its window expired, and the Intro leaked in
+    (intro, loop, intro, loop...). The head is the set of signatures that
+    start on the SAME frame as the trigger. A Sequence also anchors when a
+    MAJORITY of its head starts (>= ceil(n/2), with n >= 2), even without the
+    trigger.
 
- 4. Empate de frame (dos Secuencias arrancan en el MISMO frame): primero
-    la CONTINUACIÓN — una en loop cuya ventana vence justo en ese frame
-    sigue («siempre la que viene sonando, salvo que haya terminado o
-    cambien los eventos»); después la más ESPECÍFICA (menos firmas
-    miembro); desempate por id. Determinista.
+ 4. Frame tie (two Sequences start on the SAME frame): CONTINUATION wins
+    first—a looping Sequence whose window expires on that frame continues
+    ("always keep the one already playing unless it ended or the events
+    changed"). Next comes the most SPECIFIC Sequence (fewest member
+    signatures), then ID as a deterministic tie-breaker.
 
-Los eventos se recorren en orden ascendente de start_frame — el detector
-NO los entrega ordenados (los emite por canal), así que la tabla los ordena
-(estable). El mismo recorrido alimenta el playback, el mute de los frames
-bare y el mixdown del export: UNA tabla, un solo criterio.
+Events are traversed in ascending `start_frame` order. The detector does NOT
+return them sorted (it emits them per channel), so the table applies a stable
+sort. The same traversal drives playback, bare-frame muting, and export
+mixdown: ONE table and one policy.
 
-**Declara:** `ayther`, `seq_anchor_frame`, `seq_head_quorum`, `seq_sub_before`, `seq_sub_claims`, `SeqAnchorState`, `SeqAnchorSub`
+**Declares:** `ayther`, `seq_anchor_frame`, `seq_head_quorum`, `seq_sub_before`, `seq_sub_claims`, `SeqAnchorState`, `SeqAnchorSub`
 
-_El header instalado (`include/ayther/audio_seq_anchor.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/audio_seq_anchor.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_animationh"></a>
 
 ## ayther_animation.h
 
@@ -343,11 +360,13 @@ game supplies the cursor. Level-1 phase state must be reset after detection
 loss or non-sequential seeks; callers must not assume backward-seek safety
 until that reset contract is enforced.
 
-**Declara:** `AnimationDef`, `AnimationPlayer`, `AnimHdFrame`, `ayther`, `HdPose`, `Impl`
+**Declares:** `AnimationDef`, `AnimationPlayer`, `AnimHdFrame`, `ayther`, `HdPose`, `Impl`
 
-_El header instalado (`include/ayther/ayther_animation.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_animation.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_audio_eventsh"></a>
 
 ## ayther_audio_events.h
 
@@ -399,11 +418,13 @@ The detector, substitution FFI, engine coordinator, `AudioPlayer` event
 playback, and root target are integrated. Session replay and live paths share
 the persisted assignments but retain distinct scheduling policies.
 
-**Declara:** `AudioEventAssignment`, `AudioEventSubstitution`, `AudioEventTrigger`, `ayther`, `Impl`
+**Declares:** `AudioEventAssignment`, `AudioEventSubstitution`, `AudioEventTrigger`, `ayther`, `Impl`
 
-_El header instalado (`include/ayther/ayther_audio_events.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_audio_events.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_background_exporth"></a>
 
 ## ayther_background_export.h
 
@@ -434,68 +455,73 @@ engine-side consumer, ready to wire once the engine builds (needs vcpkg for
 stb_image_write). ayther_background_export.cpp is NOT yet in
 the root CMakeLists.txt — it type-checks standalone (see its header comment).
 
-**Declara:** `ayther`, `BackgroundExporter`, `LayerImage`
+**Declares:** `ayther`, `BackgroundExporter`, `LayerImage`
 
-_El header instalado (`include/ayther/ayther_background_export.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_background_export.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_components_tomlh"></a>
 
 ## ayther_components_toml.h
 
-ayther_components_toml.h — round-trip TOML de la capa de Componentes:
-`animations.toml` (C-S4) y `audio_events.toml` (C-A4).
+ayther_components_toml.h — TOML round-trip of the Components layer:
+`animations.toml` (C-S4) and `audio_events.toml` (C-A4).
 
-El horneo (bake_*) lo llama el Deliver del Lab al construir el pack; el
-parseo (parse_*) lo llama AytherSession al cargar un pack (load_pack_into),
-re-poblando el AnimationPlayer / el mirror de asignaciones por evento. Ambos
-lados viven en el ENGINE (funciones libres, sin UI ni Vulkan) para que el
-round-trip sea testeable headless con strings.
+Baking (bake_*) is called by the Lab's Deliver step while building the pack;
+parsing (parse_*) is called by AytherSession when loading a pack
+(load_pack_into), repopulating the AnimationPlayer / the per-event assignment
+mirror. Both sides live in the ENGINE (free functions, no UI and no Vulkan)
+so the round-trip is testable headless with strings.
 
-Formatos:
+Formats:
   animations.toml (engine-owned):
     [[animation]]
-    clip  = "0x<16hex>"          # handle de autoría (clip id)
+    clip  = "0x<16hex>"          # authoring handle (clip id)
     sheet = "sheets/run.png"
-    tween = 1                     # 0 Pop · 1 tween geométrico
+    tween = 1                     # 0 Pop · 1 geometric tween
     [[animation.pose]]
-    pose   = "0x<16hex>"          # hash de la pose (identidad estable)
-    src    = [x, y, w, h]         # sub-rect del sheet (px)
-    anchor = [x, y, w, h]         # keyframe dst (Nivel 1)
+    pose   = "0x<16hex>"          # pose hash (stable identity)
+    src    = [x, y, w, h]         # sub-rect of the sheet (px)
+    anchor = [x, y, w, h]         # keyframe dst (Level 1)
     ticks  = 6
 
-  audio_events.toml — MISMO esquema que parsea el core Rust
-  (AudioSubstitutor::parse_events_toml, cargado por load_from_pack):
+  audio_events.toml — the SAME schema the Rust core parses
+  (AudioSubstitutor::parse_events_toml, loaded by load_from_pack):
     [[event]]
     signature = "0x<16hex>"
     asset     = "audio/music/zone1.ogg"
-    loop      = true              # opcional (default false)
+    loop      = true              # optional (default false)
 
-  plane_sets.toml — Utilería (CU002) y Glifos (CU005): sustitución HD por
-  ELEMENTO multi-tile de plano. Hasta acá el catálogo de Pintar sólo existía
-  en la sesión de autoría (inyectado por API), así que el `.ay` entregado NO
-  reproducía ninguna sustitución multi-tile; este archivo cierra ese hueco.
+  plane_sets.toml — Props (CU002) and Glyphs (CU005): HD substitution per
+  multi-tile plane ELEMENT. Until now the Paint catalogue existed only in the
+  authoring session (injected through the API), so the delivered `.ay` did
+  NOT reproduce any multi-tile substitution; this file closes that gap.
     [[font]]
     id = "0x<16hex>" · name = "HUD" · cell_w = 1 · cell_h = 2
     [[set]]
-    id      = "0x<16hex>"        # pintar_element_id (determinista por captura)
-    name    = "Cofre"            # informativo (overlay/debug)
+    id      = "0x<16hex>"        # pintar_element_id (deterministic per capture)
+    name    = "Chest"            # informational (overlay/debug)
     type    = "utileria"         # utileria | glifo
     plane   = 0                   # 0=A · 1=B · 2=Window
     w_cells = 3 · h_cells = 2     # bbox
-    asset   = "cofre.png"         # basename (el bake lo rutea al tier)
-    tiles   = "0x<hash>:cx,cy|…"  # miembros con offset RELATIVO en celdas
-    font    = "0x<16hex>" · ch = "A"    # sólo type="glifo"
+    asset   = "cofre.png"         # basename (the bake routes it to the tier)
+    tiles   = "0x<hash>:cx,cy|…"  # members with a RELATIVE offset in cells
+    font    = "0x<16hex>" · ch = "A"    # type="glifo" only
 
-  Los FLIPS observados al capturar NO se hornean a propósito: el hash de
-  tile de plano es flip-invariante y el matcher no los exige (una utilería
-  espejada matchea igual). Viven sólo en pintar_elements.toml, que los usa
-  para el export fiel del PNG base.
+  The FLIPS observed at capture time are deliberately NOT baked: the plane
+  tile hash is flip-invariant and the matcher does not require them (a
+  mirrored prop matches all the same). They live only in
+  pintar_elements.toml, which uses them for the faithful export of the base
+  PNG.
 
-**Declara:** `ayther`, `bake_animations_toml`, `bake_audio_events_toml`, `bake_elements_toml`, `bake_enhance_toml`, `bake_kinematics_toml`, `bake_panoramas_toml`, `bake_plane_sequences_toml`, `bake_plane_sets_toml`, `bake_screens_toml`, `PackEnhance`, `PackInstrument`, `PackKinematic`, `PackKinematicStep`, `PackPanorama`, `PackPanoramaCell`, `PackPlaneFont`, `PackPlaneSeqStep`, `PackPlaneSequence`, `PackPlaneSet`, `PackPlaneSetMember`, `PackScreen`, `PackScreenCell`, `parse_animations_toml`, `parse_audio_events_toml`, `parse_elements_toml`, `parse_enhance_toml`, `parse_instruments_toml`, `parse_kinematics_toml`, `parse_panoramas_toml`, `parse_plane_sequences_toml`, `parse_plane_sets_toml`, `parse_screens_toml`, `plane_sequence_step_at`, `plane_sequence_total`
+**Declares:** `ayther`, `bake_animations_toml`, `bake_audio_events_toml`, `bake_elements_toml`, `bake_enhance_toml`, `bake_kinematics_toml`, `bake_panoramas_toml`, `bake_plane_sequences_toml`, `bake_plane_sets_toml`, `bake_screens_toml`, `PackEnhance`, `PackInstrument`, `PackKinematic`, `PackKinematicStep`, `PackPanorama`, `PackPanoramaCell`, `PackPlaneFont`, `PackPlaneSeqStep`, `PackPlaneSequence`, `PackPlaneSet`, `PackPlaneSetMember`, `PackScreen`, `PackScreenCell`, `parse_animations_toml`, `parse_audio_events_toml`, `parse_elements_toml`, `parse_enhance_toml`, `parse_instruments_toml`, `parse_kinematics_toml`, `parse_panoramas_toml`, `parse_plane_sequences_toml`, `parse_plane_sets_toml`, `parse_screens_toml`, `plane_sequence_step_at`, `plane_sequence_total`
 
-_El header instalado (`include/ayther/ayther_components_toml.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_components_toml.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_configh"></a>
 
 ## ayther_config.h
 
@@ -514,11 +540,13 @@ Call sequence:
   config.push_recent(rom_path);
   config.save();
 
-**Declara:** `AytherConfig`
+**Declares:** `AytherConfig`
 
-_El header instalado (`include/ayther/ayther_config.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_config.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_core_ffih"></a>
 
 ## ayther_core_ffi.h
 
@@ -530,32 +558,36 @@ integrated via corrosion). The extern-C wrappers below remain ONLY for the
 zero-copy hot path (process_frame / update_ram / set_pack — raw pointers cxx
 does not bridge); keep them in sync with lib.rs by hand.
 
-`<stdint.h>` en vez de `<cstdint>` y `extern "C"` bajo guarda: es un paso
-hacia poder incluirlo desde C, y desde C++ no cambia nada.
+`<stdint.h>` instead of `<cstdint>` and a guarded `extern "C"`: a step
+towards being includable from C, and from C++ nothing changes.
 
-AVISO, para no prometer a medias: este header **todavía no es C puro**. Usa
-`bool` y nombres de struct sin `typedef`, así que un `.c` no lo compila. La
-API C del SDK es `ayther_sdk.h` —ahí está la superficie pensada para C, con
-lectura de packs incluida— y éste es un header de contrato compartido en C++.
-Lo destapó el ejemplo `pack_read`, al intentar usarlo desde C.
+NOTICE, so as not to half-promise: this header is **not pure C yet**. It uses
+`bool` and struct names without a `typedef`, so a `.c` will not compile it.
+The SDK's C API is `ayther_sdk.h` —that is the surface designed for C, pack
+reading included— and this is a shared contract header in C++.
+The `pack_read` example exposed it, by trying to use it from C.
 
-**Declara:** `AudioEventGate`, `AyArchive`, `ayther_apply_rom_patch`, `ayther_asset_id`, `ayther_asset_id_bytes`, `ayther_audio_evdet_event_count`, `ayther_audio_evdet_flush`, `ayther_audio_evdet_free`, `ayther_audio_evdet_get_events`, `ayther_audio_evdet_new`, `ayther_audio_evdet_push`, `ayther_audio_evdet_set_split_on_reattack`, `ayther_audio_event_active`, `ayther_audio_event_clear_events`, `ayther_audio_event_count`, `ayther_audio_event_finish`, `ayther_audio_event_free`, `ayther_audio_event_get`, `ayther_audio_event_new`, `ayther_audio_event_process_frame`, `ayther_audio_event_process_frame_ex`, `ayther_audio_event_reset`, `ayther_audio_event_set_initial_active`, `ayther_audio_event_set_pal`, `ayther_audio_events_format`, `ayther_audio_events_parse`, `ayther_audio_gate_eval`, `ayther_audio_gate_free`, `ayther_audio_gate_new`, `ayther_audio_hasher_end_tick`, `ayther_audio_hasher_free`, `ayther_audio_hasher_get_occurrences`, `ayther_audio_hasher_new`, `ayther_audio_hasher_process_batch`, `ayther_audio_hasher_unique_count`, `ayther_audio_sub_add_event_override`, `ayther_audio_sub_add_override`, `ayther_audio_sub_catalog_len`, `ayther_audio_sub_clear_event_overrides`, `ayther_audio_sub_clear_overrides`, `ayther_audio_sub_event_catalog_len`, `ayther_audio_sub_free`, `ayther_audio_sub_load_pack`, `ayther_audio_sub_new`, `ayther_audio_sub_resolve`, `ayther_audio_sub_resolve_events`, `ayther_bg_stitcher_animated_cells`, `ayther_bg_stitcher_bounds`, `ayther_bg_stitcher_cell_count`, `ayther_bg_stitcher_conflicts`, `ayther_bg_stitcher_free`, `ayther_bg_stitcher_get`, `ayther_bg_stitcher_new`, `ayther_bg_stitcher_observe`, `ayther_chan_bit`, `ayther_chan_index`, `ayther_chip_name`, `ayther_compat_free`, `ayther_compat_grade`, `ayther_compat_json`, `ayther_compat_reason`, `ayther_compat_unverified`, `ayther_compat_unverified_count`, `ayther_core_version`, `ayther_credits_assets`, `ayther_credits_attribution`, `ayther_credits_author`, `ayther_credits_count`, `ayther_credits_free`, `ayther_credits_licenses`, `ayther_credits_role`, `ayther_engine_version`, `ayther_game_profile_assign`, `ayther_game_profile_entities`, `ayther_game_profile_free`, `ayther_game_profile_kind_count`, `ayther_game_profile_kind_name`, `ayther_game_profile_kind_of_id`, `ayther_game_profile_load`, `ayther_game_profile_load_str`, `ayther_geo_tween_duration`, `ayther_geo_tween_free`, `ayther_geo_tween_new`, `ayther_geo_tween_sample`, `ayther_instruments_soundfonts`, `ayther_is_rom_patch`, `ayther_manifest_schema_supported`, `ayther_pack_build_id`, `ayther_pack_builder_add_bytes`, `ayther_pack_builder_add_file`, `ayther_pack_builder_count`, `ayther_pack_builder_finish`, `ayther_pack_builder_free`, `ayther_pack_builder_new`, `ayther_pack_close`, `ayther_pack_compat`, `ayther_pack_credits`, `ayther_pack_declares_systems`, `ayther_pack_default_profile`, `ayther_pack_entry_count`, `ayther_pack_entry_name`, `ayther_pack_entry_streamable`, `ayther_pack_file_size`, `ayther_pack_game_id`, `ayther_pack_meta_field`, `ayther_pack_open`, `ayther_pack_profile_count`, `ayther_pack_profile_field`, `ayther_pack_profile_index`, `ayther_pack_profile_muted_buses`, `ayther_pack_profile_systems`, `ayther_pack_read`, `ayther_pack_read_range`, `ayther_pack_report_code`, `ayther_pack_report_count`, `ayther_pack_report_free`, `ayther_pack_report_has_errors`, `ayther_pack_report_message`, `ayther_pack_report_severity`, `ayther_pack_schema`, `ayther_pack_set_region`, `ayther_pack_set_tier`, `ayther_pack_set_tier_for_height`, `ayther_pack_systems`, `ayther_pack_tiers`, `ayther_pack_validate`, `ayther_pack_watcher_free`, `ayther_pack_watcher_new`, `ayther_pack_watcher_poll`, `ayther_palette_signature`, `ayther_pose_sub_add_override`, `ayther_pose_sub_add_override_variants`, `ayther_pose_sub_clear_overrides`, `ayther_pose_sub_free`, `ayther_pose_sub_load_pack`, `ayther_pose_sub_new`, `ayther_pose_sub_resolve`, `ayther_pose_sub_set_cram`, `ayther_pose_sub_set_screen`, `ayther_rom_patch_error`, `ayther_script_free`, `ayther_script_get_audio_overrides`, `ayther_script_get_shader_params`, `ayther_script_get_sprite_overrides`, `ayther_script_get_tile_overrides`, `ayther_script_load_string`, `ayther_script_new`, `ayther_script_on_frame`, `ayther_script_set_pack`, `ayther_script_update_audio`, `ayther_script_update_sprites`, `ayther_script_update_tiles`, `ayther_scroll_unwrapper_free`, `ayther_scroll_unwrapper_last_step`, `ayther_scroll_unwrapper_new`, `ayther_scroll_unwrapper_push`, `ayther_sf2_all_notes_off`, `ayther_sf2_bake`, `ayther_sf2_control`, `ayther_sf2_free`, `ayther_sf2_list_presets`, `ayther_sf2_new`, `ayther_sf2_new_shared`, `ayther_sf2_note_off`, `ayther_sf2_note_on`, `ayther_sf2_preset_list`, `ayther_sf2_program`, `ayther_sf2_render`, `ayther_sf2_trim_cache`, `ayther_sonic_read_velocity`, `ayther_sonic_read_xy`, `ayther_soundfont_normalize_file`, `ayther_sprite_hasher_clip_count`, `ayther_sprite_hasher_free`, `ayther_sprite_hasher_get_clip`, `ayther_sprite_hasher_get_occurrences`, `ayther_sprite_hasher_new`, `ayther_sprite_hasher_process_sprites`, `ayther_sprite_hasher_process_vram`, `ayther_sprite_hasher_reset_animation_grouper`, `ayther_sprite_hasher_unique_count`, `ayther_sprite_sub_add_override`, `ayther_sprite_sub_add_override_ref`, `ayther_sprite_sub_clear_overrides`, `ayther_sprite_sub_free`, `ayther_sprite_sub_load_pack`, `ayther_sprite_sub_new`, `ayther_sprite_sub_resolve`, `ayther_subsystem_count`, `ayther_subsystem_name`, `ayther_tile_brightness_factor`, `ayther_tile_hasher_dump_toml`, `ayther_tile_hasher_free`, `ayther_tile_hasher_get_occurrences`, `ayther_tile_hasher_new`, `ayther_tile_hasher_process_frame`, `ayther_tile_hasher_unique_count`, `ayther_tile_mean_level`, `ayther_tile_shape_hash`, `ayther_tile_sub_add_override`, `ayther_tile_sub_begin_frame`, `ayther_tile_sub_clear_overrides`, `ayther_tile_sub_free`, `ayther_tile_sub_load_pack`, `ayther_tile_sub_load_pack_named`, `ayther_tile_sub_lookup`, `ayther_tile_sub_new`, `ayther_tile_sub_resolve`, `ayther_tween_begin_frame`, `ayther_tween_clear`, `ayther_tween_clear_overrides`, `ayther_tween_free`, `ayther_tween_load_pack`, `ayther_tween_new`, `ayther_tween_resolve`, `ayther_tween_set_override`, `ayther_widescreen_gate_eval`, `ayther_widescreen_gate_free`, `ayther_widescreen_gate_new`, `AytherAnimFrame`, `AytherAudioActive`, `AytherAudioActiveSub`, `AytherAudioEvent`, `AytherAudioEventDetector`, `AytherAudioEventSub`, `AytherAudioHasher`, `AytherAudioOccurrence`, `AytherAudioOverride`, `AytherAudioSub`, `AytherAudioSubstitutor`, `AytherAudioWrite`, `AytherBatchEventDetector`, `AytherBgStitcher`, `AytherCompat`, `AytherCredits`, `AytherEventSub`, `AytherGameProfile`, `AytherGeometricTween`, `AytherPackBuilder`, `AytherPackReport`, `AytherPackWatcher`, `AytherPcmEvent`, `AytherScriptEnv`, `AytherScrollUnwrapper`, `AytherSf2`, `AytherShaderParams`, `AytherSpriteHasher`, `AytherSpriteOccurrence`, `AytherSpriteOverride`, `AytherSpriteSub`, `AytherSpriteSubstitutor`, `AytherTileHasher`, `AytherTileOccurrence`, `AytherTileOverride`, `AytherTileSub`, `AytherTileSubstitutor`, `AytherTransform`, `PoseSetSubstitutor`, `struct`, `TweenPlayer`, `WidescreenGate`
+**Declares:** `AudioEventGate`, `AyArchive`, `ayther_apply_rom_patch`, `ayther_asset_id`, `ayther_asset_id_bytes`, `ayther_audio_evdet_event_count`, `ayther_audio_evdet_flush`, `ayther_audio_evdet_free`, `ayther_audio_evdet_get_events`, `ayther_audio_evdet_new`, `ayther_audio_evdet_push`, `ayther_audio_evdet_set_split_on_reattack`, `ayther_audio_event_active`, `ayther_audio_event_clear_events`, `ayther_audio_event_count`, `ayther_audio_event_finish`, `ayther_audio_event_free`, `ayther_audio_event_get`, `ayther_audio_event_new`, `ayther_audio_event_process_frame`, `ayther_audio_event_process_frame_ex`, `ayther_audio_event_reset`, `ayther_audio_event_set_initial_active`, `ayther_audio_event_set_pal`, `ayther_audio_events_format`, `ayther_audio_events_parse`, `ayther_audio_gate_eval`, `ayther_audio_gate_free`, `ayther_audio_gate_new`, `ayther_audio_hasher_end_tick`, `ayther_audio_hasher_free`, `ayther_audio_hasher_get_occurrences`, `ayther_audio_hasher_new`, `ayther_audio_hasher_process_batch`, `ayther_audio_hasher_unique_count`, `ayther_audio_sub_add_event_override`, `ayther_audio_sub_add_override`, `ayther_audio_sub_catalog_len`, `ayther_audio_sub_clear_event_overrides`, `ayther_audio_sub_clear_overrides`, `ayther_audio_sub_event_catalog_len`, `ayther_audio_sub_free`, `ayther_audio_sub_load_pack`, `ayther_audio_sub_new`, `ayther_audio_sub_resolve`, `ayther_audio_sub_resolve_events`, `ayther_bg_stitcher_animated_cells`, `ayther_bg_stitcher_bounds`, `ayther_bg_stitcher_cell_count`, `ayther_bg_stitcher_conflicts`, `ayther_bg_stitcher_free`, `ayther_bg_stitcher_get`, `ayther_bg_stitcher_new`, `ayther_bg_stitcher_observe`, `ayther_chan_bit`, `ayther_chan_index`, `ayther_chip_name`, `ayther_compat_free`, `ayther_compat_grade`, `ayther_compat_json`, `ayther_compat_reason`, `ayther_compat_unverified`, `ayther_compat_unverified_count`, `ayther_core_version`, `ayther_credits_assets`, `ayther_credits_attribution`, `ayther_credits_author`, `ayther_credits_count`, `ayther_credits_free`, `ayther_credits_licenses`, `ayther_credits_role`, `ayther_engine_version`, `ayther_game_profile_assign`, `ayther_game_profile_entities`, `ayther_game_profile_free`, `ayther_game_profile_kind_count`, `ayther_game_profile_kind_name`, `ayther_game_profile_kind_of_id`, `ayther_game_profile_load`, `ayther_game_profile_load_str`, `ayther_geo_tween_duration`, `ayther_geo_tween_free`, `ayther_geo_tween_new`, `ayther_geo_tween_sample`, `ayther_instruments_soundfonts`, `ayther_is_rom_patch`, `ayther_manifest_schema_supported`, `ayther_pack_build_id`, `ayther_pack_builder_add_bytes`, `ayther_pack_builder_add_file`, `ayther_pack_builder_count`, `ayther_pack_builder_finish`, `ayther_pack_builder_free`, `ayther_pack_builder_new`, `ayther_pack_close`, `ayther_pack_compat`, `ayther_pack_credits`, `ayther_pack_declares_systems`, `ayther_pack_default_profile`, `ayther_pack_entry_count`, `ayther_pack_entry_name`, `ayther_pack_entry_streamable`, `ayther_pack_file_size`, `ayther_pack_game_id`, `ayther_pack_meta_field`, `ayther_pack_open`, `ayther_pack_profile_count`, `ayther_pack_profile_field`, `ayther_pack_profile_index`, `ayther_pack_profile_muted_buses`, `ayther_pack_profile_systems`, `ayther_pack_read`, `ayther_pack_read_range`, `ayther_pack_report_code`, `ayther_pack_report_count`, `ayther_pack_report_free`, `ayther_pack_report_has_errors`, `ayther_pack_report_message`, `ayther_pack_report_severity`, `ayther_pack_schema`, `ayther_pack_set_region`, `ayther_pack_set_tier`, `ayther_pack_set_tier_for_height`, `ayther_pack_systems`, `ayther_pack_tiers`, `ayther_pack_validate`, `ayther_pack_watcher_free`, `ayther_pack_watcher_new`, `ayther_pack_watcher_poll`, `ayther_palette_signature`, `ayther_pose_sub_add_override`, `ayther_pose_sub_add_override_variants`, `ayther_pose_sub_clear_overrides`, `ayther_pose_sub_free`, `ayther_pose_sub_load_pack`, `ayther_pose_sub_new`, `ayther_pose_sub_resolve`, `ayther_pose_sub_set_cram`, `ayther_pose_sub_set_screen`, `ayther_rom_patch_error`, `ayther_script_free`, `ayther_script_get_audio_overrides`, `ayther_script_get_shader_params`, `ayther_script_get_sprite_overrides`, `ayther_script_get_tile_overrides`, `ayther_script_load_string`, `ayther_script_new`, `ayther_script_on_frame`, `ayther_script_set_pack`, `ayther_script_update_audio`, `ayther_script_update_sprites`, `ayther_script_update_tiles`, `ayther_scroll_unwrapper_free`, `ayther_scroll_unwrapper_last_step`, `ayther_scroll_unwrapper_new`, `ayther_scroll_unwrapper_push`, `ayther_sf2_all_notes_off`, `ayther_sf2_bake`, `ayther_sf2_control`, `ayther_sf2_free`, `ayther_sf2_list_presets`, `ayther_sf2_new`, `ayther_sf2_new_shared`, `ayther_sf2_note_off`, `ayther_sf2_note_on`, `ayther_sf2_preset_list`, `ayther_sf2_program`, `ayther_sf2_render`, `ayther_sf2_trim_cache`, `ayther_sonic_read_velocity`, `ayther_sonic_read_xy`, `ayther_soundfont_normalize_file`, `ayther_sprite_hasher_clip_count`, `ayther_sprite_hasher_free`, `ayther_sprite_hasher_get_clip`, `ayther_sprite_hasher_get_occurrences`, `ayther_sprite_hasher_new`, `ayther_sprite_hasher_process_sprites`, `ayther_sprite_hasher_process_vram`, `ayther_sprite_hasher_reset_animation_grouper`, `ayther_sprite_hasher_unique_count`, `ayther_sprite_sub_add_override`, `ayther_sprite_sub_add_override_ref`, `ayther_sprite_sub_clear_overrides`, `ayther_sprite_sub_free`, `ayther_sprite_sub_load_pack`, `ayther_sprite_sub_new`, `ayther_sprite_sub_resolve`, `ayther_subsystem_count`, `ayther_subsystem_name`, `ayther_tile_brightness_factor`, `ayther_tile_hasher_dump_toml`, `ayther_tile_hasher_free`, `ayther_tile_hasher_get_occurrences`, `ayther_tile_hasher_new`, `ayther_tile_hasher_process_frame`, `ayther_tile_hasher_unique_count`, `ayther_tile_mean_level`, `ayther_tile_shape_hash`, `ayther_tile_sub_add_override`, `ayther_tile_sub_begin_frame`, `ayther_tile_sub_clear_overrides`, `ayther_tile_sub_free`, `ayther_tile_sub_load_pack`, `ayther_tile_sub_load_pack_named`, `ayther_tile_sub_lookup`, `ayther_tile_sub_new`, `ayther_tile_sub_resolve`, `ayther_tween_begin_frame`, `ayther_tween_clear`, `ayther_tween_clear_overrides`, `ayther_tween_free`, `ayther_tween_load_pack`, `ayther_tween_new`, `ayther_tween_resolve`, `ayther_tween_set_override`, `ayther_widescreen_gate_eval`, `ayther_widescreen_gate_free`, `ayther_widescreen_gate_new`, `AytherAnimFrame`, `AytherAudioActive`, `AytherAudioActiveSub`, `AytherAudioEvent`, `AytherAudioEventDetector`, `AytherAudioEventSub`, `AytherAudioHasher`, `AytherAudioOccurrence`, `AytherAudioOverride`, `AytherAudioSub`, `AytherAudioSubstitutor`, `AytherAudioWrite`, `AytherBatchEventDetector`, `AytherBgStitcher`, `AytherCompat`, `AytherCredits`, `AytherEventSub`, `AytherGameProfile`, `AytherGeometricTween`, `AytherPackBuilder`, `AytherPackReport`, `AytherPackWatcher`, `AytherPcmEvent`, `AytherScriptEnv`, `AytherScrollUnwrapper`, `AytherSf2`, `AytherShaderParams`, `AytherSpriteHasher`, `AytherSpriteOccurrence`, `AytherSpriteOverride`, `AytherSpriteSub`, `AytherSpriteSubstitutor`, `AytherTileHasher`, `AytherTileOccurrence`, `AytherTileOverride`, `AytherTileSub`, `AytherTileSubstitutor`, `AytherTransform`, `PoseSetSubstitutor`, `struct`, `TweenPlayer`, `WidescreenGate`
 
-_El header instalado (`include/ayther/ayther_core_ffi.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_core_ffi.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_envh"></a>
 
 ## ayther_env.h
 
-ayther_env.h — getenv con fallback al prefijo legacy AETHER_ (rebrand de
-código 2026-07-25): scripts/arneses viejos que exporten AETHER_* siguen
-funcionando sin cambios. Usar SIEMPRE esto para variables AYTHER_*.
+ayther_env.h — getenv with a fallback to the legacy AETHER_ prefix (code
+rebrand 2026-07-25): older scripts and harnesses that export AETHER_* keep
+working unchanged. ALWAYS use this for AYTHER_* variables.
 
-**Declara:** `ayther`, `env_get`
+**Declares:** `ayther`, `env_get`
 
-_El header instalado (`include/ayther/ayther_env.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_env.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_layersh"></a>
 
 ## ayther_layers.h
 
@@ -569,11 +601,13 @@ Element-level visibility is deliberately not represented here. It belongs
 to the session inventory and is controlled through
 AytherSession::set_hidden_elements().
 
-**Declara:** `AytherLayer`, `AytherLayerContent`, `AytherLayerStack`, `uint8_t`
+**Declares:** `AytherLayer`, `AytherLayerContent`, `AytherLayerStack`, `uint8_t`
 
-_El header instalado (`include/ayther/ayther_layers.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_layers.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_mode3h"></a>
 
 ## ayther_mode3.h
 
@@ -613,39 +647,43 @@ The Rust profile implementation, FFI, engine resolver, session wiring, and
 root CMake target are integrated. The design mirrors the existing
 SpriteSubstitutor/metasprite flow and publishes results through FrameView.
 
-**Declara:** `ayther`, `EntityInstance`, `Impl`, `Mode3Resolver`
+**Declares:** `ayther`, `EntityInstance`, `Impl`, `Mode3Resolver`
 
-_El header instalado (`include/ayther/ayther_mode3.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_mode3.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_rankh"></a>
 
 ## ayther_rank.h
 
-ayther_rank.h — la ESCALERA de resolución: qué entidad gana cuando varias
-matchean el mismo contenido.
+ayther_rank.h — the resolution LADDER: which entity wins when several match
+the same content.
 
-Regla del producto (2026-07-26): el match prioriza SIEMPRE de complejidad
-MAYOR a MENOR. La entidad que gana RECLAMA su cobertura y las de menor rango
-contenidas en ella no se dibujan — no se «tapan» por orden de dibujo, ni
-siquiera se emiten.
+Product rule (2026-07-26): matching ALWAYS prioritises from HIGHER to LOWER
+complexity. The winning entity CLAIMS its coverage, and the lower-ranked
+entities contained within it are not drawn — they are not covered up by draw
+order, they are not even emitted.
 
-Por qué acá y no en el renderer: el orden de lanes es una consecuencia, no la
-decisión. Cuando la prioridad vive en el orden de dibujo, dos entidades
-terminan pintando la misma región y el resultado depende de quién va último
-— que es exactamente el bug que tenía el Cuadro (los quads de Utilería de esa
-pantalla se dibujaban ENCIMA del Cuadro que ya los contenía).
+Why here and not in the renderer: lane order is a consequence, not the
+decision. When priority lives in the draw order, two entities end up painting
+the same region and the result depends on which one goes last — which is
+exactly the bug the Picture had (the Prop quads of that screen were drawn ON
+TOP OF the Picture that already contained them).
 
-Antes de esto no existía ninguna noción de prioridad ENTRE tipos: seis
-matchers corrían aislados, cada uno escribía su buffer del FrameView y el
-renderer los dibujaba todos. Las únicas escaleras eran INTRA-dominio, con dos
-arrays de claim incompatibles: `claimed[]` sobre las occurrences de sprite y
-`consumed[]` sobre las celdas de plano.
+Before this there was no notion of priority BETWEEN types: six matchers ran
+in isolation, each one wrote its own FrameView buffer and the renderer drew
+them all. The only ladders were INTRA-domain, with two incompatible claim
+arrays: `claimed[]` over sprite occurrences and `consumed[]` over plane
+cells.
 
-**Declara:** `ayther`, `outranks`, `rank_name`, `uint8_t`
+**Declares:** `ayther`, `outranks`, `rank_name`, `uint8_t`
 
-_El header instalado (`include/ayther/ayther_rank.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_rank.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_recordingh"></a>
 
 ## ayther_recording.h
 
@@ -667,11 +705,13 @@ In memory the initial state is kept RAW (ready to unserialize); compression
 happens only at save() time. The motor (AytherSession) records into this and
 replays from it via replay_seek().
 
-**Declara:** `ayther`, `AytherRecording`, `FrameStat`
+**Declares:** `ayther`, `AytherRecording`, `FrameStat`
 
-_El header instalado (`include/ayther/ayther_recording.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_recording.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_rendererh"></a>
 
 ## ayther_renderer.h
 
@@ -693,11 +733,13 @@ Single-owner; driven from the same thread as the session.
 R3.0: scaffold — owns the offscreen target; render() clears it. The emu-frame,
 HD-tile, sprite and post-process passes land in R3.1 / R3.2.
 
-**Declara:** `AyArchive`, `ayther`, `AytherLayerStack`, `AytherRenderer`, `FrameView`, `SceneElement`, `VkContext`
+**Declares:** `AyArchive`, `ayther`, `AytherLayerStack`, `AytherRenderer`, `FrameScratch`, `FrameView`, `SceneElement`, `VkContext`
 
-_El header instalado (`include/ayther/ayther_renderer.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_renderer.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_resulth"></a>
 
 ## ayther_result.h
 
@@ -711,11 +753,13 @@ that* it failed.
 
 C++20: no std::expected (that is C++23). This is the project's vehicle.
 
-**Declara:** `ayther`, `Error`, `ErrorCode`, `Result`
+**Declares:** `ayther`, `Error`, `ErrorCode`, `Result`
 
-_El header instalado (`include/ayther/ayther_result.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_result.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_sdk_versionh"></a>
 
 ## ayther_sdk_version.h
 
@@ -737,19 +781,23 @@ They can differ when a program finds an unexpected library at run time.
 `sdk_version_check()` reports both values so incompatibility fails with a
 diagnostic rather than at the first changed layout or call contract.
 
-**Declara:** `ayther`, `SdkVersion`
+**Declares:** `ayther`, `SdkVersion`
 
-_El header instalado (`include/ayther/ayther_sdk_version.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_sdk_version.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_sdkh"></a>
 
 ## ayther_sdk.h
 
-**Declara:** `ay_add_audio_observer`, `ay_add_frame_observer`, `ay_add_post_filter`, `ay_audio_events`, `ay_capabilities`, `ay_clear_pack`, `ay_compat_close`, `ay_compat_grade`, `ay_compat_json`, `ay_compat_reason`, `ay_compat_runnable`, `ay_compat_unverified`, `ay_compat_unverified_count`, `ay_core_option_count`, `ay_core_option_desc`, `ay_core_option_key`, `ay_create`, `ay_destroy`, `ay_error_message`, `ay_export_frame`, `ay_export_frame_size`, `ay_extension_active`, `ay_extension_failures`, `ay_frame`, `ay_game_id`, `ay_get_input`, `ay_has_pack`, `ay_last_create_error`, `ay_memory_size`, `ay_pack_close`, `ay_pack_compat`, `ay_pack_entry_count`, `ay_pack_entry_name`, `ay_pack_entry_size`, `ay_pack_entry_streamable`, `ay_pack_game_id`, `ay_pack_open`, `ay_pack_read_entry`, `ay_pack_read_range`, `ay_read_memory`, `ay_remove_extension`, `ay_set_input`, `ay_set_pack`, `ay_step`, `AyAudioEvent`, `AyButton`, `AyCapability`, `AyCompat`, `AyFrame`, `AyPack`, `AyPixelFormat`, `AySession`, `AySessionConfig`, `AyStatus`, `enum`, `int`, `struct`, `void`
+**Declares:** `ay_add_audio_observer`, `ay_add_frame_observer`, `ay_add_post_filter`, `ay_audio_events`, `ay_capabilities`, `ay_clear_pack`, `ay_compat_close`, `ay_compat_grade`, `ay_compat_json`, `ay_compat_reason`, `ay_compat_runnable`, `ay_compat_unverified`, `ay_compat_unverified_count`, `ay_core_option_count`, `ay_core_option_desc`, `ay_core_option_key`, `ay_create`, `ay_destroy`, `ay_error_message`, `ay_export_frame`, `ay_export_frame_size`, `ay_extension_active`, `ay_extension_failures`, `ay_frame`, `ay_game_id`, `ay_get_input`, `ay_has_pack`, `ay_last_create_error`, `ay_memory_size`, `ay_pack_close`, `ay_pack_compat`, `ay_pack_entry_count`, `ay_pack_entry_name`, `ay_pack_entry_size`, `ay_pack_entry_streamable`, `ay_pack_game_id`, `ay_pack_open`, `ay_pack_read_entry`, `ay_pack_read_range`, `ay_read_memory`, `ay_remove_extension`, `ay_set_input`, `ay_set_pack`, `ay_step`, `AyAudioEvent`, `AyButton`, `AyCapability`, `AyCompat`, `AyFrame`, `AyPack`, `AyPixelFormat`, `AySession`, `AySessionConfig`, `AyStatus`, `enum`, `int`, `struct`, `void`
 
-_El header instalado (`include/ayther/ayther_sdk.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_sdk.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_sessionh"></a>
 
 ## ayther_session.h
 
@@ -783,11 +831,13 @@ ayther::unique_handle inside the pimpl — no raw Rust pointer lives loose (§4.
 Threading: a session is single-owner and must be driven from one thread (the
 emulation thread), matching ayther_core's rule. Non-copyable; movable.
 
-**Declara:** `ayther`, `ayther_plane_tile_hash_repalette`, `ayther_plane_tile_hash_variants`, `AytherRecording`, `AytherSession`, `ElementEffect`, `EnhancedElement`, `FrameView`, `HiddenElement`, `PlaneCellHit`, `PlaneTileOccurrence`, `SceneElement`, `subsystem_bit`, `uint8_t`
+**Declares:** `ayther`, `ayther_plane_tile_hash_repalette`, `ayther_plane_tile_hash_variants`, `AytherRecording`, `AytherSession`, `ElementEffect`, `EnhancedElement`, `FrameView`, `HiddenElement`, `PlaneCellHit`, `PlaneTileOccurrence`, `SceneElement`, `subsystem_bit`, `uint8_t`
 
-_El header instalado (`include/ayther/ayther_session.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_session.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_unique_handleh"></a>
 
 ## ayther_unique_handle.h
 
@@ -806,11 +856,13 @@ Usage:
       ayther::unique_handle<AytherTileHasher, &ayther_tile_hasher_free>;
   TileHasherPtr h{ ayther_tile_hasher_new() };   // freed automatically
 
-**Declara:** `ayther`, `handle_deleter`
+**Declares:** `ayther`, `handle_deleter`
 
-_El header instalado (`include/ayther/ayther_unique_handle.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_unique_handle.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_versionh"></a>
 
 ## ayther_version.h
 
@@ -820,109 +872,121 @@ AYTHER_VERSION_* identifies the product release shared by Cargo, CMake, the
 native SDK, the engine compatibility check, and the Lua API. The remaining
 values are independent protocol revisions and do not follow SemVer.
 
-_El header instalado (`include/ayther/ayther_version.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_version.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="ayther_videoh"></a>
 
 ## ayther_video.h
 
-ayther_video.h — decoder de video para la Cinemática ().
+ayther_video.h — video decoder for the Kinematic.
 
-QUÉ ES: un clip VP9 en contenedor IVF, decodificado a BGRA8 listo para subir
-a una textura. No sabe nada de Vulkan ni de la sesión: se le pide un índice
-de frame y devuelve píxeles.
+WHAT IT IS: a VP9 clip in an IVF container, decoded to BGRA8 ready to upload
+into a texture. It knows nothing about Vulkan or the session: you ask it for
+a frame index and it returns pixels.
 
-POR QUÉ VP9/IVF Y NO FFmpeg — no es gusto, es la frontera GPL del proyecto.
-`ayther_engine` es una lib ESTÁTICA; el núcleo de FFmpeg es LGPL-2.1+, así
-que linkearlo obligaría a distribución dinámica o a entregar objetos
-relinkeables, y cualquier componente --enable-gpl lo volvería GPL. libvpx es
-BSD-3 + patent grant. IVF son 32 bytes de header y 12 por frame, o sea que el
-demuxer entra en este archivo y no arrastra libavformat. El ENCODER sigue
-siendo un ffmpeg.exe EXTERNO del PATH (lab/src/app/ffmpeg_pipe.h): proceso
-aparte, sin linkeo, sin pregunta de licencia.
+WHY VP9/IVF AND NOT FFmpeg — it is not taste, it is the project's GPL
+boundary. `ayther_engine` is a STATIC library; the FFmpeg core is LGPL-2.1+,
+so linking it would force dynamic distribution or shipping relinkable
+objects, and any --enable-gpl component would make it GPL. libvpx is BSD-3 +
+patent grant. IVF is 32 bytes of header and 12 per frame, which means the
+demuxer fits in this file and drags in no libavformat. The ENCODER remains an
+EXTERNAL ffmpeg.exe from PATH (lab/src/app/ffmpeg_pipe.h): a separate
+process, no linking, no licence question.
 
-POR QUÉ EL HEADER NO INCLUYE vpx: si `vpx/vpx_decoder.h` entrara acá, el
-include dir de libvpx tendría que ser PUBLIC en el CMake del engine y el Lab,
-el runtime y los tools pasarían a depender de una librería OPCIONAL. Pimpl.
+WHY THE HEADER DOES NOT INCLUDE vpx: if `vpx/vpx_decoder.h` came in here, the
+libvpx include dir would have to be PUBLIC in the engine CMake, and the Lab,
+the runtime and the tools would start depending on an OPTIONAL library.
+Pimpl.
 
-SIN libvpx (AYTHER_HAVE_VPX apagado) esto compila igual: open() devuelve
-false con motivo y validate() rechaza. Un colaborador sin libvpx no queda
-bloqueado, y el bake nunca hornea un video sin validar.
+WITHOUT libvpx (AYTHER_HAVE_VPX off) this still compiles: open() returns
+false with a reason and validate() rejects. A contributor without libvpx is
+not blocked, and the bake never bakes a video without validating it.
 
-STREAMING (): el clip NO reside en RAM. Lee de una `VideoSource` —el pack
-por rango o un archivo— y se queda sólo con el índice de paquetes, el paquete
-en curso y el frame convertido. Antes copiaba el .ivf entero, y ése era el
-motivo real del tope de 32 MB por video del bake: no el formato, sino que
-`ayther_pack_read` es todo-o-nada. Retirado el tope, un clip de 8K ocupa lo
-mismo que uno de 3 s.
+STREAMING: the clip does NOT reside in RAM. It reads from a `VideoSource` —
+the pack by range, or a file — and keeps only the packet index, the current
+packet and the converted frame. It used to copy the whole .ivf, and that was
+the real reason for the bake's 32 MB per-video cap: not the format, but that
+`ayther_pack_read` is all-or-nothing. With the cap removed, an 8K clip takes
+the same space as a 3 s one.
 
-**Declara:** `ayther`, `Impl`, `video_i420_to_bgra_px`, `video_index_build`, `video_index_frames`, `video_index_path`, `video_probe`, `video_source_from_file`, `video_source_from_pack`, `VideoClip`, `VideoFrameView`, `VideoInfo`, `VideoPlane`, `VideoProbe`, `VideoSource`
+**Declares:** `ayther`, `Impl`, `video_i420_to_bgra_px`, `video_index_build`, `video_index_frames`, `video_index_path`, `video_probe`, `video_source_from_file`, `video_source_from_pack`, `VideoClip`, `VideoFrameView`, `VideoInfo`, `VideoPlane`, `VideoProbe`, `VideoSource`
 
-_El header instalado (`include/ayther/ayther_video.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/ayther_video.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="cram_paletteh"></a>
 
 ## cram_palette.h
 
-cram_palette.h — la CRAM de la Mega Drive, leída ( EM-9.4).
+cram_palette.h — the Mega Drive CRAM, read (EM-9.4).
 
-Las cuatro líneas de paleta del VDP: 64 colores de 9 bits que deciden de qué
-color se ve cada índice de cada tile. Todo lo demás del pipeline —el hash de
-tile de plano, la firma de variante por paleta (), el tinte— se apoya en
-esto, y hasta ahora la conversión vivía suelta en tres lugares distintos de
+The four VDP palette lines: 64 nine-bit colours that decide what colour every
+index of every tile is seen as. Everything else in the pipeline —the plane
+tile hash, the per-palette variant signature, the tint— leans on this, and
+until now the conversion lived loose in three different places inside
 `ayther_session.cpp`.
 
-# El formato: EMPAQUETADO, no el del bus
+# The format: PACKED, not the bus one
 
-La CRAM que publica el fork viene EMPAQUETADA —R en los bits 0-2, G en 3-5,
-B en 6-8— y **no** en el formato del bus de la Genesis, que deja huecos
-(R=1-3, G=5-7, B=9-11). Confundirlos da colores que parecen razonables:
-todo sale a la mitad de intensidad y desplazado de tono, que es peor que
-salir mal del todo — nadie lo mira dos veces.
+The CRAM the fork publishes comes PACKED —R in bits 0-2, G in 3-5, B in 6-8—
+and **not** in the Genesis bus format, which leaves gaps (R=1-3, G=5-7,
+B=9-11). Confusing them yields colours that look plausible: everything comes
+out at half intensity and hue-shifted, which is worse than coming out plainly
+wrong — nobody looks at it twice.
 
-Verificado contra el juego: blanco = 0x1FF, azul = 0x1E3 → R3 G4 B7.
+Verified against the game: white = 0x1FF, blue = 0x1E3 → R3 G4 B7.
 
-# Los 3 bits a 8: NO es `x << 5`
+# From 3 bits to 8: it is NOT `x << 5`
 
-Un componente de 3 bits que se lleva a 8 con un corrimiento nunca llega a
-255: el blanco máximo daría 224 y toda la imagen quedaría lavada. La
-expansión correcta repite el patrón de bits, que es lo que hace que 7 → 255 y
-0 → 0 con los intermedios repartidos parejo.
+A 3-bit component taken to 8 with a shift never reaches 255: maximum white
+would give 224 and the whole image would look washed out. The correct
+expansion repeats the bit pattern, which is what makes 7 → 255 and 0 → 0 with
+the intermediate values spread evenly.
 
-**Declara:** `ayther`, `cram_c8`, `cram_color`, `cram_color_at`, `cram_line_signature`, `CramColor`
+**Declares:** `ayther`, `cram_c8`, `cram_color`, `cram_color_at`, `cram_line_signature`, `CramColor`
 
-_El header instalado (`include/ayther/cram_palette.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/cram_palette.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="failure_escalationh"></a>
 
 ## failure_escalation.h
 
-failure_escalation.h — cuándo dejar de intentar ().
+failure_escalation.h — when to stop trying.
 
-El fallback de  ya evita que un asset roto corte la sesión: se oye el
-original y listo. Lo que falta es la ESCALADA — un pack con muchos assets
-rotos reintenta cada uno, cada frame, y paga la resolución completa por algo
-que ya se sabe que no va a andar. Ése es el riesgo que  anota.
+The fallback already prevents a broken asset from cutting the session short:
+the original is heard and that is that. What is missing is ESCALATION — a
+pack with many broken assets retries each one, every frame, and pays for the
+full resolution of something already known not to work. That is the risk
+noted here.
 
-LA REGLA, que es lo único que hay acá:
+THE RULE, which is the only thing this header holds:
 
-  Se cuentan ASSETS DISTINTOS, no ocurrencias.
+  DISTINCT ASSETS are counted, not occurrences.
 
-Un archivo roto que suena mil veces es UN problema; doce archivos distintos
-es un pack mal armado o una carpeta que no llegó. Contar ocurrencias apagaría
-el subsistema por un solo asset que se repite mucho — que es justo el caso
-que NO hay que castigar, porque el fallback ya lo resuelve bien.
+One broken file that plays a thousand times is ONE problem; twelve distinct
+files is a badly assembled pack or a folder that never arrived. Counting
+occurrences would shut the subsystem down over a single asset that repeats a
+lot — which is exactly the case NOT to punish, because the fallback already
+handles it well.
 
-Y se cuenta POR SUBSISTEMA: que falte la música no dice nada sobre los
-efectos, y apagar los dos por uno sería llevarse puesto lo que sí funciona.
+And the count is PER SUBSYSTEM: missing music says nothing about sound
+effects, and shutting both down over one would take out what does work.
 
-Header-only y sin dependencias: se testea sin sesión, sin audio y sin ROM.
+Header-only and dependency-free: it is tested without a session, without
+audio and without a ROM.
 
-**Declara:** `ayther`, `FailureEscalation`, `threshold_`
+**Declares:** `ayther`, `FailureEscalation`, `threshold_`
 
-_El header instalado (`include/ayther/failure_escalation.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/failure_escalation.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="libretro_hostayther_apih"></a>
 
 ## libretro_host/ayther_api.h
 
@@ -993,205 +1057,227 @@ siendo el DUENO de la identidad: el core da los HECHOS (st, ls, fd, env, pan)
 y `audio_event.rs` calcula la firma, igual que con FM y PSG. Ver el comentario
 de la union para el empaquetado exacto.
 
-**Declara:** `ayther_audio_event_type_v1`, `ayther_audio_event_v1`, `ayther_audio_source_v1`, `ayther_audio_transport_stats_v1`, `ayther_audio_voice_v1`, `ayther_audio_write_v1`, `ayther_endianness`, `ayther_frame_delta_v1`, `ayther_frame_hash_v1`, `ayther_frame_snapshot_v1`, `ayther_get_interface`, `ayther_interface_v1`, `ayther_journal_event_v1`, `ayther_journal_v1`, `ayther_legacy_memory_id`, `ayther_line_cells_v1`, `ayther_line_header_v1`, `ayther_line_regs_v1`, `ayther_recompose_error`, `ayther_recompose_multilayer`, `ayther_recompose_stats_v1`, `ayther_recompose_status`, `ayther_region_id`, `ayther_region_info_v1`, `ayther_sprite_v1`, `ayther_status`, `ayther_subscription_state_v1`, `ayther_system_v1`, `int32_t`
+**Declares:** `ayther_audio_event_type_v1`, `ayther_audio_event_v1`, `ayther_audio_source_v1`, `ayther_audio_transport_stats_v1`, `ayther_audio_voice_v1`, `ayther_audio_write_v1`, `ayther_endianness`, `ayther_frame_delta_v1`, `ayther_frame_hash_v1`, `ayther_frame_snapshot_v1`, `ayther_get_interface`, `ayther_interface_v1`, `ayther_journal_event_v1`, `ayther_journal_v1`, `ayther_legacy_memory_id`, `ayther_line_cells_v1`, `ayther_line_header_v1`, `ayther_line_regs_v1`, `ayther_recompose_error`, `ayther_recompose_multilayer`, `ayther_recompose_stats_v1`, `ayther_recompose_status`, `ayther_region_id`, `ayther_region_info_v1`, `ayther_sprite_v1`, `ayther_status`, `ayther_subscription_state_v1`, `ayther_system_v1`, `int32_t`
 
-_El header instalado (`include/ayther/libretro_host/ayther_api.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/libretro_host/ayther_api.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="libretro_hostcore_loaderh"></a>
 
 ## libretro_host/core_loader.h
 
-**Declara:** `CoreLoader`
+**Declares:** `CoreLoader`
 
-_El header instalado (`include/ayther/libretro_host/core_loader.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/libretro_host/core_loader.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="libretro_hostlibretroh"></a>
 
 ## libretro_host/libretro.h
 
-**Declara:** `bool`, `float`, `int`, `int16_t`, `int64_t`, `retro_api_version`, `retro_audio_buffer_status_callback`, `retro_audio_callback`, `retro_av_enable_flags`, `retro_camera_buffer`, `retro_camera_callback`, `retro_cheat_reset`, `retro_cheat_set`, `retro_controller_description`, `retro_controller_info`, `retro_core_option_definition`, `retro_core_option_display`, `retro_core_option_v2_category`, `retro_core_option_v2_definition`, `retro_core_option_value`, `retro_core_options_intl`, `retro_core_options_update_display_callback`, `retro_core_options_v2`, `retro_core_options_v2_intl`, `retro_deinit`, `retro_device_power`, `retro_disk_control_callback`, `retro_disk_control_ext_callback`, `retro_exec_mem_alloc`, `retro_exec_mem_free`, `retro_fastforwarding_override`, `retro_frame_time_callback`, `retro_framebuffer`, `retro_game_geometry`, `retro_game_info`, `retro_game_info_ext`, `retro_get_memory_size`, `retro_get_proc_address_interface`, `retro_get_region`, `retro_get_system_av_info`, `retro_get_system_info`, `retro_hw_context_type`, `retro_hw_render_callback`, `retro_hw_render_context_negotiation_interface`, `retro_hw_render_context_negotiation_interface_type`, `retro_hw_render_interface`, `retro_hw_render_interface_type`, `retro_init`, `retro_input_descriptor`, `retro_key`, `retro_keyboard_callback`, `retro_language`, `retro_led_interface`, `retro_load_game`, `retro_load_game_special`, `retro_location_callback`, `retro_log_callback`, `retro_log_level`, `retro_memory_descriptor`, `retro_memory_map`, `retro_message`, `retro_message_ext`, `retro_message_target`, `retro_message_type`, `retro_microphone_interface`, `retro_microphone_params`, `retro_microphone_t`, `retro_midi_interface`, `retro_mod`, `retro_netpacket_callback`, `retro_perf_callback`, `retro_perf_counter`, `retro_perf_tick_t`, `retro_pixel_format`, `retro_power_state`, `retro_proc_address_t`, `retro_reset`, `retro_rumble_effect`, `retro_rumble_interface`, `retro_run`, `retro_savestate_context`, `retro_sensor_action`, `retro_sensor_interface`, `retro_serialize`, `retro_serialize_size`, `retro_set_audio_sample`, `retro_set_audio_sample_batch`, `retro_set_controller_port_device`, `retro_set_environment`, `retro_set_input_poll`, `retro_set_input_state`, `retro_set_video_refresh`, `retro_subsystem_info`, `retro_subsystem_memory_info`, `retro_subsystem_rom_info`, `retro_system_av_info`, `retro_system_content_info_override`, `retro_system_info`, `retro_system_timing`, `retro_throttle_state`, `retro_time_t`, `retro_unload_game`, `retro_unserialize`, `retro_usec_t`, `retro_variable`, `retro_vfs_dir_handle`, `retro_vfs_file_handle`, `retro_vfs_interface`, `retro_vfs_interface_info`, `size_t`, `uint64_t`, `uintptr_t`, `unsigned`, `void`
+**Declares:** `bool`, `float`, `int`, `int16_t`, `int64_t`, `retro_api_version`, `retro_audio_buffer_status_callback`, `retro_audio_callback`, `retro_av_enable_flags`, `retro_camera_buffer`, `retro_camera_callback`, `retro_cheat_reset`, `retro_cheat_set`, `retro_controller_description`, `retro_controller_info`, `retro_core_option_definition`, `retro_core_option_display`, `retro_core_option_v2_category`, `retro_core_option_v2_definition`, `retro_core_option_value`, `retro_core_options_intl`, `retro_core_options_update_display_callback`, `retro_core_options_v2`, `retro_core_options_v2_intl`, `retro_deinit`, `retro_device_power`, `retro_disk_control_callback`, `retro_disk_control_ext_callback`, `retro_exec_mem_alloc`, `retro_exec_mem_free`, `retro_fastforwarding_override`, `retro_frame_time_callback`, `retro_framebuffer`, `retro_game_geometry`, `retro_game_info`, `retro_game_info_ext`, `retro_get_memory_size`, `retro_get_proc_address_interface`, `retro_get_region`, `retro_get_system_av_info`, `retro_get_system_info`, `retro_hw_context_type`, `retro_hw_render_callback`, `retro_hw_render_context_negotiation_interface`, `retro_hw_render_context_negotiation_interface_type`, `retro_hw_render_interface`, `retro_hw_render_interface_type`, `retro_init`, `retro_input_descriptor`, `retro_key`, `retro_keyboard_callback`, `retro_language`, `retro_led_interface`, `retro_load_game`, `retro_load_game_special`, `retro_location_callback`, `retro_log_callback`, `retro_log_level`, `retro_memory_descriptor`, `retro_memory_map`, `retro_message`, `retro_message_ext`, `retro_message_target`, `retro_message_type`, `retro_microphone_interface`, `retro_microphone_params`, `retro_microphone_t`, `retro_midi_interface`, `retro_mod`, `retro_netpacket_callback`, `retro_perf_callback`, `retro_perf_counter`, `retro_perf_tick_t`, `retro_pixel_format`, `retro_power_state`, `retro_proc_address_t`, `retro_reset`, `retro_rumble_effect`, `retro_rumble_interface`, `retro_run`, `retro_savestate_context`, `retro_sensor_action`, `retro_sensor_interface`, `retro_serialize`, `retro_serialize_size`, `retro_set_audio_sample`, `retro_set_audio_sample_batch`, `retro_set_controller_port_device`, `retro_set_environment`, `retro_set_input_poll`, `retro_set_input_state`, `retro_set_video_refresh`, `retro_subsystem_info`, `retro_subsystem_memory_info`, `retro_subsystem_rom_info`, `retro_system_av_info`, `retro_system_content_info_override`, `retro_system_info`, `retro_system_timing`, `retro_throttle_state`, `retro_time_t`, `retro_unload_game`, `retro_unserialize`, `retro_usec_t`, `retro_variable`, `retro_vfs_dir_handle`, `retro_vfs_file_handle`, `retro_vfs_interface`, `retro_vfs_interface_info`, `size_t`, `uint64_t`, `uintptr_t`, `unsigned`, `void`
 
-_El header instalado (`include/ayther/libretro_host/libretro.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/libretro_host/libretro.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="libretro_hostretro_runnerh"></a>
 
 ## libretro_host/retro_runner.h
 
-**Declara:** `RetroRunner`
+**Declares:** `RetroRunner`
 
-_El header instalado (`include/ayther/libretro_host/retro_runner.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/libretro_host/retro_runner.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="output_profileh"></a>
 
 ## output_profile.h
 
-output_profile.h — perfiles de SALIDA ().
+output_profile.h — OUTPUT profiles.
 
-NO son los perfiles de remasterización (), y confundirlos sería el peor
-resultado de este issue. Los de  dicen **qué se sustituye** y los decide
-el autor del pack; éstos dicen **cómo se ve en TU pantalla** y los decide
-quien juega. Un CRT no cambia qué assets entran, y un perfil «Fiel» no cambia
-si tenés un plasma o un portátil.
+These are NOT the remastering profiles, and confusing the two would be the
+worst outcome here. The remastering ones say **what gets substituted** and
+the pack author decides them; these say **how it looks on YOUR screen** and
+whoever is playing decides them. A CRT does not change which assets come in,
+and a "Faithful" profile does not change whether you own a plasma or a
+laptop.
 
-Por eso viven en headers distintos y por eso el vocabulario los separa:
-«perfil de remasterización» contra «perfil de salida».
+That is why they live in different headers and why the vocabulary keeps them
+apart: "remastering profile" versus "output profile".
 
-El perfil configura tres cosas: el ESCALADO, el SUAVIZADO y los SHADERS de
-presentación. Es todo lo que hay entre el frame ya compuesto y el monitor.
+The profile configures three things: SCALING, SMOOTHING and the presentation
+SHADERS. That is everything between the composed frame and the monitor.
 
-Header-only y sin Vulkan: se testea sin GPU.
+Header-only and Vulkan-free: it is tested without a GPU.
 
-**Declara:** `ayther`, `output_profile_by_id`, `output_profiles`, `output_rect`, `OutputProfile`, `OutputRect`, `uint8_t`
+**Declares:** `ayther`, `output_profile_by_id`, `output_profiles`, `output_rect`, `OutputProfile`, `OutputRect`, `uint8_t`
 
-_El header instalado (`include/ayther/output_profile.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/output_profile.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="pano_bandsh"></a>
 
 ## pano_bands.h
 
-pano_bands.h — la cámara de una Panorámica, VOTADA POR BANDA ().
+pano_bands.h — the camera of a Panorama, VOTED PER BAND.
 
-EL PROBLEMA. La Panorámica modela una tira rígida con UNA cámara: cada celda
-visible vota `cam_px = lx*8 - screen_x` y gana la moda. Cuando el plano tiene
-line-scroll —bandas que se desplazan a distinto ritmo dentro de la MISMA
-capa del VDP— no existe una posición que las explique a todas: las celdas de
-la banda rápida votan contra las del fondo. En el mejor caso gana la moda y
-la banda minoritaria queda mal ubicada; en el peor el voto se parte y el
-anclaje no fija.
+THE PROBLEM. The Panorama models a rigid strip with ONE camera: every visible
+cell votes `cam_px = lx*8 - screen_x` and the mode wins. When the plane has
+line-scroll —bands that move at different rates within the SAME VDP layer—
+no single position explains them all: the cells of the fast band vote against
+those of the background. At best the mode wins and the minority band ends up
+misplaced; at worst the vote splits and the anchor never settles.
 
-QUE EL CASO EXISTE está medido, no supuesto (2026-08-24, hscroll_bands_probe):
+THAT THE CASE EXISTS is measured, not assumed (2026-08-24,
+hscroll_bands_probe):
 
-  Golden Axe   3 tomas, 40.854 frames   reg $B modo 0   0 bandas
-  Ecco         1.800 frames             reg $B modo 0   0 bandas
-  Aladdin      1.800 frames             reg $B modo 0   0 bandas
-  Sonic 3 & K  1.800 frames             tabla por línea en 1.766
-                                        plano A: 1 banda · plano B: 37
+  Golden Axe   3 takes, 40,854 frames   reg $B mode 0   0 bands
+  Ecco         1,800 frames             reg $B mode 0   0 bands
+  Aladdin      1,800 frames             reg $B mode 0   0 bands
+  Sonic 3 & K  1,800 frames             per-line table in 1,766
+                                        plane A: 1 band · plane B: 37
 
-Golden Axe NO es el corpus de esta feature —sus nubes de título se
-resolvieron como dos Acetatos en paralaje, —; Sonic 3 & Knuckles sí.
+Golden Axe is NOT the corpus for this feature —its title-screen clouds were
+resolved as two parallaxed Acetates—; Sonic 3 & Knuckles is.
 
-LA FORMA DE LA SOLUCION. Con 37 bandas, declarar una deriva por tira (la
-dirección 2 de la issue) no alcanza: serían 37 velocidades que el autor
-tendría que mantener a mano. Se vota POR BANDA, que es lo que hace el
-hardware.
+THE SHAPE OF THE SOLUTION. With 37 bands, declaring one drift per strip
+(direction 2 of the issue) is not enough: that would be 37 speeds the author
+would have to maintain by hand. The vote is PER BAND, which is what the
+hardware does.
 
-Este archivo es sólo el VOTO: agrupa y decide, no lee VRAM, no toca Vulkan y
-no sabe qué es una Panorámica. Igual que `widescreen.h`, se puede medir sin
-GPU y sin ROM — que es como se encontró el bug de bandas de EM-8.0.
+This file is only the VOTE: it groups and decides, it does not read VRAM,
+does not touch Vulkan and does not know what a Panorama is. Like
+`widescreen.h`, it can be measured without a GPU and without a ROM — which is
+how the banding bug in EM-8.0 was found.
 
-**Declara:** `ayther`, `BandCam`, `pano_band_edges`, `pano_vote_by_band`, `PanoVote`
+**Declares:** `ayther`, `BandCam`, `pano_band_edges`, `pano_vote_by_band`, `PanoVote`
 
-_El header instalado (`include/ayther/pano_bands.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/pano_bands.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="panorama_coverh"></a>
 
 ## panorama_cover.h
 
-panorama_cover.h — la regla de COBERTURA de una Panorámica ().
+panorama_cover.h — the COVERAGE rule of a Panorama.
 
-«¿Lo que se ve en esta posición ES la lámina, o es otra cosa dibujada encima
-del mismo plano?» Una vez que la cámara ancló, hay que contestarla celda por
-celda, y de esa cuenta sale `FrameView.panorama_cover`.
+"Is what is seen at this position the strip, or is it something else drawn on
+top of the same plane?" Once the camera has anchored, that has to be answered
+cell by cell, and `FrameView.panorama_cover` comes out of that count.
 
-VIVE EN UN HEADER Y NO ADENTRO DE LA SESIÓN porque es una regla del FORMATO
-de la tira —igual que `ayther_plane_tile_hash_variants`, con el que se
-apoya— y porque el defecto que arregla no se podía probar sin una ROM y una
-toma de veinte minutos. Acá se prueba con tres hashes inventados.
+IT LIVES IN A HEADER AND NOT INSIDE THE SESSION because it is a rule of the
+strip FORMAT —like `ayther_plane_tile_hash_variants`, which it leans on— and
+because the defect it fixes could not be tested without a ROM and a
+twenty-minute capture. Here it is tested with three made-up hashes.
 
-EL DEFECTO (, medido en Sonic 3 & Knuckles f2092). Una posición de la
-tira puede tener VARIOS hashes: una celda animada tiene uno por estado, y un
-barrido que cruzó de zona apila dos tramos del nivel en la misma posición. El
-índice los guarda todos —cada estado tiene que poder ANCLAR— pero el PNG
-conserva UNO (`Cell::last` del stitcher).
+THE DEFECT (measured on Sonic 3 & Knuckles f2092). One position of the strip
+can have SEVERAL hashes: an animated cell has one per state, and a scroll
+that crossed into another zone stacks two sections of the level at the same
+position. The index keeps them all —every state has to be able to ANCHOR—
+but the PNG keeps ONE (`Cell::last` in the stitcher).
 
-Aceptar cualquiera para verificar la cobertura declara «anclada, cobertura
-100 %» sobre una lámina que muestra otro tramo del nivel: el recorte exportado
-era Angel Island —cielo, agua, pasto— mientras el frame era una cueva.
+Accepting any of them to verify coverage declares "anchored, 100 % coverage"
+over a strip that shows a different section of the level: the exported crop
+was Angel Island —sky, water, grass— while the frame was a cave.
 
-POR QUÉ CASI NUNCA SE VE: el área nativa se corrige sola, porque las celdas
-vivas que la tira no reclamó se dibujan encima y tapan el anclaje flojo. Lo
-delata el ensanchado ( EM-8.1), donde el área extendida no tiene con qué
-corregirse — ahí se ve exactamente lo que la tira tiene.
+WHY IT IS ALMOST NEVER SEEN: the native area corrects itself, because the
+live cells the strip did not claim are drawn on top and hide the weak anchor.
+What exposes it is widescreen (EM-8.1), where the extended area has nothing
+to correct itself with — there you see exactly what the strip holds.
 
-LO QUE NO ES EL ARREGLO: un piso de cobertura. Se probaron los dos números
-disponibles y ninguno separa los casos (Golden Axe extiende BIEN con 69 %;
-Sonic 3 & K extiende MAL con 100 %). Un umbral afinado contra dos puntos es
-un parche frágil disfrazado de arreglo.
+WHAT THE FIX IS NOT: a coverage floor. Both available numbers were tried and
+neither separates the cases (Golden Axe extends WELL at 69 %; Sonic 3 & K
+extends BADLY at 100 %). A threshold tuned against two data points is a
+fragile patch dressed up as a fix.
 
-EL ARREGLO es alinear el índice con el dibujo: se verifica contra el hash que
-la lámina CONSERVA y no contra cualquiera de los que pasaron por ahí. Los
-demás no se tiran — siguen en el índice de anclaje, donde la multiplicidad
-ayuda a votar dónde está la cámara y un voto de más se compensa con los otros
-treinta. Lo que no pueden es decidir QUÉ SE DIBUJA donde nadie va a
-corregirlo.
+THE FIX is to align the index with the drawing: coverage is verified against
+the hash the strip KEEPS and not against any of the ones that passed through
+there. The others are not discarded — they stay in the anchoring index, where
+multiplicity helps vote on where the camera is and one extra vote is offset
+by the other thirty. What they may not do is decide WHAT IS DRAWN where
+nobody is going to correct it.
 
-**Declara:** `ayther`, `panorama_pos_matches`
+**Declares:** `ayther`, `panorama_pos_matches`
 
-_El header instalado (`include/ayther/panorama_cover.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/panorama_cover.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="parallax_bandsh"></a>
 
 ## parallax_bands.h
 
-parallax_bands.h — la columna de nivel POR BANDA ( EM-8.0).
+parallax_bands.h — the level column PER BAND (EM-8.0).
 
-El plano B lleva parallax por bandas: cada entrada de la tabla Hscroll tiene
-su propio desplazamiento, así que «columna de nivel» **no es una sola cosa en
-ese plano** — depende de la fila. Con una cámara única por plano, todas las
-bandas colapsan en las mismas columnas y se apilan unas sobre otras.
+Plane B carries per-band parallax: every entry of the Hscroll table has its
+own displacement, so "level column" **is not a single thing on that plane** —
+it depends on the row. With a single camera per plane, every band collapses
+onto the same columns and they stack on top of one another.
 
-MEDIDO en Sonic 2 (`background_spike`, 1200 frames): el plano A reconstruía 607
-columnas de nivel y el B sólo **37** —menos de una pantalla— con 45 bandas por
-frame. No era que faltara arte: estaba todo apilado en el lugar equivocado.
+MEASURED on Sonic 2 (`background_spike`, 1200 frames): plane A reconstructed
+607 level columns and plane B only **37** —less than one screen— with 45
+bands per frame. It was not that art was missing: it was all stacked in the
+wrong place.
 
-DOS COSAS QUE ESTE ARCHIVO APRENDIÓ A LOS GOLPES
+TWO THINGS THIS FILE LEARNED THE HARD WAY
 
-1. La regla vive acá y no adentro del bucle de `ayther_session.cpp`. La
-   primera versión quedó enterrada ahí, donde el oráculo del stitcher no la
-   veía —llama al stitcher directamente—, así que al medirla no movió un solo
-   número. No estaba mal: no se estaba ejecutando.
+1. The rule lives here and not inside the loop in `ayther_session.cpp`. The
+   first version was buried there, where the stitcher oracle could not see it
+   —it calls the stitcher directly— so measuring it moved not a single
+   number. It was not wrong: it was not being executed.
 
-2. No alcanza con restar los H de dos bandas dentro del mismo frame. El campo
-   del VDP es de 10 bits y envuelve, y la separación entre bandas CRECE sin
-   límite a lo largo de un nivel (medido: 17 px contra 566 px en 1033 px de
-   scroll). Cada banda necesita su propio des-enrollado, igual que la cámara
-   del plano. Por eso `BandCameras` tiene estado: una resta pura no puede
-   saber cuántas vueltas dio cada banda.
+2. Subtracting the H of two bands within the same frame is not enough. The
+   VDP field is 10 bits and it wraps, and the separation between bands GROWS
+   without bound over the course of a level (measured: 17 px against 566 px
+   over 1033 px of scroll). Each band needs its own unwrapping, just like the
+   plane camera. That is why `BandCameras` has state: a pure subtraction
+   cannot know how many times each band wrapped around.
 
-**Declara:** `ayther`, `band_count`, `BandCameras`, `hscroll_base`, `hscroll_mask`, `hscroll_of_line`, `State`, `wrap_px`
+**Declares:** `ayther`, `band_count`, `BandCameras`, `hscroll_base`, `hscroll_mask`, `hscroll_of_line`, `State`, `wrap_px`
 
-_El header instalado (`include/ayther/parallax_bands.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/parallax_bands.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="psg_synthh"></a>
 
 ## psg_synth.h
 
-PsgSynth — SN76489 (PSG) propio, con salida POR CANAL. Fase 1 de .
+PsgSynth — our own SN76489 (PSG), with PER-CHANNEL output. Phase 1.
 
-POR QUÉ PROPIO. ymfm cubre el YM2612 pero no el SN76489, y las
-implementaciones que andan dando vueltas (MAME, el propio GPGX) son GPL:
-ayther_engine es una lib ESTÁTICA y meterle GPL la contamina entera. El chip
-es chico de verdad —tres generadores de onda cuadrada y un LFSR— así que
-escribirlo sale más barato que discutir licencias.
+WHY OUR OWN. ymfm covers the YM2612 but not the SN76489, and the
+implementations in circulation (MAME, GPGX itself) are GPL: ayther_engine is
+a STATIC library and adding GPL contaminates the whole of it. The chip is
+genuinely small —three square-wave generators and an LFSR— so writing it is
+cheaper than arguing about licences.
 
-`gpgx-src/core/sound/psg.c` es la referencia de COMPORTAMIENTO (constantes,
-tabla de volumen, red de realimentación del ruido), no de código.
+`gpgx-src/core/sound/psg.c` is the reference for BEHAVIOUR (constants, volume
+table, noise feedback network), not for code.
 
-TASA INTERNA. El chip corre a MCLK/15 y divide por 16, o sea un tick cada
-15*16 = 240 M-cycles → 223721,56 Hz con el reloj NTSC. Es exactamente 4,2×
-la tasa del YM2612 (MCLK/1008), y no es casualidad: 1008/240 = 4,2.
+INTERNAL RATE. The chip runs at MCLK/15 and divides by 16, i.e. one tick
+every 15*16 = 240 M-cycles → 223721.56 Hz with the NTSC clock. That is
+exactly 4.2× the YM2612 rate (MCLK/1008), and it is no coincidence:
+1008/240 = 4.2.
 
-Ese detalle importa. TODOS los incrementos de frecuencia del PSG son
-múltiplos de 240 M-cycles, así que cada transición de la onda cae JUSTO en un
-borde de tick — muestrear a 223721 Hz es exacto, sin jitter de sub-muestra y
-sin necesidad de síntesis band-limited acá. El aliasing se maneja después, al
-decimar a la tasa de salida con el resampler.
+That detail matters. ALL PSG frequency increments are multiples of 240
+M-cycles, so every wave transition lands EXACTLY on a tick boundary —
+sampling at 223721 Hz is exact, with no sub-sample jitter and no need for
+band-limited synthesis here. Aliasing is handled later, when decimating to
+the output rate with the resampler.
 
-**Declara:** `ayther`, `PsgSynth`, `shift_noise`
+**Declares:** `ayther`, `PsgSynth`, `shift_noise`
 
-_El header instalado (`include/ayther/psg_synth.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/psg_synth.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="rewind_bufferh"></a>
 
 ## rewind_buffer.h
 
@@ -1209,45 +1295,50 @@ push() is a no-op and there is zero per-frame cost.
 
 Single-threaded; driven from the emulation thread alongside AytherSession.
 
-**Declara:** `ayther`, `RewindBuffer`, `ring_`
+**Declares:** `ayther`, `RewindBuffer`, `ring_`
 
-_El header instalado (`include/ayther/rewind_buffer.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/rewind_buffer.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="voice_routerh"></a>
 
 ## voice_router.h
 
-voice_router — el router de canales por voz (, Fase 2).
+voice_router — the per-voice channel router (Phase 2).
 
-LA INVERSIÓN. Hasta ahora la sustitución era SUSTRACTIVA: el chip sonaba
-entero y se tapaban canales con una máscara derivada de VENTANAS de eventos.
-Una ventana es un MODELO del sonido; el chip ES el sonido, así que todo
-instante que la ventana no cubriera pero el chip siguiera sonando era una
-fuga —  (huecos entre nota y nota) y  (juntura entre Secuencias) son
-el mismo defecto visto en dos lugares.
+THE INVERSION. Until now substitution was SUBTRACTIVE: the chip played in
+full and channels were masked out with a mask derived from event WINDOWS. A
+window is a MODEL of the sound; the chip IS the sound, so every instant the
+window did not cover while the chip kept playing was a leak — the gaps
+between notes and the seam between Sequences are the same defect seen in two
+places.
 
-Acá el default se da vuelta: el chip queda MUDO y todo lo que se oye lo
-produce este router. Una voz se toma el canal DESDE EL KEY-ON DEL PROPIO CHIP
-hasta el fin de su cola. No hay ventana en la que equivocarse.
+Here the default is flipped: the chip is MUTED and everything heard is
+produced by this router. A voice takes over the channel FROM THE CHIP'S OWN
+KEY-ON until the end of its tail. There is no window left to get wrong.
 
-LAS DOS PIEZAS
-  ChipMirror  — un YM2612 (ymfm) y un SN76489 (PsgSynth) alimentados con el
-                mismo log de escrituras que recibe el core, produciendo los
-                10 canales POR SEPARADO. Es el sustrato: corre siempre,
-                tomen o no las voces su salida.
-  ChannelRouter — 10 slots. En cada key-on le pregunta a la política qué debe
-                sonar y apunta el slot a esa fuente.
+THE TWO PIECES
+  ChipMirror  — a YM2612 (ymfm) and an SN76489 (PsgSynth) fed with the same
+                write log the core receives, producing the 10 channels
+                SEPARATELY. It is the substrate: it always runs, whether or
+                not the voices take its output.
+  ChannelRouter — 10 slots. On every key-on it asks the policy what should
+                play and points the slot at that source.
 
-POR QUÉ EL ESPEJO CORRE SIEMPRE: su estado de registros ES la identidad del
-sonido. Si se apagara mientras una voz está sustituida, al volver no sabría
-con qué timbre sonaba — medido en la Fase 0: arrancar el sintetizador sin el
-estado previo baja la correlación de envolvente de 0,975 a 0,889.
+WHY THE MIRROR ALWAYS RUNS: its register state IS the identity of the sound.
+If it were switched off while a voice is substituted, on return it would not
+know what timbre it was playing with — measured in Phase 0: starting the
+synthesiser without the previous state drops the envelope correlation from
+0.975 to 0.889.
 
-**Declara:** `ayther`, `begin`, `buf_`, `ChannelRouter`, `ChipMirror`, `gen_until`, `IVoiceSource`, `reset`, `StreamResampler`, `VoiceContext`, `VoicePolicy`, `Ym2612Mirror`, `ymfm`
+**Declares:** `ayther`, `begin`, `buf_`, `ChannelRouter`, `ChipMirror`, `gen_until`, `IVoiceSource`, `reset`, `StreamResampler`, `VoiceContext`, `VoicePolicy`, `Ym2612Mirror`, `ymfm`
 
-_El header instalado (`include/ayther/voice_router.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/voice_router.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="vulkan_backendtile_tex_cacheh"></a>
 
 ## vulkan_backend/tile_tex_cache.h
 
@@ -1257,11 +1348,13 @@ First access per asset_path:  read bytes from pack → decode PNG (stb_image) �
 swap R↔B (RGBA→BGRA) → VkTexture init()+upload(). Subsequent accesses return
 the cached VkTexture directly. Owned by AytherRenderer.
 
-**Declara:** `AyArchive`, `StagingRelease`, `TileTexCache`, `VkContext`
+**Declares:** `AyArchive`, `StagingRelease`, `TileTexCache`, `VkContext`
 
-_El header instalado (`include/ayther/vulkan_backend/tile_tex_cache.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/vulkan_backend/tile_tex_cache.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="vulkan_backendvk_contexth"></a>
 
 ## vulkan_backend/vk_context.h
 
@@ -1272,44 +1365,49 @@ inside shutdown() (also called by the destructor).
 
 Uses vk-bootstrap for the boilerplate-heavy device selection / creation.
 
-**Declara:** `SDL_Window`, `vk_verbose_logging`, `VkContext`, `VmaAllocator_T`
+**Declares:** `SDL_Window`, `vk_verbose_logging`, `VkContext`, `VmaAllocator_T`
 
-_El header instalado (`include/ayther/vulkan_backend/vk_context.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/vulkan_backend/vk_context.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="vulkan_backendvk_indexed_planeh"></a>
 
 ## vulkan_backend/vk_indexed_plane.h
 
-VkIndexedPlane — el pipeline INDEXADO del render propio (R-2, ).
+VkIndexedPlane — the INDEXED pipeline of our own renderer (R-2).
 
-En vez de decodificar tiles a texturas RGBA, sube el ESTADO CRUDO del VDP y
-resuelve el color en el fragment shader:
-  - VRAM (2048 patrones 4bpp) → textura R8_UINT de 512×256 (64 tiles/fila,
-    cada tile 8×8 texels = su nibble de índice de color desempaquetado).
-  - CRAM (64 colores empaquetados R0-2/G3-5/B6-8) → textura 64×1 RGBA8,
-    convertida con la MISMA expansión de color que el renderer del core
-    (3 bits → nivel ×2 → RGB565 → 888 por replicación de bits), para que el
-    resultado sea comparable BIT A BIT contra el framebuffer del emulador.
-  - Cada quad de 8×8 px lleva patrón + línea de paleta + flips por push
-    constant; el shader hace índice → color. El índice 0 se descarta
-    (semántica del VDP: transparente).
+Instead of decoding tiles into RGBA textures, it uploads the RAW VDP STATE
+and resolves the colour in the fragment shader:
+  - VRAM (2048 4bpp patterns) → a 512×256 R8_UINT texture (64 tiles per row,
+    each tile 8×8 texels = its unpacked colour-index nibble).
+  - CRAM (64 packed colours R0-2/G3-5/B6-8) → a 64×1 RGBA8 texture, converted
+    with the SAME colour expansion as the core renderer (3 bits → level ×2 →
+    RGB565 → 888 by bit replication), so the result is comparable BIT FOR BIT
+    against the emulator framebuffer.
+  - Every 8×8 px quad carries pattern + palette line + flips through a push
+    constant; the shader maps index → colour. Index 0 is discarded (VDP
+    semantics: transparent).
 
-Por qué así (de la épica ): un fundido de paleta ya no invalida nada
-(cambian 64 texels), y un efecto por elemento es un uniform por quad, no una
-lane nueva. Las subidas son INCREMENTALES: shadow CPU de VRAM/CRAM y sólo
-los tiles/paleta que cambiaron viajan a la GPU.
+Why this way (from the epic): a palette fade no longer invalidates anything
+(64 texels change), and a per-element effect is one uniform per quad, not a
+new lane. Uploads are INCREMENTAL: a CPU shadow of VRAM/CRAM, and only the
+tiles/palette that changed travel to the GPU.
 
-Contrato de layouts (idéntico a VkSprite): el render target debe estar en
-COLOR_ATTACHMENT_OPTIMAL al entrar a draw_cells(); el pass lo deja en
-TRANSFER_DST_OPTIMAL. upload_*() se graban FUERA de un render pass.
-Contrato de orden: al menos un upload_vram()+upload_cram() antes del primer
-draw_cells() (las imágenes nacen UNDEFINED; draw sin upload es no-op).
+Layout contract (identical to VkSprite): the render target must be in
+COLOR_ATTACHMENT_OPTIMAL on entry to draw_cells(); the pass leaves it in
+TRANSFER_DST_OPTIMAL. upload_*() are recorded OUTSIDE a render pass.
+Ordering contract: at least one upload_vram()+upload_cram() before the first
+draw_cells() (the images are born UNDEFINED; a draw without an upload is a
+no-op).
 
-**Declara:** `create_images`, `VkContext`, `VkIndexedPlane`, `VkRenderTarget`, `VmaAllocation_T`
+**Declares:** `VkContext`, `VkIndexedPlane`, `VkRenderTarget`, `VmaAllocation_T`
 
-_El header instalado (`include/ayther/vulkan_backend/vk_indexed_plane.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/vulkan_backend/vk_indexed_plane.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="vulkan_backendvk_render_targeth"></a>
 
 ## vulkan_backend/vk_render_target.h
 
@@ -1326,14 +1424,17 @@ Usage flags cover every consumer in one image:
   TRANSFER_SRC      — the frontend blit to the swapchain
   SAMPLED           — the Lab viewport (ImGui) / shader sampling
 
-Owned by AytherRenderer and recreated on resize. Destruction is automatic;
-shutdown() remains available for deterministic early release.
+Owned by AytherRenderer and recreated on resize. The target captures the
+device/allocator handles it needs, so destruction is automatic; shutdown()
+remains available for deterministic early release.
 
-**Declara:** `VkContext`, `VkRenderTarget`, `VmaAllocation_T`
+**Declares:** `release`, `VkContext`, `VkRenderTarget`, `VmaAllocation_T`, `VmaAllocator_T`
 
-_El header instalado (`include/ayther/vulkan_backend/vk_render_target.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/vulkan_backend/vk_render_target.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="vulkan_backendvk_spriteh"></a>
 
 ## vulkan_backend/vk_sprite.h
 
@@ -1364,11 +1465,13 @@ framebuffer with standard src-alpha blending.
   VkPresent::finalize() then transitions TRANSFER_DST → PRESENT_SRC_KHR
   as usual — no callers need to be changed.
 
-**Declara:** `AyArchive`, `ayther`, `AytherSpriteSub`, `VkContext`, `VkSprite`, `VkTexture`
+**Declares:** `AyArchive`, `ayther`, `AytherSpriteSub`, `VkContext`, `VkSprite`, `VkTexture`
 
-_El header instalado (`include/ayther/vulkan_backend/vk_sprite.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/vulkan_backend/vk_sprite.h`) carries the full documentation of every symbol._
 
 ---
+
+<a id="vulkan_backendvk_textureh"></a>
 
 ## vulkan_backend/vk_texture.h
 
@@ -1380,42 +1483,47 @@ every frame.  A persistent staging buffer avoids per-frame allocation.
 Usage:
   init(ctx, width, height)        — once
   upload(ctx, cmd, pixels, ...)   — inside a command buffer (begin..end)
-  shutdown(ctx)
+  shutdown(ctx)                    — optional early release
 
 The image layout at the end of upload() is
   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL (suitable for blit src).
 
-**Declara:** `init_cost_`, `TexImageFormat`, `TexPixelFormat`, `VkContext`, `VkTexture`, `VmaAllocation_T`
+**Declares:** `release`, `TexImageFormat`, `TexPixelFormat`, `VkContext`, `VkTexture`, `VmaAllocation_T`, `VmaAllocator_T`
 
-_El header instalado (`include/ayther/vulkan_backend/vk_texture.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/vulkan_backend/vk_texture.h`) carries the full documentation of every symbol._
 
 ---
 
+<a id="widescreenh"></a>
+
 ## widescreen.h
 
-widescreen.h — qué celdas de nivel llenan el área extendida ( EM-8.1).
+widescreen.h — which level cells fill the extended area (EM-8.1).
 
-El ancho de más NO se dibuja con lo que hay en la nametable viva. Eso ya se
-midió y no cierra: del lado hacia el que vas, el juego streamea 1-2 celdas por
-delante, y 16:9 sobre 224 px pide 5 por lado (7 si se preserva la relación del
-4:3 mostrado). El plano A —el gameplay— directamente no tiene arte lateral.
+The extra width is NOT drawn from what sits in the live nametable. That has
+been measured and it does not add up: on the side you are heading towards the
+game streams 1-2 cells ahead, and 16:9 over 224 px asks for 5 per side (7 if
+the displayed 4:3 aspect is preserved). Plane A —the gameplay— simply has no
+lateral art.
 
-  fuente del lateral    celdas rancias    sin arte
-  nametable viva              182            185
-  lámina de nivel               0            185
+  side source           stale cells    without art
+  live nametable            182            185
+  level strip                 0            185
 
-«Rancia» es arte de OTRO tramo del nivel: la nametable envuelve cada 512 px, y
-leerla de más devuelve una banda que no corresponde. La lámina del stitcher
-—lo que cada posición mostró cuando estuvo en pantalla— pone el nivel real.
+"Stale" means art from ANOTHER section of the level: the nametable wraps every
+512 px, and reading past it returns a band that does not belong. The stitcher
+strip —what each position showed while it was on screen— supplies the real
+level.
 
-Este archivo es sólo el PLAN: qué posición de nivel va en cada celda del área
-extendida. No dibuja, no lee VRAM y no toca Vulkan, para que se pueda medir
-sin GPU y sin ROM — que es como se encontró el bug de bandas de EM-8.0.
+This file is only the PLAN: which level position goes into each cell of the
+extended area. It does not draw, does not read VRAM and does not touch
+Vulkan, so it can be measured without a GPU and without a ROM — which is how
+the banding bug in EM-8.0 was found.
 
-Y la fila importa: en el plano B cada banda de parallax resuelve su propia
-columna (ver `parallax_bands.h`). Un área extendida que pidiera una sola
-columna por lado dejaría huecos justo donde el parallax separa las bandas.
+And the row matters: on plane B each parallax band resolves its own column
+(see `parallax_bands.h`). An extended area that asked for a single column per
+side would leave gaps exactly where parallax separates the bands.
 
-**Declara:** `ayther`, `Coverage`, `ExtCell`, `widescreen_cols_per_side`, `widescreen_coverage`, `widescreen_plan`, `widescreen_target_width`
+**Declares:** `ayther`, `Coverage`, `ExtCell`, `widescreen_cols_per_side`, `widescreen_coverage`, `widescreen_plan`, `widescreen_target_width`
 
-_El header instalado (`include/ayther/widescreen.h`) lleva la documentación completa de cada símbolo._
+_The installed header (`include/ayther/widescreen.h`) carries the full documentation of every symbol._

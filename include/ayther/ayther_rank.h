@@ -1,47 +1,47 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// ayther_rank.h — la ESCALERA de resolución: qué entidad gana cuando varias
-// matchean el mismo contenido.
+// ayther_rank.h — the resolution LADDER: which entity wins when several match
+// the same content.
 //
-// Regla del producto (2026-07-26): el match prioriza SIEMPRE de complejidad
-// MAYOR a MENOR. La entidad que gana RECLAMA su cobertura y las de menor rango
-// contenidas en ella no se dibujan — no se «tapan» por orden de dibujo, ni
-// siquiera se emiten.
+// Product rule (2026-07-26): matching ALWAYS prioritises from HIGHER to LOWER
+// complexity. The winning entity CLAIMS its coverage, and the lower-ranked
+// entities contained within it are not drawn — they are not covered up by draw
+// order, they are not even emitted.
 //
-// Por qué acá y no en el renderer: el orden de lanes es una consecuencia, no la
-// decisión. Cuando la prioridad vive en el orden de dibujo, dos entidades
-// terminan pintando la misma región y el resultado depende de quién va último
-// — que es exactamente el bug que tenía el Cuadro (los quads de Utilería de esa
-// pantalla se dibujaban ENCIMA del Cuadro que ya los contenía).
+// Why here and not in the renderer: lane order is a consequence, not the
+// decision. When priority lives in the draw order, two entities end up painting
+// the same region and the result depends on which one goes last — which is
+// exactly the bug the Picture had (the Prop quads of that screen were drawn ON
+// TOP OF the Picture that already contained them).
 //
-// Antes de esto no existía ninguna noción de prioridad ENTRE tipos: seis
-// matchers corrían aislados, cada uno escribía su buffer del FrameView y el
-// renderer los dibujaba todos. Las únicas escaleras eran INTRA-dominio, con dos
-// arrays de claim incompatibles: `claimed[]` sobre las occurrences de sprite y
-// `consumed[]` sobre las celdas de plano.
+// Before this there was no notion of priority BETWEEN types: six matchers ran
+// in isolation, each one wrote its own FrameView buffer and the renderer drew
+// them all. The only ladders were INTRA-domain, with two incompatible claim
+// arrays: `claimed[]` over sprite occurrences and `consumed[]` over plane
+// cells.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
 
 namespace ayther {
 
-/// Rango de especificidad. Mayor valor = entidad MÁS compleja = gana.
+/// Specificity rank. Higher value = MORE complex entity = wins.
 ///
-/// El criterio no es «cuánto ocupa» sino cuánta información hace falta para
-/// afirmarla: una Cinemática exige una progresión de firmas de pantalla, un
-/// Cuadro una pantalla entera, una entidad de Modo 3 una lectura de RAM, un
-/// keyframe una pose EN UN ESTADO (paleta, flip, firma), una pose un conjunto
-/// co-presente, y un tile suelto un único hash.
+/// The criterion is not how much area it covers but how much information is
+/// needed to assert it: a Kinematic requires a progression of screen
+/// signatures, a Picture a whole screen, a Mode 3 entity a RAM read, a keyframe
+/// a pose IN ONE STATE (palette, flip, signature), a pose a co-present set,
+/// and a loose tile a single hash.
 enum class MatchRank : uint8_t {
-    Tile      = 0,   ///< tile de plano 1×1 / sprite suelto por hash
-    Glyph     = 1,   ///< glifo: utilería + carácter de una fuente
-    Prop      = 2,   ///< Utilería: conjunto co-presente con offsets relativos
-    Pose      = 3,   ///< pose: conjunto de sprites co-presentes
-    Keyframe  = 4,   ///< pose EN UN ESTADO observado (paleta · flip · firma)
-    Entity    = 5,   ///< Modo 3: identidad por RAM, exacta por instancia
-    Panorama  = 6,   ///< Panorámica: la tira del nivel de una capa
-    Picture   = 7,   ///< Cuadro: la pantalla completa de las capas elegidas
-    Kinematic = 8,   ///< Cinemática: una progresión ordenada de Cuadros
+    Tile      = 0,   ///< 1×1 plane tile / loose sprite matched by hash
+    Glyph     = 1,   ///< glyph: prop + a character of a font
+    Prop      = 2,   ///< Prop: co-present set with relative offsets
+    Pose      = 3,   ///< pose: set of co-present sprites
+    Keyframe  = 4,   ///< pose IN ONE observed STATE (palette · flip · signature)
+    Entity    = 5,   ///< Mode 3: identity by RAM, exact per instance
+    Panorama  = 6,   ///< Panorama: the level-wide strip of one layer
+    Picture   = 7,   ///< Picture: the complete screen of the chosen layers
+    Kinematic = 8,   ///< Kinematic: an ordered progression of Pictures
 };
 
 inline constexpr bool outranks(MatchRank a, MatchRank b) {

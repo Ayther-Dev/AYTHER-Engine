@@ -1,25 +1,28 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// failure_escalation.h — cuándo dejar de intentar ().
+// failure_escalation.h — when to stop trying.
 //
-// El fallback de  ya evita que un asset roto corte la sesión: se oye el
-// original y listo. Lo que falta es la ESCALADA — un pack con muchos assets
-// rotos reintenta cada uno, cada frame, y paga la resolución completa por algo
-// que ya se sabe que no va a andar. Ése es el riesgo que  anota.
+// The fallback already prevents a broken asset from cutting the session short:
+// the original is heard and that is that. What is missing is ESCALATION — a
+// pack with many broken assets retries each one, every frame, and pays for the
+// full resolution of something already known not to work. That is the risk
+// noted here.
 //
-// LA REGLA, que es lo único que hay acá:
+// THE RULE, which is the only thing this header holds:
 //
-//   Se cuentan ASSETS DISTINTOS, no ocurrencias.
+//   DISTINCT ASSETS are counted, not occurrences.
 //
-// Un archivo roto que suena mil veces es UN problema; doce archivos distintos
-// es un pack mal armado o una carpeta que no llegó. Contar ocurrencias apagaría
-// el subsistema por un solo asset que se repite mucho — que es justo el caso
-// que NO hay que castigar, porque el fallback ya lo resuelve bien.
+// One broken file that plays a thousand times is ONE problem; twelve distinct
+// files is a badly assembled pack or a folder that never arrived. Counting
+// occurrences would shut the subsystem down over a single asset that repeats a
+// lot — which is exactly the case NOT to punish, because the fallback already
+// handles it well.
 //
-// Y se cuenta POR SUBSISTEMA: que falte la música no dice nada sobre los
-// efectos, y apagar los dos por uno sería llevarse puesto lo que sí funciona.
+// And the count is PER SUBSYSTEM: missing music says nothing about sound
+// effects, and shutting both down over one would take out what does work.
 //
-// Header-only y sin dependencias: se testea sin sesión, sin audio y sin ROM.
+// Header-only and dependency-free: it is tested without a session, without
+// audio and without a ROM.
 // ---------------------------------------------------------------------------
 #include <cstddef>
 #include <cstdint>
@@ -31,34 +34,34 @@ namespace ayther {
 
 class FailureEscalation {
 public:
-    /// Doce archivos distintos. Un par de assets rotos no es un desastre y el
-    /// fallback los cubre sin que se note; una docena ya es un pack que salió
-    /// mal, y seguir intentándolos cuesta más de lo que rinde.
+    /// Twelve distinct files. A couple of broken assets is not a disaster and
+    /// the fallback covers them unnoticed; a dozen is already a pack that came
+    /// out wrong, and continuing to retry them costs more than it yields.
     static constexpr size_t kDefaultThreshold = 12;
 
     explicit FailureEscalation(size_t threshold = kDefaultThreshold)
         : threshold_(threshold ? threshold : 1) {}
 
-    /// Registra que `asset` falló en `subsystem`.
+    /// Records that `asset` failed in `subsystem`.
     ///
-    /// Devuelve true SÓLO en el fallo que cruza el umbral — una vez, no en cada
-    /// llamada posterior. Si devolviera true siempre, el llamador apagaría un
-    /// subsistema ya apagado en cada frame y el log crecería sin decir nada
-    /// nuevo.
+    /// Returns true ONLY on the failure that crosses the threshold — once, not
+    /// on every subsequent call. If it always returned true, the caller would
+    /// shut down an already-shut-down subsystem every frame and the log would
+    /// grow without saying anything new.
     bool note(uint32_t subsystem, const std::string& asset) {
         if (asset.empty()) return false;
         auto& seen = failed_[subsystem];
-        if (!seen.insert(asset).second) return false;   // ya contado
+        if (!seen.insert(asset).second) return false;   // already counted
         return seen.size() == threshold_;
     }
 
-    /// Cuántos assets distintos fallaron en ese subsistema.
+    /// How many distinct assets failed in that subsystem.
     size_t count(uint32_t subsystem) const {
         const auto it = failed_.find(subsystem);
         return it == failed_.end() ? 0 : it->second.size();
     }
 
-    /// El total, para el mensaje al usuario.
+    /// The total, for the message shown to the user.
     size_t total() const {
         size_t n = 0;
         for (const auto& [s, set] : failed_) { (void)s; n += set.size(); }

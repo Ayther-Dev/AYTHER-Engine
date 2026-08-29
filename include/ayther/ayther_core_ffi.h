@@ -8,14 +8,14 @@
 // zero-copy hot path (process_frame / update_ram / set_pack — raw pointers cxx
 // does not bridge); keep them in sync with lib.rs by hand.
 // ---------------------------------------------------------------------------
-// `<stdint.h>` en vez de `<cstdint>` y `extern "C"` bajo guarda: es un paso
-// hacia poder incluirlo desde C, y desde C++ no cambia nada.
+// `<stdint.h>` instead of `<cstdint>` and a guarded `extern "C"`: a step
+// towards being includable from C, and from C++ nothing changes.
 //
-// AVISO, para no prometer a medias: este header **todavía no es C puro**. Usa
-// `bool` y nombres de struct sin `typedef`, así que un `.c` no lo compila. La
-// API C del SDK es `ayther_sdk.h` —ahí está la superficie pensada para C, con
-// lectura de packs incluida— y éste es un header de contrato compartido en C++.
-// Lo destapó el ejemplo `pack_read`, al intentar usarlo desde C.
+// NOTICE, so as not to half-promise: this header is **not pure C yet**. It uses
+// `bool` and struct names without a `typedef`, so a `.c` will not compile it.
+// The SDK's C API is `ayther_sdk.h` —that is the surface designed for C, pack
+// reading included— and this is a shared contract header in C++.
+// The `pack_read` example exposed it, by trying to use it from C.
 #include <stdint.h>
 #include <stddef.h>
 
@@ -59,38 +59,39 @@ bool ayther_sonic_read_velocity(const uint8_t* ram, size_t size,
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-//  — gate de condiciones de audio (el evaluador vive en el core)
+// Audio condition gate (the evaluator lives in the core)
 // ---------------------------------------------------------------------------
 
-struct AudioEventGate;   // opaco — no dereferenciar
+struct AudioEventGate;   // opaque — do not dereference
 
-/// Compila el gate desde el texto de audio_events.toml. Devuelve NULL cuando no
-/// hay ninguna condición (el caso normal), y así el caller se ahorra la consulta
-/// por frame sin tener que preguntar nada.
+/// Compiles the gate from the text of audio_events.toml. Returns NULL when
+/// there is no condition at all (the normal case), so the caller saves the
+/// per-frame query without having to ask anything.
 AudioEventGate* ayther_audio_gate_new(const char* text);
 void            ayther_audio_gate_free(AudioEventGate* g);
 
-/// Firmas cuyas condiciones NO se cumplen en este frame — las que tienen que
-/// sonar en ORIGINAL. Escribe hasta `cap` y devuelve el total disponible.
+/// Signatures whose conditions are NOT met this frame — the ones that have to
+/// play as the ORIGINAL. Writes up to `cap` and returns the total available.
 uint32_t ayther_audio_gate_eval(const AudioEventGate* g,
                                 const uint8_t* ram, size_t ram_len,
                                 bool word_swapped, uint32_t frame,
                                 uint64_t* out, uint32_t cap);
 
 // ---------------------------------------------------------------------------
-//  EM-8.2 — gate del ENSANCHADO (mismo camino A que el de audio)
+// EM-8.2 — the WIDESCREEN gate (the same path A as the audio one)
 // ---------------------------------------------------------------------------
 
-struct WidescreenGate;   // opaco — no dereferenciar
+struct WidescreenGate;   // opaque — do not dereference
 
-/// Compila el gate desde el texto de widescreen.toml. Devuelve NULL cuando el
-/// pack no declara `[[widescreen]]` — todos los ya horneados — y así el caller
-/// se ahorra la consulta por frame Y no apaga el ensanchado manual del Lab.
+/// Compiles the gate from the text of widescreen.toml. Returns NULL when the
+/// pack declares no `[[widescreen]]` — every pack baked so far — so the caller
+/// saves the per-frame query AND does not switch off the Lab's manual
+/// widescreen.
 WidescreenGate* ayther_widescreen_gate_new(const char* text);
 void            ayther_widescreen_gate_free(WidescreenGate* g);
 
-/// El ancho lógico de este frame. Escribe `out_width` y devuelve true SÓLO si
-/// alguna regla matcheó; con false el caller conserva lo que tenía.
+/// The logical width of this frame. Writes `out_width` and returns true ONLY
+/// if some rule matched; on false the caller keeps what it had.
 bool ayther_widescreen_gate_eval(const WidescreenGate* g,
                                  const uint8_t* ram, size_t ram_len,
                                  bool word_swapped, uint32_t frame,
@@ -143,19 +144,19 @@ void ayther_pack_close(AyArchive* pack);
 /// E.g. "JP" → read("graphics/title.png") tries "locales/JP/graphics/title.png" first.
 void ayther_pack_set_region(AyArchive* pack, const char* region);
 
-/// : bitmask de tiers de resolución incluidos (bit t = tier t presente;
-/// 0 = pack legacy). Tiers: 0=HD 3x · 1=Full HD 4.5x · 2=2K 6x · 3=4K 9x ·
-/// 4=8K 18x. El indice CRECE con la resolucion: `set_tier` barre hacia arriba
-/// desde el ideal y uno fuera de orden le haria elegir de menos.
+/// Bitmask of included resolution tiers (bit t = tier t present; 0 = legacy
+/// pack). Tiers: 0=HD 3x · 1=Full HD 4.5x · 2=2K 6x · 3=4K 9x · 4=8K 18x. The
+/// index GROWS with resolution: `set_tier` scans upwards from the ideal, and an
+/// out-of-order one would make it pick too low.
 uint8_t ayther_pack_tiers(const AyArchive* pack);
 
-/// : activa el tier para el `ideal` del display — el menor incluido >=
-/// ideal, o el mayor incluido si no hay. Los lookups resuelven
-/// `tiers/<activo>/<nombre>` de forma transparente. No-op en packs legacy.
+/// Activates the tier for the display's `ideal` — the lowest included one >=
+/// ideal, or the highest included one if there is none. Lookups resolve
+/// `tiers/<active>/<name>` transparently. No-op on legacy packs.
 void ayther_pack_set_tier(AyArchive* pack, int ideal);
 
-/// : mapea la altura de salida (px) al tier ideal y lo activa:
-/// <=720 HD · <=1080 Full HD · <=1440 2K · <=2160 4K · mas 8K.
+/// Maps the output height (px) to the ideal tier and activates it:
+/// <=720 HD · <=1080 Full HD · <=1440 2K · <=2160 4K · above that, 8K.
 void ayther_pack_set_tier_for_height(AyArchive* pack, int out_height_px);
 
 /// Return the size in bytes of a logical asset, or -1 if not found.
@@ -167,30 +168,31 @@ int64_t ayther_pack_file_size(const AyArchive* pack, const char* logical_path);
 int64_t ayther_pack_read(const AyArchive* pack, const char* logical_path,
                           uint8_t* out_buf, size_t buf_cap);
 
-/// : si la entrada se puede leer POR RANGO. Preguntarlo antes es lo que
-/// permite elegir estrategia: con streaming un video se reproduce sin
-/// materializarse (RAM = un frame), sin streaming hay que leerlo entero.
+/// Whether the entry can be read BY RANGE. Asking first is what allows a
+/// strategy to be chosen: with streaming a video plays without being
+/// materialised (RAM = one frame); without streaming it has to be read whole.
 ///
-/// Es true sólo para entradas `Stored` cuyo indice firmado trae hashes por
-/// trozo: los packs anteriores a  y toda entrada deflateada dan false.
-/// : cuántas entradas tiene el pack, y el nombre de cada una (orden
-/// alfabético estable). El nombre se COPIA al buffer del llamador: un puntero
-/// prestado obligaría a saber cuánto vive, y ése es el contrato que nadie lee.
-/// Devuelve los bytes escritos, 0 si el índice no existe, y NEGATIVO (el largo
-/// necesario) si el buffer es chico.
+/// It is true only for `Stored` entries whose signed index carries per-chunk
+/// hashes: packs older than that, and every deflated entry, return false.
+/// How many entries the pack has, and the name of each (stable alphabetical
+/// order). The name is COPIED into the caller's buffer: a borrowed pointer
+/// would require knowing how long it lives, and that is the contract nobody
+/// reads. Returns the bytes written, 0 if the index does not exist, and
+/// NEGATIVE (the required length) if the buffer is too small.
 uint32_t ayther_pack_entry_count(const AyArchive* pack);
 int32_t  ayther_pack_entry_name(const AyArchive* pack, uint32_t i,
                                 char* dst, uint32_t cap);
 
 bool ayther_pack_entry_streamable(const AyArchive* pack, const char* logical_path);
 
-/// : leer `len` bytes de una entrada desde `offset` sin materializarla.
+/// Reads `len` bytes of an entry from `offset` without materialising it.
 ///
-/// Devuelve los bytes escritos —puede ser MENOS que `len` cuando el rango llega
-/// al final de la entrada— o -1 si la entrada no es direccionable por rango, si
-/// el rango cae fuera, o si un trozo no verifica contra el indice firmado.
-/// Nada sale de aca sin verificar: la unidad de verificacion es el trozo, no la
-/// entrada, y eso es lo que hace barata la lectura parcial.
+/// Returns the bytes written —which may be FEWER than `len` when the range
+/// reaches the end of the entry— or -1 if the entry is not addressable by
+/// range, if the range falls outside, or if a chunk fails verification against
+/// the signed index. Nothing leaves here unverified: the unit of verification
+/// is the chunk, not the entry, and that is what makes the partial read
+/// cheap.
 int64_t ayther_pack_read_range(const AyArchive* pack, const char* logical_path,
                                uint64_t offset, uint8_t* out_buf, size_t len);
 
@@ -199,229 +201,242 @@ int64_t ayther_pack_read_range(const AyArchive* pack, const char* logical_path,
 const char* ayther_pack_game_id(const AyArchive* pack);
 
 // ---------------------------------------------------------------------------
-//  — validación de compatibilidad, ANTES de abrir el pack
+// Compatibility validation, BEFORE opening the pack
 // ---------------------------------------------------------------------------
 //
-// Devuelve una LISTA de hallazgos y no un booleano, porque hay dos cosas
-// distintas que un pack puede tener mal:
+// It returns a LIST of findings and not a boolean, because there are two
+// different things a pack can have wrong:
 //
-//   · incompatibilidad CRÍTICA (es de otro juego, pide un Engine que no
-//     existe) → error: abrir serviría contenido equivocado;
-//   · degradación OPCIONAL (trae un subsistema que este build no conoce, se
-//     horneó con otro core) → advertencia: correr y avisar.
+//   · CRITICAL incompatibility (it belongs to another game, it asks for an
+//     Engine that does not exist) → error: opening it would serve the wrong
+//     content;
+//   · OPTIONAL degradation (it brings a subsystem this build does not know, it
+//     was baked with another core) → warning: run and say so.
 //
-// Con un booleano, o se rechaza lo segundo —y un pack usable no abre— o se
-// acepta lo primero, y el usuario ve el pack de otro juego sin saber por qué.
+// With a boolean, either the second is rejected —and a usable pack does not
+// open— or the first is accepted, and the user sees another game's pack without
+// knowing why.
 //
-// No abre el pack: por eso un pack incompatible no puede tirar la sesión.
+// It does not open the pack: that is why an incompatible pack cannot take the
+// session down.
 
 typedef struct AytherPackReport AytherPackReport;
 
-/// Lo que la sesión tiene puesto. Punteros nulos y `has_rom = false` significan
-/// «no se sabe» — y eso sale como ADVERTENCIA en el informe, para que «no se
-/// comprobó» no se lea como «está bien».
+/// What the session has loaded. Null pointers and `has_rom = false` mean "not
+/// known" — and that comes out as a WARNING in the report, so that "it was not
+/// checked" does not read as "it is fine".
 typedef struct {
     uint32_t    rom_crc32;
     bool        has_rom;
     const char* platform;        ///< "megadrive" · "segacd" · NULL
-    const char* core_build_id;   ///< build_id del core del fork · NULL
-    const char* engine_version;  ///< NULL = la de este build
-    bool        release_build;   ///< en release, un pack sin firma es ERROR
+    const char* core_build_id;   ///< build_id of the fork's core · NULL
+    const char* engine_version;  ///< NULL = the one from this build
+    bool        release_build;   ///< in release, an unsigned pack is an ERROR
 } AytherValidateCtx;
 
 AytherPackReport* ayther_pack_validate(const char* path, const AytherValidateCtx* ctx);
 uint32_t          ayther_pack_report_count(const AytherPackReport* r);
-/// 0 = error · 1 = advertencia · 2 = recomendación () · -1 fuera de rango.
+/// 0 = error · 1 = warning · 2 = recommendation · -1 out of range.
 int32_t           ayther_pack_report_severity(const AytherPackReport* r, uint32_t i);
-/// Código estable, para decidir sin parsear castellano.
+/// Stable code, so decisions need no prose parsing.
 const char*       ayther_pack_report_code(const AytherPackReport* r, uint32_t i);
-/// Mensaje para humanos.
+/// Human-readable message.
 const char*       ayther_pack_report_message(const AytherPackReport* r, uint32_t i);
-/// La única pregunta que decide si arrancar. Las advertencias se muestran igual.
+/// The only question that decides whether to start. Warnings are shown all the
+/// same.
 bool              ayther_pack_report_has_errors(const AytherPackReport* r);
 void              ayther_pack_report_free(AytherPackReport* r);
 
-/// : el GRADO de compatibilidad, derivado del mismo informe de arriba.
+/// The compatibility GRADE, derived from the same report above.
 ///
-/// Existe además de `ayther_pack_validate` porque la pregunta es otra: el
-/// informe dice QUÉ pasa, el grado dice QUÉ HACER. Y porque el criterio para
-/// pasar de una lista de hallazgos a un veredicto tiene que ser uno solo —
-/// Play, el SDK y el Hub contestan lo mismo porque llaman acá.
+/// It exists alongside `ayther_pack_validate` because the question is
+/// different: the report says WHAT is happening, the grade says WHAT TO DO. And
+/// because the criterion for going from a list of findings to a verdict has to
+/// be a single one — Play, the SDK and the Hub give the same answer because
+/// they call in here.
 typedef struct AytherCompat AytherCompat;
 
-/// 0 exacta · 1 con advertencias · 2 experimental · 3 incompatible.
-/// De mejor a peor, y el orden es contrato.
+/// 0 exact · 1 with warnings · 2 experimental · 3 incompatible.
+/// Best to worst, and the order is part of the contract.
 
 
-///  EM-4.1: el hash de FORMA de un tile — invariante al brillo, sensible a
-/// la silueta. Agrupa las variantes que un fade POR CONTENIDO produce (el juego
-/// escribe tiles con índices más oscuros), que son las que cuestan autoría: un
-/// fade por PALETA ya lo agrupa solo el hash de sprite, que es ciego a paleta.
+/// EM-4.1: the SHAPE hash of a tile — invariant to brightness, sensitive to the
+/// silhouette. It groups the variants a CONTENT-BASED fade produces (the game
+/// writes tiles with darker indices), which are the ones that cost authoring
+/// effort: a PALETTE fade is already grouped by the sprite hash on its own,
+/// which is palette-blind.
 ///
-/// No reemplaza al hash de identidad: lo acompaña. Uno dice «qué tile es» y
-/// éste, «de qué familia».
+/// It does not replace the identity hash: it accompanies it. One says "which
+/// tile this is" and this one, "which family it belongs to".
 uint64_t ayther_tile_shape_hash(const uint8_t* tile, uint32_t n);
-/// Nivel medio de los píxeles OPACOS (0..15). Negativo = todo transparente, que
-/// NO es lo mismo que un tile negro.
+/// Mean level of the OPAQUE pixels (0..15). Negative = fully transparent, which
+/// is NOT the same as a black tile.
 float    ayther_tile_mean_level(const uint8_t* tile, uint32_t n);
-/// Cuánto atenuar el asset de `referencia` para reproducir `tile`. Negativo =
-/// alguno no tiene píxeles opacos.
+/// How much to dim the `referencia` asset to reproduce `tile`. Negative = one
+/// of them has no opaque pixels.
 float    ayther_tile_brightness_factor(const uint8_t* tile, const uint8_t* referencia);
 
-///  EM-7.4: parches IPS/BPS del USUARIO, aplicados en RAM.
+/// EM-7.4: the USER's IPS/BPS patches, applied in RAM.
 ///
-/// Una fan-translation o un romhack es un parche: describe cómo transformar una
-/// ROM que el usuario ya tiene, sin llevar el juego adentro. Por eso se puede
-/// distribuir donde la ROM no, y por eso esto es BYOR-safe.
+/// A fan translation or a romhack is a patch: it describes how to transform a
+/// ROM the user already has, without carrying the game inside. That is why it
+/// can be distributed where the ROM cannot, and why this is BYOR-safe.
 ///
-/// El parche se aplica al BUFFER que se le pasa al core, nunca al archivo del
-/// disco: la misma doctrina que el resto del proyecto, y acá además protege al
-/// usuario de quedarse sin su ROM original por probar un hack.
+/// The patch is applied to the BUFFER handed to the core, never to the file on
+/// disk: the same doctrine as the rest of the project, and here it additionally
+/// protects the user from losing their original ROM by trying a hack.
 bool    ayther_is_rom_patch(const uint8_t* data, uint32_t size);
-/// Bytes escritos, o negativo: -1 args · -2 no es parche · -3 no entra
-/// (el tamaño necesario queda en `out_needed`) · -4 fallo (ver el error).
+/// Bytes written, or negative: -1 args · -2 not a patch · -3 does not fit
+/// (the required size is left in `out_needed`) · -4 failure (see the error).
 int64_t ayther_apply_rom_patch(const uint8_t* rom, uint32_t rom_n,
                                const uint8_t* parche, uint32_t parche_n,
                                uint8_t* out, uint32_t out_cap,
                                uint32_t* out_needed);
-/// El motivo del último fallo. Un «no se pudo parchear» sin motivo deja al
-/// usuario sin saber si bajó el parche equivocado o si su ROM está dañada.
+/// The reason for the last failure. A "could not patch" with no reason leaves
+/// the user unable to tell whether they downloaded the wrong patch or their ROM
+/// is damaged.
 uint32_t ayther_rom_patch_error(char* buf, uint32_t cap);
 
 AytherCompat* ayther_pack_compat(const char* path, const AytherValidateCtx* ctx);
 int32_t       ayther_compat_grade(const AytherCompat* c);
-/// Nunca vacío para un handle válido.
+/// Never empty for a valid handle.
 const char*   ayther_compat_reason(const AytherCompat* c);
-/// Lo que NO se pudo comprobar — es lo que separa «experimental» de «exacta».
+/// What could NOT be verified — it is what separates "experimental" from
+/// "exact".
 uint32_t      ayther_compat_unverified_count(const AytherCompat* c);
 const char*   ayther_compat_unverified(const AytherCompat* c, uint32_t i);
-/// El veredicto entero en JSON, con el informe adentro.
+/// The whole verdict as JSON, with the report inside.
 const char*   ayther_compat_json(const AytherCompat* c);
 void          ayther_compat_free(AytherCompat* c);
 
 // ---------------------------------------------------------------------------
-//  — perfiles de remasterización
+// Remastering profiles
 // ---------------------------------------------------------------------------
 //
-// Un perfil NO multiplica el material: filtra el que ya está. Declara qué
-// subsistemas enciende y qué buses silencia; los assets son los mismos. Sin
-// eso, un pack con cuatro perfiles pesaría cuatro veces.
+// A profile does NOT multiply the material: it filters what is already there.
+// It declares which subsystems it enables and which buses it mutes; the assets
+// are the same. Without that, a pack with four profiles would weigh four times
+// as much.
 //
-// La lista SIEMPRE trae «original» primero (implícito, no se declara y no se
-// puede sacar) y siempre tiene exactamente un default: el llamador no tiene que
-// defenderse de una lista vacía ni de dos defaults.
+// The list ALWAYS carries "original" first (implicit, undeclared and
+// unremovable) and always has exactly one default: the caller does not have to
+// defend against an empty list nor against two defaults.
 
-/// Cuántos perfiles ofrece el pack. Nunca 0.
+/// How many profiles the pack offers. Never 0.
 uint32_t ayther_pack_profile_count(const AyArchive* pack);
 
-/// Campo `field` del perfil `i`: "id" · "name" · "description". La cadena vale
-/// hasta la próxima llamada a esto o a `ayther_pack_meta_field` — comparten
-/// buffer, porque dos con la misma regla sólo agregan una forma de equivocarse.
+/// Field `field` of profile `i`: "id" · "name" · "description". The string is
+/// valid until the next call to this or to `ayther_pack_meta_field` — they
+/// share a buffer, because two with the same rule only add one more way to get
+/// it wrong.
 const char* ayther_pack_profile_field(AyArchive* pack, uint32_t i, const char* field);
 
-/// Subsistemas que enciende (bit j = `ayther_subsystem_name(j)`). 0 en
-/// «original», que es lo correcto: no enciende nada.
+/// Subsystems it enables (bit j = `ayther_subsystem_name(j)`). 0 on "original",
+/// which is correct: it enables nothing.
 uint32_t ayther_pack_profile_systems(const AyArchive* pack, uint32_t i);
 
-/// Buses que silencia (0=sin clasificar · 1=música · 2=efectos · 3=voces).
+/// Buses it mutes (0=unclassified · 1=music · 2=effects · 3=voices).
 uint32_t ayther_pack_profile_muted_buses(const AyArchive* pack, uint32_t i);
 
-/// El perfil que se aplica al cargar el pack sin pedir otro.
+/// The profile applied when loading the pack without asking for another.
 uint32_t ayther_pack_default_profile(const AyArchive* pack);
 
-/// Índice del perfil `id`, o -1 si el pack no lo tiene. No devuelve 0 porque
-/// «no existe» y «existe y no enciende nada» son cosas distintas.
+/// Index of profile `id`, or -1 if the pack does not have it. It does not
+/// return 0 because "does not exist" and "exists and enables nothing" are
+/// different things.
 int32_t ayther_pack_profile_index(const AyArchive* pack, const char* id);
 
 // ---------------------------------------------------------------------------
-//  — créditos y procedencia del pack, para Play y Hub
+// Pack credits and provenance, for Play and the Hub
 // ---------------------------------------------------------------------------
 
-/// Handle opaco con `credits.toml` ya parseado. Se pide, se consulta y se
-/// libera: el pack no paga el parseo cuando nadie los muestra.
+/// Opaque handle with `credits.toml` already parsed. It is requested, queried
+/// and released: the pack does not pay for the parse when nobody displays them.
 typedef struct AytherCredits AytherCredits;
 
-/// NULL si el pack no trae créditos o si el archivo está roto — un pack sin
-/// créditos es válido y uno con el archivo ilegible tiene que seguir jugándose.
-/// Lo que no puede es mostrar una atribución inventada.
+/// NULL if the pack carries no credits or if the file is broken — a pack
+/// without credits is valid and one with an unreadable file still has to be
+/// playable. What it must not do is show an invented attribution.
 AytherCredits* ayther_pack_credits(const AyArchive* pack);
 
-/// Cuántas PERSONAS acredita el pack (no cuántos assets).
+/// How many PEOPLE the pack credits (not how many assets).
 uint32_t    ayther_credits_count(const AytherCredits* c);
 const char* ayther_credits_author(const AytherCredits* c, uint32_t i);
-/// Rol declarado, o cadena vacía (no NULL: un rol ausente no es fuera de rango).
+/// Declared role, or an empty string (not NULL: a missing role is not out of
+/// range).
 const char* ayther_credits_role(const AytherCredits* c, uint32_t i);
-/// Las licencias que aportó, separadas por coma.
+/// The licences they contributed, comma-separated.
 const char* ayther_credits_licenses(const AytherCredits* c, uint32_t i);
 uint32_t    ayther_credits_assets(const AytherCredits* c, uint32_t i);
 
-/// La atribución del asset `asset_id` — lo que Play muestra del asset que está
-/// usando. El id es el nombre de contenido de la entrada (), sin `assets/`
-/// ni el prefijo de tier: el mismo dibujo en cuatro tiers es UN asset y tiene
-/// UNA procedencia. NULL si ese asset no declara nada.
+/// The attribution of asset `asset_id` — what Play shows for the asset it is
+/// using. The id is the content name of the entry, without `assets/` and
+/// without the tier prefix: the same drawing across four tiers is ONE asset and
+/// has ONE provenance. NULL if that asset declares nothing.
 const char* ayther_credits_attribution(const AytherCredits* c, const char* asset_id);
 
 void ayther_credits_free(AytherCredits* c);
 
 // ---------------------------------------------------------------------------
-//  — metadatos del manifest, consultables SIN ejecutar el pack
+// Manifest metadata, queryable WITHOUT running the pack
 // ---------------------------------------------------------------------------
 
-/// Versión de ESQUEMA del manifest que este build escribe y entiende.
+/// The manifest SCHEMA version this build writes and understands.
 uint32_t ayther_manifest_schema_supported(void);
 
-/// Versión del ENGINE — la misma contra la que el validador () compara el
-/// `engine_min` del pack. La expone el core para que el reporte técnico ()
-/// no mantenga una segunda copia del número: dos copias se separan en el primer
-/// bump y el reporte pasa a mentir sobre qué Engine horneó el pack.
+/// The ENGINE version — the same one the validator compares the pack's
+/// `engine_min` against. The core exposes it so the technical report does not
+/// keep a second copy of the number: two copies drift apart on the first bump
+/// and the report starts lying about which Engine baked the pack.
 const char* ayther_engine_version(void);
 
-/// Esquema DECLARADO por el pack (1 = horneado antes de que el campo
-/// existiera). Un pack con un esquema MAYOR que el soportado no abre: la
-/// tolerancia a campos desconocidos es forward-compat de datos, pero abrir un
-/// pack que dice depender de algo que este build no sabe leer sería servirlo a
-/// medias y llamarlo éxito.
+/// The schema DECLARED by the pack (1 = baked before the field existed). A pack
+/// with a schema HIGHER than the supported one does not open: tolerance of
+/// unknown fields is data forward-compatibility, but opening a pack that says
+/// it depends on something this build cannot read would be serving it half-way
+/// and calling it success.
 uint32_t ayther_pack_schema(const AyArchive* pack);
 
-/// Subsistemas que AYTHER sabe sustituir, en ORDEN CANÓNICO. El índice es el
-/// contrato con `AytherSubsystem` del Engine, y hay un test que compara las dos
-/// listas nombre por nombre.
+/// The subsystems AYTHER knows how to substitute, in CANONICAL ORDER. The index
+/// is the contract with the Engine's `AytherSubsystem`, and there is a test
+/// comparing the two lists name by name.
 uint32_t    ayther_subsystem_count(void);
 const char* ayther_subsystem_name(uint32_t index);
 
-/// : máscara de subsistemas que el pack DECLARA traer (bit i = el pack trae
+/// Mask of subsystems the pack DECLARES it carries (bit i = the pack carries
 /// `ayther_subsystem_name(i)`).
 ///
-/// **0 es ambiguo**: hay que leerlo junto con `ayther_pack_declares_systems`.
-/// Un pack legacy no declara nada, y eso no es lo mismo que declarar que no
-/// trae nada — tratarlos igual haría que todo pack viejo apareciera vacío.
+/// **0 is ambiguous**: it has to be read together with
+/// `ayther_pack_declares_systems`. A legacy pack declares nothing, and that is
+/// not the same as declaring that it carries nothing — treating them alike
+/// would make every old pack appear empty.
 uint32_t ayther_pack_systems(const AyArchive* pack);
 bool     ayther_pack_declares_systems(const AyArchive* pack);
 
-/// : un campo de `[compat]` o de autoría, como cadena NUL-terminada.
+/// A field of `[compat]` or of authoring, as a NUL-terminated string.
 /// `field`: "rom_crc32" · "platform" · "core_min" · "license" · "contributors"
-/// (esta última separada por comas). NULL = no declarado, que es distinto de
-/// declarado vacío.
+/// (the last one comma-separated). NULL = not declared, which is different from
+/// declared empty.
 ///
-/// El puntero vive hasta la próxima llamada sobre el MISMO pack (se cachea
-/// adentro para no filtrar una asignación por consulta), así que hay que
-/// copiarlo antes de volver a preguntar.
+/// The pointer lives until the next call on the SAME pack (it is cached inside
+/// so as not to leak one allocation per query), so it has to be copied before
+/// asking again.
 const char* ayther_pack_meta_field(AyArchive* pack, const char* field);
 
-/// BUILD ID del pack (/) — identifica UN horneado concreto.
+/// The pack BUILD ID — it identifies ONE concrete bake.
 ///
-/// NO está declarado en el pack: se DERIVA de los bytes de `integrity.toml`,
-/// que es el conjunto de hashes de todo lo que hay adentro. Por eso no puede
-/// mentir (un campo del manifest se edita; esto se recalcula), dos horneados
-/// idénticos dan el mismo id, y no hay circularidad — declararlo en el manifest
-/// era imposible, porque la integridad cubre el manifest.
+/// It is NOT declared in the pack: it is DERIVED from the bytes of
+/// `integrity.toml`, which is the set of hashes of everything inside. That is
+/// why it cannot lie (a manifest field is editable; this is recomputed), two
+/// identical bakes give the same id, and there is no circularity — declaring it
+/// in the manifest was impossible, because integrity covers the manifest.
 ///
-/// Es lo que hace diagnosticable un pack cuyos assets se nombran por hash: el
-/// mensaje de error lleva `hash - juego vN build XXXX` y el buscador del Lab
-/// resuelve ese par contra el log del horneado.
+/// It is what makes a pack whose assets are named by hash diagnosable: the
+/// error message carries `hash - game vN build XXXX` and the Lab's search
+/// resolves that pair against the bake log.
 ///
-/// VACÍO en packs legacy (sin integrity.toml). Tratarlo como «desconocido», no
-/// como un id.
+/// EMPTY on legacy packs (no integrity.toml). Treat it as "unknown", not as an
+/// id.
 const char* ayther_pack_build_id(const AyArchive* pack);
 
 // ---------------------------------------------------------------------------
@@ -609,23 +624,24 @@ void ayther_tile_sub_free(AytherTileSubstitutor* s);
 /// Load the substitution catalog from `tile_substitutions.toml` in the pack.
 void ayther_tile_sub_load_pack(AytherTileSubstitutor* s, const AyArchive* pack);
 
-/// Load the catalog from a NAMED toml in the pack (Fase 2c: planos →
-/// `plane_tile_substitutions.toml`). Mismo formato [[sub]].
+/// Load the catalog from a NAMED toml in the pack (Phase 2c: planes →
+/// `plane_tile_substitutions.toml`). Same [[sub]] format.
 void ayther_tile_sub_load_pack_named(AytherTileSubstitutor* s,
                                      const AyArchive* pack, const char* file);
 
-/// Búsqueda directa hash → asset (override > catalog). Copia el path NUL-terminado
-/// en `out` (cap bytes); devuelve true si había asignación. Para el resolver
-/// scroll-aware de tiles de plano (computa la posición por su cuenta).
+/// Direct hash → asset lookup (override > catalog). Copies the NUL-terminated
+/// path into `out` (cap bytes); returns true if there was an assignment. For
+/// the scroll-aware resolver of plane tiles (which computes the position on its
+/// own).
 bool ayther_tile_sub_lookup(const AytherTileSubstitutor* s, uint64_t hash,
                             char* out, uint32_t cap);
 
-/// EM-2 (): evalúa las condiciones del catálogo para este frame y fija el
-/// asset vigente por hash. Llamar UNA vez por frame ANTES de los lookups.
-/// `ram` es la Work RAM cruda del core; `word_swapped` declara si viene con el
-/// `addr ^ 1` del Mega Drive en hosts LE (para el 68k: true) — así una
-/// dirección del TOML es la misma que muestran RetroAchievements / Data Crystal.
-/// No-op barato si el pack no trae condiciones.
+/// EM-2: evaluates the catalogue conditions for this frame and fixes the
+/// current asset per hash. Call it ONCE per frame BEFORE the lookups.
+/// `ram` is the core's raw Work RAM; `word_swapped` declares whether it comes
+/// with the Mega Drive `addr ^ 1` on LE hosts (for the 68k: true) — that way an
+/// address from the TOML is the same one RetroAchievements / Data Crystal show.
+/// A cheap no-op if the pack carries no conditions.
 void ayther_tile_sub_begin_frame(AytherTileSubstitutor* s,
                                  uint64_t               frame_number,
                                  const uint8_t*         ram,
@@ -726,7 +742,7 @@ struct AytherSpriteOccurrence {
     uint8_t  palette;        ///< VDP palette index 0–3
     uint8_t  priority;       ///< VDP priority bit (0=low,1=high) — metasprite front/back
     uint8_t  slot;           ///< SAT slot index 0–79 (Ayther hide-by-hash)
-    uint8_t  hflip;          ///< VDP h-flip (CU-AN-11: auto-espejo del sheet HD)
+    uint8_t  hflip;          ///< VDP h-flip (CU-AN-11: auto-mirror of the HD sheet)
     uint8_t  vflip;          ///< VDP v-flip
 };
 
@@ -737,42 +753,44 @@ struct AytherSpriteSub {
     int16_t screen_y;
     uint8_t w_tiles;
     uint8_t h_tiles;
-    /// Tamaño EXACTO del destino en píxeles. El bbox unión de una POSE casi
-    /// nunca es múltiplo de 8 (p.ej. 29×64): truncarlo a tiles achataba el
-    /// HD/snapshot al dibujarlo. 0 = derivar de w_tiles/h_tiles×8 (productores
-    /// tile-exactos: per-sprite, tiles de plano, Modo 3).
+    /// EXACT destination size in pixels. The union bbox of a POSE is almost
+    /// never a multiple of 8 (e.g. 29×64): truncating it to tiles used to
+    /// squash the HD/snapshot when drawing it. 0 = derive from
+    /// w_tiles/h_tiles×8 (tile-exact producers: per-sprite, plane tiles,
+    /// Mode 3).
     uint16_t w_px;
     uint16_t h_px;
-    /// Arreglo con que matcheó la POSE: 0 = el capturado · bit0 = espejo H ·
-    /// bit1 = espejo V. El asset (snapshot / HD default) es la cara CANÓNICA →
-    /// el render lo dibuja pre-volteado por estos bits (la instancia espejada
-    /// se ve en SU dirección). 0 en per-sprite/planos/Modo 3 y en poses con
-    /// candidatos por variante.
+    /// The arrangement the POSE matched with: 0 = the captured one · bit0 = H
+    /// mirror · bit1 = V mirror. The asset (snapshot / HD default) is the
+    /// CANONICAL facing → the render draws it pre-flipped by these bits (the
+    /// mirrored instance is seen in ITS direction). 0 on
+    /// per-sprite/planes/Mode 3 and on poses with per-variant candidates.
     uint8_t mirror;
-    /// Paleta observada del ancla (occ del per-sprite / miembro ancla de la
-    /// pose): el fundido E1 se ancla acá, no a la primera occ del bbox (un
-    /// ajeno solapado — el jinete sobre el Dragón — daba la paleta equivocada
-    /// y el flash de paleta nunca modulaba el HD). 0xFF = desconocida
-    /// (productores que no la llenan: tiles de plano, Modo 3 → heurística).
+    /// Observed palette of the anchor (the per-sprite occurrence / the pose's
+    /// anchor member): the E1 fade anchors here, not on the first occurrence of
+    /// the bbox (an unrelated overlapping one — the rider on the Dragon — gave
+    /// the wrong palette and the palette flash never modulated the HD).
+    /// 0xFF = unknown (producers that do not fill it: plane tiles, Mode 3 →
+    /// heuristic).
     uint8_t palette;
-    /// : paleta AUTORADA del candidato elegido cuando no es la observada —
-    /// el motor aproxima el color tintando por la razón CRAM viva
-    /// observada/candidata. 0xFF = sin síntesis.
+    /// The AUTHORED palette of the chosen candidate when it is not the observed
+    /// one — the motor approximates the colour by tinting with the live CRAM
+    /// observed/candidate ratio. 0xFF = no synthesis.
     uint8_t synth_pal;
-    /// Referencia autorada del tinte E1 (promedio RGB 0-255 de la línea CRAM
-    /// al capturar la pose). {0,0,0} = sin referencia → peak-hold escalar.
+    /// Authored reference of the E1 tint (RGB 0-255 average of the CRAM line
+    /// when the pose was captured). {0,0,0} = no reference → scalar peak-hold.
     uint8_t ref_rgb[3];
-    /// Sub-rect UV del asset (0..1; 0,0,1,1 = quad completo). : los quads
-    /// por grupo de paleta de una pose mixta recortan su porción del asset.
+    /// UV sub-rect of the asset (0..1; 0,0,1,1 = the whole quad). The per-
+    /// palette-group quads of a mixed pose crop their portion of the asset.
     float u0, v0, uw, vh;
-    /// Identidad estable de la pose que emitió el sub (in-betweens §6.1/6.2):
-    /// el TweenPlayer trackea instancias con ella. AL FINAL del struct (ABI:
-    /// recompilar core+engine+lab juntos al cambiarlo).
+    /// Stable identity of the pose that emitted the sub (in-betweens
+    /// §6.1/6.2): the TweenPlayer tracks instances with it. AT THE END of the
+    /// struct (ABI: recompile core+engine+lab together when changing it).
     uint64_t pose_key;
-    /// Vestuario: ruta/asset id de la máscara de TINTE del asset BASE de la
-    /// pose ("" = sin máscara; blanco = la zona sigue el tinte de paleta,
-    /// negro = sólo la luma). Sólo la llena el pose-sub cuando el asset
-    /// elegido es el base. AL FINAL del struct (misma regla ABI que pose_key).
+    /// Wardrobe: path/asset id of the TINT mask of the pose's BASE asset
+    /// ("" = no mask; white = the area follows the palette tint, black = luma
+    /// only). Only the pose-sub fills it, and only when the chosen asset is the
+    /// base one. AT THE END of the struct (the same ABI rule as pose_key).
     char mask_path[256];
 };
 
@@ -854,73 +872,76 @@ uint32_t ayther_sprite_sub_resolve(const AytherSpriteSubstitutor* s,
 
 
 // ---------------------------------------------------------------------------
-// PoseSetSubstitutor — sustitución por FIRMA DE POSE (multi-sprite ANIMADO).
-// Una pose = conjunto de hashes; sólo sustituye cuando TODOS están presentes (sin
-// reclamar), en el bbox de los miembros, y los reclama. Resuelve DESPUÉS del
-// metasprite y ANTES del per-sprite. `pose_substitutions.toml`: [[pose]] con el
-// modelo COMPLETO (hashes + asset, y opcionales: rel/dims "x,y|…" = matching
-// instanciado, max_w/max_h = guard, flip = cara del asset, ref = tinte E1
-// autorado "r,g,b", [[pose.variant]] = candidatos paleta×flip). Un pack viejo
-// (solo hashes/asset) carga con la semántica legacy por set.
+// PoseSetSubstitutor — substitution by POSE SIGNATURE (ANIMATED multi-sprite).
+// A pose = a set of hashes; it only substitutes when ALL of them are present
+// (unclaimed), over the bbox of the members, and it claims them. It resolves
+// AFTER the metasprite and BEFORE the per-sprite. `pose_substitutions.toml`:
+// [[pose]] with the COMPLETE model (hashes + asset, plus optional: rel/dims
+// "x,y|…" = instanced matching, max_w/max_h = guard, flip = the asset's facing,
+// ref = authored E1 tint "r,g,b", [[pose.variant]] = palette×flip candidates).
+// An old pack (hashes/asset only) loads with the legacy per-set semantics.
 // ---------------------------------------------------------------------------
 struct PoseSetSubstitutor;  // opaque — do not dereference
 PoseSetSubstitutor* ayther_pose_sub_new();
 void                ayther_pose_sub_free(PoseSetSubstitutor* p);
 /// Load `pose_substitutions.toml` from the pack. Returns the catalog entry count.
 uint32_t ayther_pose_sub_load_pack(PoseSetSubstitutor* p, const AyArchive* pack);
-/// Preview EN VIVO (Animar): agrega una pose-override (set de hashes → asset),
-/// resuelta con prioridad sobre el catálogo y preservada al cargar un pack.
-/// `rel_x`/`rel_y` (n elementos, paralelos; pueden ser null) = offsets relativos
-/// de cada miembro → matching INSTANCIADO exacto (bbox 1:1, una sub por instancia).
-/// `dim_w`/`dim_h` (n elementos, paralelos; pueden ser null) = tamaño en PX de
-/// cada miembro: la tolerancia off-screen de un miembro AUSENTE necesita SUS dims
-/// reales (sin ellas se aproximan con las del primer miembro visible y el match
-/// cae en los bordes). `base_mirror` = cara en que está dibujado el asset respecto
-/// de la capturada (bit0 H · bit1 V, flip de presentación de Posar): se XORea al
-/// espejo del arreglo detectado.
+/// LIVE preview (Animate): adds a pose override (a set of hashes → asset),
+/// resolved with priority over the catalogue and preserved when a pack is
+/// loaded.
+/// `rel_x`/`rel_y` (n elements, parallel; may be null) = relative offsets of
+/// each member → exact INSTANCED matching (1:1 bbox, one sub per instance).
+/// `dim_w`/`dim_h` (n elements, parallel; may be null) = size in PX of each
+/// member: the off-screen tolerance of an ABSENT member needs ITS real
+/// dimensions (without them they are approximated with those of the first
+/// visible member and the match fails at the edges). `base_mirror` = the facing
+/// the asset is drawn in relative to the captured one (bit0 H · bit1 V, the
+/// presentation flip in Pose): it is XORed onto the mirror of the detected
+/// arrangement.
 void     ayther_pose_sub_add_override(PoseSetSubstitutor* p, const uint64_t* hashes,
                                       const int16_t* rel_x, const int16_t* rel_y,
                                       const int16_t* dim_w, const int16_t* dim_h,
-                                      const uint8_t* mem_flips,   // : flips SAT por miembro o null
+                                      const uint8_t* mem_flips,   // per-member SAT flips, or null
                                       uint32_t n, uint16_t max_w, uint16_t max_h,
                                       uint8_t base_mirror, const uint8_t* ref_rgb,
-                                      const uint8_t* ref_lines,   // : 12 B (4 líneas × RGB) o null
+                                      const uint8_t* ref_lines,   // 12 B (4 lines × RGB) or null
                                       const char* asset,
-                                      const char* mask);   // Vestuario (null/"" = sin máscara)
-/// Como el anterior pero con CANDIDATOS por variante ( paso 2). `default_asset`
-/// es el fallback; los candidatos van en arrays paralelos (paleta/hflip/vflip = int8,
-/// -1 = cualquiera) + un array de punteros a rutas. Al matchear, el motor elige el
-/// candidato más próximo a la variante observada del ancla.
+                                      const char* mask);   // Wardrobe (null/"" = no mask)
+/// Like the previous one but with per-variant CANDIDATES (step 2).
+/// `default_asset` is the fallback; the candidates go in parallel arrays
+/// (palette/hflip/vflip = int8, -1 = any) plus an array of pointers to paths.
+/// On a match, the motor picks the candidate closest to the observed variant of
+/// the anchor.
 void     ayther_pose_sub_add_override_variants(
              PoseSetSubstitutor* p, const uint64_t* hashes,
              const int16_t* rel_x, const int16_t* rel_y,
              const int16_t* dim_w, const int16_t* dim_h,
-             const uint8_t* mem_flips,   // : flips SAT por miembro o null
+             const uint8_t* mem_flips,   // per-member SAT flips, or null
              uint32_t n, uint16_t max_w, uint16_t max_h, uint8_t base_mirror,
              const uint8_t* ref_rgb,
-             const uint8_t* ref_lines,   // : 12 B (4 líneas × RGB) o null
+             const uint8_t* ref_lines,   // 12 B (4 lines × RGB) or null
              const char* default_asset,
              const int8_t* var_pal, const int8_t* var_hf, const int8_t* var_vf,
-             const uint16_t* var_slots,  // : bitmask de slots por candidato o null
-             const uint64_t* var_sig,    // : firma de contenido por candidato o null
+             const uint16_t* var_slots,  // per-candidate slot bitmask, or null
+             const uint64_t* var_sig,    // per-candidate content signature, or null
              const char* const* var_assets, uint32_t n_var,
-             const char* mask);   // Vestuario (null/"" = sin máscara)
-/// : CRAM viva del frame (words empaquetadas R0-2/G3-5/B6-8, ≥64 words) —
-/// track de estabilidad por línea + latch de firmas de contenido en estado
-/// estable. Llamar cada frame ANTES de ayther_pose_sub_resolve.
+             const char* mask);   // Wardrobe (null/"" = no mask)
+/// The frame's live CRAM (packed words R0-2/G3-5/B6-8, ≥64 words) — per-line
+/// stability tracking + latching of content signatures while in a stable state.
+/// Call it every frame BEFORE ayther_pose_sub_resolve.
 void     ayther_pose_sub_set_cram(PoseSetSubstitutor* p,
                                   const uint16_t* words, uint32_t n);
-/// : firma de contenido de una línea — xxh3 de los colores crudos (9 bits)
-/// de los `slots` marcados. La MISMA función del runtime; el Lab la llama al
-/// capturar la variante (autoría y runtime no pueden divergir).
+/// Content signature of one line — xxh3 of the raw (9-bit) colours of the
+/// marked `slots`. The SAME function the runtime uses; the Lab calls it when
+/// capturing the variant (authoring and runtime cannot diverge).
 uint64_t ayther_palette_signature(const uint16_t* words, uint32_t n,
                                   uint8_t line, uint16_t slots);
-/// Limpia todas las pose-overrides en vivo (no toca el catálogo del pack).
+/// Clears every live pose override (it does not touch the pack catalogue).
 void     ayther_pose_sub_clear_overrides(PoseSetSubstitutor* p);
-/// Área VISIBLE del display según el modo de video vivo (fb del frame; H32/H40 ×
-/// V28/V30). Límite de la tolerancia a miembros off-screen del matching: un
-/// ausente sólo se tolera si su rect esperado queda totalmente fuera de
-/// [0,w)×[0,h). 0 = ignorado. Actualizar por frame (el modo puede cambiar).
+/// VISIBLE display area according to the live video mode (the frame's fb;
+/// H32/H40 × V28/V30). It bounds the matching tolerance for off-screen members:
+/// an absent one is only tolerated if its expected rect falls entirely outside
+/// [0,w)×[0,h). 0 = ignored. Update it per frame (the mode can change).
 void     ayther_pose_sub_set_screen(PoseSetSubstitutor* p, uint16_t w, uint16_t h);
 /// Resolve pose-sets this frame. `claimed` (occ_count bytes, in/out) carries the
 /// metasprite claims in and gets the pose-set claims OR'd in. Returns subs written.
@@ -932,12 +953,12 @@ uint32_t ayther_pose_sub_resolve(const PoseSetSubstitutor*     p,
                                  uint32_t                      buf_cap);
 
 // ---------------------------------------------------------------------------
-// TweenPlayer v2 — in-betweens por TRANSICIÓN (§6.1/6.2). Filtra el HD ya
-// resuelto POR INSTANCIA (tracks por pose_key + centro del bbox): al cambiar la
-// POSE de un track hacia un target con transición autorada, reproduce los
-// dibujos intermedios en los primeros frames del hold del destino. Escalera:
-// par exacto (from→target) > comodín (target) > pop directo.
-// `tween_sequences.toml`: [[tween]] target / from (opcional) / frames / ticks.
+// TweenPlayer v2 — in-betweens by TRANSITION (§6.1/6.2). It filters the
+// already-resolved HD PER INSTANCE (tracks by pose_key + bbox centre): when a
+// track's POSE changes towards a target with an authored transition, it plays
+// the intermediate drawings in the first frames of the destination's hold.
+// Ladder: exact pair (from→target) > wildcard (target) > direct pop.
+// `tween_sequences.toml`: [[tween]] target / from (optional) / frames / ticks.
 // ---------------------------------------------------------------------------
 struct TweenPlayer;  // opaque — do not dereference
 TweenPlayer* ayther_tween_new();
@@ -996,20 +1017,20 @@ bool ayther_pack_builder_finish(AytherPackBuilder* b, bool sign,
                                 const char* out_path,
                                 char* err_buf, size_t err_cap);
 
-/// ASSET ID () — el nombre con el que un archivo del proyecto vive dentro
-/// del pack: los 32 primeros hex del SHA-256 de su contenido, SIN extensión.
+/// ASSET ID — the name a project file lives under inside the pack: the first 32
+/// hex characters of the SHA-256 of its content, WITHOUT an extension.
 ///
-/// Está en el core y no acá porque tiene que ser el mismo digest que verifica
-/// las entradas al leer: dos implementaciones del mismo hash es deriva
-/// silenciosa esperando a pasar.
+/// It lives in the core and not here because it has to be the same digest that
+/// verifies entries on read: two implementations of the same hash are silent
+/// drift waiting to happen.
 ///
-/// `out` necesita 33 bytes (32 hex + NUL). Devuelve false si el archivo no se
-/// puede leer o el buffer no alcanza — eso es «este asset no entra», nunca un
-/// nombre vacío.
+/// `out` needs 33 bytes (32 hex + NUL). Returns false if the file cannot be
+/// read or the buffer is too small — that means "this asset does not go in",
+/// never an empty name.
 bool ayther_asset_id(const char* fs_path, char* out, size_t cap);
 
-/// Igual, pero sobre bytes en memoria: para el contenido GENERADO por el bake
-/// (el SoundFont recortado), que no tiene archivo del que salir.
+/// Same, but over bytes in memory: for content GENERATED by the bake (the
+/// trimmed SoundFont), which has no file to come from.
 bool ayther_asset_id_bytes(const uint8_t* data, size_t len, char* out, size_t cap);
 
 // ---------------------------------------------------------------------------
@@ -1064,18 +1085,19 @@ uint32_t ayther_audio_hasher_unique_count(const AytherAudioHasher* h);
 /// Layout-identical to the fork's AytherAudioWrite and RetroRunner::AudioWrite.
 struct AytherAudioWrite {
     uint32_t cycle;  ///< CPU M-cycle timestamp within the frame (timing diverges across replay — do NOT use for identity)
-    /// FM: el REGISTRO YA LATCHEADO, 0x000-0x1FF (bit 0x100 = banco 1, o sea los
-    /// canales 4-6). PSG: 0 — ese chip es de un byte y el latch va en el dato.
+    /// FM: the ALREADY-LATCHED REGISTER, 0x000-0x1FF (bit 0x100 = bank 1, i.e.
+    /// channels 4-6). PSG: 0 — that chip is single-byte and the latch travels in
+    /// the data.
     ///
-    /// NO es el índice de puerto del bus. Lo fue hasta el fork `3fc6ee89`
-    /// (2026-08-11), que consolidó la telemetría de audio: antes el core mandaba
-    /// el byte crudo con su puerto (0-3) y cada consumidor replicaba el
-    /// protocolo de latch. Los tres que lo hacían —el detector, el espejo del
-    /// router y el spike de re-síntesis— siguieron haciendo `addr & 3` después
-    /// del cambio, y eso dejó al Lab MUDO y al detector sin ver un solo evento
-    /// durante dos días, sin que ningún oráculo se quejara: los tres sintetizan
-    /// sus escrituras de prueba con la misma convención que su consumidor, así
-    /// que un cambio de convención los deja pasando en verde (2026-08-13).
+    /// It is NOT the bus port index. It was until fork `3fc6ee89` (2026-08-11),
+    /// which consolidated the audio telemetry: before that the core sent the raw
+    /// byte with its port (0-3) and every consumer replicated the latch
+    /// protocol. The three that did so —the detector, the router mirror and the
+    /// re-synthesis spike— kept doing `addr & 3` after the change, and that left
+    /// the Lab MUTE and the detector seeing not a single event for two days,
+    /// without any oracle complaining: all three synthesise their test writes
+    /// with the same convention as their consumer, so a change of convention
+    /// leaves them passing green (2026-08-13).
     uint16_t addr;
     uint8_t  data;   ///< byte written to the chip bus
     uint8_t  chip;   ///< 0 = YM2612 (FM), 1 = SN76489 (PSG)
@@ -1114,14 +1136,14 @@ uint32_t ayther_audio_hasher_get_occurrences(const AytherAudioHasher*  h,
                                               uint32_t                  buf_cap);
 
 // ---------------------------------------------------------------------------
-// AudioEventDetector — eventos de audio por comandos al chip  (C-A2)
+// AudioEventDetector — audio events from chip commands  (C-A2)
 //
-// Detecta el ciclo de vida (inicio/fin) de cada canal de sonido a partir del log
-// de escrituras crudas del fork (AytherAudioWrite), produciendo bloques de
-// actividad con una FIRMA estable (replay-estable, a diferencia del PCM). Se
-// alimenta por frame; al final se cierra con _finish. Ver core/src/audio_event.rs.
+// It detects the lifecycle (start/end) of each sound channel from the fork's
+// raw write log (AytherAudioWrite), producing activity blocks with a stable
+// SIGNATURE (replay-stable, unlike the PCM). It is fed per frame; at the end it
+// is closed with _finish. See core/src/audio_event.rs.
 //
-// Ownership: el caller crea con _new(), libera con _free().
+// Ownership: the caller creates with _new(), releases with _free().
 // ---------------------------------------------------------------------------
 // Geometric tween (C-S1 Level 1) — glide the HD asset between keyframes.
 // The bbox anchor a keyframe's HD is drawn at; interpolating it across the held
@@ -1144,21 +1166,21 @@ AytherTransform ayther_geo_tween_sample(const AytherGeometricTween* t, uint32_t 
 
 struct AytherAudioEventDetector;  // opaque — do not dereference
 
-/// El bit de un canal dentro de la máscara de silenciado (32 bits):
+/// The bit of a channel within the 32-bit mute mask:
 ///
 ///   bits  0-5   FM  (YM2612)   0-5
 ///   bits  6-9   PSG (SN76489)  0-3
-///   bits 10-17  PCM (RF5C164 de Sega CD) 0-7
-///   bits 18-31  libres — el core los RECHAZA al escribir la región 0x10D
+///   bits 10-17  PCM (the Sega CD RF5C164) 0-7
+///   bits 18-31  free — the core REJECTS them when writing region 0x10D
 ///
-/// Vive acá, en el contrato, y no en cada llamador, porque hasta 2026-08-13
-/// estuvo escrita a mano como `chip == 0 ? (1<<ch) : (1<<(6+ch))` en más de
-/// veinte lugares entre el Engine y el Lab. Con un tercer chip esa forma manda
-/// los ocho canales del PCM a la rama del PSG —bits 6 a 13—, pisando al PSG y
-/// desbordando la máscara sin que nada falle.
+/// It lives here, in the contract, and not in every caller, because until
+/// 2026-08-13 it was written by hand as `chip == 0 ? (1<<ch) : (1<<(6+ch))` in
+/// more than twenty places across the Engine and the Lab. With a third chip
+/// that form sends the eight PCM channels into the PSG branch —bits 6 to 13—,
+/// trampling the PSG and overflowing the mask without anything failing.
 ///
-/// Devuelve 0 para un chip que no participa de la máscara, que es una respuesta
-/// legítima: significa «este canal no se puede silenciar por acá».
+/// It returns 0 for a chip that does not take part in the mask, which is a
+/// legitimate answer: it means "this channel cannot be muted through here".
 inline uint32_t ayther_chan_bit(uint8_t chip, uint8_t channel) {
     if (chip == 0 && channel < 6) return uint32_t(1u) << channel;
     if (chip == 1 && channel < 4) return uint32_t(1u) << (6 + channel);
@@ -1166,18 +1188,18 @@ inline uint32_t ayther_chan_bit(uint8_t chip, uint8_t channel) {
     return 0;
 }
 
-/// Todos los canales que la máscara sabe nombrar (18 bits). Es el «mutear todo»
-/// de un solo: el valor anterior, 0x3FF, dejaba sonando al chip PCM entero.
+/// Every channel the mask can name (18 bits). It is the single "mute
+/// everything": the previous value, 0x3FF, left the whole PCM chip playing.
 inline constexpr uint32_t kAytherAllChannels = 0x3FFFFu;
 
-/// Cuántos canales sabe nombrar la máscara — el largo de cualquier arreglo
-/// indexado por `ayther_chan_index`.
+/// How many channels the mask can name — the length of any array indexed by
+/// `ayther_chan_index`.
 inline constexpr int kAytherChanCount = 18;
 
-/// El ÍNDICE de un canal en el orden canónico de la máscara (FM 1-6 · PSG 1-4 ·
-/// PCM 1-8), o -1 si el chip no participa. Es el mismo orden de los bits, y por
-/// eso el mismo que usan las lanes del timeline: un solo lugar decide en qué
-/// fila va cada canal.
+/// The INDEX of a channel in the canonical order of the mask (FM 1-6 ·
+/// PSG 1-4 · PCM 1-8), or -1 if the chip does not take part. It is the same
+/// order as the bits, and therefore the same one the timeline lanes use: a
+/// single place decides which row each channel goes in.
 inline int ayther_chan_index(uint8_t chip, uint8_t channel) {
     if (chip == 0 && channel < 6) return channel;
     if (chip == 1 && channel < 4) return 6 + channel;
@@ -1185,7 +1207,7 @@ inline int ayther_chan_index(uint8_t chip, uint8_t channel) {
     return -1;
 }
 
-/// Nombre corto del chip, para etiquetas de UI y de export.
+/// Short chip name, for UI and export labels.
 inline const char* ayther_chip_name(uint8_t chip) {
     return chip == 0 ? "FM" : chip == 1 ? "PSG" : chip == 3 ? "PCM" : "?";
 }
@@ -1193,117 +1215,120 @@ inline const char* ayther_chip_name(uint8_t chip) {
 /// One detected audio event: a channel's activity span with a stable signature.
 struct AytherAudioEvent {
     uint64_t signature;    ///< stable hash of the channel's register snapshot at key-on
-    /// Identidad de instrumento: patch SIN frecuencia ni canal (DAC = la firma).
-    /// La misma voz a través de notas/canales comparte instrument aunque la
-    /// firma difiera — agrupa "el mismo sonido" para el export DAW (Mezclar).
+    /// Instrument identity: the patch WITHOUT frequency or channel (DAC = the
+    /// signature). The same voice across notes/channels shares an instrument
+    /// even when the signature differs — it groups "the same sound" for the DAW
+    /// export (Mix).
     uint64_t instrument;
     uint32_t start_frame;  ///< frame of the key-on
     uint32_t end_frame;    ///< frame of the key-off (== start_frame for a 1-frame event)
-    uint8_t  chip;         ///< 0 = YM2612 (FM), 1 = SN76489 (PSG), 3 = RF5C164 (PCM de Sega CD)
+    uint8_t  chip;         ///< 0 = YM2612 (FM), 1 = SN76489 (PSG), 3 = RF5C164 (Sega CD PCM)
     uint8_t  channel;      ///< FM 0-5 | PSG 0-3 | PCM 0-7
-    /// Nota MIDI al key-on (255 = sin altura: DAC/ruido PSG/fnum 0).
-    /// Piano-roll / MIDI (Mezclar).
+    /// MIDI note at key-on (255 = no pitch: DAC/PSG noise/fnum 0).
+    /// Piano roll / MIDI (Mix).
     uint8_t  pitch;
-    /// «Velocidad» al key-on, escala MIDI 1-127 (0 = desconocida: DAC y
-    /// residuales). En FM sale del Total Level del operador PORTADOR —el chip
-    /// no tiene velocity—; en PSG, de la atenuación.
+    /// "Velocity" at key-on, MIDI scale 1-127 (0 = unknown: DAC and residuals).
+    /// On FM it comes from the Total Level of the CARRIER operator —the chip
+    /// has no velocity—; on PSG, from the attenuation.
     ///
-    /// Ocupa el byte que era `_pad`: sizeof sigue siendo 32 y ningún campo se
-    /// mueve, así que el ABI no cambia. Es la mitad de la información que
-    /// `instrument` deja afuera a propósito: el volumen no es identidad de
-    /// timbre ().
+    /// It occupies the byte that used to be `_pad`: sizeof is still 32 and no
+    /// field moves, so the ABI does not change. It is the half of the
+    /// information `instrument` deliberately leaves out: volume is not timbre
+    /// identity.
     uint8_t  velocity;
 };
 
 // ---------------------------------------------------------------------------
-// SoundFont — síntesis de la voz asignada a un timbre del juego  ()
+// SoundFont — synthesis of the voice assigned to a game timbre
 //
-// El sintetizador vive del lado RUST: `ayther_engine` es una lib ESTÁTICA, y
-// uno LGPL (FluidSynth) obligaría a distribución dinámica o a entregar objetos
-// relinkeables — la misma frontera que en  hizo elegir libvpx sobre FFmpeg.
-// Del lado del core la frontera FFI ya existe, así que la pregunta desaparece.
+// The synthesiser lives on the RUST side: `ayther_engine` is a STATIC library,
+// and an LGPL one (FluidSynth) would force dynamic distribution or shipping
+// relinkable objects — the same boundary that led to choosing libvpx over
+// FFmpeg. On the core side the FFI boundary already exists, so the question
+// disappears.
 // ---------------------------------------------------------------------------
 struct AytherSf2;   // opaque — do not dereference
 
-/// Abre un SoundFont desde bytes. NULL si no se pudo. Liberar con ayther_sf2_free.
+/// Opens a SoundFont from bytes. NULL on failure. Release with ayther_sf2_free.
 AytherSf2* ayther_sf2_new(const uint8_t* data, size_t len, int32_t sample_rate);
 
-/// Igual, pero comparte el SoundFont parseado entre instancias con la misma
-/// `key` (el hash de su ruta). El motor crea una instancia POR TIMBRE para
-/// poder REALZAR su ganancia escalando el buffer — CC 7 se acaba en 127 ().
+/// Same, but it shares the parsed SoundFont between instances with the same
+/// `key` (the hash of its path). The motor creates one instance PER TIMBRE so
+/// it can BOOST its gain by scaling the buffer — CC 7 runs out at 127.
 AytherSf2* ayther_sf2_new_shared(uint64_t key, const uint8_t* data, size_t len,
                                  int32_t sample_rate);
-/// Suelta los SoundFonts cacheados que ya no usa ninguna instancia.
+/// Releases the cached SoundFonts no instance uses any more.
 void ayther_sf2_trim_cache(void);
 void       ayther_sf2_free(AytherSf2* p);
 void       ayther_sf2_program(AytherSf2* p, int32_t ch, int32_t preset);
-/// Control Change de MIDI. CC 7 = volumen del canal (0-127, default 100): por
-/// ahí va la GANANCIA por timbre — escalar el buffer no serviría porque un
-/// mismo SoundFont sirve a varios timbres, cada uno en su canal.
+/// MIDI Control Change. CC 7 = channel volume (0-127, default 100): that is
+/// where the per-timbre GAIN travels — scaling the buffer would not work
+/// because one SoundFont serves several timbres, each on its own channel.
 void       ayther_sf2_control(AytherSf2* p, int32_t ch, int32_t cc, int32_t value);
 void       ayther_sf2_note_on(AytherSf2* p, int32_t ch, int32_t key, int32_t vel);
 void       ayther_sf2_note_off(AytherSf2* p, int32_t ch, int32_t key);
-/// Corta todo de inmediato — para los cortes del juego y los seeks.
+/// Cuts everything immediately — for the game's cuts and for seeks.
 void       ayther_sf2_all_notes_off(AytherSf2* p);
-/// Estéreo INTERCALADO f32: `out` tiene que tener `frames * 2` floats. Con `p`
-/// nulo escribe SILENCIO (el llamador encola el buffer igual, y con basura
-/// sonaría ruido blanco).
+/// INTERLEAVED f32 stereo: `out` must hold `frames * 2` floats. With a null
+/// `p` it writes SILENCE (the caller queues the buffer anyway, and with garbage
+/// it would play white noise).
 void       ayther_sf2_render(AytherSf2* p, float* out, size_t frames);
-/// Presets de un SF2 SIN cargarlo en el sintetizador — para la biblioteca.
-/// Devuelve el total (puede superar `cap`).
+/// Presets of an SF2 WITHOUT loading it into the synthesiser — for the
+/// library. Returns the total (which may exceed `cap`).
 uint32_t   ayther_sf2_list_presets(const uint8_t* data, size_t len,
                                    uint16_t* out_bank, uint16_t* out_preset,
                                    uint32_t cap);
-/// Idem pero desde una RUTA y CON NOMBRE, una línea por preset:
-/// `bank:preset|nombre`. Elegir un timbre es leer nombres — una lista de «0:33»
-/// no se puede recorrer.
+/// Same but from a PATH and WITH NAMES, one line per preset:
+/// `bank:preset|name`. Choosing a timbre means reading names — a list of "0:33"
+/// cannot be browsed.
 ///
-/// Toma la ruta y no un buffer porque lee SÓLO el chunk `pdta` saltando por las
-/// cabeceras RIFF: una biblioteca de 182 archivos con dos de ~1 GB no se puede
-/// recorrer cargando cada uno entero. Funciona sobre SF2 parciales (no valida
-/// instrumentos). Devuelve los bytes escritos, 0 si no entra o falla.
-/// Acepta también `.sf3` (mismo pdta) y `.sfz` (un instrumento = una línea
-/// `0:0|nombre`, sin tocar los samples).
+/// It takes the path and not a buffer because it reads ONLY the `pdta` chunk,
+/// skipping through the RIFF headers: a library of 182 files, two of them
+/// ~1 GB, cannot be browsed by loading each one whole. It works on partial SF2
+/// files (it does not validate instruments). Returns the bytes written, 0 if it
+/// does not fit or fails.
+/// It also accepts `.sf3` (same pdta) and `.sfz` (one instrument = one line
+/// `0:0|name`, without touching the samples).
 size_t     ayther_sf2_preset_list(const char* path, uint8_t* out, size_t cap);
 
-/// Normaliza un SoundFont de DISCO a SF2 plano en memoria: `.sf2` pasa
-/// derecho, `.sf3` se descomprime (samples Vorbis → PCM) y `.sfz` se
-/// convierte (texto + samples sueltos → un preset 0:0). Es LA puerta por la
-/// que un formato nuevo entra — aguas abajo (sintetizador, horneado, pack)
-/// todo sigue siendo SF2 plano. Dos llamadas como ayther_sf2_bake (`cap = 0`
-/// consulta el tamaño); el resultado queda cacheado por ruta, así la
-/// conversión no se paga dos veces. Devuelve 0 si no se pudo convertir.
+/// Normalises a SoundFont from DISK into flat SF2 in memory: `.sf2` passes
+/// straight through, `.sf3` is decompressed (Vorbis samples → PCM) and `.sfz`
+/// is converted (text + loose samples → one 0:0 preset). It is THE door through
+/// which a new format enters — downstream (synthesiser, bake, pack) everything
+/// is still flat SF2. Two calls like ayther_sf2_bake (`cap = 0` queries the
+/// size); the result is cached by path, so the conversion is not paid for
+/// twice. Returns 0 if it could not be converted.
 ///
-/// Nota: ayther_sf2_new/new_shared y ayther_sf2_bake ya convierten SF3 por
-/// detección de BYTES — esta función hace falta para `.sfz`, que necesita la
-/// ruta (sus samples viven al lado del archivo de texto).
+/// Note: ayther_sf2_new/new_shared and ayther_sf2_bake already convert SF3 by
+/// BYTE detection — this function is needed for `.sfz`, which needs the path
+/// (its samples live next to the text file).
 size_t     ayther_soundfont_normalize_file(const char* path,
                                            uint8_t* out, size_t cap);
 
-/// Los SoundFonts que un `instruments.toml` referencia, uno por línea:
-/// `basename|bank:preset,bank:preset,...`. Texto plano a propósito: cruzar un
-/// vector de structs por el FFI para algo que se consume una vez al hornear no
-/// vale la complejidad. Devuelve los bytes escritos.
+/// The SoundFonts an `instruments.toml` references, one per line:
+/// `basename|bank:preset,bank:preset,...`. Plain text on purpose: crossing a
+/// vector of structs over the FFI for something consumed once at bake time is
+/// not worth the complexity. Returns the bytes written.
 size_t     ayther_instruments_soundfonts(const char* toml_text,
                                          uint8_t* out, size_t cap);
 
-/// Hornea un SF2 recortado a los `(bank, preset)` pedidos. Devuelve los bytes
-/// que ocupa el resultado; llamar con `cap = 0` para consultar el tamaño.
+/// Bakes an SF2 trimmed to the requested `(bank, preset)` pairs. Returns the
+/// bytes the result occupies; call with `cap = 0` to query the size.
 ///
-/// Existe porque un SF2 de origen puede pesar cientos de MB (en una colección
-/// real hay uno de 988): nadie descarga esa biblioteca para usar 10-30 timbres
-/// — es tamaño de DISTRIBUCIÓN (el pack ya abre lazy desde , la residencia
-/// dejó de ser el motivo). Medido: 0,3% del original en un archivo de 97 MB.
+/// It exists because a source SF2 can weigh hundreds of MB (a real collection
+/// holds one of 988): nobody downloads that library to use 10-30 timbres — it
+/// is DISTRIBUTION size (the pack already opens lazily, so residency stopped
+/// being the reason). Measured: 0.3% of the original on a 97 MB file.
 size_t     ayther_sf2_bake(const uint8_t* src, size_t src_len,
                            const uint16_t* banks, const uint16_t* presets,
                            uint32_t n, uint8_t* out, size_t cap);
 
 AytherAudioEventDetector* ayther_audio_event_new();
 void     ayther_audio_event_free(AytherAudioEventDetector* d);
-/// Región del reloj para la decodificación de pitch (0 = NTSC, 1 = PAL).
+/// Clock region for pitch decoding (0 = NTSC, 1 = PAL).
 void     ayther_audio_event_set_pal(AytherAudioEventDetector* d, uint8_t pal);
-/* Evidencia de audio p/ eventos residuales: canales que suenan al inicio de la
- * toma (bits 0-5 FM, 6-9 PSG; la sesión lo mide con una sonda de PCM). */
+/* Audio evidence for residual events: channels playing at the start of the
+ * take (bits 0-5 FM, 6-9 PSG; the session measures it with a PCM probe). */
 void     ayther_audio_event_set_initial_active(AytherAudioEventDetector* d, uint16_t mask);
 void     ayther_audio_event_reset(AytherAudioEventDetector* d);
 /// Ingest one frame's raw chip writes (bus order). `writes` is `n` AytherAudioWrite.
@@ -1350,78 +1375,81 @@ uint32_t ayther_audio_event_get(const AytherAudioEventDetector* d,
                                 AytherAudioEvent* out_buf, uint32_t buf_cap);
 
 // ---------------------------------------------------------------------------
-// BatchEventDetector — eventos por HASHES DE BATCH de PCM (C-A1, complemento
-// del detector por comandos de arriba). Corre sobre el historial de audio de
-// una toma (.arp v7, un push POR FRAME: primer hash o 0 = silencio) sin
-// necesitar el log de escrituras del fork. Emite el MISMO AytherAudioEvent
-// (chip = 255 → mezcla, sin canal). No separa sonidos solapados en la mezcla.
+// BatchEventDetector — events from PCM BATCH HASHES (C-A1, complementing the
+// command-based detector above). It runs over the audio history of a take
+// (.arp v7, one push PER FRAME: first hash, or 0 = silence) without needing the
+// fork's write log. It emits the SAME AytherAudioEvent (chip = 255 → the mix,
+// no channel). It does not separate overlapping sounds within the mix.
 // ---------------------------------------------------------------------------
 
 struct AytherBatchEventDetector;  // opaque — do not dereference
 
 AytherBatchEventDetector* ayther_audio_evdet_new();
 void     ayther_audio_evdet_free(AytherBatchEventDetector* d);
-/// Toggle re-attack splitting (default on): un retrigger sin silencio (la
-/// cabeza determinista reaparece) corta el run en dos instancias.
+/// Toggle re-attack splitting (default on): a retrigger without silence (the
+/// deterministic head reappears) splits the run into two instances.
 void     ayther_audio_evdet_set_split_on_reattack(AytherBatchEventDetector* d, bool on);
-/// Alimentar un hash de batch (0 = silencio) — una vez por frame de la toma.
+/// Feed one batch hash (0 = silence) — once per frame of the take.
 void     ayther_audio_evdet_push(AytherBatchEventDetector* d, uint64_t hash);
-/// Cerrar el run en vuelo (fin de la toma).
+/// Close the run in flight (end of the take).
 void     ayther_audio_evdet_flush(AytherBatchEventDetector* d);
 uint32_t ayther_audio_evdet_event_count(const AytherBatchEventDetector* d);
-/// Copia eventos a out_buf (hasta cap); devuelve el total (crecer y reintentar).
+/// Copies events into out_buf (up to cap); returns the total (grow and retry).
 uint32_t ayther_audio_evdet_get_events(const AytherBatchEventDetector* d,
                                        AytherAudioEvent* out_buf, uint32_t cap);
 
-/// Un canal key-on AHORA con su firma (sustitución EN VIVO, runtime).
-///  F3: instrument/pitch viajan con la voz (capturados al key-on) — el
-/// runtime resuelve las reglas de match por instrumento sin esperar a que el
-/// evento cierre. 24 bytes.
+/// A channel keyed on RIGHT NOW with its signature (LIVE substitution,
+/// runtime). F3: instrument/pitch travel with the voice (captured at key-on) —
+/// the runtime resolves per-instrument match rules without waiting for the
+/// event to close. 24 bytes.
 struct AytherAudioActive {
     uint64_t signature;
-    uint64_t instrument; ///< fm_instrument/psg_instrument (0 = desconocido)
+    uint64_t instrument; ///< fm_instrument/psg_instrument (0 = unknown)
     uint8_t  chip;       ///< 0 = FM, 1 = PSG
     uint8_t  channel;    ///< FM 0-5 | PSG 0-3
-    uint8_t  pitch;      ///< nota MIDI al key-on; 255 = sin altura
+    uint8_t  pitch;      ///< MIDI note at key-on; 255 = no pitch
     uint8_t  _pad[5];
 };
-/// Canales activos ahora (out hasta cap); devuelve la cantidad.
+/// Channels active right now (out, up to cap); returns the count.
 uint32_t ayther_audio_event_active(const AytherAudioEventDetector* d,
                                    AytherAudioActive* out_buf, uint32_t buf_cap);
-/// Vacía los eventos cerrados (uso en vivo; no toca el estado de canales).
+/// Empties the closed events (live use; it does not touch the channel state).
 void     ayther_audio_event_clear_events(AytherAudioEventDetector* d);
 
 // ---------------------------------------------------------------------------
-// audio_events.toml — catálogo de sustituciones por evento (C-A5)
-// Persistencia firma→asset(+canales) para guardar/cargar proyecto y entrega .ay.
+// audio_events.toml — catalogue of per-event substitutions (C-A5)
+// signature→asset(+channels) persistence for saving/loading the project and for
+// the .ay delivery.
 // ---------------------------------------------------------------------------
 
 struct AytherEventSub {
     uint64_t signature;
-    char     asset[256];   ///< asset HD (logical path)
-    uint32_t channels;     ///< máscara de canales (ver ayther_chan_bit); 0 = re-derivable
-    /// SECUENCIA (Mezclar): campos en el viejo _pad[6].
-    uint8_t  looping;      ///< 1 = el HD lupea hasta cerrar la ventana
+    char     asset[256];   ///< HD asset (logical path)
+    uint32_t channels;     ///< channel mask (see ayther_chan_bit); 0 = re-derivable
+    /// SEQUENCE (Mix): fields in the former _pad[6].
+    uint8_t  looping;      ///< 1 = the HD loops until the window closes
     uint8_t  _pad;
-    uint32_t duration_frames;  ///< ventana en frames (0 = sub per-evento clásica)
-    ///  F3: regla de match — sizeof 288 (era 272; ambos lados en este repo).
-    uint64_t match_instrument; ///< identidad del timbre de la regla (0 sin regla)
-    uint8_t  match_rule;       ///< 0 exacta (legacy) · 1 instrumento · 2 instr+nota
-    uint8_t  match_pitch;      ///< nota MIDI de la regla 2 (255 = sin altura)
-    /// : bus del sonido — 0 sin clasificar · 1 música · 2 efectos · 3 voces.
+    uint32_t duration_frames;  ///< window in frames (0 = classic per-event sub)
+    /// F3: match rule — sizeof 288 (it was 272; both sides live in this repo).
+    uint64_t match_instrument; ///< timbre identity of the rule (0 = no rule)
+    uint8_t  match_rule;       ///< 0 exact (legacy) · 1 instrument · 2 instr+note
+    uint8_t  match_pitch;      ///< MIDI note of rule 2 (255 = no pitch)
+    /// The sound's bus — 0 unclassified · 1 music · 2 effects · 3 voices.
     ///
-    /// Sale de uno de los bytes de relleno que ya estaban, así que el layout NO
-    /// cambia: un binario viejo lee 0 donde antes leía relleno, y 0 es
-    /// exactamente lo que significa «este pack no lo dijo».
+    /// It comes out of one of the padding bytes that were already there, so the
+    /// layout does NOT change: an old binary reads 0 where it used to read
+    /// padding, and 0 is exactly what "this pack did not say" means.
     uint8_t  bus;
     uint8_t  _pad2[5];
 };
 
-/// Formatea `subs` (n entradas) a texto audio_events.toml en `out` (con nul) si
-/// cabe. Devuelve la longitud SIN nul; si > out_cap no escribe (reintentar mayor).
+/// Formats `subs` (n entries) into audio_events.toml text in `out` (with a nul)
+/// if it fits. Returns the length WITHOUT the nul; if > out_cap it writes
+/// nothing (retry with a larger buffer).
 uint32_t ayther_audio_events_format(const AytherEventSub* subs, uint32_t n,
                                     char* out, uint32_t out_cap);
-/// Parsea texto audio_events.toml → out (hasta cap). Devuelve la cantidad escrita.
+/// Parses audio_events.toml text → out (up to cap). Returns the number
+/// written.
 uint32_t ayther_audio_events_parse(const char* text, AytherEventSub* out, uint32_t cap);
 
 // ---------------------------------------------------------------------------
@@ -1545,8 +1573,8 @@ AytherScrollUnwrapper* ayther_scroll_unwrapper_new(int32_t period);
 void    ayther_scroll_unwrapper_free(AytherScrollUnwrapper* u);
 /// Feed this frame's wrapped scroll ([0, period)); returns the absolute camera.
 int64_t ayther_scroll_unwrapper_push(AytherScrollUnwrapper* u, int32_t wrapped);
-/// : delta (px) del ultimo push — |delta| no fisico (> ~32 px/frame) =
-/// corte de escena; el caller congela la acumulacion del stitch.
+/// Delta (px) of the last push — a non-physical |delta| (> ~32 px/frame) =
+/// a scene cut; the caller freezes the stitch accumulation.
 int32_t ayther_scroll_unwrapper_last_step(const AytherScrollUnwrapper* u);
 
 // ---------------------------------------------------------------------------
@@ -1565,8 +1593,8 @@ struct AytherGameProfile;  // opaque — do not dereference
 
 /// Load a profile from a TOML file. NULL on read/parse error.
 AytherGameProfile* ayther_game_profile_load(const char* toml_path);
-/// : el caso pack — game_profile.toml vive ADENTRO del .ay y llega como
-/// string, nunca como archivo. NULL en error de parse.
+/// The pack case — game_profile.toml lives INSIDE the .ay and arrives as a
+/// string, never as a file. NULL on a parse error.
 AytherGameProfile* ayther_game_profile_load_str(const char* toml);
 void     ayther_game_profile_free(AytherGameProfile* p);
 

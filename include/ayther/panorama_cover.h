@@ -1,74 +1,75 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// panorama_cover.h — la regla de COBERTURA de una Panorámica ().
+// panorama_cover.h — the COVERAGE rule of a Panorama.
 //
-// «¿Lo que se ve en esta posición ES la lámina, o es otra cosa dibujada encima
-// del mismo plano?» Una vez que la cámara ancló, hay que contestarla celda por
-// celda, y de esa cuenta sale `FrameView.panorama_cover`.
+// "Is what is seen at this position the strip, or is it something else drawn on
+// top of the same plane?" Once the camera has anchored, that has to be answered
+// cell by cell, and `FrameView.panorama_cover` comes out of that count.
 //
-// VIVE EN UN HEADER Y NO ADENTRO DE LA SESIÓN porque es una regla del FORMATO
-// de la tira —igual que `ayther_plane_tile_hash_variants`, con el que se
-// apoya— y porque el defecto que arregla no se podía probar sin una ROM y una
-// toma de veinte minutos. Acá se prueba con tres hashes inventados.
+// IT LIVES IN A HEADER AND NOT INSIDE THE SESSION because it is a rule of the
+// strip FORMAT —like `ayther_plane_tile_hash_variants`, which it leans on— and
+// because the defect it fixes could not be tested without a ROM and a
+// twenty-minute capture. Here it is tested with three made-up hashes.
 //
-// EL DEFECTO (, medido en Sonic 3 & Knuckles f2092). Una posición de la
-// tira puede tener VARIOS hashes: una celda animada tiene uno por estado, y un
-// barrido que cruzó de zona apila dos tramos del nivel en la misma posición. El
-// índice los guarda todos —cada estado tiene que poder ANCLAR— pero el PNG
-// conserva UNO (`Cell::last` del stitcher).
+// THE DEFECT (measured on Sonic 3 & Knuckles f2092). One position of the strip
+// can have SEVERAL hashes: an animated cell has one per state, and a scroll
+// that crossed into another zone stacks two sections of the level at the same
+// position. The index keeps them all —every state has to be able to ANCHOR—
+// but the PNG keeps ONE (`Cell::last` in the stitcher).
 //
-// Aceptar cualquiera para verificar la cobertura declara «anclada, cobertura
-// 100 %» sobre una lámina que muestra otro tramo del nivel: el recorte exportado
-// era Angel Island —cielo, agua, pasto— mientras el frame era una cueva.
+// Accepting any of them to verify coverage declares "anchored, 100 % coverage"
+// over a strip that shows a different section of the level: the exported crop
+// was Angel Island —sky, water, grass— while the frame was a cave.
 //
-// POR QUÉ CASI NUNCA SE VE: el área nativa se corrige sola, porque las celdas
-// vivas que la tira no reclamó se dibujan encima y tapan el anclaje flojo. Lo
-// delata el ensanchado ( EM-8.1), donde el área extendida no tiene con qué
-// corregirse — ahí se ve exactamente lo que la tira tiene.
+// WHY IT IS ALMOST NEVER SEEN: the native area corrects itself, because the
+// live cells the strip did not claim are drawn on top and hide the weak anchor.
+// What exposes it is widescreen (EM-8.1), where the extended area has nothing
+// to correct itself with — there you see exactly what the strip holds.
 //
-// LO QUE NO ES EL ARREGLO: un piso de cobertura. Se probaron los dos números
-// disponibles y ninguno separa los casos (Golden Axe extiende BIEN con 69 %;
-// Sonic 3 & K extiende MAL con 100 %). Un umbral afinado contra dos puntos es
-// un parche frágil disfrazado de arreglo.
+// WHAT THE FIX IS NOT: a coverage floor. Both available numbers were tried and
+// neither separates the cases (Golden Axe extends WELL at 69 %; Sonic 3 & K
+// extends BADLY at 100 %). A threshold tuned against two data points is a
+// fragile patch dressed up as a fix.
 //
-// EL ARREGLO es alinear el índice con el dibujo: se verifica contra el hash que
-// la lámina CONSERVA y no contra cualquiera de los que pasaron por ahí. Los
-// demás no se tiran — siguen en el índice de anclaje, donde la multiplicidad
-// ayuda a votar dónde está la cámara y un voto de más se compensa con los otros
-// treinta. Lo que no pueden es decidir QUÉ SE DIBUJA donde nadie va a
-// corregirlo.
+// THE FIX is to align the index with the drawing: coverage is verified against
+// the hash the strip KEEPS and not against any of the ones that passed through
+// there. The others are not discarded — they stay in the anchoring index, where
+// multiplicity helps vote on where the camera is and one extra vote is offset
+// by the other thirty. What they may not do is decide WHAT IS DRAWN where
+// nobody is going to correct it.
 // ---------------------------------------------------------------------------
 #include <cstdint>
 #include <vector>
 
 namespace ayther {
 
-/// Las 4 lecturas de `h` bajo la línea de paleta `pal`, con `out[0]` = `h` tal
-/// cual. La implementación real vive en el core (aritmética exacta: el PRIME es
-/// invertible mod 2⁶⁴); esto es sólo el tipo de la función para poder inyectarla
-/// en la prueba sin arrastrar el core.
+/// The 4 readings of `h` under palette line `pal`, with `out[0]` = `h` as-is.
+/// The real implementation lives in the core (exact arithmetic: the PRIME is
+/// invertible mod 2⁶⁴); this is only the function type, so it can be injected
+/// into the test without dragging in the core.
 using PanoHashVariantsFn = void (*)(uint64_t h, uint8_t pal, uint64_t out[4]);
 
-/// ¿La celda que la LÁMINA DIBUJA en esta posición es la observada?
+/// Is the cell the STRIP DRAWS at this position the observed one?
 ///
-/// `strip` son los hashes de la tira en esa posición, **con el dibujado
-/// primero** — el orden lo garantiza `AytherSession::bg_cells`, y para un pack
-/// horneado, el TOML que salió de ahí.
+/// `strip` holds the hashes of the strip at that position, **with the drawn one
+/// first** — the order is guaranteed by `AytherSession::bg_cells`, and for a
+/// baked pack, by the TOML that came out of it.
 ///
-/// Una tira vacía en esa posición **no** matchea: no hay con qué comparar, y
-/// «no sé» no es «sí». Es la diferencia entre no cubrir una celda y afirmar que
-/// la lámina la explica.
+/// An empty strip at that position does **not** match: there is nothing to
+/// compare against, and "I do not know" is not "yes". That is the difference
+/// between not covering a cell and asserting that the strip explains it.
 inline bool panorama_pos_matches(const std::vector<uint64_t>& strip,
                                  uint64_t h, uint8_t pal,
                                  PanoHashVariantsFn variants) {
     if (strip.empty()) return false;
-    // El camino DIRECTO primero: sin repaletado —el caso normal— esto no cuesta
-    // nada, y el trabajo extra lo pagan sólo las celdas que ya iban a
-    // descartarse.
+    // The DIRECT path first: with no repaletting —the normal case— this costs
+    // nothing, and the extra work is paid only by cells that were going to be
+    // discarded anyway.
     const uint64_t rendered_hash = strip[0];
     if (rendered_hash == h) return true;
-    // : el mismo dibujo bajo otra línea CRAM produce otro hash (la línea
-    // entra al final del FNV). Las cuatro lecturas son exactas, no aproximadas.
+    // The same drawing under another CRAM line produces a different hash (the
+    // line enters at the end of the FNV). The four readings are exact, not
+    // approximate.
     uint64_t var[4];
     variants(h, pal, var);
     for (int i = 1; i < 4; ++i)

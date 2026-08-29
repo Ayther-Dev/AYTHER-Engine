@@ -1,13 +1,13 @@
-# NOTICE — dependencias de terceros
+# NOTICE — third-party dependencies
 
-> **GENERADO — no editar a mano.** `pwsh tools/gen_notice.ps1`.
-> Verificar con `pwsh tools/gen_notice.ps1 -BuildDir build/<native-preset> -Check`; la CI de release debe ejecutarlo.
-> Un NOTICE incompleto es tan inútil como ninguno — las licencias
-> permisivas piden que el aviso viaje CON el binario.
+> **GENERATED — do not edit by hand.** `pwsh tools/gen_notice.ps1`.
+> Verify with `pwsh tools/gen_notice.ps1 -BuildDir build/<native-preset> -Check`; the release CI must run it.
+> An incomplete NOTICE is as useless as none — permissive licences
+> require the notice to travel WITH the binary.
 
-## Crates de Rust (grafo completo, incluidas las transitivas)
+## Rust crates (full graph, transitive dependencies included)
 
-| crate | versión | licencia |
+| crate | version | licence |
 |---|---|---|
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
 | `autocfg` | 1.5.1 | Apache-2.0 OR MIT |
@@ -118,12 +118,12 @@
 | `zip` | 2.4.2 | MIT |
 | `zopfli` | 0.8.3 | Apache-2.0 |
 
-## Bibliotecas de C/C++ (vcpkg)
+## C/C++ libraries (vcpkg)
 
-El texto completo de cada licencia viaja en
+The full text of each licence ships in
 `vcpkg_installed/<triplet>/share/<port>/copyright`.
 
-| port | versión | licencia (primera línea del copyright) |
+| port | version | licence (first line of the copyright) |
 |---|---|---|
 | `drlibs` | 2026-03-03 | This software is available as a choice of the following licenses. Choose |
 | `sdl3` | 3.4.8 | Some configurations may use code licensed under the MIT and Apache-2.0 licenses. |
@@ -140,15 +140,15 @@ El texto completo de cada licencia viaja en
 | `vulkan-memory-allocator` | 3.3.0 | Copyright (c) 2017-2025 Advanced Micro Devices, Inc. All rights reserved. |
 | `zstd` | 1.5.7 | ZSTD is dual licensed under BSD and GPLv2. |
 
-## Fuentes vendorizadas en el repositorio
+## Sources vendored in the repository
 
-| componente | revisión | licencia | por qué está |
+| component | revision | licence | why it is here |
 |---|---|---|---|
-| `third_party/ymfm` | `81aec25ccbb98f4873a255f7551ac4dadac59b4a` | BSD-3-Clause | sintetizador FM del router de voces (#327). Es ymfm y NO el Nuked OPN2 del fork, que es LGPL-2.1: el motor es una lib ESTÁTICA y eso obligaría a distribución dinámica. |
-| `third_party/libvpx` | tag `v1.15.2` | BSD-3-Clause + patent grant | decodificador de la Cinemática (#263). Es libvpx y NO FFmpeg por la misma frontera: el núcleo de FFmpeg es LGPL-2.1+. |
+| `third_party/ymfm` | `81aec25ccbb98f4873a255f7551ac4dadac59b4a` | BSD-3-Clause | FM synthesiser for the voice router (#327). It is ymfm and NOT the fork's Nuked OPN2, which is LGPL-2.1: the engine is a STATIC library and that would force dynamic distribution. |
+| `third_party/libvpx` | tag `v1.15.2` | BSD-3-Clause + patent grant | decoder for the Cinematic subsystem (#263). It is libvpx and NOT FFmpeg for the same boundary reason: the FFmpeg core is LGPL-2.1+. |
 
-## Lo que NO se distribuye
+## What is NOT distributed
 
-Cores de libretro (los aporta el usuario — BYOC), ROMs y BIOS (BYOR),
-y packs derivados de juegos comerciales. El guardián
-`sdk/tools/check_sdk_leak.cmake` lo verifica sobre el artefacto publicado.
+libretro cores (supplied by the user — BYOC), ROMs and BIOS images (BYOR),
+and packs derived from commercial games. The guard
+`sdk/tools/check_sdk_leak.cmake` verifies this against the published artifact.

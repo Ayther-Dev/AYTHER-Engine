@@ -39,31 +39,31 @@ struct AytherConfig {
     /// VRAM-exposing fork). Empty until the user configures it.
     std::string core_path;
 
-    /// No-Intro DAT (opcional, lo provee el usuario — no se distribuye):
-    /// nombra canónicamente los ROMs por CRC32 al crear proyectos.
+    /// No-Intro DAT (optional, supplied by the user — not distributed):
+    /// canonically names ROMs by CRC32 when creating projects.
     std::string dat_path;
 
-    /// Colección de SoundFonts (.sf2/.sf3/.sfz) del usuario — la biblioteca de la
-    /// re-síntesis de timbres (). Va en la config GLOBAL y no en el
-    /// proyecto porque una colección se junta una vez y sirve para todos: la
-    /// del usuario tiene 182 archivos y no tendría sentido re-elegirla por
-    /// proyecto. Lo asignado sí es del proyecto (instruments.toml), y al
-    /// hornear el pack viajan sólo los presets usados — así que el .ay no
-    /// depende de esta carpeta.
+    /// The user's SoundFont collection (.sf2/.sf3/.sfz) — the library behind
+    /// timbre re-synthesis. It lives in the GLOBAL config and not in the
+    /// project because a collection is gathered once and serves them all: this
+    /// user's holds 182 files and re-picking it per project would make no
+    /// sense. What is assigned IS per project (instruments.toml), and when the
+    /// pack is baked only the presets in use travel with it — so the .ay does
+    /// not depend on this folder.
     std::string soundfonts_dir;
 
-    /// Definiciones por juego del Maper (defs/<game_id>.toml: direcciones RAM
-    /// + stages, keyed por CRC32 No-Intro). Global y cross-proyecto.
+    /// Per-game Mapper definitions (defs/<game_id>.toml: RAM addresses +
+    /// stages, keyed by No-Intro CRC32). Global and cross-project.
     /// Default: %APPDATA%\Ayther\defs.
     std::string defs_dir;
 
-    /// RetroAchievements (importador de Code Notes del Maper, M5). La API
-    /// key es del usuario (retroachievements.org → Settings → API Key).
+    /// RetroAchievements (the Mapper's Code Notes importer, M5). The API key
+    /// belongs to the user (retroachievements.org → Settings → API Key).
     std::string ra_user;
     std::string ra_api_key;
 
-    /// Servidor MCP embebido del Lab (plan §7): expone tools para agentes de
-    /// IA por HTTP en localhost. OPT-IN, apagado por defecto.
+    /// The Lab's embedded MCP server (plan §7): exposes tools for AI agents
+    /// over HTTP on localhost. OPT-IN, off by default.
     bool mcp_enabled = false;
     int  mcp_port    = 7777;
 
@@ -80,46 +80,47 @@ struct AytherConfig {
 
     // ---- Input bindings (Lab Capturar: P1 6 botones; P2 habilitable) --------
 
-    /// Acciones del pad Genesis de 6 botones, por jugador.
+    /// Actions of the 6-button Genesis pad, per player.
     enum class GameAction : int {
         DpadUp = 0, DpadDown, DpadLeft, DpadRight,
         A, B, C, X, Y, Z, Start, Mode,
         Count
     };
-    /// Controles de captura (globales): un toggle de grabación + marcar.
+    /// Capture controls (global): a recording toggle + mark.
     enum class LabAction : int { RecordToggle = 0, Mark, Count };
 
     static constexpr int kGameActions   = static_cast<int>(GameAction::Count);
     static constexpr int kLabActions = static_cast<int>(LabAction::Count);
 
-    /// Bindings por jugador. Teclado: nombres de SDL_GetScancodeName ("Up",
-    /// "Z"); gamepad: SDL_GetGamepadStringForButton ("a", "dpup",
-    /// "leftshoulder"). "" = sin asignar.
+    /// Per-player bindings. Keyboard: SDL_GetScancodeName names ("Up", "Z");
+    /// gamepad: SDL_GetGamepadStringForButton ("a", "dpup", "leftshoulder").
+    /// "" = unassigned.
     struct InputBindings {
         std::string kb [kGameActions];
         std::string pad[kGameActions];
     };
 
     InputBindings input_p1, input_p2;
-    bool          p2_enabled = false;            ///< habilita el puerto 2
-    std::string   lab_kb [kLabActions];    ///< Grabar/Detener · Marcar
+    bool          p2_enabled = false;            ///< enables port 2
+    std::string   lab_kb [kLabActions];    ///< Record/Stop · Mark
     std::string   lab_pad[kLabActions];
 
-    /// Botones del mando para Aceptar/Descartar en los diálogos de nombre
-    /// (Grabar/Marcar). Calibración press-to-bind: guardan la POSICIÓN física
-    /// (nombre SDL: "a"=south, "b"=east, …), no el rótulo — robusto contra
-    /// mandos que SDL mal-rotula. "" = autodetección por tipo de mando.
+    /// Controller buttons for Accept/Discard in the naming dialogs
+    /// (Record/Mark). Press-to-bind calibration: they store the physical
+    /// POSITION (SDL name: "a"=south, "b"=east, …), not the label — robust
+    /// against controllers SDL mislabels. "" = auto-detect from controller
+    /// type.
     std::string   dialog_accept_pad;
     std::string   dialog_discard_pad;
 
-    /// Tipo de mando POR JUGADOR (0 = Xbox · 1 = Nintendo · 2 = PlayStation).
-    /// Solo afecta la PRESENTACIÓN de los botones (el A de Nintendo no está
-    /// donde el de Xbox; PlayStation usa formas) y la resolución "(auto)" de
-    /// Aceptar/Descartar en diálogos. Los bindings guardan SIEMPRE el nombre
-    /// SDL posicional ("a"=south, …), estable entre tipos.
+    /// Controller type PER PLAYER (0 = Xbox · 1 = Nintendo · 2 = PlayStation).
+    /// It affects only the PRESENTATION of the buttons (Nintendo's A is not
+    /// where Xbox's is; PlayStation uses shapes) and the "(auto)" resolution of
+    /// Accept/Discard in dialogs. Bindings ALWAYS store the positional SDL name
+    /// ("a"=south, …), which is stable across types.
     int pad_type[2] = {0, 0};
 
-    /// Claves TOML estables por acción ("dpad_up", "a", … / "record", …).
+    /// Stable per-action TOML keys ("dpad_up", "a", … / "record", …).
     static const char* game_action_key(GameAction a);
     static const char* lab_action_key(LabAction a);
 

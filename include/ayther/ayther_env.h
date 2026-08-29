@@ -1,8 +1,8 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// ayther_env.h — getenv con fallback al prefijo legacy AETHER_ (rebrand de
-// código 2026-07-25): scripts/arneses viejos que exporten AETHER_* siguen
-// funcionando sin cambios. Usar SIEMPRE esto para variables AYTHER_*.
+// ayther_env.h — getenv with a fallback to the legacy AETHER_ prefix (code
+// rebrand 2026-07-25): older scripts and harnesses that export AETHER_* keep
+// working unchanged. ALWAYS use this for AYTHER_* variables.
 // ---------------------------------------------------------------------------
 #include <cstdlib>
 #include <cstring>

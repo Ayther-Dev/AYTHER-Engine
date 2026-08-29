@@ -1,34 +1,35 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// output_profile.h — perfiles de SALIDA ().
+// output_profile.h — OUTPUT profiles.
 //
-// NO son los perfiles de remasterización (), y confundirlos sería el peor
-// resultado de este issue. Los de  dicen **qué se sustituye** y los decide
-// el autor del pack; éstos dicen **cómo se ve en TU pantalla** y los decide
-// quien juega. Un CRT no cambia qué assets entran, y un perfil «Fiel» no cambia
-// si tenés un plasma o un portátil.
+// These are NOT the remastering profiles, and confusing the two would be the
+// worst outcome here. The remastering ones say **what gets substituted** and
+// the pack author decides them; these say **how it looks on YOUR screen** and
+// whoever is playing decides them. A CRT does not change which assets come in,
+// and a "Faithful" profile does not change whether you own a plasma or a
+// laptop.
 //
-// Por eso viven en headers distintos y por eso el vocabulario los separa:
-// «perfil de remasterización» contra «perfil de salida».
+// That is why they live in different headers and why the vocabulary keeps them
+// apart: "remastering profile" versus "output profile".
 //
-// El perfil configura tres cosas: el ESCALADO, el SUAVIZADO y los SHADERS de
-// presentación. Es todo lo que hay entre el frame ya compuesto y el monitor.
+// The profile configures three things: SCALING, SMOOTHING and the presentation
+// SHADERS. That is everything between the composed frame and the monitor.
 //
-// Header-only y sin Vulkan: se testea sin GPU.
+// Header-only and Vulkan-free: it is tested without a GPU.
 // ---------------------------------------------------------------------------
 #include <cstdint>
 #include <cstring>
 
 namespace ayther {
 
-/// Cómo se lleva el frame al tamaño de la ventana.
+/// How the frame is brought to the window size.
 enum class OutputScaling : uint8_t {
-    /// El rect más grande que preserva el aspecto. Lo de siempre.
+    /// The largest rect that preserves the aspect ratio. The usual one.
     Fit,
-    /// Múltiplo ENTERO del alto nativo, centrado. Es lo que hace que cada píxel
-    /// del juego ocupe exactamente los mismos píxeles de pantalla; con un
-    /// escalado no entero, dos filas de píxeles idénticas salen de distinto
-    /// grosor y el dibujo se ve tembloroso.
+    /// INTEGER multiple of the native height, centred. This is what makes every
+    /// game pixel occupy exactly the same screen pixels; with a non-integer
+    /// scale, two identical pixel rows come out at different thicknesses and
+    /// the artwork looks shimmery.
     Integer,
 };
 
@@ -36,51 +37,53 @@ struct OutputProfile {
     const char*   id;
     const char*   name;
     OutputScaling scaling = OutputScaling::Fit;
-    /// Filtro al escalar. false = nearest (cada píxel duro), true = lineal.
+    /// Filter used when scaling. false = nearest (every pixel hard),
+    /// true = linear.
     bool  smoothing      = false;
-    /// Multiplicadores sobre lo que el pack pide en `shader_params`. NO son
-    /// valores absolutos: el autor ya eligió cuánta curvatura queda bien con su
-    /// arte, y el perfil de salida decide cuánto de eso llega a esta pantalla.
-    /// Pisarlo con un valor fijo borraría esa decisión.
+    /// Multipliers over what the pack asks for in `shader_params`. They are NOT
+    /// absolute values: the author already chose how much curvature suits their
+    /// art, and the output profile decides how much of that reaches this
+    /// screen. Overriding it with a fixed value would erase that decision.
     float crt_scale      = 0.0f;
     float scan_scale     = 0.0f;
     float vignette_scale = 0.0f;
-    ///  EM-7.2: sangrado de croma de señal compuesta [0,1].
+    /// EM-7.2: composite-signal chroma bleed [0,1].
     ///
-    /// A diferencia de los tres de arriba éste es ABSOLUTO y no un
-    /// multiplicador: el pack no tiene un `ntsc` que escalar, porque el
-    /// sangrado no es una decisión del autor sobre su arte sino sobre qué
-    /// televisor imita quien mira. Escalarlo contra un valor que nadie autora
-    /// daría siempre cero.
+    /// Unlike the three above, this one is ABSOLUTE and not a multiplier: the
+    /// pack has no `ntsc` to scale, because bleed is not the author's decision
+    /// about their art but the viewer's decision about which television set to
+    /// imitate. Scaling it against a value nobody authors would always give
+    /// zero.
     float ntsc           = 0.0f;
 };
 
-/// Los perfiles que el Engine conoce. En orden de presentación.
+/// The profiles the Engine knows about, in presentation order.
 inline const OutputProfile* output_profiles(uint32_t* count) {
     static const OutputProfile kAll[] = {
-        // El default es LCD y no CRT: en una pantalla moderna el CRT es un
-        // efecto, y arrancar con un efecto puesto haría que el primer vistazo
-        // de la remasterización fuera el shader y no el arte.
+        // The default is LCD and not CRT: on a modern screen the CRT is an
+        // effect, and starting with an effect enabled would make the first look
+        // at the remaster be the shader rather than the art.
         { "lcd",     "LCD nativo",     OutputScaling::Fit,     false, 0.0f, 0.0f, 0.0f, 0.0f },
         { "crt",     "CRT simulado",   OutputScaling::Fit,     true,  1.0f, 1.0f, 1.0f, 0.0f },
         { "pixel",   "Pixel-perfect",  OutputScaling::Integer, false, 0.0f, 0.0f, 0.0f, 0.0f },
         { "smooth",  "Suavizado",      OutputScaling::Fit,     true,  0.0f, 0.0f, 0.0f, 0.0f },
-        // Cinematográfica: sin líneas de barrido pero con viñeta y un poco de
-        // curvatura. Es una presentación, no una imitación de un televisor.
+        // Cinematic: no scanlines, but with vignette and a little curvature.
+        // It is a presentation, not an imitation of a television set.
         { "cinema",  "Cinematográfica", OutputScaling::Fit,    true,  0.35f, 0.0f, 1.0f, 0.0f },
-        //  EM-7.2: NTSC. Es el CRT más el sangrado de croma de una señal
-        // compuesta — la mayoría de los juegos de esta época se vieron así, con
-        // los degradados de un solo color que el compuesto mezclaba. Va aparte
-        // de «CRT simulado» porque son dos cosas distintas: uno es el tubo (la
-        // grilla de fósforo) y el otro, el cable.
+        // EM-7.2: NTSC. It is the CRT plus the chroma bleed of a composite
+        // signal — most games of this era were seen this way, with the
+        // single-colour gradients that composite blended. It is kept apart from
+        // "CRT simulado" because they are two different things: one is the tube
+        // (the phosphor grid) and the other is the cable.
         { "ntsc",    "NTSC compuesto", OutputScaling::Fit,     true,  1.0f, 1.0f, 1.0f, 1.0f },
     };
     if (count) *count = static_cast<uint32_t>(sizeof(kAll) / sizeof(kAll[0]));
     return kAll;
 }
 
-/// Busca por id. nullptr = este build no lo conoce, que es distinto de «no hay
-/// perfil»: un pack de mañana puede recomendar uno que no existe todavía.
+/// Looks one up by id. nullptr = this build does not know it, which is not the
+/// same as "there is no profile": a pack from tomorrow may recommend one that
+/// does not exist yet.
 inline const OutputProfile* output_profile_by_id(const char* id) {
     if (!id || !*id) return nullptr;
     uint32_t n = 0;
@@ -90,20 +93,20 @@ inline const OutputProfile* output_profile_by_id(const char* id) {
     return nullptr;
 }
 
-/// El perfil por defecto — el que se usa cuando nadie dijo nada.
+/// The default profile — the one used when nobody said anything.
 inline const OutputProfile& output_profile_default() { return output_profiles(nullptr)[0]; }
 
-/// RECOMENDAR NO ES IMPONER, y esto es esa regla escrita.
+/// RECOMMENDING IS NOT IMPOSING, and this is that rule written down.
 ///
-/// Precedencia: lo que ELIGIÓ el usuario > lo que RECOMIENDA el pack > el
-/// default. Un pack puede sugerir «CRT» porque su arte se diseñó con eso en
-/// mente, pero quien mira la pantalla es el que sabe si tiene un OLED o un
-/// proyector — y si su elección no ganara, la recomendación sería una
-/// imposición con otro nombre.
+/// Precedence: what the user CHOSE > what the pack RECOMMENDS > the default. A
+/// pack may suggest "CRT" because its art was designed with that in mind, but
+/// the person looking at the screen is the one who knows whether they have an
+/// OLED or a projector — and if their choice did not win, the recommendation
+/// would be an imposition under another name.
 ///
-/// Un id desconocido (de cualquiera de los dos) se ignora en vez de fallar: un
-/// pack de mañana puede recomendar un perfil que este build no tiene, y eso no
-/// invalida el resto.
+/// An unknown id (from either side) is ignored rather than treated as an error:
+/// a pack from tomorrow may recommend a profile this build does not have, and
+/// that does not invalidate the rest.
 inline const OutputProfile& output_profile_resolve(const char* user_choice,
                                                    const char* pack_recommends) {
     if (const OutputProfile* p = output_profile_by_id(user_choice))    return *p;
@@ -111,9 +114,10 @@ inline const OutputProfile& output_profile_resolve(const char* user_choice,
     return output_profile_default();
 }
 
-/// El rect de destino para este perfil. `Integer` busca el múltiplo entero más
-/// grande que entre; si ni ×1 entra —una ventana más chica que el frame— cae a
-/// `Fit`, porque recortar la imagen sería peor que escalarla mal.
+/// The destination rect for this profile. `Integer` looks for the largest
+/// integer multiple that fits; if not even ×1 fits —a window smaller than the
+/// frame— it falls back to `Fit`, because cropping the image would be worse
+/// than scaling it badly.
 struct OutputRect { int32_t x, y, w, h; };
 
 inline OutputRect output_rect(const OutputProfile& p,
@@ -131,7 +135,7 @@ inline OutputRect output_rect(const OutputProfile& p,
             return { (static_cast<int32_t>(dst_w) - w) / 2,
                      (static_cast<int32_t>(dst_h) - h) / 2, w, h };
         }
-        // Cae a Fit: no entra ni una vez.
+        // Falls back to Fit: it does not fit even once.
     }
 
     const double src_a = static_cast<double>(src_w) / src_h;

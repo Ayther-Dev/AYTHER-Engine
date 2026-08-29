@@ -31,9 +31,9 @@ struct FrameStat {
     uint16_t sprites = 0;   ///< sprite occurrences this frame
     uint16_t tiles   = 0;   ///< tile occurrences this frame
     uint16_t audio   = 0;   ///< audio occurrences this frame
-    uint16_t plane_a = 0;   ///< Plano A: celdas de nametable no vacías (cobertura) — v5
-    uint16_t plane_b = 0;   ///< Plano B: idem — v5
-    uint16_t plane_w = 0;   ///< Window (HUD): idem — v6
+    uint16_t plane_a = 0;   ///< Plane A: non-empty nametable cells (coverage) — v5
+    uint16_t plane_b = 0;   ///< Plane B: same — v5
+    uint16_t plane_w = 0;   ///< Window (HUD): same — v6
 };
 
 struct AytherRecording {
@@ -52,14 +52,14 @@ struct AytherRecording {
     std::vector<uint64_t> sprite_hashes;
     std::vector<uint32_t> hash_offsets;   ///< size = frame_count()+1 (or empty)
 
-    /// Versión VIGENTE del algoritmo de hash de sprites (1 = flip-invariante,
-    /// patrón crudo de VRAM — 2026-07-10). Se persiste en el .arp (v8) para
-    /// detectar historias viejas: una toma con `hash_algo` menor tiene hashes
-    /// de OTRA función (las caras espejadas hashaban distinto) → present() no
-    /// encuentra las poses re-capturadas y los marks del timeline no encienden.
-    /// El Lab la re-hornea al cargarla (replay_rebake_history_step) y re-guarda.
+    /// CURRENT version of the sprite hash algorithm (1 = flip-invariant, raw
+    /// VRAM pattern — 2026-07-10). It is persisted in the .arp (v8) to detect
+    /// old histories: a take with a lower `hash_algo` holds hashes from ANOTHER
+    /// function (mirrored faces used to hash differently) → present() does not
+    /// find the re-captured poses and the timeline marks never light up. The
+    /// Lab re-bakes it on load (replay_rebake_history_step) and saves again.
     static constexpr uint32_t kSpriteHashAlgo = 1;
-    uint32_t hash_algo = kSpriteHashAlgo;   ///< algo de la historia capturada (0 = pre-v8)
+    uint32_t hash_algo = kSpriteHashAlgo;   ///< algorithm of the captured history (0 = pre-v8)
 
     // Per-frame AUDIO hashes (.arp v7) — drives the per-sound presence rows under
     // the AUDIO lane so the timeline shows *which* frames a sound plays and lets
@@ -68,26 +68,28 @@ struct AytherRecording {
     std::vector<uint64_t> audio_hashes;
     std::vector<uint32_t> audio_offsets;  ///< size = frame_count()+1 (or empty)
 
-    /// Keyframe de replay horneado (R7e): un savestate (zstd-comprimido) que da
-    /// arranque al frame `frame` — unserializar + correr [frame, target) rinde el
-    /// frame buscado SIN re-simular desde 0. Comprimidos por separado para
-    /// descomprimir sólo el que un seek necesita (RAM acotada en tomas largas).
+    /// Baked replay keyframe (R7e): a savestate (zstd-compressed) that gives
+    /// frame `frame` its starting point — unserialize + run [frame, target)
+    /// yields the sought frame WITHOUT re-simulating from 0. Compressed
+    /// separately so only the one a seek needs is decompressed (bounded RAM on
+    /// long takes).
     struct Keyframe {
-        uint32_t             frame    = 0;   ///< frame al que da arranque
-        uint32_t             raw_size = 0;   ///< tamaño del savestate descomprimido
-        std::vector<uint8_t> comp;           ///< savestate zstd-comprimido
+        uint32_t             frame    = 0;   ///< frame it gives a start to
+        uint32_t             raw_size = 0;   ///< size of the uncompressed savestate
+        std::vector<uint8_t> comp;           ///< zstd-compressed savestate
     };
-    std::vector<Keyframe> keyframes;         ///< ordenados asc. por frame (puede estar vacío)
+    std::vector<Keyframe> keyframes;         ///< sorted asc. by frame (may be empty)
 
     uint32_t frame_count() const { return static_cast<uint32_t>(inputs.size()); }
     bool     empty()       const { return inputs.empty() || initial_state.empty(); }
 
-    /// Comprime `raw_state` y lo agrega como keyframe del frame `frame`. Llamado
-    /// por el motor al cerrar/migrar una toma. No-op si la (de)compresión falla.
+    /// Compresses `raw_state` and adds it as the keyframe of frame `frame`.
+    /// Called by the motor when closing/migrating a take. No-op if
+    /// (de)compression fails.
     void add_keyframe(uint32_t frame, const std::vector<uint8_t>& raw_state);
 
-    /// Descomprime keyframes[idx] en `out`. false si idx fuera de rango o falla
-    /// la descompresión. El motor lo llama on-demand por seek.
+    /// Decompresses keyframes[idx] into `out`. false if idx is out of range or
+    /// decompression fails. The motor calls it on demand, per seek.
     bool decompress_keyframe(size_t idx, std::vector<uint8_t>& out) const;
 
     /// True if sprite `hash` is present on frame `f` (R7c). False when the take
@@ -99,9 +101,9 @@ struct AytherRecording {
         return false;
     }
 
-    /// Sub-toma [begin, end) con `state` como savestate inicial (debe ser el
-    /// estado de máquina PRE-frame `begin`). Rebasa inputs/stats/historia CSR
-    /// y trim marks a 0. Precondición: begin < end <= frame_count().
+    /// Sub-take [begin, end) with `state` as the initial savestate (it must be
+    /// the machine state PRE-frame `begin`). Rebases inputs/stats/CSR history
+    /// and resets trim marks to 0. Precondition: begin < end <= frame_count().
     AytherRecording slice(uint32_t begin, uint32_t end,
                           std::vector<uint8_t> state) const;
 
@@ -109,10 +111,11 @@ struct AytherRecording {
     /// Returns false on I/O or compression failure.
     bool save(const std::string& path) const;
 
-    /// Reescribe SOLO el campo `name` del header de un .arp existente —
-    /// renombrar una toma no debe recomprimir su savestate ni tocar el resto.
-    /// No-op exitoso si el nombre ya coincide. false si el archivo falta, el
-    /// header es inválido o falla la E/S (el original queda intacto).
+    /// Rewrites ONLY the `name` field of an existing .arp header — renaming a
+    /// take must not recompress its savestate nor touch anything else.
+    /// Successful no-op if the name already matches. false if the file is
+    /// missing, the header is invalid or I/O fails (the original is left
+    /// intact).
     static bool patch_name(const std::string& path, const std::string& new_name);
 
     /// Load a `.arp` file. Returns std::nullopt on any error (bad magic,

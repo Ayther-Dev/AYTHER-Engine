@@ -1,21 +1,22 @@
 # ---------------------------------------------------------------------------
-# gen_api_reference.ps1 — la referencia de la API pública, generada (#553).
+# gen_api_reference.ps1 — the public API reference, generated (#553).
 #
-# POR QUÉ NO ES DOXYGEN (todavía). Doxygen produce una referencia mejor, pero
-# exige una herramienta instalada en cada máquina que quiera regenerarla y en
-# CI. Esto recorre la MISMA raíz que instala `cmake/AytherInstall.cmake` —todos
-# los `.h` bajo `include/ayther/`— y no depende de nada: si un header entra o
-# sale de la superficie, la referencia lo refleja sin mantener una lista
-# paralela. El día que Doxygen esté en el CI, esto sigue sirviendo como índice.
+# WHY IT IS NOT DOXYGEN (yet). Doxygen produces a better reference, but it
+# demands a tool installed on every machine that wants to regenerate it and in
+# CI. This walks the SAME root that `cmake/AytherInstall.cmake` installs —every
+# `.h` under `include/ayther/`— and depends on nothing: if a header enters or
+# leaves the surface, the reference reflects it without maintaining a parallel
+# list. The day Doxygen is in CI, this still serves as an index.
 #
-# Lo que NO hace, dicho: no parsea C++ de verdad. Extrae la cabecera de cada
-# header y sus declaraciones de primer nivel con sus comentarios. Alcanza para
-# contestar «¿qué hay y para qué es?» y no para «¿cuál es la firma exacta de
-# esta sobrecarga?» — para eso está el header, que viaja en el paquete.
+# What it does NOT do, stated plainly: it does not really parse C++. It
+# extracts each header's file banner and its top-level declarations with their
+# comments. That is enough to answer "what is there and what is it for?" and
+# not "what is the exact signature of this overload?" — the header answers
+# that, and it ships in the package.
 #
-# Uso:
-#   pwsh tools/gen_api_reference.ps1           # regenera
-#   pwsh tools/gen_api_reference.ps1 -Check    # CI: falla si quedó vieja
+# Usage:
+#   pwsh tools/gen_api_reference.ps1           # regenerate
+#   pwsh tools/gen_api_reference.ps1 -Check    # CI: fails if it went stale
 # ---------------------------------------------------------------------------
 param(
     [switch]$Check,
@@ -26,40 +27,47 @@ $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path "$PSScriptRoot/..").Path
 Set-Location $repo
 
-# La instalación copia recursivamente todos los headers de esta raíz. Enumerar
-# ese mismo árbol mantiene sincronizados paquete e índice sin parsear CMake.
+# The installation recursively copies every header under this root. Walking
+# that same tree keeps package and index in sync without parsing CMake.
 $includeRoot = (Resolve-Path "include/ayther").Path
 $headers = Get-ChildItem $includeRoot -Recurse -File -Filter "*.h" |
            ForEach-Object {
                [pscustomobject]@{
                    file = [System.IO.Path]::GetRelativePath(
                        $includeRoot, $_.FullName).Replace('\', '/')
-                   nota = "Header público instalado."
+                   nota = "Installed public header."
                }
            } |
            Sort-Object file
-if ($headers.Count -lt 2) { throw "la lista pública salió con $($headers.Count) headers" }
+if ($headers.Count -lt 2) { throw "the public list came out with $($headers.Count) headers" }
+
+function Get-HeaderAnchor([string]$File) {
+    # Match GitHub/JetBrains heading slugs: preserve '_' and '-', remove path
+    # separators and punctuation, and turn whitespace into '-'.
+    $slug = $File.ToLowerInvariant() -replace '[^a-z0-9 _-]', ''
+    return (($slug -replace '\s+', '-').Trim('-'))
+}
 
 $sb = [System.Text.StringBuilder]::new()
-[void]$sb.AppendLine("# AYTHER Engine — índice de headers instalados")
+[void]$sb.AppendLine("# AYTHER Engine — index of installed headers")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("> **GENERADO — no editar a mano.** ``pwsh tools/gen_api_reference.ps1``.")
-[void]$sb.AppendLine("> Sale de ``include/ayther/**/*.h``, la misma raíz que instala")
-[void]$sb.AppendLine("> ``cmake/AytherInstall.cmake``: si un header entra")
-[void]$sb.AppendLine("> o sale de la superficie, esta página lo refleja sin que nadie edite una")
-[void]$sb.AppendLine("> lista paralela.")
+[void]$sb.AppendLine("> **GENERATED — do not edit by hand.** ``pwsh tools/gen_api_reference.ps1``.")
+[void]$sb.AppendLine("> Derived from ``include/ayther/**/*.h``, the same root that")
+[void]$sb.AppendLine("> ``cmake/AytherInstall.cmake`` installs: if a header enters")
+[void]$sb.AppendLine("> or leaves the surface, this page reflects it without anyone editing a")
+[void]$sb.AppendLine("> parallel list.")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("La superficie instalada y su estabilidad se describen en")
+[void]$sb.AppendLine("The installed surface and its stability are described in")
 [void]$sb.AppendLine("[``API_COMPATIBILITY.md``](API_COMPATIBILITY.md).")
-[void]$sb.AppendLine("Aparecer en este índice no implica por sí solo una garantía de estabilidad.")
+[void]$sb.AppendLine("Appearing in this index does not by itself imply a stability guarantee.")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("## Los $($headers.Count) headers")
+[void]$sb.AppendLine("## The $($headers.Count) headers")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("| header | qué aporta |")
+[void]$sb.AppendLine("| header | what it provides |")
 [void]$sb.AppendLine("|---|---|")
 foreach ($h in $headers) {
-    $anchor = "#" + ($h.file -replace '[^a-zA-Z0-9]', '-').ToLower()
-    [void]$sb.AppendLine("| [``$($h.file)``]($anchor) | $($h.nota) |")
+    $anchor = Get-HeaderAnchor $h.file
+    [void]$sb.AppendLine("| [``$($h.file)``](#$anchor) | $($h.nota) |")
 }
 [void]$sb.AppendLine()
 
@@ -70,20 +78,25 @@ foreach ($h in $headers) {
 
     [void]$sb.AppendLine("---")
     [void]$sb.AppendLine()
+    # Explicit IDs avoid renderer-specific heading slug rules for '_', '/' and
+    # '.'. The table above and IDE inspections now resolve the same stable ID.
+    $anchor = Get-HeaderAnchor $h.file
+    [void]$sb.AppendLine("<a id=`"$anchor`"></a>")
+    [void]$sb.AppendLine()
     [void]$sb.AppendLine("## $($h.file)")
     [void]$sb.AppendLine()
 
-    # La cabecera del archivo: el bloque de comentarios de arriba de todo, que
-    # es donde este repo explica POR QUÉ existe cada cosa. Se toma tal cual —
-    # resumirla sería perder justamente lo que no está en otro lado.
+    # The file banner: the comment block at the very top, which is where this
+    # repo explains WHY each thing exists. It is taken verbatim — summarising
+    # it would lose precisely what is not written down anywhere else.
     $cab = [regex]::Match($texto, '(?s)^(?:#\w+[^\n]*\n|/\* [-]+\n)?((?://[^\n]*\n| \*[^\n]*\n)+)')
     if ($cab.Success) {
         $lineas = $cab.Groups[1].Value -split "`n" | ForEach-Object {
             ($_ -replace '^\s*//\s?', '' -replace '^\s*\*\s?', '' -replace '^-+$', '').TrimEnd()
         }
-        # Se corta en la primera línea vacía doble: el resto de la cabecera suele
-        # ser detalle de implementación, y una referencia que copia todo no es
-        # una referencia.
+        # It stops at the first double blank line: the rest of the banner is
+        # usually implementation detail, and a reference that copies everything
+        # is not a reference.
         $acum = @()
         $vacias = 0
         foreach ($l in $lineas) {
@@ -95,36 +108,36 @@ foreach ($h in $headers) {
         [void]$sb.AppendLine()
     }
 
-    # Declaraciones de primer nivel: tipos y funciones que el consumidor usa.
+    # Top-level declarations: the types and functions the consumer uses.
     $decls = [regex]::Matches($texto,
         '(?m)^(?:struct|class|enum(?:\s+class)?|typedef|inline|[A-Za-z_][A-Za-z0-9_:<>\*\s]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(\(|\{|;)')
     $nombres = $decls | ForEach-Object { $_.Groups[1].Value } |
                Where-Object { $_ -notmatch '^(if|for|while|return|else|namespace)$' } |
                Select-Object -Unique | Sort-Object
     if ($nombres) {
-        [void]$sb.AppendLine("**Declara:** " + (($nombres | ForEach-Object { "``$_``" }) -join ", "))
+        [void]$sb.AppendLine("**Declares:** " + (($nombres | ForEach-Object { "``$_``" }) -join ", "))
         [void]$sb.AppendLine()
     }
-    [void]$sb.AppendLine("_El header instalado (``include/ayther/$($h.file)``) lleva la documentación completa de cada símbolo._")
+    [void]$sb.AppendLine("_The installed header (``include/ayther/$($h.file)``) carries the full documentation of every symbol._")
     [void]$sb.AppendLine()
 }
 
-$nuevo = $sb.ToString() -replace "`r`n", "`n"
+$nuevo = (($sb.ToString() -replace "`r`n", "`n").TrimEnd()) + "`n"
 $outPath = Join-Path $repo $Out
 
 if ($Check) {
-    if (-not (Test-Path $outPath)) { throw "$Out no existe — corré el script sin -Check" }
+    if (-not (Test-Path $outPath)) { throw "$Out does not exist — run the script without -Check" }
     $viejo = (Get-Content $outPath -Raw) -replace "`r`n", "`n"
     if ($viejo.TrimEnd() -ne $nuevo.TrimEnd()) {
-        Write-Host "`nLa referencia quedó desactualizada." -ForegroundColor Red
-        Write-Host "Regeneralo con: pwsh tools/gen_api_reference.ps1"
+        Write-Host "`nThe reference is out of date." -ForegroundColor Red
+        Write-Host "Regenerate it with: pwsh tools/gen_api_reference.ps1"
         exit 1
     }
-    Write-Host "  [ OK ] la referencia coincide con la superficie declarada"
+    Write-Host "  [ OK ] the reference matches the declared surface"
     exit 0
 }
 
 [System.IO.Directory]::CreateDirectory(
     [System.IO.Path]::GetDirectoryName($outPath)) | Out-Null
 [System.IO.File]::WriteAllText($outPath, $nuevo)
-Write-Host "  escrito: $Out  ($($headers.Count) headers)"
+Write-Host "  written: $Out  ($($headers.Count) headers)"

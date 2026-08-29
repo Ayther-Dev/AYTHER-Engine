@@ -1,29 +1,30 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// parallax_bands.h — la columna de nivel POR BANDA ( EM-8.0).
+// parallax_bands.h — the level column PER BAND (EM-8.0).
 //
-// El plano B lleva parallax por bandas: cada entrada de la tabla Hscroll tiene
-// su propio desplazamiento, así que «columna de nivel» **no es una sola cosa en
-// ese plano** — depende de la fila. Con una cámara única por plano, todas las
-// bandas colapsan en las mismas columnas y se apilan unas sobre otras.
+// Plane B carries per-band parallax: every entry of the Hscroll table has its
+// own displacement, so "level column" **is not a single thing on that plane** —
+// it depends on the row. With a single camera per plane, every band collapses
+// onto the same columns and they stack on top of one another.
 //
-// MEDIDO en Sonic 2 (`background_spike`, 1200 frames): el plano A reconstruía 607
-// columnas de nivel y el B sólo **37** —menos de una pantalla— con 45 bandas por
-// frame. No era que faltara arte: estaba todo apilado en el lugar equivocado.
+// MEASURED on Sonic 2 (`background_spike`, 1200 frames): plane A reconstructed
+// 607 level columns and plane B only **37** —less than one screen— with 45
+// bands per frame. It was not that art was missing: it was all stacked in the
+// wrong place.
 //
-// DOS COSAS QUE ESTE ARCHIVO APRENDIÓ A LOS GOLPES
+// TWO THINGS THIS FILE LEARNED THE HARD WAY
 //
-// 1. La regla vive acá y no adentro del bucle de `ayther_session.cpp`. La
-//    primera versión quedó enterrada ahí, donde el oráculo del stitcher no la
-//    veía —llama al stitcher directamente—, así que al medirla no movió un solo
-//    número. No estaba mal: no se estaba ejecutando.
+// 1. The rule lives here and not inside the loop in `ayther_session.cpp`. The
+//    first version was buried there, where the stitcher oracle could not see it
+//    —it calls the stitcher directly— so measuring it moved not a single
+//    number. It was not wrong: it was not being executed.
 //
-// 2. No alcanza con restar los H de dos bandas dentro del mismo frame. El campo
-//    del VDP es de 10 bits y envuelve, y la separación entre bandas CRECE sin
-//    límite a lo largo de un nivel (medido: 17 px contra 566 px en 1033 px de
-//    scroll). Cada banda necesita su propio des-enrollado, igual que la cámara
-//    del plano. Por eso `BandCameras` tiene estado: una resta pura no puede
-//    saber cuántas vueltas dio cada banda.
+// 2. Subtracting the H of two bands within the same frame is not enough. The
+//    VDP field is 10 bits and it wraps, and the separation between bands GROWS
+//    without bound over the course of a level (measured: 17 px against 566 px
+//    over 1033 px of scroll). Each band needs its own unwrapping, just like the
+//    plane camera. That is why `BandCameras` has state: a pure subtraction
+//    cannot know how many times each band wrapped around.
 // ---------------------------------------------------------------------------
 #include <cstddef>
 #include <cstdint>
@@ -31,26 +32,26 @@
 
 namespace ayther {
 
-/// Cómo está organizada la tabla Hscroll (registro $0B, bits 0-1).
+/// How the Hscroll table is organised (register $0B, bits 0-1).
 ///
-///   0 = uno para todo el plano · 1 = por celda dentro del primer tile ·
-///   2 = por celda (cada 8 líneas) · 3 = por línea
+///   0 = one for the whole plane · 1 = per cell within the first tile ·
+///   2 = per cell (every 8 lines) · 3 = per line
 inline uint32_t hscroll_mask(uint8_t reg0b) {
     static const uint32_t kMask[4] = { 0x00, 0x07, 0xF8, 0xFF };
     return kMask[reg0b & 3];
 }
 
-/// Base de la tabla Hscroll en VRAM (registro $0D).
+/// Base of the Hscroll table in VRAM (register $0D).
 inline uint32_t hscroll_base(uint8_t reg0d) {
     return (static_cast<uint32_t>(reg0d) << 10) & 0xFC00u;
 }
 
-/// Lee el H de una LÍNEA de pantalla para un plano. `read_u32` entrega la
-/// palabra larga de VRAM ya des-swapeada.
+/// Reads the H of one screen LINE for a plane. `read_u32` yields the VRAM long
+/// word already un-swapped.
 ///
-/// El campo del VDP es de 10 bits: el juego puede escribir por encima y el resto
-/// se ignora, así que se enmascara acá y no en el llamador — hacerlo afuera es
-/// como se cuela un valor de 16 bits en un cálculo de 10.
+/// The VDP field is 10 bits: the game may write above that and the rest is
+/// ignored, so it is masked here and not in the caller — doing it outside is
+/// how a 16-bit value sneaks into a 10-bit calculation.
 template <typename ReadU32>
 inline int hscroll_of_line(const ReadU32& read_u32, uint32_t base, uint32_t mask,
                            uint8_t plane, int line) {
@@ -60,17 +61,17 @@ inline int hscroll_of_line(const ReadU32& read_u32, uint32_t base, uint32_t mask
                       : static_cast<int>((hw >> 16) & 0x3FF);
 }
 
-/// El resto SIEMPRE positivo. `-1 % 512` es -1 en C++, y una columna negativa
-/// acá significaría leer la nametable por afuera.
+/// The ALWAYS positive remainder. `-1 % 512` is -1 in C++, and a negative
+/// column here would mean reading the nametable out of bounds.
 inline int wrap_px(int v, int w) {
     if (w <= 0) return 0;
     const int r = v % w;
     return r < 0 ? r + w : r;
 }
 
-/// Cuántas BANDAS distintas hay en este plano, mirando las `rows` filas que se
-/// dibujan. Es la medida que dice si vale la pena separar: 1 significa que el
-/// plano no tiene parallax por bandas.
+/// How many distinct BANDS this plane has, looking at the `rows` rows that are
+/// drawn. It is the measurement that says whether separating is worthwhile: 1
+/// means the plane has no per-band parallax.
 template <typename ReadU32>
 inline int band_count(const ReadU32& read_u32, uint32_t base, uint32_t mask,
                       uint8_t plane, int rows) {
@@ -85,19 +86,19 @@ inline int band_count(const ReadU32& read_u32, uint32_t base, uint32_t mask,
 }
 
 // ---------------------------------------------------------------------------
-/// La cámara ABSOLUTA de cada banda de un plano, des-enrollada frame a frame.
+/// The ABSOLUTE camera of each band of a plane, unwrapped frame by frame.
 ///
-/// El VDP sólo dice dónde está cada banda DENTRO del plano (0..ancho-1). Para
-/// reconstruir una lámina de nivel hace falta la posición absoluta, y eso pide
-/// memoria: la vuelta que dio la banda entre dos frames se deduce de que el
-/// salto sea chico. El criterio es el de siempre —un salto de más de medio
-/// plano se lee como una vuelta— y por eso hay que alimentarlo TODOS los
-/// frames: saltear frames convierte un scroll rápido en una vuelta inventada.
+/// The VDP only says where each band is WITHIN the plane (0..width-1). To
+/// reconstruct a level strip the absolute position is needed, and that requires
+/// memory: the wrap a band made between two frames is inferred from the jump
+/// being small. The criterion is the usual one —a jump of more than half a
+/// plane reads as a wrap— and that is why it must be fed EVERY frame: skipping
+/// frames turns a fast scroll into an invented wrap.
 class BandCameras {
 public:
-    /// `rows` = filas de celdas en pantalla · `width_px` = ancho del plano.
-    /// Reconfigurar (otro nivel, otro tamaño de plano) reinicia el arranque:
-    /// las bandas vuelven a sembrarse en el próximo frame.
+    /// `rows` = rows of cells on screen · `width_px` = plane width.
+    /// Reconfiguring (another level, another plane size) resets the start: the
+    /// bands are seeded again on the next frame.
     void configure(int rows, int width_px) {
         if (rows == rows_ && width_px == width_) return;
         rows_ = rows > 0 ? rows : 0;
@@ -109,18 +110,19 @@ public:
 
     int rows() const { return rows_; }
 
-    /// Consume un frame: lee la tabla Hscroll y actualiza las `rows` bandas.
+    /// Consumes one frame: reads the Hscroll table and updates the `rows`
+    /// bands.
     ///
-    /// El H del VDP es cuánto se corrió el plano HACIA la derecha, así que la
-    /// cámara es su negativo — el mismo signo que usa el resto del motor.
+    /// The VDP H is how far the plane moved TOWARDS the right, so the camera is
+    /// its negative — the same sign the rest of the motor uses.
     template <typename ReadU32>
     void observe(const ReadU32& read_u32, uint32_t base, uint32_t mask,
                  uint8_t plane) {
         if (rows_ <= 0) return;
-        // La banda de arriba es el origen, y las demás se SIEMBRAN respecto de
-        // ella. Sembrar cada una en su propio valor envuelto pondría a una banda
-        // 64 px atrás en la columna +56 en vez de en la -8: el VDP dice dónde
-        // está dentro del plano, no de qué lado.
+        // The topmost band is the origin, and the rest are SEEDED relative to
+        // it. Seeding each one at its own wrapped value would place a band 64 px
+        // behind at column +56 instead of at -8: the VDP says where it is within
+        // the plane, not on which side.
         const int h0 = hscroll_of_line(read_u32, base, mask, plane, 0);
         const int w0 = wrap_px(-h0, width_);
         push(0, w0, w0, 0);
@@ -131,9 +133,9 @@ public:
         }
     }
 
-    /// La columna de nivel de la banda que le toca a la fila `row`.
-    /// Fuera de rango devuelve 0, que es la cámara única de antes: la
-    /// degradación es «como estaba», nunca un salto.
+    /// The level column of the band that row `row` belongs to.
+    /// Out of range it returns 0, which is the old single camera: the
+    /// degradation is "as it was", never a jump.
     int column(int row) const {
         if (row < 0 || row >= rows_) return 0;
         const int64_t a = st_[static_cast<size_t>(row)].abs;
@@ -145,21 +147,21 @@ public:
         return st_[static_cast<size_t>(row)].abs;
     }
 
-    /// Cuánto separa a esta banda de la banda 0, en columnas. Es lo que se le
-    /// suma a una cámara de plano ya des-enrollada por afuera.
+    /// How far this band is from band 0, in columns. It is what gets added to
+    /// a plane camera already unwrapped elsewhere.
     int offset_from_top(int row) const { return column(row) - column(0); }
 
 private:
     struct State { bool seeded = false; int last = 0; int64_t abs = 0; };
 
-    /// El representante más cercano a cero. Medio plano: por debajo es scroll,
-    /// por encima es que dio la vuelta.
+    /// The representative closest to zero. Half a plane: below it is scroll,
+    /// above it is a wrap.
     ///
-    /// Es una APUESTA, y la única que se puede hacer mirando un valor envuelto:
-    /// dos bandas separadas por más de medio plano en el mismo frame son
-    /// indistinguibles de dos separadas por lo que sobra del otro lado. Al
-    /// arrancar un nivel las bandas están todas juntas, así que la apuesta se
-    /// hace cuando es segura y después sólo se acumula.
+    /// It is a BET, and the only one that can be made looking at a wrapped
+    /// value: two bands separated by more than half a plane in the same frame
+    /// are indistinguishable from two separated by whatever is left on the
+    /// other side. At the start of a level the bands are all together, so the
+    /// bet is made when it is safe and after that it only accumulates.
     int shortest(int d) const {
         if (d >  width_ / 2) d -= width_;
         if (d < -width_ / 2) d += width_;

@@ -1,45 +1,44 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// audio_live_resume.h — decisión PURA de reanudación de un reemplazo live
-// ().
+// audio_live_resume.h — PURE resume decision for a live replacement.
 //
-// Una pausa corta físicamente los streams HD (), pero la instancia LÓGICA
-// del reemplazo —qué asset, anclado a qué frame, hasta cuándo— sigue viva en
-// la sesión. Al reanudar hay que volver a sonar DESDE EL OFFSET que dicta el
-// reloj emulado, no desde cero: limpiar los flancos y re-disparar corrige el
-// silencio pero introduce desfase, y eso está explícitamente prohibido.
+// A pause physically stops the HD streams, but the LOGICAL replacement
+// instance—which asset, anchored to which frame, and until when—remains alive
+// in the session. On resume, playback must continue FROM THE OFFSET dictated
+// by the emulated clock, not from zero: clearing edges and retriggering removes
+// the silence but introduces drift, which is explicitly forbidden.
 //
-// La estrategia elegida es RECREAR el stream desde el offset (no congelar el
-// stream físico): es la misma aritmética que ya usa el camino de toma
-// ((f - anclaje) / fps), sobrevive a Assets OFF/ON y al cambio de workspace
-// con el mismo código, y es compatible con la migración futura al mixer
-// unificado () — la instancia lógica no sabe nada de SDL.
+// The chosen strategy is to RECREATE the stream at the offset rather than
+// freeze the physical stream. It uses the same arithmetic as the take path
+// (`(f - anchor) / fps`), survives Assets OFF/ON and workspace changes through
+// the same code, and is compatible with a future unified mixer: the logical
+// instance knows nothing about SDL.
 //
-// Este header es PURO (sin SDL, sin core) para que la decisión sea testeable
-// sin sesión ni ROM — mismo criterio que transport_gate.h ().
+// This header is PURE (no SDL and no core), so the decision can be tested
+// without a session or ROM, following the same criterion as transport_gate.h.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
 
 namespace ayther {
 
-/// Qué hacer con una instancia live al reanudar el transporte.
+/// What to do with a live instance when the transport resumes.
 enum class LiveResumeAction : uint8_t {
-    Restart,    ///< re-crear el stream desde `offset_seconds`
-    Finished,   ///< la instancia venció durante la pausa/bypass — descartarla
+    Restart,    ///< re-create the stream from `offset_seconds`
+    Finished,   ///< the instance expired during the pause/bypass — discard it
 };
 
 struct LiveResumeDecision {
     LiveResumeAction action         = LiveResumeAction::Finished;
-    double           offset_seconds = 0.0;   ///< sólo con Restart
+    double           offset_seconds = 0.0;   ///< only with Restart
 };
 
-constexpr uint64_t kLiveNoCut = UINT64_MAX;   // = drena entero ()
+constexpr uint64_t kLiveNoCut = UINT64_MAX;   // = drains in full
 
-/// ¿Quedó atrás esta instancia? Un loop sin tail muere en end_frame (un loop
-/// nunca queda libre — contrato de tick_events); con tail drena hasta
-/// cut_frame. Un non-loop manda su cut (kLiveNoCut = sólo lo poda la
-/// duración del asset).
+/// Has this instance been left behind? A loop with no tail dies at end_frame
+/// (a loop is never left free — the tick_events contract); with a tail it
+/// drains until cut_frame. A non-loop is governed by its cut (kLiveNoCut = it
+/// is bounded only by the asset duration).
 constexpr bool live_instance_over(uint64_t frame, uint64_t end_frame,
                                   uint64_t cut_frame, bool looping) noexcept {
     const uint64_t last =
@@ -48,21 +47,23 @@ constexpr bool live_instance_over(uint64_t frame, uint64_t end_frame,
     return frame > last;
 }
 
-/// Decide la reanudación de UNA instancia.
+/// Decides the resume of ONE instance.
 ///
-/// `frame`         reloj emulado al reanudar (los steps en pausa avanzan y
-///                 cuentan: el offset sale de acá, no de un reloj de pared).
-/// `start_frame`   anclaje de la instancia (el rising-edge real).
-/// `end_frame`     fin de la ventana; kLiveNoCut = one-shot libre (su fin es
-///                 la duración del asset).
-/// `cut_frame`     corte duro end+tail (); kLiveNoCut = drena entero.
-/// `looping`       un loop no tiene «final natural»: vive hasta su ventana
-///                 (end, o cut si tiene tail) y su offset conserva la FASE —
-///                 el módulo lo aplica el player sobre el PCM decodificado.
-/// `fps`           timing del juego (PAL/NTSC); <= 1 usa 60.
-/// `asset_seconds` duración del asset si se conoce, 0 = desconocida (la
-///                 poda por duración queda en manos del player, que devuelve
-///                 éxito-sin-stream si el offset cae pasado el final, ).
+/// `frame`         emulated clock at resume time (steps taken while paused do
+///                 advance and count: the offset comes from here, not from a
+///                 wall clock).
+/// `start_frame`   the anchor of the instance (the real rising edge).
+/// `end_frame`     end of the window; kLiveNoCut = free one-shot (its end is
+///                 the asset duration).
+/// `cut_frame`     hard cut end+tail; kLiveNoCut = drains in full.
+/// `looping`       a loop has no "natural end": it lives until its window
+///                 (end, or cut if it has a tail) and its offset preserves
+///                 PHASE — the modulo is applied by the player over the
+///                 decoded PCM.
+/// `fps`           game timing (PAL/NTSC); <= 1 uses 60.
+/// `asset_seconds` asset duration if known, 0 = unknown (bounding by duration
+///                 is left to the player, which returns success-without-stream
+///                 if the offset lands past the end).
 inline LiveResumeDecision live_resume_decide(uint64_t frame,
                                              uint64_t start_frame,
                                              uint64_t end_frame,
@@ -76,19 +77,18 @@ inline LiveResumeDecision live_resume_decide(uint64_t frame,
     const double f = fps > 1.0 ? fps : 60.0;
     const double offset = static_cast<double>(frame - start_frame) / f;
 
-    // Non-loop con duración conocida: pasado el final del PCM no queda nada
-    // que reanudar — vencida, aunque su ventana/cut siga formalmente abierta.
+    // Non-loop with a known duration: past the end of the PCM there is nothing
+    // left to resume — expired, even if its window/cut is still formally open.
     if (!looping && asset_seconds > 0.0 && offset >= asset_seconds)
         return {LiveResumeAction::Finished, 0.0};
 
     return {LiveResumeAction::Restart, offset};
 }
 
-/// Offset de arranque en BYTES dentro del PCM decodificado, alineado a cuadro
-/// completo. Para un loop aplica el módulo: la fase se conserva tras
-/// cualquier cantidad de pausas. Devuelve un múltiplo de `bytes_per_frame`,
-/// siempre < pcm_bytes para loops; para non-loop puede devolver >= pcm_bytes
-/// (nada que sonar — el caller decide, ).
+/// Start offset in BYTES within the decoded PCM, aligned to a whole frame. For
+/// a loop it applies the modulo: phase is preserved after any number of pauses.
+/// Returns a multiple of `bytes_per_frame`, always < pcm_bytes for loops; for a
+/// non-loop it may return >= pcm_bytes (nothing to play — the caller decides).
 inline uint64_t live_resume_offset_bytes(double   offset_seconds,
                                          uint32_t freq,
                                          uint32_t bytes_per_frame,
@@ -100,8 +100,8 @@ inline uint64_t live_resume_offset_bytes(double   offset_seconds,
                                          static_cast<double>(freq)) *
                    bytes_per_frame;
     if (looping && pcm_bytes >= bytes_per_frame) {
-        // Módulo sobre cuadros ENTEROS del asset: pcm_bytes puede no ser
-        // múltiplo exacto de bytes_per_frame si el archivo viene raro.
+        // Modulo over WHOLE frames of the asset: pcm_bytes may not be an exact
+        // multiple of bytes_per_frame if the file comes out odd.
         const uint64_t whole = (pcm_bytes / bytes_per_frame) * bytes_per_frame;
         if (whole > 0) off %= whole;
     }

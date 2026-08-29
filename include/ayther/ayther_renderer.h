@@ -26,13 +26,13 @@
 #include "vulkan_backend/vk_texture.h"        // emu-frame texture
 #include "vulkan_backend/tile_tex_cache.h"    // HD tile textures
 #include "vulkan_backend/vk_sprite.h"         // HD sprite overlay (R3.2)
-#include "vulkan_backend/vk_indexed_plane.h"  // R-5 (): compose indexado
+#include "vulkan_backend/vk_indexed_plane.h"  // R-5: indexed compose
 
 #include <string>
 
 struct AyArchive;   // opaque (ayther_core_ffi.h) — HD asset source
 class  VkContext;
-class  AytherLayerStack;   // R-4 () — modelo de capas (ayther_layers.h)
+class  AytherLayerStack;   // R-4 — layer model (ayther_layers.h)
 
 namespace ayther {
 
@@ -67,29 +67,30 @@ public:
     // pack. Call on pack hot-reload, after vkDeviceWaitIdle().
     void evict_pack_textures(VkContext& ctx);
 
-    // Evict UNA textura de sprite HD por asset path (incluye sus variantes
-    // volteadas) para que el próximo frame la recargue del pack/disco. Para
-    // assets reescritos en vivo — el snapshot de una pose se regenera en cada
-    // edición del armado en Posar y el cache por-path lo dejaba viejo.
-    // evict_pack_textures tira TODO; esto es quirúrgico (espera GPU idle sólo
-    // si la textura estaba cargada).
+    // Evict ONE HD sprite texture by asset path (including its flipped
+    // variants) so the next frame reloads it from the pack/disk. For assets
+    // rewritten live — a pose snapshot is regenerated on every edit of the rig
+    // in Pose, and the per-path cache used to leave it stale.
+    // evict_pack_textures throws EVERYTHING away; this is surgical (it waits
+    // for GPU idle only if the texture was loaded).
     void evict_sprite_texture(VkContext& ctx, const std::string& path);
 
-    ///  fase 2: pre-calienta la textura de un asset SUELTO de disco (decode
-    /// asincrono) — llamar al asignar/alimentar poses para que la primera
-    /// aparicion no pague el decode (pico > frame budget → crackle de audio).
-    /// flip = variante volteada (bit0 h, bit1 v). No-op si el path no existe.
+    /// Phase 2: pre-warms the texture of a LOOSE asset from disk (async
+    /// decode) — call it when assigning/feeding poses so the first appearance
+    /// does not pay for the decode (a spike > frame budget → audio crackle).
+    /// flip = flipped variant (bit0 h, bit1 v). No-op if the path does not
+    /// exist.
     void prewarm_sprite(const std::string& path, uint8_t flip = 0);
 
-    /// Vestuario: pre-calienta la MÁSCARA de tinte de una pose (decode R8 con
-    /// clave propia `path#m…` — el mismo PNG puede estar asignado como asset y
-    /// como máscara). Misma política que prewarm_sprite.
+    /// Wardrobe: pre-warms the tint MASK of a pose (R8 decode under its own
+    /// key `path#m…` — the same PNG may be assigned both as an asset and as a
+    /// mask). Same policy as prewarm_sprite.
     void prewarm_sprite_mask(const std::string& path, uint8_t flip = 0);
 
-    /// HOT-RELOAD de autoría (2026-07-24): stat de los assets HD cargados
-    /// DESDE DISCO y evict de los que cambiaron/aparecieron — el próximo frame
-    /// los recarga (imágenes editadas en graphics/ fuera del Lab se veían
-    /// viejas hasta reiniciar). Llamar a baja cadencia (~1×/s).
+    /// Authoring HOT-RELOAD (2026-07-24): stats the HD assets loaded FROM
+    /// DISK and evicts the ones that changed or appeared — the next frame
+    /// reloads them (images edited in graphics/ outside the Lab used to look
+    /// stale until a restart). Call at a low cadence (~1×/s).
     void poll_disk_sprite_textures(VkContext& ctx);
 
     // Destroy all resources. Safe on a partially-initialized renderer.
@@ -97,31 +98,34 @@ public:
 
     bool is_ready() const { return target_.is_ready(); }
 
-    // Region util del ultimo frame subido (el fb cambia de modo de video).
+    // Useful region of the last uploaded frame (the fb changes video mode).
     uint32_t emu_frame_w() const { return emu_w_; }
     uint32_t emu_frame_h() const { return emu_h_; }
 
-    /// Readback (export MP4): graba en `cmd` la copia del offscreen (que quedó
-    /// SHADER_READ_ONLY tras render()) a un buffer host-visible — barrera a
-    /// TRANSFER_SRC + vkCmdCopyImageToBuffer (BGRA tightly packed, extent() del
-    /// target) + barrera de vuelta. `dst` debe tener extent().w*h*4 bytes.
+    /// Readback (MP4 export): records into `cmd` the copy of the offscreen
+    /// (left in SHADER_READ_ONLY after render()) to a host-visible buffer —
+    /// barrier to TRANSFER_SRC + vkCmdCopyImageToBuffer (BGRA tightly packed,
+    /// the target extent()) + barrier back. `dst` must hold extent().w*h*4
+    /// bytes.
     void copy_target_to_buffer(VkCommandBuffer cmd, VkBuffer dst);
 
-    // ---- Export de frames a CPU (MP4) ---------------------------------------
-    // Recursos de readback PROPIOS (cmd pool TRANSIENT + fence + buffer VMA
-    // host-visible con mapeo persistente — VMA es privado del engine, por eso
-    // viven acá y no en el lab). El export no se ata al present: cada
-    // export_frame renderiza `fv` al offscreen (que debe estar YA
-    // redimensionado a la resolución destino con resize()), copia al buffer,
-    // submitea con fence y ESPERA. Un solo buffer reusado (8K ≈ 95 MB host).
-    /// Crea los recursos para frames de extent() actual. false = sin recursos.
+    // ---- CPU frame export (MP4) --------------------------------------------
+    // OWN readback resources (a TRANSIENT cmd pool + fence + host-visible VMA
+    // buffer with persistent mapping — VMA is private to the engine, which is
+    // why they live here and not in the Lab). Export is not tied to present:
+    // each export_frame renders `fv` to the offscreen (which must ALREADY be
+    // resized to the destination resolution via resize()), copies to the
+    // buffer, submits with a fence and WAITS. A single reused buffer
+    // (8K ≈ 95 MB host).
+    /// Creates the resources for frames of the current extent(). false = no
+    /// resources.
     bool readback_init(VkContext& ctx);
-    /// Render + copia + submit + wait. Devuelve el BGRA mapeado (w*h*4 del
-    /// extent() del target; válido hasta el próximo export_frame) o nullptr.
-    /// `vdp_mask` = los mismos ojos de capa del render (bits AYTHER_LAYER_*:
-    /// A=1 B=2 W=4 OBJ=8). El Snapshot del Lab deja elegir qué capas entran en
-    /// la imagen; 0xFF = todas, que es lo que hacían el export MP4 y el
-    /// snapshot antes de que el parámetro existiera.
+    /// Render + copy + submit + wait. Returns the mapped BGRA (w*h*4 of the
+    /// target extent(); valid until the next export_frame) or nullptr.
+    /// `vdp_mask` = the same layer eyes as the render (AYTHER_LAYER_* bits:
+    /// A=1 B=2 W=4 OBJ=8). The Lab Snapshot lets the user choose which layers
+    /// enter the image; 0xFF = all of them, which is what the MP4 export and
+    /// the snapshot did before the parameter existed.
     const uint8_t* export_frame(VkContext& ctx, const FrameView& fv,
                                 AyArchive* pack, bool hd_on,
                                 const AytherLayerStack* layers = nullptr,
@@ -133,43 +137,46 @@ public:
     // HD tile substitutions and HD sprite pass. hd_on=false gives the raw emulator
     // look (M4 Original mode). `pack` provides HD asset bytes; null → emu only.
     //
-    // R-4 (): las lanes se despachan desde la LISTA DE CAPAS — orden
-    // explícito, visibilidad por capa, capas Custom insertables (no-op hasta
-    // R-7). `layers = nullptr` usa el stack por defecto (== el orden cableado
-    // histórico: los smokes y el export no cambian). Las capas VDP del stack
-    // NO se dibujan acá: su visibilidad viaja por la máscara de sesión
-    // (AytherLayerStack::vdp_mask, ruteada por el frontend).
-    // R-5 parte 2b: `vdp_mask` = los ojos de WORKSPACE (Editar/Pintar, bits
-    // AYTHER_LAYER_*: A=1 B=2 W=4 OBJ=8) — el ex canal 0x102, ahora un filtro
-    // por elemento del compose (AND con la visibilidad del stack). En frames
-    // de fallback al blit no aplica (el blit trae el frame completo).
+    // R-4: the lanes are dispatched from the LAYER LIST — explicit order,
+    // per-layer visibility, insertable Custom layers (a no-op until R-7).
+    // `layers = nullptr` uses the default stack (== the historical hard-wired
+    // order: the smokes and the export do not change). The stack's VDP layers
+    // are NOT drawn here: their visibility travels through the session mask
+    // (AytherLayerStack::vdp_mask, routed by the frontend).
+    // R-5 part 2b: `vdp_mask` = the WORKSPACE eyes (Edit/Paint,
+    // AYTHER_LAYER_* bits: A=1 B=2 W=4 OBJ=8) — the former 0x102 channel, now a
+    // per-element filter of the compose (ANDed with the stack visibility). On
+    // frames that fall back to the blit it does not apply (the blit brings the
+    // whole frame).
     void render(VkContext& ctx, VkCommandBuffer cmd, const FrameView& fv,
                 AyArchive* pack, bool hd_on = true,
                 const AytherLayerStack* layers = nullptr,
                 uint8_t vdp_mask = 0xFF);
 
-    // R-8 (): modo UV checker — vista de diagnóstico de autoría. Todo
-    // elemento SIN asset se pinta con un checker anclado al elemento, con el
-    // par de colores de SU CAPA (rosa+negro = autorado pero no cargó); el resto se
-    // atenúa (los HD dibujan normal encima). Solo afecta los pases de escena;
-    // en frames de fallback al blit no aplica.
+    // R-8: UV checker mode — an authoring diagnostic view. Every element
+    // WITHOUT an asset is painted with a checker anchored to the element, using
+    // the colour pair of ITS LAYER (pink+black = authored but failed to load);
+    // the rest is dimmed (the HD ones draw normally on top). It only affects
+    // the scene passes; on frames that fall back to the blit it does not
+    // apply.
     void set_checker(bool on) noexcept { checker_ = on; }
     bool checker() const noexcept { return checker_; }
 
-    // Capa ENFOCADA: la que se está autorando se compone a intensidad plena y
-    // el resto se atenúa, para que el foco de trabajo se lea de un vistazo.
-    // Índice de capa de escena (0=Plano B · 1=Plano A · 2=Window · 3=Sprites);
-    // -1 = sin foco (todo a intensidad plena).
+    // FOCUSED layer: the one being authored is composed at full intensity and
+    // the rest is dimmed, so the working focus reads at a glance.
+    // Scene layer index (0=Plane B · 1=Plane A · 2=Window · 3=Sprites);
+    // -1 = no focus (everything at full intensity).
     //
-    // Vive acá y no en el canal 0x108 del fork porque el dim es una decisión de
-    // COMPOSICIÓN, y la composición es nuestra desde R-5 (): aquel canal es
-    // booleano —atenúa «lo no-sprite»— y no sabe de una capa enfocada.
+    // It lives here and not in the fork's 0x108 channel because the dim is a
+    // COMPOSITION decision, and composition has been ours since R-5: that
+    // channel is boolean —it dims "the non-sprite"— and knows nothing about a
+    // focused layer.
     void set_focus_layer(int layer) noexcept { focus_layer_ = layer; }
     int  focus_layer() const noexcept { return focus_layer_; }
 
-    /// R-8: estado de carga del asset del SUB de un elemento (para el reporte
-    /// de cobertura del Lab). NotRequested/Pending/Ready/Failed; elementos sin
-    /// sub devuelven NotRequested.
+    /// R-8: load state of an element's SUB asset (for the Lab coverage
+    /// report). NotRequested/Pending/Ready/Failed; elements without a sub
+    /// return NotRequested.
     VkSprite::TexState sub_texture_state(const FrameView& fv,
                                          const SceneElement& e) const;
 
@@ -179,46 +186,48 @@ public:
     VkSampler   framebuffer_sampler() const { return target_.sampler(); }
     VkExtent2D  framebuffer_extent()  const { return target_.extent();  }
 
-    // ---- : imagen de COMPARACIÓN (preview A/B) --------------------------
-    // Un segundo offscreen que guarda una COPIA del frame ya renderizado, para
-    // poder mostrar dos versiones del mismo cuadro a la vez (split Original |
-    // AYTHER). Existe porque el renderer tiene un solo `target_`: sin una copia,
-    // dibujar las dos versiones exigiría renderizar dos veces por frame.
+    // ---- COMPARISON image (A/B preview) ------------------------------------
+    // A second offscreen holding a COPY of the already-rendered frame, so two
+    // versions of the same frame can be shown at once (split Original |
+    // AYTHER). It exists because the renderer has a single `target_`: without a
+    // copy, drawing both versions would require rendering twice per frame.
     //
-    // El uso previsto es EN PAUSA — el gesto de autoría es comparar UN cuadro:
-    // se renderiza la versión original, se captura acá, se renderiza la HD y se
-    // dibujan las dos. En vivo funcionaría igual, pero el costo pasa a ser por
-    // frame y esa decisión no la toma el renderer.
+    // The intended use is WHILE PAUSED — the authoring gesture is comparing ONE
+    // frame: render the original version, capture it here, render the HD one
+    // and draw both. Live it would work the same, but the cost becomes
+    // per-frame and that decision is not the renderer's to make.
     //
-    // No se crea hasta que alguien la pide (capture_compare): un Lab que nunca
-    // abre el A/B no paga la memoria de un segundo canvas, que a 8K no es poca.
+    // It is not created until somebody asks for it (capture_compare): a Lab
+    // that never opens the A/B does not pay the memory of a second canvas,
+    // which at 8K is not small.
     bool        compare_ready() const { return compare_.is_ready(); }
-    /// : la IMAGEN, para el split del runtime — que compone con blits por
-    /// región y no muestreando, así que necesita el handle y no la vista.
+    /// The IMAGE, for the runtime split — which composes with per-region blits
+    /// rather than sampling, so it needs the handle and not the view.
     VkImage     compare_image()   const { return compare_.image();   }
     VkImageView compare_view()    const { return compare_.view();    }
     VkSampler   compare_sampler() const { return compare_.sampler(); }
     VkExtent2D  compare_extent()  const { return compare_.extent();  }
 
-    /// Copia el offscreen ACTUAL (tal como lo dejó render()) a la imagen de
-    /// comparación. Crea/redimensiona la imagen si hace falta. Grabar antes de
-    /// re-renderizar el mismo cuadro con la otra configuración.
-    /// false = no se pudo crear la imagen (sin memoria) — el caller degrada a
-    /// mostrar una sola versión.
+    /// Copies the CURRENT offscreen (exactly as render() left it) into the
+    /// comparison image. Creates/resizes the image if needed. Record it before
+    /// re-rendering the same frame with the other configuration.
+    /// false = the image could not be created (out of memory) — the caller
+    /// degrades to showing a single version.
     bool capture_compare(VkContext& ctx, VkCommandBuffer cmd);
-    /// Libera la imagen de comparación (salir del A/B devuelve la memoria).
+    /// Releases the comparison image (leaving the A/B returns the memory).
     void compare_release(VkContext& ctx);
 
-    /// Lee la imagen de comparación a CPU — BGRA del extent del target, con los
-    /// mismos recursos de readback que `export_frame` (requiere readback_init).
-    /// Existe para el ORÁCULO del A/B: lo que hace que la comparación no mienta
-    /// es que la copia contenga exactamente lo que el offscreen tenía al
-    /// capturar, y eso sólo se puede afirmar leyéndola. nullptr si no hay copia
-    /// o el submit falla.
+    /// Reads the comparison image back to the CPU — BGRA of the target extent,
+    /// using the same readback resources as `export_frame` (requires
+    /// readback_init). It exists for the A/B ORACLE: what makes the comparison
+    /// honest is that the copy contains exactly what the offscreen held at
+    /// capture time, and that can only be asserted by reading it. nullptr if
+    /// there is no copy or the submit fails.
     const uint8_t* readback_compare(VkContext& ctx);
 
-    /// Captura + submit propio, para usar capture_compare fuera de un frame
-    /// (oráculos). En el Lab la captura viaja en el cmd del frame en curso.
+    /// Capture + its own submit, so capture_compare can be used outside a
+    /// frame (oracles). In the Lab the capture travels in the cmd of the frame
+    /// in progress.
     bool capture_compare_now(VkContext& ctx);
 
 private:
@@ -229,9 +238,9 @@ private:
     static constexpr uint32_t kEmuH = 240;
 
     VkRenderTarget target_;       // offscreen HD frame
-    VkRenderTarget compare_;      // : copia para el A/B (lazy, ver arriba)
-    // ---- Readback del export MP4 (readback_init/export_frame) --------------
-    // VmaAllocation forward-declarado como en vk_texture.h (VMA privado).
+    VkRenderTarget compare_;      // copy for the A/B (lazy, see above)
+    // ---- MP4 export readback (readback_init/export_frame) ------------------
+    // VmaAllocation forward-declared as in vk_texture.h (VMA is private).
     VkCommandPool   rb_pool_  = VK_NULL_HANDLE;
     VkCommandBuffer rb_cmd_   = VK_NULL_HANDLE;
     VkFence         rb_fence_ = VK_NULL_HANDLE;
@@ -239,16 +248,16 @@ private:
     VmaAllocation   rb_alloc_ = VK_NULL_HANDLE;
     void*           rb_map_   = nullptr;
     VkTexture      emu_tex_;
-    uint32_t  emu_w_ = 0, emu_h_ = 0;   // dims del ultimo frame subido      // emulator software framebuffer → GPU
+    uint32_t  emu_w_ = 0, emu_h_ = 0;   // dims of the last uploaded frame   // emulator software framebuffer → GPU
     TileTexCache   tile_cache_;   // HD tile textures from the pack
     VkSprite       sprite_;       // HD sprite overlay pass (into the offscreen)
     bool           sprite_ok_ = false;  // false if the SPIR-V shaders are absent
-    // R-5 (): el pipeline indexado (VRAM+CRAM en GPU) con el que se compone
-    // la escena desde el inventario cuando fv.scene está publicada — sin blit.
+    // R-5: the indexed pipeline (VRAM+CRAM on the GPU) used to compose the
+    // scene from the inventory when fv.scene is published — no blit.
     VkIndexedPlane indexed_;
     bool           indexed_ok_ = false;
-    bool           checker_    = false;   // R-8 (): modo UV checker
-    int            focus_layer_ = -1;     // capa enfocada (-1 = ninguna)
+    bool           checker_    = false;   // R-8: UV checker mode
+    int            focus_layer_ = -1;     // focused layer (-1 = none)
     // Capacity-retaining temporary storage belongs to this renderer instance.
     // Keeping it behind an implementation object avoids exposing render-only
     // element types in the public header while preserving allocation reuse.

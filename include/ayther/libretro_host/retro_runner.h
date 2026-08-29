@@ -67,12 +67,12 @@ public:
         return fn_retro_get_memory_size(3 /*RETRO_MEMORY_VIDEO_RAM*/);
     }
 
-    // --- CRAM access (read-only — Mapa multi-espacio del Maper) -------------
-    // Id PRIVADO del fork Ayther de GPX (no hay id libretro estándar para
-    // CRAM): 128 bytes = 64 colores de 9 bits como uint16 host-endian en el
-    // layout interno de GPX (0000BBB0GGG0RRR0). Cores stock devuelven null.
+    // --- CRAM access (read-only — the Mapper's multi-space map) -------------
+    // PRIVATE id of the Ayther fork of GPX (there is no standard libretro id
+    // for CRAM): 128 bytes = 64 nine-bit colours as host-endian uint16 in the
+    // internal GPX layout (0000BBB0GGG0RRR0). Stock cores return null.
     static constexpr unsigned kAytherMemoryCram = 0x100;
-    [[deprecated("E-5: usar read_cram_v1() con ABI v1")]]
+    [[deprecated("E-5: use read_cram_v1() with ABI v1")]]
     const uint8_t* color_ram() const {
         if (!fn_retro_get_memory_data) return nullptr;
         return static_cast<const uint8_t*>(
@@ -83,11 +83,11 @@ public:
         return fn_retro_get_memory_size(kAytherMemoryCram);
     }
 
-    // --- VDP registers (read-only — Maper tilemap viewer, M9.3) -------------
-    // Id PRIVADO del fork: los 32 registros del VDP (reg[0x20]). El Lab deriva
-    // las bases de las name tables de planos y el tamaño del plano.
+    // --- VDP registers (read-only — Mapper tilemap viewer, M9.3) ------------
+    // PRIVATE id of the fork: the 32 VDP registers (reg[0x20]). The Lab derives
+    // the plane name-table bases and the plane size from them.
     static constexpr unsigned kAytherMemoryVdpRegs = 0x101;
-    [[deprecated("E-5: usar read_vdp_regs_v1() con ABI v1")]]
+    [[deprecated("E-5: use read_vdp_regs_v1() with ABI v1")]]
     const uint8_t* vdp_regs() const {
         if (!fn_retro_get_memory_data) return nullptr;
         return static_cast<const uint8_t*>(
@@ -98,12 +98,12 @@ public:
         return fn_retro_get_memory_size(kAytherMemoryVdpRegs);
     }
 
-    // --- VSRAM (read — scroll vertical) -------------------------------------
-    // 128 bytes = 64 entradas u16 (11 bits de vscroll). El hscroll vive en VRAM;
-    // esto es lo único que faltaba para resolver la posición en pantalla de un
-    // tile de plano (Fase 2c). Cores stock devuelven null.
+    // --- VSRAM (read — vertical scroll) -------------------------------------
+    // 128 bytes = 64 u16 entries (11 bits of vscroll). The hscroll lives in
+    // VRAM; this was the only thing missing to resolve the on-screen position
+    // of a plane tile (Phase 2c). Stock cores return null.
     static constexpr unsigned kAytherMemoryVsram = 0x107;
-    [[deprecated("E-5: usar read_vsram_v1() con ABI v1")]]
+    [[deprecated("E-5: use read_vsram_v1() with ABI v1")]]
     const uint8_t* vsram() const {
         if (!fn_retro_get_memory_data) return nullptr;
         return static_cast<const uint8_t*>(
@@ -114,29 +114,29 @@ public:
         return fn_retro_get_memory_size(kAytherMemoryVsram);
     }
 
-    // --- RAM del Z80 (, ABI 1.9) -----------------------------------------
+    // --- Z80 RAM (ABI 1.9) --------------------------------------------------
     //
-    // Los 8 KB que el 68k ve en 0xA00000-0xA01FFF. El 68k y el Z80 se reparten
-    // el trabajo de sonido, y varios juegos dejan ahí el id del tema a tocar —
-    // no en work RAM.
+    // The 8 KB the 68k sees at 0xA00000-0xA01FFF. The 68k and the Z80 split the
+    // sound work, and several games leave the id of the track to play there —
+    // not in work RAM.
     //
-    // POR QUÉ HAY UN ACCESSOR PARA ESTO. Para grabar un tema limpio desde el
-    // Sound Test hay que encontrar la casilla donde el 68k deja el id. En
-    // Golden Axe el diferencial de work RAM dejó dos candidatos y la
-    // confirmación automática los descartó a los dos: la única hipótesis que
-    // quedaba era esta RAM, y no había dónde mirar.
+    // WHY THERE IS AN ACCESSOR FOR THIS. To record a clean track from the Sound
+    // Test one has to find the slot where the 68k leaves the id. In Golden Axe
+    // the work-RAM differential left two candidates and automatic confirmation
+    // discarded both: the only hypothesis left was this RAM, and there was
+    // nowhere to look.
     //
-    // Cores stock devuelven null, como con el resto de las regiones del fork.
+    // Stock cores return null, as with the rest of the fork's regions.
     static constexpr unsigned kAytherMemoryZ80Ram = 0x10F;
     const uint8_t* z80_ram() const {
         if (!fn_retro_get_memory_data) return nullptr;
         return static_cast<const uint8_t*>(
             fn_retro_get_memory_data(kAytherMemoryZ80Ram));
     }
-    /// La misma región, mutable. ESCRIBIRLA MIENTRAS EL Z80 CORRE ES UNA
-    /// CARRERA: hay que hacerlo con el bus tomado, o aceptar que lo escrito
-    /// puede durar un frame — que para disparar un sonido por id alcanza, y
-    /// para cualquier otra cosa no.
+    /// The same region, mutable. WRITING IT WHILE THE Z80 RUNS IS A RACE: it
+    /// has to be done with the bus held, or one accepts that what is written
+    /// may last a frame — which is enough to trigger a sound by id, and not
+    /// enough for anything else.
     uint8_t* z80_ram_mut() {
         if (!fn_retro_get_memory_data) return nullptr;
         return static_cast<uint8_t*>(
@@ -148,87 +148,93 @@ public:
     }
 
     // --- Parsed sprites this frame (READ list 0x10B + WRITE-reset count 0x10C) ---
-    // Detección de sprites por lo que parse_satb REALMENTE parseó: entradas de
-    // **10 bytes** — yr/xr/attr u16 + w/h u8 + sat_idx/chain_pos u8 (el
-    // `ayther_sprite_v1` del fork), deduplicado. El consumidor real
-    // (`ayther_sprite_hasher_process_sprites`) usa ese stride; este comentario
-    // decía 8 y hacía leer corrido a quien le creyera. Es robusto a que el juego reescriba el
-    // SAT a mitad de frame / cambie su base (genio del logo Sega de Aladdin), donde
-    // leer el SAT a fin de frame muestra solo placeholders. Reset (count=0) antes de
-    // run_frame; leer después. No-op con core stock → la FFI cae al autodetect.
-    // --- Export arbitrario del core (sondas/spikes — ) -------------------
-    // Resuelve un símbolo exportado del módulo REALMENTE cargado por ESTE
-    // runner (con multi-instancia cada runner carga SU copia del DLL, con
-    // estáticos propios: resolver sobre otra carga sería tocar OTRO estado).
-    // nullptr con un core que no lo exporte (stock → degradación limpia).
+    // Sprite detection from what parse_satb ACTUALLY parsed: **10-byte**
+    // entries — yr/xr/attr u16 + w/h u8 + sat_idx/chain_pos u8 (the fork's
+    // `ayther_sprite_v1`), deduplicated. The real consumer
+    // (`ayther_sprite_hasher_process_sprites`) uses that stride; this comment
+    // used to say 8 and made anyone who believed it read misaligned. It is
+    // robust to the game rewriting the SAT mid-frame / changing its base (the
+    // genie in Aladdin's Sega logo), where reading the SAT at end of frame
+    // shows only placeholders. Reset (count=0) before run_frame; read after.
+    // No-op with a stock core → the FFI falls back to autodetect.
+    // --- Arbitrary core export (probes/spikes) ------------------------------
+    // Resolves a symbol exported by the module ACTUALLY loaded by THIS runner
+    // (with multiple instances each runner loads ITS copy of the DLL, with its
+    // own statics: resolving against another load would touch ANOTHER state).
+    // nullptr with a core that does not export it (stock → clean
+    // degradation).
     template <typename FnPtr>
     FnPtr core_sym(const char* name) const { return loader_.sym<FnPtr>(name); }
 
-    // --- ABI AYTHER v1 (E-1, ) -------------------------------------------
-    // El contrato VERSIONADO del fork, negociado al cargar el DLL. Hasta acá
-    // todo el diálogo con el core iba por `retro_get_memory_data(0x100-0x10E)`:
-    // punteros mutables crudos, sin versión, sin validación y sin forma de
-    // preguntar qué entiende el core que hay del otro lado.
+    // --- AYTHER ABI v1 (E-1) ------------------------------------------------
+    // The fork's VERSIONED contract, negotiated when the DLL is loaded. Until
+    // now the whole dialogue with the core went through
+    // `retro_get_memory_data(0x100-0x10E)`: raw mutable pointers, with no
+    // version, no validation, and no way to ask what the core on the other side
+    // understands.
     //
-    // La negociación es OPCIONAL y no participa del éxito de la carga: un core
-    // stock no exporta el símbolo y eso es perfectamente válido — se sigue por
-    // el camino legacy. `has_ayther_v1()` es el gate con el que los callers
-    // eligen un camino u otro (E-3/E-4).
+    // The negotiation is OPTIONAL and does not take part in the success of the
+    // load: a stock core does not export the symbol and that is perfectly valid
+    // — the legacy path is followed. `has_ayther_v1()` is the gate callers use
+    // to pick one path or the other (E-3/E-4).
 
-    /// True si el core exporta la ABI v1 y la negociación fue exitosa.
+    /// True if the core exports ABI v1 and the negotiation succeeded.
     bool has_ayther_v1() const { return ayther_api_ != nullptr; }
 
-    /// El medio cargado es una imagen de DISCO (.iso/.cue/.chd) — o sea Sega CD,
-    /// el único hardware con chips que el router de voces no espeja: el PCM
-    /// RF5C164 y el CDDA. Se resuelve por la extensión al init, antes del primer
-    /// frame, y no por lo que el juego llegue a tocar ().
+    /// The loaded medium is a DISC image (.iso/.cue/.chd) — i.e. Sega CD, the
+    /// only hardware with chips the voice router does not mirror: the RF5C164
+    /// PCM and the CDDA. It is resolved from the extension at init, before the
+    /// first frame, and not from whatever the game happens to touch.
     bool cd_media() const { return cd_media_; }
 
-    /// Descriptor negociado; nullptr si `!has_ayther_v1()`. Propiedad del core:
-    /// vale hasta `shutdown()` y sólo se toca desde el hilo de emulación.
+    /// The negotiated descriptor; nullptr if `!has_ayther_v1()`. Owned by the
+    /// core: valid until `shutdown()` and only touched from the emulation
+    /// thread.
     const ayther_interface_v1* ayther_api() const { return ayther_api_; }
 
-    /// La versión de la ABI que declara el core (0 sin ABI). Major/minor con
-    /// `AYTHER_ABI_VERSION_MAJOR/MINOR`. La regla es major == 1 y minor >= lo
-    /// que se necesite, nunca `==`: la ABI es aditiva (guía 1.9 §3).
+    /// The ABI version the core declares (0 without the ABI). Major/minor via
+    /// `AYTHER_ABI_VERSION_MAJOR/MINOR`. The rule is major == 1 and minor >=
+    /// whatever is needed, never `==`: the ABI is additive (guide 1.9 §3).
     uint32_t ayther_abi_version() const { return ayther_api_ ? ayther_api_->abi_version : 0u; }
 
-    /// Las suscripciones que este Engine CONSUME — y sólo ésas (ABI 1.9, guía
-    /// §4: «pedir sólo lo que se va a leer»). Hasta la ABI 1.3 esto era
-    /// `AYTHER_SUB_ALL` y daba lo mismo, porque los siete bits eran los siete
-    /// que se leían. Desde 1.9 `AYTHER_SUB_ALL` es 0xFFF e incluye ATTRIBUTION
-    /// (un byte por pixel), LINE_STATE / LINE_CRAM / LINE_CELLS y FRAME_HASH
-    /// (~100 KB recorridos por frame): cada bit activo mueve el renderer del
-    /// core al clon observado y paga lo que captura, y nadie en el Engine lee
-    /// todavía esas regiones. Cuando aparezca el consumidor (anclaje por tile,
-    /// FRAME_HASH del Lab) se agrega SU bit acá, junto con quien lo lee.
+    /// The subscriptions this Engine CONSUMES — and only those (ABI 1.9, guide
+    /// §4: "ask only for what will be read"). Up to ABI 1.3 this was
+    /// `AYTHER_SUB_ALL` and it made no difference, because the seven bits were
+    /// the seven that were read. Since 1.9 `AYTHER_SUB_ALL` is 0xFFF and
+    /// includes ATTRIBUTION (one byte per pixel), LINE_STATE / LINE_CRAM /
+    /// LINE_CELLS and FRAME_HASH (~100 KB walked per frame): every active bit
+    /// moves the core renderer to the observed clone and pays for what it
+    /// captures, and nobody in the Engine reads those regions yet. When the
+    /// consumer appears (per-tile anchoring, the Lab's FRAME_HASH) ITS bit gets
+    /// added here, alongside whoever reads it.
     static constexpr uint32_t kEngineSubscriptions =
         AYTHER_SUB_VDP_MEMORY | AYTHER_SUB_SPRITE_CAPTURE | AYTHER_SUB_RENDER_CONTROLS |
         AYTHER_SUB_RASTER_TRACKING | AYTHER_SUB_AUDIO_WRITES | AYTHER_SUB_RECOMPOSITION |
         AYTHER_SUB_AUDIO_EVENTS;
 
-    /// Bits de `fallback_reasons` (snapshot) / 0x10E (legacy). El header 1.9 no
-    /// los nombra; la guía de integración §5.8 sí, y de ahí salen. `> 0` sigue
-    /// siendo «fallback» para todo el mundo; estos dos merecen distinguirse:
-    /// OVERFLOW = el journal pasó de 256 eventos y `recompose_multilayer`
-    /// devuelve RC_JOURNAL_OVERFLOW en vez de un prefijo plausible;
-    /// UNSUPPORTED_CONTROLS = un control que pedimos no aplica en este modo.
+    /// Bits of `fallback_reasons` (snapshot) / 0x10E (legacy). The 1.9 header
+    /// does not name them; the integration guide §5.8 does, and that is where
+    /// they come from. `> 0` still means "fallback" to everyone; these two
+    /// deserve distinguishing: OVERFLOW = the journal passed 256 events and
+    /// `recompose_multilayer` returns RC_JOURNAL_OVERFLOW instead of a
+    /// plausible prefix; UNSUPPORTED_CONTROLS = a control we asked for does not
+    /// apply in this mode.
     static constexpr uint32_t kRasterReasonJournalOverflow     = UINT32_C(1) << 7;
     static constexpr uint32_t kRasterReasonUnsupportedControls = UINT32_C(1) << 8;
 
-    /// Pide lo que el Engine consume (`kEngineSubscriptions`), acotado a lo que
-    /// el core soporta. Devuelve la máscara activada (0 con un core sin ABI,
-    /// que es el camino legacy y no necesita pedir).
+    /// Asks for what the Engine consumes (`kEngineSubscriptions`), bounded by
+    /// what the core supports. Returns the enabled mask (0 with a core without
+    /// the ABI, which is the legacy path and needs no request).
     ///
-    /// El fork no instrumenta NADA hasta que alguien lo declara: sin esto el log
-    /// de escrituras de chip viene vacío, el probe de audio no emite y la
-    /// máscara de mute se ignora EN SILENCIO. Un consumidor que no lo sabe no ve
-    /// un error: ve ceros, que es exactamente lo que un oráculo confunde con
-    /// «esto está en silencio como esperaba» (2026-08-13: cuatro herramientas
-    /// medían un core mudo y lo reportaban como resultado).
+    /// The fork instruments NOTHING until somebody declares it: without this
+    /// the chip write log comes back empty, the audio probe emits nothing and
+    /// the mute mask is ignored SILENTLY. A consumer that does not know this
+    /// does not see an error: it sees zeros, which is exactly what an oracle
+    /// confuses with "this is silent as expected" (2026-08-13: four tools were
+    /// measuring a mute core and reporting it as a result).
     ///
-    /// Es idempotente y no pisa nada. Los tests de la ABI (`abi_*`) piden a mano
-    /// a propósito — ahí la suscripción ES lo que se está probando.
+    /// It is idempotent and overrides nothing. The ABI tests (`abi_*`) ask by
+    /// hand on purpose — there the subscription IS what is being tested.
     uint32_t subscribe_all_supported() {
         if (!ayther_api_ || !(ayther_api_->capabilities & AYTHER_CAP_SUBSCRIPTIONS_V1))
             return 0;
@@ -241,43 +247,44 @@ public:
     }
 
 
-    // --- Lecturas por la ABI v1 (E-3, ) ----------------------------------
-    // Paralelas a los accessors legacy, que siguen intactos: el caller elige con
-    // `has_ayther_v1()`. La diferencia de fondo con el camino viejo es que acá
-    // la lectura VALIDA — hay una generación de snapshot que dice si lo leído
-    // corresponde al frame que se cree, y un estado de suscripción que distingue
-    // «no hay datos» de «nadie los pidió». Con los punteros crudos las dos
-    // situaciones se ven igual: memoria con algo adentro.
+    // --- Reads through ABI v1 (E-3) -----------------------------------------
+    // Parallel to the legacy accessors, which remain untouched: the caller
+    // picks with `has_ayther_v1()`. The fundamental difference from the old
+    // path is that here the read VALIDATES — there is a snapshot generation
+    // that says whether what was read belongs to the frame one believes, and a
+    // subscription state that distinguishes "there is no data" from "nobody
+    // asked for it". With the raw pointers both situations look the same:
+    // memory with something in it.
     struct AytherReadResult {
         int32_t  status     = AYTHER_STATUS_UNSUPPORTED;
-        uint32_t count      = 0;   ///< elementos leídos
-        uint64_t generation = 0;   ///< generación que devolvió el core
+        uint32_t count      = 0;   ///< elements read
+        uint64_t generation = 0;   ///< generation the core returned
         bool ok() const { return status == AYTHER_STATUS_OK; }
     };
 
-    /// Snapshot del frame ACTUAL. Llamar después de `run_frame()`: la ABI
-    /// resetea sus contadores en el frame boundary, así que este snapshot es el
-    /// que reemplaza a los `reset_*()` manuales del camino legacy.
+    /// Snapshot of the CURRENT frame. Call it after `run_frame()`: the ABI
+    /// resets its counters at the frame boundary, so this snapshot is what
+    /// replaces the manual `reset_*()` calls of the legacy path.
     AytherReadResult capture_frame_snapshot(ayther_frame_snapshot_v1& out) const;
 
-    /// `SYSTEM` (ABI 1.5): modo del VDP (4/5), h40, interlace, S/H, PAL y el
-    /// viewport del frame emitido con su offset (Game Gear = 160×144 en
-    /// (48,24)). Sin suscripción; se llena al leer. Es la fuente del modo en
-    /// vez de decodificar registros: esa decodificación ya se corrigió una vez
-    /// en el core y la copia del Engine no se enteró (guía §5.1). Devuelve
-    /// UNSUPPORTED sin la capability.
+    /// `SYSTEM` (ABI 1.5): VDP mode (4/5), h40, interlace, S/H, PAL and the
+    /// viewport of the emitted frame with its offset (Game Gear = 160×144 at
+    /// (48,24)). No subscription; it is filled on read. It is the source of
+    /// truth for the mode instead of decoding registers: that decoding was
+    /// already fixed once in the core and the Engine's copy never found out
+    /// (guide §5.1). Returns UNSUPPORTED without the capability.
     AytherReadResult read_system_v1(ayther_system_v1& out) const;
 
-    /// Región entera al buffer del caller, validando la generación.
+    /// A whole region into the caller's buffer, validating the generation.
     AytherReadResult read_region_v1(uint32_t region, void* out, uint32_t bytes,
                                     uint64_t generation) const;
 
-    // VDP (AYTHER_SUB_VDP_MEMORY). `out` debe tener el byte_size de la región.
-    /// Cuántos bytes dice la ABI que mide una región (0 si no hay ABI o no la
-    /// conoce). Los `read_*_v1` de VDP escriben ESE tamaño, no el que reporta
-    /// `retro_get_memory_size`: quien dimensione el buffer con el número legacy
-    /// está apostando a que las dos fuentes coincidan. Hoy coinciden; esto
-    /// existe para que el caller no tenga que apostar.
+    // VDP (AYTHER_SUB_VDP_MEMORY). `out` must hold the byte_size of the region.
+    /// How many bytes the ABI says a region measures (0 if there is no ABI or
+    /// it does not know it). The VDP `read_*_v1` calls write THAT size, not the
+    /// one `retro_get_memory_size` reports: whoever sizes the buffer with the
+    /// legacy number is betting that the two sources agree. Today they do; this
+    /// exists so the caller does not have to bet.
     size_t abi_region_bytes(uint32_t region) const;
 
     AytherReadResult read_vram_v1    (void* out, const ayther_frame_snapshot_v1& s) const;
@@ -285,125 +292,127 @@ public:
     AytherReadResult read_vdp_regs_v1(void* out, const ayther_frame_snapshot_v1& s) const;
     AytherReadResult read_vsram_v1   (void* out, const ayther_frame_snapshot_v1& s) const;
 
-    /// Sprites parseados (AYTHER_SUB_SPRITE_CAPTURE), con FORWARD-COMPAT: si el
-    /// core declara un `element_size` mayor que el struct que este Engine
-    /// conoce, se lee a un temporal y se copian sólo los campos conocidos. Sin
-    /// eso, un core más nuevo desalinearía la lectura entera — que es
-    /// exactamente lo que venía pasando por coincidencia con el puntero legacy
-    /// (8 bytes leídos de un layout que hoy tiene 10).
+    /// Parsed sprites (AYTHER_SUB_SPRITE_CAPTURE), with FORWARD COMPATIBILITY:
+    /// if the core declares an `element_size` larger than the struct this
+    /// Engine knows, it reads into a temporary and copies only the known
+    /// fields. Without that, a newer core would misalign the whole read — which
+    /// is exactly what was happening by coincidence with the legacy pointer
+    /// (8 bytes read from a layout that today has 10).
     AytherReadResult read_parsed_sprites_v1(ayther_sprite_v1* out, uint32_t max,
                                             const ayther_frame_snapshot_v1& s) const;
 
-    /// Escrituras de chip del frame (AYTHER_SUB_AUDIO_WRITES).
+    /// The frame's chip writes (AYTHER_SUB_AUDIO_WRITES).
     AytherReadResult read_audio_writes_v1(ayther_audio_write_v1* out, uint32_t max,
                                           const ayther_frame_snapshot_v1& s) const;
 
-    /// Razones de fallback del raster (AYTHER_SUB_RASTER_TRACKING). El snapshot
-    /// ya las trae; 0 si no hay ABI o no se está suscripto.
+    /// Raster fallback reasons (AYTHER_SUB_RASTER_TRACKING). The snapshot
+    /// already carries them; 0 if there is no ABI or no subscription.
     uint32_t read_raster_fallback_v1(const ayther_frame_snapshot_v1& s) const;
 
-    // --- Frame Delta Stream (E-6, ) --------------------------------------
-    // Qué se ensució en el frame, dicho por el core en vez de deducido: un byte
-    // por *pattern name* (32 bytes de VRAM cada uno) más los contadores del
-    // frame, incluido `raster_event_count` — el tamaño del journal de eventos
-    // raster, que es el único dato de acá que el snapshot NO trae y el insumo
-    // del replay multicapa de .
+    // --- Frame Delta Stream (E-6) -------------------------------------------
+    // What got dirtied in the frame, told by the core instead of deduced: one
+    // byte per *pattern name* (32 bytes of VRAM each) plus the frame counters,
+    // including `raster_event_count` — the size of the raster event journal,
+    // which is the only value here the snapshot does NOT carry and the input to
+    // the multi-layer replay.
     //
-    // Se refresca solo, dentro de `run_frame()`. Ver `poll_frame_delta_()` para
-    // por qué el poll vive ahí y no en el caller.
+    // It refreshes itself, inside `run_frame()`. See `poll_frame_delta_()` for
+    // why the poll lives there and not in the caller.
     //
-    // LO QUE ESTO **NO** HABILITA, y conviene saberlo antes de intentarlo: no
-    // sirve para dejar de leer VRAM entera en `refresh_abi_mirror()`. No por el
-    // dato —desde  el bitmask es un superconjunto fiel de lo que cambió,
-    // verificado frame a frame en `abi_frame_delta`— sino porque no hay nada que
-    // ganar: leer los 64 KiB por la ABI mide **0,002 ms/frame**, el 0,01% de un
-    // frame de 16,6 ms. La invalidación selectiva cambiaría una lectura lineal
-    // por un recorrido de 2048 bytes y N llamadas a `read_region`, para ahorrar
-    // dos microsegundos y agregar un estado incremental que hay que invalidar
-    // bien en cada reset, unserialize y cambio de core.
+    // WHAT THIS DOES **NOT** ENABLE, worth knowing before attempting it: it is
+    // no use for dropping the full VRAM read in `refresh_abi_mirror()`. Not
+    // because of the data —the bitmask is a faithful superset of what changed,
+    // verified frame by frame in `abi_frame_delta`— but because there is
+    // nothing to gain: reading the 64 KiB through the ABI measures **0.002
+    // ms/frame**, 0.01% of a 16.6 ms frame. Selective invalidation would trade
+    // a linear read for a walk over 2048 bytes and N `read_region` calls, to
+    // save two microseconds and add incremental state that has to be
+    // invalidated correctly on every reset, unserialize and core change.
     bool has_frame_delta() const { return last_delta_ok_; }
-    /// Válido sólo con `has_frame_delta()`; queda del último `run_frame()`.
+    /// Valid only with `has_frame_delta()`; left over from the last
+    /// `run_frame()`.
     const ayther_frame_delta_v1& frame_delta() const { return last_delta_; }
 
-    // --- Eventos de audio tipificados () ---------------------------------
-    // El SEGUNDO camino de audio, y existe por una razón concreta: el chip PCM
-    // de Sega CD no tiene bus expuesto, así que `read_audio_writes_v1` —que
-    // transporta escrituras crudas de FM y PSG— no lo lleva ni lo puede llevar.
-    // Este camino trae eventos YA TIPIFICADOS (key-on/off, volumen, pitch).
+    // --- Typed audio events -------------------------------------------------
+    // The SECOND audio path, and it exists for a concrete reason: the Sega CD
+    // PCM chip has no exposed bus, so `read_audio_writes_v1` —which carries raw
+    // FM and PSG writes— does not carry it and cannot. This path brings
+    // ALREADY-TYPED events (key-on/off, volume, pitch).
     //
-    // Quién manda para qué chip, por escrito: las escrituras crudas son la
-    // fuente para FM y PSG; los eventos, para el PCM. La IDENTIDAD de un sonido
-    // no la decide ninguno de los dos — la calcula el detector
-    // (`core/src/audio_event.rs`) para los tres chips por igual.
+    // Which one governs which chip, in writing: the raw writes are the source
+    // for FM and PSG; the events, for the PCM. The IDENTITY of a sound is
+    // decided by neither — it is computed by the detector
+    // (`core/src/audio_event.rs`) for all three chips alike.
     //
-    // Es CONSUMO-AL-POLLEAR sobre una cola SPSC: lo que se lee desaparece, así
-    // que hay un solo consumidor y llama una vez por frame. `event_size` sale
-    // del core y no de un `sizeof` local — el struct pasó a ser una unión y
-    // cambió de tamaño una vez ya.
+    // It is CONSUME-ON-POLL over an SPSC queue: what is read disappears, so
+    // there is a single consumer and it calls once per frame. `event_size`
+    // comes from the core and not from a local `sizeof` — the struct became a
+    // union and changed size once already.
     //
-    // Devuelve la cantidad de eventos escritos en `out` (0 sin ABI, sin
-    // suscripción o sin nada pendiente).
+    // Returns the number of events written into `out` (0 without the ABI,
+    // without a subscription, or with nothing pending).
     uint32_t poll_audio_events_v1(ayther_audio_event_v1* out, uint32_t max) const;
-    /// Eventos que el transporte descartó por falta de polleo, acumulado.
+    /// Events the transport dropped for lack of polling, accumulated.
     uint32_t audio_events_dropped() const;
 
-    // --- Escrituras de control por la ABI v1 (E-4, ) ---------------------
-    // Las escrituras legacy son `*p = valor` sobre memoria del core: no validan
-    // bounds, no avisan del cambio de generación (el sistema de snapshots queda
-    // desincronizado) y nada impide hacerlas en pleno `retro_run`. `write_control`
-    // valida las tres cosas y devuelve la generación nueva.
+    // --- Control writes through ABI v1 (E-4) --------------------------------
+    // The legacy writes are `*p = value` over core memory: they do not validate
+    // bounds, do not signal the generation change (the snapshot system goes out
+    // of sync) and nothing stops them happening in the middle of `retro_run`.
+    // `write_control` validates all three and returns the new generation.
     struct AytherWriteResult {
         int32_t  status         = AYTHER_STATUS_UNSUPPORTED;
         uint64_t new_generation = 0;
         bool ok() const { return status == AYTHER_STATUS_OK; }
     };
 
-    /// Escritura en una región de CONTROL, entre frames.
-    /// `AYTHER_GENERATION_ANY` omite la validación de generación, que es lo
-    /// correcto para un control que se fija fuera de un snapshot activo.
+    /// A write into a CONTROL region, between frames.
+    /// `AYTHER_GENERATION_ANY` skips generation validation, which is the right
+    /// thing for a control set outside an active snapshot.
     AytherWriteResult write_control_v1(
         uint32_t region, const void* data, uint32_t bytes,
         uint64_t expected_generation = AYTHER_GENERATION_ANY) const;
 
-    // ---- Controles de render y audio (AYTHER_SUB_RENDER_CONTROLS) ----------
-    // Los tamaños son parte del CONTRATO de cada control, no un detalle del
-    // caller: viven acá para que nadie los repita a mano.
-    static constexpr uint32_t kSpriteSuppressBytes    = 16;        // 128 slots SAT
-    static constexpr uint32_t kTileSuppressBytes      = 512;       // 64×64 celdas
-    static constexpr uint32_t kPlaneTileSuppressBytes = 3 * 1024;  // 3 planos
+    // ---- Render and audio controls (AYTHER_SUB_RENDER_CONTROLS) ------------
+    // The sizes are part of the CONTRACT of each control, not a caller detail:
+    // they live here so nobody repeats them by hand.
+    static constexpr uint32_t kSpriteSuppressBytes    = 16;        // 128 SAT slots
+    static constexpr uint32_t kTileSuppressBytes      = 512;       // 64×64 cells
+    static constexpr uint32_t kPlaneTileSuppressBytes = 3 * 1024;  // 3 planes
 
-    /// Máscara de capas visibles: 1 byte con los bits A/B/Window/Sprites. El
-    /// renderer la lee POR LÍNEA, así que oculta o muestra capas en vivo.
+    /// Visible layer mask: 1 byte with the A/B/Window/Sprites bits. The
+    /// renderer reads it PER LINE, so it hides or shows layers live.
     AytherWriteResult set_layer_mask_v1(uint8_t mask) const {
         return write_control_v1(AYTHER_REGION_LAYER_MASK, &mask, 1);
     }
-    /// 0 = render normal (bit-exact). !=0 = los píxeles que NO son de sprite se
-    /// emiten al 25%, para que los sprites preponderen (Lab Animación).
+    /// 0 = normal render (bit-exact). !=0 = the pixels that are NOT sprite are
+    /// emitted at 25%, so sprites stand out (Lab Animation).
     AytherWriteResult set_layer_dim_v1(uint8_t on) const {
         return write_control_v1(AYTHER_REGION_LAYER_DIM, &on, 1);
     }
-    /// Bitmask de 128 bits: slots de la SAT que `parse_satb` va a saltear.
+    /// A 128-bit bitmask: SAT slots `parse_satb` will skip.
     AytherWriteResult set_sprite_suppress_v1(const uint8_t* bits16) const {
         return write_control_v1(AYTHER_REGION_SPRITE_SUPPRESS,
                                 bits16, kSpriteSuppressBytes);
     }
-    /// Celdas de salida de 8px (64×64, stride 64) que se pintan con el backdrop
-    /// y revelan el fondo del VDP. La aplica `render_line`.
+    /// 8px output cells (64×64, stride 64) painted with the backdrop, revealing
+    /// the VDP background. Applied by `render_line`.
     AytherWriteResult set_tile_suppress_v1(const uint8_t* bits, uint32_t n) const {
         return write_control_v1(AYTHER_REGION_TILE_SUPPRESS, bits, n);
     }
-    /// 3 planos × bitmap de (patrón<<2 | paleta): `render_bg_m5/_vs` saltean esas
-    /// celdas y revelan el plano de atrás. El fork tenía un flag `active` aparte
-    /// (0x106) sin el cual esto era un no-op SILENCIOSO; por la ABI el core lo
-    /// administra solo — medido en `abi_write_control` ().
+    /// 3 planes × a bitmap of (pattern<<2 | palette): `render_bg_m5/_vs` skip
+    /// those cells and reveal the plane behind. The fork used to have a
+    /// separate `active` flag (0x106) without which this was a SILENT no-op;
+    /// through the ABI the core manages it itself — measured in
+    /// `abi_write_control`.
     AytherWriteResult set_plane_tile_suppress_v1(const uint8_t* bits, uint32_t n) const {
         return write_control_v1(AYTHER_REGION_PLANE_TILE_SUPPRESS, bits, n);
     }
-    /// Canales a silenciar. El canal se pone a 0 en el mixer de SALIDA sin tocar
-    /// el estado del chip: replay-safe, el chip evoluciona idéntico y sólo
-    /// cambia el PCM emitido — el hasher tiene que seguir viéndolo (). Es el
-    /// primitivo de la sustitución por evento: mutear los canales de un evento
-    /// mientras suena su asset HD. 0 = todo suena.
+    /// Channels to silence. The channel is set to 0 in the OUTPUT mixer
+    /// without touching the chip state: replay-safe, the chip evolves
+    /// identically and only the emitted PCM changes — the hasher has to keep
+    /// seeing it. It is the primitive of per-event substitution: muting the
+    /// channels of an event while its HD asset plays. 0 = everything plays.
     static constexpr uint32_t audio_mute_fm(int ch)  { return uint32_t(1u << ch); }        // ch 0-5
     static constexpr uint32_t audio_mute_psg(int ch) { return uint32_t(1u << (6 + ch)); }  // ch 0-3
     static constexpr uint32_t audio_mute_pcm(int ch) { return uint32_t(1u << (10 + ch)); } // ch 0-7
@@ -411,13 +420,14 @@ public:
         return write_control_v1(AYTHER_REGION_AUDIO_MUTE, &mask, sizeof(mask));
     }
 
-    // --- Señal de fidelidad por frame (R-5 , id 0x10E) -------------------
-    // u32 ESCRIBIBLE: escrituras con efecto visual a mitad de pantalla
-    // (CRAM/VSRAM/tabla de hscroll/regs). El frontend la resetea antes del
-    // frame visible y la lee después; >0 = el frame NO se recompone fiel desde
-    // el estado final (R-1) → ese frame cae al blit (híbrido). 0 con core stock.
+    // --- Per-frame fidelity signal (R-5, id 0x10E) --------------------------
+    // A WRITABLE u32: writes with a visual effect mid-screen (CRAM/VSRAM/the
+    // hscroll table/regs). The frontend resets it before the visible frame and
+    // reads it after; >0 = the frame is NOT faithfully recomposed from the
+    // final state (R-1) → that frame falls back to the blit (hybrid). 0 with a
+    // stock core.
     static constexpr unsigned kAytherMemoryRasterDirty = 0x10E;
-    [[deprecated("E-5: usar read_raster_fallback_v1() con ABI v1")]]
+    [[deprecated("E-5: use read_raster_fallback_v1() with ABI v1")]]
     uint32_t raster_dirty() const {
         if (!fn_retro_get_memory_data) return 0;
         const auto* p = static_cast<const uint32_t*>(
@@ -427,13 +437,13 @@ public:
 
     static constexpr unsigned kAytherMemoryParsedSprites = 0x10B;
     static constexpr unsigned kAytherMemoryParsedCount   = 0x10C;
-    [[deprecated("E-5: usar read_parsed_sprites_v1() con ABI v1")]]
+    [[deprecated("E-5: use read_parsed_sprites_v1() with ABI v1")]]
     const uint8_t* parsed_sprites() const {
         if (!fn_retro_get_memory_data) return nullptr;
         return static_cast<const uint8_t*>(
             fn_retro_get_memory_data(kAytherMemoryParsedSprites));
     }
-    [[deprecated("E-5: usar capture_frame_snapshot() con ABI v1")]]
+    [[deprecated("E-5: use capture_frame_snapshot() with ABI v1")]]
     uint8_t parsed_sprite_count() const {
         if (!fn_retro_get_memory_data) return 0;
         const auto* p = static_cast<const uint8_t*>(
@@ -442,26 +452,27 @@ public:
     }
 
     // --- Audio chip writes this frame (READ log 0x109 + READ/WRITE-reset count 0x10A) ---
-    // Log temporal de escrituras CRUDAS a los chips de sonido — YM2612 (FM) + SN76489
-    // (PSG) — en orden de bus dentro del frame. Cada AudioWrite = {cycle, addr, data,
-    // chip} (8 bytes, ABI idéntico al AytherAudioWrite del fork). Es la base de la
-    // identidad de audio por SECUENCIA DE COMANDOS al chip (estable a través del
-    // replay, porque la CPU/VDP son byte-deterministas) en lugar de hashear el PCM de
-    // salida, que NO es reproducible tras unserialize (la fase del FM diverge). Mismo
-    // patrón frontend-reset que parsed_sprites: reset (count=0) antes de run_frame,
-    // leer después. No-op con core stock (degradación limpia → la FFI cae al PCM).
+    // Temporal log of the RAW writes to the sound chips — YM2612 (FM) + SN76489
+    // (PSG) — in bus order within the frame. Each AudioWrite = {cycle, addr, data,
+    // chip} (8 bytes, ABI-identical to the fork's AytherAudioWrite). It is the
+    // basis of audio identity by COMMAND SEQUENCE to the chip (stable across
+    // replay, because the CPU/VDP are byte-deterministic) instead of hashing the
+    // output PCM, which is NOT reproducible after unserialize (the FM phase
+    // diverges). The same frontend-reset pattern as parsed_sprites: reset
+    // (count=0) before run_frame, read after. No-op with a stock core (a clean
+    // degradation → the FFI falls back to the PCM).
     struct AudioWrite { uint32_t cycle; uint16_t addr; uint8_t data; uint8_t chip; };
     static constexpr unsigned kAytherMemoryAudioWrites = 0x109;
     static constexpr unsigned kAytherMemoryAudioCount  = 0x10A;
     static constexpr uint8_t  kAudioChipFM  = 0;   // YM2612
     static constexpr uint8_t  kAudioChipPSG = 1;   // SN76489
-    [[deprecated("E-5: usar read_audio_writes_v1() con ABI v1")]]
+    [[deprecated("E-5: use read_audio_writes_v1() with ABI v1")]]
     const AudioWrite* audio_writes() const {
         if (!fn_retro_get_memory_data) return nullptr;
         return static_cast<const AudioWrite*>(
             fn_retro_get_memory_data(kAytherMemoryAudioWrites));
     }
-    [[deprecated("E-5: usar capture_frame_snapshot() con ABI v1")]]
+    [[deprecated("E-5: use capture_frame_snapshot() with ABI v1")]]
     uint32_t audio_write_count() const {
         if (!fn_retro_get_memory_data) return 0;
         const auto* p = static_cast<const uint32_t*>(
@@ -469,7 +480,7 @@ public:
         return p ? *p : 0;
     }
 
-    // --- Cheats (modo avanzado del Lab: codigos GG/PAR via el core) --------
+    // --- Cheats (the Lab's advanced mode: GG/PAR codes via the core) --------
     void cheat_set(unsigned index, bool enabled, const char* code) {
         if (fn_retro_cheat_set) fn_retro_cheat_set(index, enabled, code);
     }
@@ -496,8 +507,8 @@ public:
     using AudioCb = std::function<size_t(const int16_t*, size_t)>;
     void set_audio_callback(AudioCb cb) { audio_cb_ = std::move(cb); }
 
-    // ----- Savestates (R2 base · cánones de emulador) -----------------------
-    // Genesis Plus GX ≈ 150–250 KB/estado. Used by the determinism spike and,
+    // ----- Savestates (R2 base · emulator conventions) ----------------------
+    // Genesis Plus GX ≈ 150–250 KB/state. Used by the determinism spike and,
     // later, by rewind/.arp recordings.
 
     /// Size in bytes of a serialized state, or 0 if unsupported.
@@ -537,47 +548,47 @@ public:
     void     set_input(int port, uint16_t buttons) { if (port >= 0 && port < kPorts) input_[port] = buttons; }
     uint16_t input(int port) const { return (port >= 0 && port < kPorts) ? input_[port] : 0; }
 
-    // ----- Opciones de core (EM-7.1, ) ----------------------------------
+    // ----- Core options (EM-7.1) --------------------------------------------
     //
-    // libretro las llama «variables»: pares clave/valor que el core declara al
-    // arrancar (SET_VARIABLES) y consulta cuando las necesita (GET_VARIABLE).
-    // Son las que dan «sin límite de sprites» —el anti-flicker— y el
-    // overclock donde el core lo ofrece.
+    // libretro calls them "variables": key/value pairs the core declares at
+    // startup (SET_VARIABLES) and queries when it needs them (GET_VARIABLE).
+    // They are what give "no sprite limit" —the anti-flicker— and the
+    // overclock where the core offers it.
     //
-    // HASTA ACÁ NO ESTABAN SOPORTADAS: `GET_VARIABLE` devolvía false siempre y
-    // el core caía a sus defaults internos. La fontanería que  daba por
-    // existente era el hook, no la respuesta.
+    // UNTIL NOW THEY WERE NOT SUPPORTED: `GET_VARIABLE` always returned false
+    // and the core fell back to its internal defaults. The plumbing that was
+    // assumed to exist was the hook, not the answer.
     //
-    // SE APLICAN AL INICIALIZAR Y NO CAMBIAN EN VIVO, a propósito. El core lee
-    // sus opciones una sola vez porque `GET_VARIABLE_UPDATE` contesta «no
-    // cambiaron»: devolver «sí» ahí hacía que Genesis Plus GX re-aplicara las
-    // opciones cada frame y reinicializara el chip de sonido — audio mudo, un
-    // defecto que ya se pagó una vez. Cambiar una opción exige reiniciar la
-    // sesión, y eso es lo honesto: la alternativa es un estado a medio aplicar
-    // que nadie puede explicar.
+    // THEY ARE APPLIED AT INITIALISATION AND DO NOT CHANGE LIVE, on purpose.
+    // The core reads its options exactly once because `GET_VARIABLE_UPDATE`
+    // answers "they did not change": answering "yes" there made Genesis Plus GX
+    // re-apply the options every frame and reinitialise the sound chip — mute
+    // audio, a defect already paid for once. Changing an option requires
+    // restarting the session, and that is the honest answer: the alternative is
+    // a half-applied state nobody can explain.
 
-    /// Fija el valor de una opción ANTES de `init`. Después de `init` queda
-    /// guardada pero el core ya leyó las suyas.
+    /// Sets the value of an option BEFORE `init`. After `init` it is stored but
+    /// the core has already read its own.
     void set_core_option(const std::string& key, const std::string& value) {
         core_options_[key] = value;
     }
-    /// El valor elegido, o "" si el frontend no fijó ninguno (y ahí manda el
-    /// default del core).
+    /// The chosen value, or "" if the frontend set none (and then the core
+    /// default governs).
     std::string core_option(const std::string& key) const {
         const auto it = core_options_.find(key);
         return it == core_options_.end() ? std::string() : it->second;
     }
     void clear_core_options() { core_options_.clear(); }
 
-    ///  EM-7.4: parche IPS/BPS del usuario. Se aplica al buffer de la ROM
-    /// —nunca al archivo— antes de dárselo al core, así que hay que fijarlo
-    /// ANTES de `init`. Vacío = ninguno.
+    /// EM-7.4: the user's IPS/BPS patch. It is applied to the ROM buffer
+    /// —never to the file— before handing it to the core, so it has to be set
+    /// BEFORE `init`. Empty = none.
     void set_patch_path(const std::string& p) { patch_path_ = p; }
 
-    /// Las opciones que el CORE declaró, en orden: `(clave, descripción)`. Sale
-    /// de `SET_VARIABLES`, así que está poblada después de `init` y es lo que
-    /// un frontend necesita para ofrecerlas sin hardcodear la lista de ningún
-    /// core (BYOC: no sabemos cuál van a usar).
+    /// The options the CORE declared, in order: `(key, description)`. It comes
+    /// from `SET_VARIABLES`, so it is populated after `init` and it is what a
+    /// frontend needs to offer them without hard-coding any core's list (BYOC:
+    /// we do not know which one they will use).
     const std::vector<std::pair<std::string, std::string>>& declared_options() const {
         return declared_options_;
     }
@@ -625,32 +636,32 @@ private:
     bool (*fn_retro_unserialize)(const void*, size_t)               = nullptr;
     void (*fn_retro_reset)()                                         = nullptr;
 
-    // E-1 (): la ABI v1 del fork, resuelta en load_symbols(). Ausente en un
-    // core stock — ver has_ayther_v1() arriba.
-    /// Directorio que el core recibe como SYSTEM/SAVE/CONTENT directory. Es el
-    /// de la ROM, y no un "." (el CWD del proceso, que cambia con quien
-    /// invoque): ahí es donde el core busca los BIOS —`bios_CD_U.bin` y
-    /// compañía para Sega CD, `bios_MD.bin`, `ggenie.bin`— y donde el propio
-    /// core cae por defecto cuando el frontend no contesta.
+    // E-1: the fork's ABI v1, resolved in load_symbols(). Absent on a stock
+    // core — see has_ayther_v1() above.
+    /// Directory the core receives as its SYSTEM/SAVE/CONTENT directory. It is
+    /// the ROM's, and not a "." (the process CWD, which changes with whoever
+    /// invokes it): that is where the core looks for the BIOS images
+    /// —`bios_CD_U.bin` and friends for Sega CD, `bios_MD.bin`, `ggenie.bin`—
+    /// and where the core itself falls back when the frontend does not answer.
     std::string system_dir_ = ".";
-    std::string patch_path_;   ///<  EM-7.4: parche del usuario (IPS/BPS)
-    /// EM-7.1: lo que el frontend eligió, y lo que el core declara ofrecer.
+    std::string patch_path_;   ///< EM-7.4: the user's patch (IPS/BPS)
+    /// EM-7.1: what the frontend chose, and what the core declares it offers.
     std::map<std::string, std::string> core_options_;
     std::vector<std::pair<std::string, std::string>> declared_options_;
 
-    /// El medio cargado es una imagen de DISCO (ver cd_media()).
+    /// The loaded medium is a DISC image (see cd_media()).
     bool cd_media_ = false;
 
     ayther_get_interface_fn    fn_ayther_get_interface_ = nullptr;
     const ayther_interface_v1* ayther_api_              = nullptr;
 
-    // E-6 (): el delta del último `run_frame()`, y si es utilizable.
+    // E-6: the delta of the last `run_frame()`, and whether it is usable.
     ayther_frame_delta_v1 last_delta_{};
     bool                  last_delta_ok_ = false;
     void poll_frame_delta_();
 
-    /// Cuerpo común de las cuatro lecturas del VDP: el tamaño lo declara el
-    /// core (query_region), no el Engine.
+    /// Common body of the four VDP reads: the size is declared by the core
+    /// (query_region), not by the Engine.
     AytherReadResult read_vdp_region_(uint32_t region, void* out,
                                       const ayther_frame_snapshot_v1& s) const;
 

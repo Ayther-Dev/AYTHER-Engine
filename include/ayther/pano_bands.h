@@ -1,91 +1,91 @@
 #pragma once
 // ---------------------------------------------------------------------------
-// pano_bands.h — la cámara de una Panorámica, VOTADA POR BANDA ().
+// pano_bands.h — the camera of a Panorama, VOTED PER BAND.
 //
-// EL PROBLEMA. La Panorámica modela una tira rígida con UNA cámara: cada celda
-// visible vota `cam_px = lx*8 - screen_x` y gana la moda. Cuando el plano tiene
-// line-scroll —bandas que se desplazan a distinto ritmo dentro de la MISMA
-// capa del VDP— no existe una posición que las explique a todas: las celdas de
-// la banda rápida votan contra las del fondo. En el mejor caso gana la moda y
-// la banda minoritaria queda mal ubicada; en el peor el voto se parte y el
-// anclaje no fija.
+// THE PROBLEM. The Panorama models a rigid strip with ONE camera: every visible
+// cell votes `cam_px = lx*8 - screen_x` and the mode wins. When the plane has
+// line-scroll —bands that move at different rates within the SAME VDP layer—
+// no single position explains them all: the cells of the fast band vote against
+// those of the background. At best the mode wins and the minority band ends up
+// misplaced; at worst the vote splits and the anchor never settles.
 //
-// QUE EL CASO EXISTE está medido, no supuesto (2026-08-24, hscroll_bands_probe):
+// THAT THE CASE EXISTS is measured, not assumed (2026-08-24,
+// hscroll_bands_probe):
 //
-//   Golden Axe   3 tomas, 40.854 frames   reg $B modo 0   0 bandas
-//   Ecco         1.800 frames             reg $B modo 0   0 bandas
-//   Aladdin      1.800 frames             reg $B modo 0   0 bandas
-//   Sonic 3 & K  1.800 frames             tabla por línea en 1.766
-//                                         plano A: 1 banda · plano B: 37
+//   Golden Axe   3 takes, 40,854 frames   reg $B mode 0   0 bands
+//   Ecco         1,800 frames             reg $B mode 0   0 bands
+//   Aladdin      1,800 frames             reg $B mode 0   0 bands
+//   Sonic 3 & K  1,800 frames             per-line table in 1,766
+//                                         plane A: 1 band · plane B: 37
 //
-// Golden Axe NO es el corpus de esta feature —sus nubes de título se
-// resolvieron como dos Acetatos en paralaje, —; Sonic 3 & Knuckles sí.
+// Golden Axe is NOT the corpus for this feature —its title-screen clouds were
+// resolved as two parallaxed Acetates—; Sonic 3 & Knuckles is.
 //
-// LA FORMA DE LA SOLUCION. Con 37 bandas, declarar una deriva por tira (la
-// dirección 2 de la issue) no alcanza: serían 37 velocidades que el autor
-// tendría que mantener a mano. Se vota POR BANDA, que es lo que hace el
-// hardware.
+// THE SHAPE OF THE SOLUTION. With 37 bands, declaring one drift per strip
+// (direction 2 of the issue) is not enough: that would be 37 speeds the author
+// would have to maintain by hand. The vote is PER BAND, which is what the
+// hardware does.
 //
-// Este archivo es sólo el VOTO: agrupa y decide, no lee VRAM, no toca Vulkan y
-// no sabe qué es una Panorámica. Igual que `widescreen.h`, se puede medir sin
-// GPU y sin ROM — que es como se encontró el bug de bandas de EM-8.0.
+// This file is only the VOTE: it groups and decides, it does not read VRAM,
+// does not touch Vulkan and does not know what a Panorama is. Like
+// `widescreen.h`, it can be measured without a GPU and without a ROM — which is
+// how the banding bug in EM-8.0 was found.
 // ---------------------------------------------------------------------------
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include "parallax_bands.h"   // hscroll_of_line: la misma lectura que EM-8.0
+#include "parallax_bands.h"   // hscroll_of_line: the same read as EM-8.0
 
 namespace ayther {
 
-/// Un voto: una celda visible dice dónde estaría la cámara si ella manda.
+/// One vote: a visible cell says where the camera would be if it had its way.
 struct PanoVote {
-    int32_t  screen_y;   ///< dónde se ve (px) — decide a qué banda pertenece
+    int32_t  screen_y;   ///< where it is seen (px) — decides which band it belongs to
     int32_t  cam_x;      ///< lx*8 - screen_x
     int32_t  cam_y;      ///< ly*8 - screen_y
 };
 
-/// La cámara que ganó en una banda de líneas.
+/// The camera that won within a band of lines.
 struct BandCam {
-    int32_t  y0 = 0, y1 = 0;   ///< rango de líneas [y0, y1) de la banda
+    int32_t  y0 = 0, y1 = 0;   ///< line range [y0, y1) of the band
     int32_t  cam_x = 0, cam_y = 0;
-    uint32_t votes = 0;        ///< cuántos votos sacó la ganadora
-    uint32_t total = 0;        ///< cuántos votó la banda en total
-    /// Sin votos la banda NO tiene cámara: `total == 0` es distinto de «la
-    /// cámara es (0,0)». Confundirlos dibuja la tira en el origen, que es un
-    /// defecto visible y difícil de atribuir.
+    uint32_t votes = 0;        ///< how many votes the winner got
+    uint32_t total = 0;        ///< how many the band cast in total
+    /// With no votes the band has NO camera: `total == 0` is not the same as
+    /// "the camera is (0,0)". Confusing them draws the strip at the origin,
+    /// which is a visible defect and hard to attribute.
     bool decided() const { return total != 0; }
-    /// Qué tan sólida fue la decisión: 1.0 = todas las celdas coincidieron.
-    /// Por debajo de ~0.5 la banda está mezclando dos scrolls y conviene
-    /// mirarla antes que confiar en ella.
+    /// How solid the decision was: 1.0 = every cell agreed. Below ~0.5 the band
+    /// is mixing two scrolls and is worth inspecting rather than trusting.
     float confidence() const {
         return total ? float(votes) / float(total) : 0.0f;
     }
 };
 
-/// Vota una cámara por banda.
+/// Votes one camera per band.
 ///
-/// `bands` son los cortes de línea, en orden ascendente y sin solaparse: la
-/// banda i cubre [bands[i], bands[i+1]). Salen de la tabla Hscroll del VDP —
-/// las corridas contiguas de líneas con el mismo valor de scroll, que es lo
-/// que ya cuenta `hscroll_bands_probe` y lo que `parallax_bands.h` modela para
-/// la cámara de EM-8.0.
+/// `bands` holds the line cuts, in ascending order and non-overlapping: band i
+/// covers [bands[i], bands[i+1]). They come from the VDP Hscroll table — the
+/// contiguous runs of lines sharing the same scroll value, which is what
+/// `hscroll_bands_probe` already counts and what `parallax_bands.h` models for
+/// the EM-8.0 camera.
 ///
-/// Un `bands` de un solo corte (o vacío) devuelve UNA banda que cubre todo, y
-/// entonces esto se comporta EXACTAMENTE como el voto de hoy — que es lo que
-/// hace que el cambio sea seguro para los 40.854 frames de Golden Axe medidos
-/// sin una sola banda.
+/// A `bands` with a single cut (or empty) returns ONE band covering everything,
+/// and then this behaves EXACTLY like today's vote — which is what makes the
+/// change safe for the 40,854 frames of Golden Axe measured without a single
+/// band.
 ///
-/// El desempate es DETERMINISTA y por eso está acá y no en el caller: con `>` a
-/// secas el ganador de un empate depende del orden de iteración de un hash, y
-/// eso hace que dos corridas idénticas difieran (la trampa que ya costó en el
-/// voto de la Panorámica). Gana el que más votos tiene; a igualdad, el de
-/// `cam_x` menor, y a igualdad de eso el de `cam_y` menor.
+/// Tie-breaking is DETERMINISTIC, and that is why it lives here and not in the
+/// caller: with a bare `>` the winner of a tie depends on the iteration order
+/// of a hash, and that makes two identical runs differ (the trap that already
+/// cost us in the Panorama vote). The one with the most votes wins; on a tie,
+/// the smaller `cam_x`, and on a tie of that, the smaller `cam_y`.
 inline std::vector<BandCam> pano_vote_by_band(const PanoVote* votes, size_t n,
                                               const int32_t* bands, size_t nbands,
                                               int32_t screen_h) {
     std::vector<BandCam> out;
-    // Sin cortes útiles: una sola banda que cubre la pantalla (el modelo viejo).
+    // No usable cuts: a single band covering the screen (the old model).
     if (!bands || nbands < 2) {
         out.push_back(BandCam{0, screen_h, 0, 0, 0, 0});
     } else {
@@ -95,15 +95,15 @@ inline std::vector<BandCam> pano_vote_by_band(const PanoVote* votes, size_t n,
     }
     if (!votes || n == 0) return out;
 
-    // Un tally por banda. Son pocas (37 en el peor caso medido) y pocos votos
-    // por banda, así que un vector lineal gana al hash: menos asignaciones y,
-    // sobre todo, orden de recorrido ESTABLE para el desempate.
+    // One tally per band. There are few of them (37 in the worst measured
+    // case) and few votes per band, so a linear vector beats a hash: fewer
+    // allocations and, above all, a STABLE traversal order for tie-breaking.
     struct Cnt { int32_t cx, cy; uint32_t k; };
     std::vector<std::vector<Cnt>> tally(out.size());
 
     for (size_t v = 0; v < n; ++v) {
         const PanoVote& pv = votes[v];
-        size_t b = out.size();   // fuera de toda banda = se descarta
+        size_t b = out.size();   // outside every band = discarded
         for (size_t i = 0; i < out.size(); ++i)
             if (pv.screen_y >= out[i].y0 && pv.screen_y < out[i].y1) { b = i; break; }
         if (b == out.size()) continue;
@@ -127,20 +127,21 @@ inline std::vector<BandCam> pano_vote_by_band(const PanoVote* votes, size_t n,
     return out;
 }
 
-/// Los CORTES de banda de un plano, leyendo la tabla Hscroll del VDP.
+/// The band CUTS of a plane, read from the VDP Hscroll table.
 ///
-/// Devuelve los límites en LÍNEAS de pantalla para `pano_vote_by_band`: la
-/// banda i cubre [out[i], out[i+1]). Siempre arranca en 0 y termina en
-/// `rows * 8`, así que un plano sin parallax devuelve exactamente {0, alto} —
-/// una sola banda, y el voto se comporta como el de siempre.
+/// Returns the boundaries in screen LINES for `pano_vote_by_band`: band i
+/// covers [out[i], out[i+1]). It always starts at 0 and ends at `rows * 8`, so
+/// a plane without parallax returns exactly {0, height} — a single band, and
+/// the vote behaves as it always did.
 ///
-/// `band_count()` (parallax_bands.h) responde CUÁNTAS hay; esto responde DÓNDE
-/// están, que es lo que el voto necesita. Comparten la lectura de la tabla y
-/// el muestreo cada 8 líneas: el VDP resuelve el scroll por celda o por línea
-/// según el reg $0B, y muestrear más fino no agrega bandas — agrega ruido.
+/// `band_count()` (parallax_bands.h) answers HOW MANY there are; this answers
+/// WHERE they are, which is what the vote needs. They share the table read and
+/// the sampling every 8 lines: the VDP resolves scroll per cell or per line
+/// depending on reg $0B, and sampling finer adds no bands — it adds noise.
 ///
-/// `mask == 0` (reg $0B modo 0, scroll entero) devuelve una sola banda sin
-/// leer nada: es el 100 % del corpus medido salvo Sonic 3 & Knuckles.
+/// `mask == 0` (reg $0B mode 0, whole-plane scroll) returns a single band
+/// without reading anything: that is 100 % of the measured corpus except Sonic
+/// 3 & Knuckles.
 template <typename ReadU32>
 inline std::vector<int32_t> pano_band_edges(const ReadU32& read_u32,
                                             uint32_t base, uint32_t mask,

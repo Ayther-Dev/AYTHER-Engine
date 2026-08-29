@@ -28,17 +28,18 @@ struct TileTexCache {
                            VkContext&         ctx,
                            VkCommandBuffer    cmd);
 
-    /// : llamar 1×/frame — libera el staging de los uploads con el fence ya
-    /// garantizado (los tiles suben UNA vez; el staging retenido eran ~80 KB
-    /// por tile HD × cientos de tiles). Entry* es estable (unordered_map es
-    /// node-based y acá no hay evict individual — solo shutdown total).
+    /// Call 1×/frame — releases the staging memory of uploads whose fence is
+    /// already guaranteed (tiles upload ONCE; the retained staging was ~80 KB
+    /// per HD tile × hundreds of tiles). Entry* is stable (unordered_map is
+    /// node-based and there is no individual eviction here — only full
+    /// shutdown).
     void pump(VkContext& ctx);
 
     void shutdown(VkContext& ctx);
 
 private:
     struct StagingRelease { Entry* e; uint64_t due; };
-    static constexpr uint64_t kStagingLingerPumps = 4;  // frames-in-flight + margen
+    static constexpr uint64_t kStagingLingerPumps = 4;  // frames-in-flight + margin
     std::vector<StagingRelease> staging_release_;
     uint64_t                    tick_ = 0;
 };

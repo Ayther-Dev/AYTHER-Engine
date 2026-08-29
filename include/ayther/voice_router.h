@@ -1,29 +1,30 @@
 // ---------------------------------------------------------------------------
-// voice_router — el router de canales por voz (, Fase 2).
+// voice_router — the per-voice channel router (Phase 2).
 //
-// LA INVERSIÓN. Hasta ahora la sustitución era SUSTRACTIVA: el chip sonaba
-// entero y se tapaban canales con una máscara derivada de VENTANAS de eventos.
-// Una ventana es un MODELO del sonido; el chip ES el sonido, así que todo
-// instante que la ventana no cubriera pero el chip siguiera sonando era una
-// fuga —  (huecos entre nota y nota) y  (juntura entre Secuencias) son
-// el mismo defecto visto en dos lugares.
+// THE INVERSION. Until now substitution was SUBTRACTIVE: the chip played in
+// full and channels were masked out with a mask derived from event WINDOWS. A
+// window is a MODEL of the sound; the chip IS the sound, so every instant the
+// window did not cover while the chip kept playing was a leak — the gaps
+// between notes and the seam between Sequences are the same defect seen in two
+// places.
 //
-// Acá el default se da vuelta: el chip queda MUDO y todo lo que se oye lo
-// produce este router. Una voz se toma el canal DESDE EL KEY-ON DEL PROPIO CHIP
-// hasta el fin de su cola. No hay ventana en la que equivocarse.
+// Here the default is flipped: the chip is MUTED and everything heard is
+// produced by this router. A voice takes over the channel FROM THE CHIP'S OWN
+// KEY-ON until the end of its tail. There is no window left to get wrong.
 //
-// LAS DOS PIEZAS
-//   ChipMirror  — un YM2612 (ymfm) y un SN76489 (PsgSynth) alimentados con el
-//                 mismo log de escrituras que recibe el core, produciendo los
-//                 10 canales POR SEPARADO. Es el sustrato: corre siempre,
-//                 tomen o no las voces su salida.
-//   ChannelRouter — 10 slots. En cada key-on le pregunta a la política qué debe
-//                 sonar y apunta el slot a esa fuente.
+// THE TWO PIECES
+//   ChipMirror  — a YM2612 (ymfm) and an SN76489 (PsgSynth) fed with the same
+//                 write log the core receives, producing the 10 channels
+//                 SEPARATELY. It is the substrate: it always runs, whether or
+//                 not the voices take its output.
+//   ChannelRouter — 10 slots. On every key-on it asks the policy what should
+//                 play and points the slot at that source.
 //
-// POR QUÉ EL ESPEJO CORRE SIEMPRE: su estado de registros ES la identidad del
-// sonido. Si se apagara mientras una voz está sustituida, al volver no sabría
-// con qué timbre sonaba — medido en la Fase 0: arrancar el sintetizador sin el
-// estado previo baja la correlación de envolvente de 0,975 a 0,889.
+// WHY THE MIRROR ALWAYS RUNS: its register state IS the identity of the sound.
+// If it were switched off while a voice is substituted, on return it would not
+// know what timbre it was playing with — measured in Phase 0: starting the
+// synthesiser without the previous state drops the envelope correlation from
+// 0.975 to 0.889.
 // ---------------------------------------------------------------------------
 
 #pragma once
@@ -40,7 +41,7 @@ namespace ymfm { class ym2612; }
 
 namespace ayther {
 
-class Ym2612Mirror;   // detalle de implementación: ym2612 con salida por canal
+class Ym2612Mirror;   // implementation detail: ym2612 with per-channel output
 
 // ---------------------------------------------------------------------------
 // ChipMirror
@@ -54,35 +55,38 @@ public:
     ChipMirror();
     ~ChipMirror();
 
-    /// Corta todo y vuelve a cero. Para los seeks y los cortes de escena.
-    /// OJO: esto TIRA el estado de registros, así que después hay que cebarlo
-    /// (prime) o el timbre sale mal — no es como el panic de un sampler.
+    /// Cuts everything and returns to zero. For seeks and scene cuts.
+    /// CAREFUL: this DISCARDS the register state, so it must be primed
+    /// afterwards or the timbre comes out wrong — it is not like a sampler
+    /// panic.
     void reset();
 
-    /// PAL cambia las líneas por frame y con eso los M-cycles por frame.
+    /// PAL changes the lines per frame and with it the M-cycles per frame.
     void set_pal(bool pal);
     bool pal() const { return pal_; }
 
-    /// Consume las escrituras de un frame y genera su PCM por canal.
-    /// Las escrituras se ubican por su `cycle`, así que una nota que arranca a
-    /// mitad de frame arranca a mitad de frame — no en el borde.
+    /// Consumes one frame of writes and generates its per-channel PCM.
+    /// Writes are placed by their `cycle`, so a note that starts mid-frame
+    /// starts mid-frame — not at the boundary.
     void run_frame(const AytherAudioWrite* w, uint32_t n);
 
-    /// Igual que run_frame pero SIN generar audio: sólo hace avanzar el estado
-    /// de los registros. Es el cebado tras un seek — hay que recorrer las
-    /// escrituras anteriores para saber con qué timbre venía sonando cada canal.
+    /// Same as run_frame but WITHOUT generating audio: it only advances the
+    /// register state. This is the priming after a seek — the earlier writes
+    /// must be replayed to know what timbre each channel was playing with.
     void prime_frame(const AytherAudioWrite* w, uint32_t n);
 
-    /// PCM del canal aislado del último run_frame: interleaved L,R, ya SIN
-    /// CONTINUA (ver dc_block_ en el .cpp — un canal en silencio no queda en
-    /// cero y el escalón sería un clic al tomar o soltar la voz).
+    /// PCM of the isolated channel from the last run_frame: interleaved L,R,
+    /// already DC-FREE (see dc_block_ in the .cpp — a silent channel does not
+    /// sit at zero and the step would be a click when the voice is taken or
+    /// released).
     const float* channel(int ch) const;
 
-    /// Muestras estéreo que produjo el último run_frame.
+    /// Stereo samples produced by the last run_frame.
     size_t frame_samples() const { return frame_samples_; }
 
-    /// Tasa interna = MCLK/1008 = 53267,03 Hz en NTSC. Es la tasa NATIVA del
-    /// YM2612; el PSG (que corre 4,2× más rápido) se promedia hasta acá.
+    /// Internal rate = MCLK/1008 = 53267.03 Hz on NTSC. It is the NATIVE rate
+    /// of the YM2612; the PSG (which runs 4.2× faster) is averaged down to
+    /// it.
     double rate() const;
 
 private:
@@ -94,78 +98,79 @@ private:
     float                         dc_x1_[kChannels][2] = {};
     float                         dc_y1_[kChannels][2] = {};
     bool                          dc_primed_ = false;
-    uint64_t                      generated_    = 0;   // muestras de FM totales
-    uint64_t                      psg_ticks_    = 0;   // ticks de PSG totales
-    uint64_t                      frame_base_   = 0;   // M-cycles al inicio del frame
+    uint64_t                      generated_    = 0;   // total FM samples
+    uint64_t                      psg_ticks_    = 0;   // total PSG ticks
+    uint64_t                      frame_base_   = 0;   // M-cycles at the start of the frame
     size_t                        frame_samples_ = 0;
     bool                          pal_           = false;
 };
 
 // ---------------------------------------------------------------------------
-// StreamResampler — de la tasa del chip a la del device, conservando la fase.
+// StreamResampler — from the chip rate to the device rate, preserving phase.
 //
-// Hace falta con estado y no un resample por bloque porque los dos extremos no
-// están en fase y el bloque cambia de tamaño frame a frame: el Lab no corre a
-// 16,7 ms por frame (el probe mide 20-33), así que el catch-up entrega a veces
-// varios frames juntos. Reiniciar la fase en cada bloque metería un salto en
-// cada juntura — un chasquido por frame.
+// It has to be stateful rather than a per-block resample because the two ends
+// are not in phase and the block changes size frame to frame: the Lab does not
+// run at 16.7 ms per frame (the probe measures 20-33), so catch-up sometimes
+// delivers several frames at once. Resetting the phase on every block would
+// insert a jump at every seam — one click per frame.
 // ---------------------------------------------------------------------------
 class StreamResampler {
 public:
     void reset();
     void set_rates(double src_hz, double dst_hz);
 
-    /// Encola muestras estéreo interleaved a la tasa de ORIGEN.
+    /// Enqueues interleaved stereo samples at the SOURCE rate.
     void push(const float* in, size_t frames);
 
-    /// Saca hasta `frames` muestras estéreo a la tasa de DESTINO. Devuelve
-    /// cuántas pudo entregar — menos que las pedidas significa que falta
-    /// entrada, y el que llama decide si rellena con silencio o espera.
+    /// Pulls up to `frames` stereo samples at the DESTINATION rate. Returns
+    /// how many it could deliver — fewer than requested means input is missing,
+    /// and the caller decides whether to pad with silence or wait.
     size_t pull(float* out, size_t frames);
 
-    /// Muestras de destino que ya se pueden sacar con lo encolado.
+    /// Destination samples already available from what is queued.
     size_t available() const;
 
 private:
-    std::vector<float> buf_;      // interleaved a la tasa de origen
-    double             pos_  = 0.0;   // posición de lectura, en muestras de origen
+    std::vector<float> buf_;      // interleaved at the source rate
+    double             pos_  = 0.0;   // read position, in source samples
     double             step_ = 1.0;   // src/dst
 };
 
 // ---------------------------------------------------------------------------
-// Una voz: un canal tomado entre un key-on y el fin de su cola.
+// A voice: a channel taken between a key-on and the end of its tail.
 // ---------------------------------------------------------------------------
 struct VoiceContext {
     uint8_t  chip    = 0;   ///< 0 = YM2612 (FM) · 1 = SN76489 (PSG)
     uint8_t  channel = 0;   ///< FM 0-5 · PSG 0-3
-    uint32_t frame   = 0;   ///< frame del key-on
-    uint32_t cycle   = 0;   ///< M-cycle DENTRO del frame: la posición exacta
+    uint32_t frame   = 0;   ///< frame of the key-on
+    uint32_t cycle   = 0;   ///< M-cycle WITHIN the frame: the exact position
 };
 
-/// Qué suena en un canal. `chan` es el PCM del canal aislado del espejo para
-/// este tramo; una fuente puede copiarlo, ignorarlo o mezclarse con él.
+/// What plays on a channel. `chan` is the PCM of the mirror's isolated channel
+/// for this stretch; a source may copy it, ignore it, or mix with it.
 class IVoiceSource {
 public:
     virtual ~IVoiceSource() = default;
 
-    /// El chip disparó esta voz. Devolver false = no puedo sonar → cae a copia,
-    /// que es la degradación correcta (se oye el original, no un silencio).
+    /// The chip triggered this voice. Returning false = I cannot play → it
+    /// falls back to copy, which is the right degradation (the original is
+    /// heard, not silence).
     virtual bool begin(const VoiceContext& ctx) = 0;
 
-    /// Suma `n` muestras estéreo de `chan` en `out`. Los dos son interleaved.
+    /// Adds `n` stereo samples of `chan` into `out`. Both are interleaved.
     virtual void render(const float* chan, float* out, size_t n) = 0;
 
-    /// El chip soltó la tecla. No es el final: falta la cola.
+    /// The chip released the key. This is not the end: the tail is still to come.
     virtual void key_off() = 0;
 
-    /// Terminó la cola. Una copia nunca termina —el espejo ya modela su propio
-    /// release— así que devuelve false y el slot se libera recién en el próximo
+    /// The tail finished. A copy never finishes —the mirror already models its
+    /// own release— so it returns false and the slot is freed only on the next
     /// key-on.
     virtual bool finished() const = 0;
 };
 
-/// Copia el canal aislado tal cual. Es el default y la degradación de todo lo
-/// demás: si algo no puede sonar, se oye el original.
+/// Copies the isolated channel as-is. It is the default and the degradation of
+/// everything else: if something cannot play, the original is heard.
 class CopySource final : public IVoiceSource {
 public:
     bool begin(const VoiceContext&) override { return true; }
@@ -174,8 +179,8 @@ public:
     bool finished() const override { return false; }
 };
 
-/// No suena nada. Es lo que hace que «no se cuele nada» sea estructural: no es
-/// un mute que hay que acertar a tiempo, es una fuente que no emite.
+/// Nothing plays. This is what makes "nothing leaks through" structural: it is
+/// not a mute that has to be timed right, it is a source that does not emit.
 class SilentSource final : public IVoiceSource {
 public:
     bool begin(const VoiceContext&) override { return true; }
@@ -184,24 +189,24 @@ public:
     bool finished() const override { return false; }
 };
 
-/// : copia el canal ESCALADO. Es lo que faltaba entre «copiar» y «callar»
-/// para que bajarle el volumen a un bus alcance también al audio ORIGINAL —
-/// hasta ahora la música del juego o sonaba entera o se callaba.
+/// Copies the channel SCALED. It is what was missing between "copy" and
+/// "mute" so that turning a bus down also reaches the ORIGINAL audio — until
+/// now the game music either played in full or went silent.
 ///
-/// EL FACTOR SE LEE POR RENDER, NO SE COPIA EN `begin()`.
+/// THE FACTOR IS READ PER RENDER, NOT COPIED IN `begin()`.
 ///
-/// Es la trampa que este repo ya pagó dos veces: la ganancia por Secuencia y el
-/// volumen del bus, las dos aplicadas sólo al arrancar el sonido. En un loop
-/// musical «al arrancar» es NUNCA — el usuario mueve el slider y no pasa nada
-/// hasta la próxima vez que la música empiece de cero, que puede ser jamás.
+/// This is the trap this repo already paid for twice: the per-Sequence gain and
+/// the bus volume, both applied only when the sound starts. In a music loop
+/// "when it starts" is NEVER — the user moves the slider and nothing happens
+/// until the next time the music starts from scratch, which may be never.
 ///
-/// Por eso guarda un PUNTERO al factor y no su valor: el dueño del volumen es
-/// la política, que lo cambia cuando el usuario mueve el control, y la fuente
-/// lo lee cada vez que rellena.
+/// That is why it stores a POINTER to the factor and not its value: the volume
+/// is owned by the policy, which changes it when the user moves the control,
+/// and the source reads it every time it fills.
 class GainSource final : public IVoiceSource {
 public:
-    /// `gain` tiene que sobrevivir a la fuente. En la práctica apunta al array
-    /// de ganancias por bus de la sesión, que vive tanto como ella.
+    /// `gain` has to outlive the source. In practice it points at the
+    /// session's per-bus gain array, which lives as long as the session.
     explicit GainSource(const float* gain) : gain_(gain) {}
     bool begin(const VoiceContext&) override { return true; }
     void render(const float* chan, float* out, size_t n) override;
@@ -211,13 +216,14 @@ private:
     const float* gain_ = nullptr;
 };
 
-/// Quién decide. La implementación real (Fase 4) traduce las asignaciones que
-/// ya existen —inst_assign del SF2, audio_event_assign, los mutes— a fuentes.
+/// Who decides. The real implementation (Phase 4) translates the assignments
+/// that already exist —the SF2 inst_assign, audio_event_assign, the mutes—
+/// into sources.
 class VoicePolicy {
 public:
     virtual ~VoicePolicy() = default;
-    /// Qué suena en este canal desde este key-on. nullptr = copia.
-    /// El puntero NO se adueña: la política es dueña de sus fuentes.
+    /// What plays on this channel from this key-on. nullptr = copy.
+    /// The pointer is NOT owned: the policy owns its sources.
     virtual IVoiceSource* choose(const VoiceContext& ctx) = 0;
 };
 
@@ -234,26 +240,26 @@ public:
     ChipMirror&       mirror()       { return mirror_; }
     const ChipMirror& mirror() const { return mirror_; }
 
-    /// Corta todo. Deja los slots en copia y limpia el espejo.
+    /// Cuts everything. Leaves the slots on copy and clears the mirror.
     void reset();
 
-    /// Un frame: consume el log, resuelve los key-on/key-off en su posición
-    /// exacta, y deja la mezcla en `out` (interleaved, `frame_samples()`
-    /// muestras). `out` se PISA, no se acumula.
+    /// One frame: consumes the log, resolves the key-ons/key-offs at their
+    /// exact positions, and leaves the mix in `out` (interleaved,
+    /// `frame_samples()` samples). `out` is OVERWRITTEN, not accumulated.
     void tick(const AytherAudioWrite* w, uint32_t n, uint32_t frame,
               std::vector<float>& out);
 
-    /// Telemetría — el precedente de synth_stats: sin esto, diagnosticar de
-    /// oído cuesta varias vueltas.
+    /// Telemetry — following the synth_stats precedent: without this,
+    /// diagnosing by ear takes several rounds.
     struct Stats {
         uint64_t ticks = 0, key_ons = 0, key_offs = 0;
-        uint64_t substituted = 0;   // key-ons que NO cayeron en copia
+        uint64_t substituted = 0;   // key-ons that did NOT fall back to copy
         uint64_t resets = 0;
     };
     const Stats& stats() const { return stats_; }
 
 private:
-    /// Un key-on/key-off detectado en las escrituras, con su posición.
+    /// A key-on/key-off detected in the writes, with its position.
     struct KeyEvent { uint8_t chip, channel; bool on; uint32_t cycle; };
 
     void scan_keys(const AytherAudioWrite* w, uint32_t n,
@@ -265,8 +271,8 @@ private:
     SilentSource silent_;
 
     IVoiceSource* voice_[kVoices] = {};
-    uint8_t       fm_key_ = 0;              // estado key-on de los 6 canales FM
-    uint8_t       psg_att_[4] = { 0xF, 0xF, 0xF, 0xF };   // atenuación actual
+    uint8_t       fm_key_ = 0;              // key-on state of the 6 FM channels
+    uint8_t       psg_att_[4] = { 0xF, 0xF, 0xF, 0xF };   // current attenuation
     int           psg_latch_ = 3;
     Stats         stats_;
 };
