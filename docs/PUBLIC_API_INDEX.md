@@ -1114,7 +1114,7 @@ SHADERS. That is everything between the composed frame and the monitor.
 
 Header-only and Vulkan-free: it is tested without a GPU.
 
-**Declares:** `ayther`, `output_profile_by_id`, `output_profiles`, `output_rect`, `OutputProfile`, `OutputRect`, `uint8_t`
+**Declares:** `ayther`, `output_profile_by_id`, `output_profiles`, `output_rect`, `output_shader`, `OutputProfile`, `OutputRect`, `OutputShader`, `uint8_t`
 
 _The installed header (`include/ayther/output_profile.h`) carries the full documentation of every symbol._
 

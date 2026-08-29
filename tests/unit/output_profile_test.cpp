@@ -156,6 +156,62 @@ int main() {
               "hereda el tubo del CRT: la diferencia es el cable");
     }
 
+    // -- 8. El perfil se ve TAMBIEN sin pack ---------------------------------
+    std::printf("\n[8] sin pack, manda el piso del perfil\n");
+    {
+        // EL DEFECTO: los tres efectos eran multiplicadores de lo que autora el
+        // pack, y sin pack eso es cero. «CRT simulado» salia identico a «LCD
+        // nativo» — 0 x 1 = 0— y el ajuste no cambiaba un solo pixel en el 100%
+        // de los juegos que todavia no tienen pack.
+        const OutputProfile& crt = *output_profile_by_id("crt");
+        const OutputProfile& lcd = *output_profile_by_id("lcd");
+
+        // OJO CON LOS ARGUMENTOS: sin pack el entorno de script NO devuelve
+        // ceros. Devuelve crt_strength=0.0 pero scan_strength=0.5 y
+        // vignette=0.2, que son sus defaults. Por eso el caso REAL se prueba
+        // con esos numeros y no con tres ceros: una regla que mire los tres los
+        // lee como autoria del pack, deja el gate en 0 —el unico que el pack no
+        // puso— y el shader vuelve a ser passthrough.
+        const OutputShader sin_pack = output_shader(crt, 0.0f, 0.5f, 0.2f);
+        check(sin_pack.crt > 0.0f && sin_pack.scan > 0.0f,
+              "CRT sin pack SI se ve (era identico a LCD)");
+        // El gate es lo que decide, y es el unico que el pack no puso.
+        check(output_shader(crt, 0.0f, 0.0f, 0.0f).crt == sin_pack.crt,
+              "…y da igual con que defaults venga el interprete: manda el gate");
+        const OutputShader lcd_sin = output_shader(lcd, 0.0f, 0.5f, 0.2f);
+        check(lcd_sin.crt == 0.0f && lcd_sin.scan == 0.0f && lcd_sin.vignette == 0.0f,
+              "…y LCD sigue sin poner nada, que es lo que «nativo» significa");
+
+        // Con pack, no cambia la regla existente: manda el autor, escalado.
+        const OutputShader con_pack = output_shader(crt, 0.4f, 0.5f, 0.25f);
+        check(con_pack.crt > 0.39f && con_pack.crt < 0.41f,
+              "con pack manda el pack, escalado por el perfil");
+        check(output_shader(lcd, 0.4f, 0.5f, 0.25f).crt == 0.0f,
+              "…y LCD lo sigue apagando");
+
+        // La decision es POR PACK y no por parametro: un autor que pide
+        // curvatura y deja las lineas en cero las dejo en cero a proposito.
+        const OutputShader parcial = output_shader(crt, 0.4f, 0.0f, 0.0f);
+        check(parcial.scan == 0.0f,
+              "autoria parcial: el hueco NO se rellena con el piso del perfil");
+
+        // Cinematografica sigue sin lineas de barrido tambien con su piso: es
+        // una presentacion, no una imitacion de un televisor.
+        const OutputShader cine = output_shader(*output_profile_by_id("cinema"),
+                                                0.0f, 0.5f, 0.2f);
+        check(cine.scan == 0.0f && cine.vignette > 0.0f,
+              "cinematografica sin pack: viñeta si, lineas no");
+
+        // NTSC hereda el tubo del CRT tambien en el piso: la diferencia sigue
+        // siendo el cable.
+        const OutputShader n = output_shader(*output_profile_by_id("ntsc"),
+                                             0.0f, 0.5f, 0.2f);
+        check(n.crt == sin_pack.crt && n.scan == sin_pack.scan,
+              "NTSC hereda el tubo del CRT en el piso");
+        check(n.ntsc > 0.0f && sin_pack.ntsc == 0.0f,
+              "…y el sangrado sigue siendo solo suyo");
+    }
+
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

@@ -47,6 +47,19 @@ struct OutputProfile {
     float crt_scale      = 0.0f;
     float scan_scale     = 0.0f;
     float vignette_scale = 0.0f;
+    /// Values supplied by the profile itself when the pack authors no effect.
+    ///
+    /// A multiplier alone cannot enable presentation effects when the pack
+    /// supplies zero. These floors let an output profile answer how the image
+    /// should look even without authored content. When a pack does enable CRT,
+    /// its three authored values still take precedence after being scaled.
+    ///
+    /// This complements rather than replaces the multipliers, for the same
+    /// reason that `ntsc` is already absolute: presentation remains meaningful
+    /// when there is no pack.
+    float crt_base       = 0.0f;
+    float scan_base      = 0.0f;
+    float vignette_base  = 0.0f;
     /// EM-7.2: composite-signal chroma bleed [0,1].
     ///
     /// Unlike the three above, this one is ABSOLUTE and not a multiplier: the
@@ -63,19 +76,22 @@ inline const OutputProfile* output_profiles(uint32_t* count) {
         // The default is LCD and not CRT: on a modern screen the CRT is an
         // effect, and starting with an effect enabled would make the first look
         // at the remaster be the shader rather than the art.
-        { "lcd",     "LCD nativo",     OutputScaling::Fit,     false, 0.0f, 0.0f, 0.0f, 0.0f },
-        { "crt",     "CRT simulado",   OutputScaling::Fit,     true,  1.0f, 1.0f, 1.0f, 0.0f },
-        { "pixel",   "Pixel-perfect",  OutputScaling::Integer, false, 0.0f, 0.0f, 0.0f, 0.0f },
-        { "smooth",  "Suavizado",      OutputScaling::Fit,     true,  0.0f, 0.0f, 0.0f, 0.0f },
+        //                                                        pack scales       profile floors     ntsc
+        { "lcd",     "LCD nativo",     OutputScaling::Fit,     false, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+        // The CRT floor enables the overall effect while keeping scanlines and
+        // vignette restrained enough for sustained play.
+        { "crt",     "CRT simulado",   OutputScaling::Fit,     true,  1.0f, 1.0f, 1.0f, 1.0f, 0.35f, 0.15f, 0.0f },
+        { "pixel",   "Pixel-perfect",  OutputScaling::Integer, false, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+        { "smooth",  "Suavizado",      OutputScaling::Fit,     true,  0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
         // Cinematic: no scanlines, but with vignette and a little curvature.
         // It is a presentation, not an imitation of a television set.
-        { "cinema",  "Cinematográfica", OutputScaling::Fit,    true,  0.35f, 0.0f, 1.0f, 0.0f },
+        { "cinema",  "Cinematográfica", OutputScaling::Fit,    true,  0.35f, 0.0f, 1.0f, 0.5f, 0.0f, 0.5f, 0.0f },
         // EM-7.2: NTSC. It is the CRT plus the chroma bleed of a composite
         // signal — most games of this era were seen this way, with the
         // single-colour gradients that composite blended. It is kept apart from
         // "CRT simulado" because they are two different things: one is the tube
         // (the phosphor grid) and the other is the cable.
-        { "ntsc",    "NTSC compuesto", OutputScaling::Fit,     true,  1.0f, 1.0f, 1.0f, 1.0f },
+        { "ntsc",    "NTSC compuesto", OutputScaling::Fit,     true,  1.0f, 1.0f, 1.0f, 1.0f, 0.35f, 0.15f, 1.0f },
     };
     if (count) *count = static_cast<uint32_t>(sizeof(kAll) / sizeof(kAll[0]));
     return kAll;
@@ -112,6 +128,34 @@ inline const OutputProfile& output_profile_resolve(const char* user_choice,
     if (const OutputProfile* p = output_profile_by_id(user_choice))    return *p;
     if (const OutputProfile* p = output_profile_by_id(pack_recommends)) return *p;
     return output_profile_default();
+}
+
+/// The resolved amount of each presentation effect sent to the shader.
+struct OutputShader { float crt, scan, vignette, ntsc; };
+
+/// Combines pack-authored effects with the output profile's own presentation.
+///
+/// When the pack enables CRT, its three values are scaled as a unit. Otherwise
+/// the profile floors apply, so simulated CRT and cinematic presentation still
+/// work without authored content.
+///
+/// Only `pack_crt` answers whether the pack authored the effect. Script
+/// environments provide non-zero defaults for scanlines and vignette even when
+/// CRT is disabled, and treating those defaults as authorship would suppress
+/// the floors. It is also the gate used by the shader itself.
+///
+/// Once CRT is enabled, all three authored values win. A pack that deliberately
+/// sets scanlines or vignette to zero must not have that choice filled by a
+/// profile floor. `ntsc` remains absolute and independent of pack authorship.
+inline OutputShader output_shader(const OutputProfile& p,
+                                  float pack_crt, float pack_scan,
+                                  float pack_vignette) {
+    if (pack_crt > 0.0f)
+        return { pack_crt      * p.crt_scale,
+                 pack_scan     * p.scan_scale,
+                 pack_vignette * p.vignette_scale,
+                 p.ntsc };
+    return { p.crt_base, p.scan_base, p.vignette_base, p.ntsc };
 }
 
 /// The destination rect for this profile. `Integer` looks for the largest
