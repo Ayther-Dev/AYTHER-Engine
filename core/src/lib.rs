@@ -71,7 +71,7 @@ pub const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// This counter is independent from [`RELEASE_VERSION`] and changes only when
 /// that ABI contract changes.
-pub const CORE_C_ABI_REVISION: u32 = 5;
+pub const CORE_C_ABI_REVISION: u32 = 6;
 
 use audio_hasher::{AudioHasher, AudioOccurrence, AudioSubstitutor};
 use vram_sprite::{SpriteHasher, SpriteSubstitutor};
@@ -885,6 +885,16 @@ pub unsafe extern "C" fn ayther_pack_set_region(
 #[unsafe(no_mangle)]
 pub extern "C" fn ayther_manifest_schema_supported() -> u32 {
     archive_vfs::MANIFEST_SCHEMA
+}
+
+/// Returns the `.ay` container format written and understood by this build.
+///
+/// Packs that declare a newer format are rejected with
+/// [`archive_vfs::AyError::UnsupportedFormat`]. This value is independent from
+/// [`ayther_manifest_schema_supported`], which versions manifest metadata.
+#[unsafe(no_mangle)]
+pub extern "C" fn ayther_pack_format_supported() -> u32 {
+    archive_vfs::PACK_FORMAT
 }
 
 /// Returns the AYTHER release version used to validate a pack's `ayther_min` value.

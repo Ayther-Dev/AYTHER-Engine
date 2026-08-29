@@ -384,6 +384,13 @@ void ayther_credits_free(AytherCredits* c);
 /// The manifest SCHEMA version this build writes and understands.
 uint32_t ayther_manifest_schema_supported(void);
 
+/// The physical .ay container FORMAT this build writes and understands.
+///
+/// This is independent from the manifest schema: schema versions metadata,
+/// while format versions the container and its root layout. Missing format and
+/// schema declarations both mean version 1; a newer declaration is rejected.
+uint32_t ayther_pack_format_supported(void);
+
 /// The ENGINE version — the same one the validator compares the pack's
 /// `engine_min` against. The core exposes it so the technical report does not
 /// keep a second copy of the number: two copies drift apart on the first bump

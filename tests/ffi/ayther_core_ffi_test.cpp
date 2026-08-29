@@ -160,6 +160,7 @@ static void test_version() {
     BEGIN_TEST("version/independent_protocol_revisions");
     EXPECT_EQ(ayther_core_version(), AYTHER_CORE_C_ABI_REVISION);
     EXPECT_EQ(ayther_manifest_schema_supported(), AYTHER_PACK_MANIFEST_SCHEMA);
+    EXPECT_EQ(ayther_pack_format_supported(), AYTHER_PACK_FORMAT);
 }
 
 // ---------------------------------------------------------------------------

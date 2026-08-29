@@ -57,8 +57,9 @@ documented C representation. Panics must not unwind across FFI.
 | Axis | Current value | Contract |
 |---|---:|---|
 | AYTHER release | `0.1.0` | shared by Cargo, CMake, vcpkg, SDK, engine validation, and Lua |
-| Flat C ABI revision | `5` | independent counter returned by `ayther_core_version()` |
-| Pack schema | `2` | independent parser/writer format capability |
+| Flat C ABI revision | `6` | independent counter returned by `ayther_core_version()` |
+| Pack schema | `2` | manifest metadata grammar understood by the reader/writer |
+| Pack container format | `1` | physical `.ay` envelope and root-layout capability |
 | Emulator extension ABI | `1.10` | independently negotiated core protocol |
 | SDK C API revision | `1` | independent C facade contract |
 
@@ -66,6 +67,11 @@ The release value follows SemVer. During `0.x`, minor versions may break source
 or binary compatibility and patch versions remain compatible within the same
 minor. Protocol revisions are not SemVer and must not be inferred from the
 release value. See [ADR 0002](adr/0002-release-and-protocol-version-contract.md).
+
+Flat C ABI revision 6 adds `ayther_pack_format_supported()` without changing
+existing signatures or layouts. Consumers that use only the revision-5 symbol
+set remain source-compatible; consumers of the new probe must relink against a
+revision-6 core.
 
 ## Compatibility work required before stable release
 

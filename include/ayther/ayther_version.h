@@ -19,7 +19,10 @@
     AYTHER_VERSION_STRINGIFY(AYTHER_VERSION_PATCH)
 
 /// Revision of the legacy flat C ABI exported by ayther_core.
-#define AYTHER_CORE_C_ABI_REVISION 5
+#define AYTHER_CORE_C_ABI_REVISION 6
 
 /// Latest .ay pack manifest schema written and understood by this release.
 #define AYTHER_PACK_MANIFEST_SCHEMA 2
+
+/// Latest physical .ay container format written and understood by this release.
+#define AYTHER_PACK_FORMAT 1

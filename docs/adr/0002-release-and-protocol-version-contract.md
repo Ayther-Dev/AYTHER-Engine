@@ -25,6 +25,8 @@ Protocol and format revisions remain independent:
 - `AYTHER_CORE_C_ABI_REVISION` / `ayther_core_version()` identifies the legacy
   flat C ABI and is not a SemVer number;
 - `AYTHER_PACK_MANIFEST_SCHEMA` identifies the `.ay` manifest grammar;
+- `AYTHER_PACK_FORMAT` / `ayther_pack_format_supported()` identifies the
+  physical `.ay` container and root layout;
 - the AYTHER-aware libretro extension negotiates its own major/minor ABI;
 - `AYTHER_SDK_C_API_VERSION` identifies the C facade contract.
 
@@ -33,10 +35,19 @@ A release-version bump must update Cargo, CMake, vcpkg, and
 the runtime Rust value with the C/C++ header and CMake project version. CMake
 rejects a vcpkg manifest whose version differs from `PROJECT_VERSION`.
 
-Protocol revisions change only when their respective contracts change. A pack
-schema bump must define its readable/writable compatibility range and migration
-behavior. An ABI bump must include symbol/layout tests and a deprecation or
-migration note.
+Protocol revisions change only when their respective contracts change. Pack
+schema and container format are separate axes: schema versions metadata fields
+and tables, while format versions the physical envelope. Both default to 1 when
+absent and reject declarations newer than the reader, with container format
+validated first. A bump to either must define its readable/writable
+compatibility range and migration behavior. An ABI bump must include
+symbol/layout tests and a deprecation or migration note.
+
+Flat C ABI revision 6 adds the
+`ayther_pack_format_supported()` capability probe. The change is additive and
+does not alter any existing function signature or C-compatible layout; consumers
+built against revision 5 continue to use the unchanged subset, while consumers
+that call the new symbol must relink against revision 6 or later.
 
 ## Consequences
 

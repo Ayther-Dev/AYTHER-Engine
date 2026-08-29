@@ -142,6 +142,13 @@ pub fn is_stored_entry(path: &str) -> bool {
 /// rejected because it may require semantics this build does not implement.
 pub const MANIFEST_SCHEMA: u32 = 2;
 
+/// Newest `.ay` container format written and understood by this build.
+///
+/// This is independent from [`MANIFEST_SCHEMA`]: `schema` versions the metadata
+/// grammar, while `format` versions the physical container and root layout.
+/// Packs created before this field existed are container format 1.
+pub const PACK_FORMAT: u32 = 1;
+
 /// Pack-level metadata from `manifest.toml → [pack]`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PackMeta {
@@ -160,6 +167,9 @@ pub struct PackMeta {
     /// Manifest schema version. Absence denotes legacy schema version 1.
     #[serde(default)]
     pub schema: Option<u32>,
+    /// Physical `.ay` container version. Absence denotes legacy format 1.
+    #[serde(default)]
+    pub format: Option<u32>,
     /// Additional contributors to the pack.
     #[serde(default)]
     pub contributors: Vec<String>,
@@ -341,6 +351,13 @@ pub enum AyError {
         /// Schema declared by the pack.
         found: u32,
         /// Newest schema supported by this build.
+        max: u32,
+    },
+    /// The manifest requires a container format newer than this build understands.
+    UnsupportedFormat {
+        /// Container format declared by the pack.
+        found: u32,
+        /// Newest container format supported by this build.
         max: u32,
     },
 }
@@ -816,6 +833,16 @@ impl AyArchive {
             .map_err(|e| AyError::MalformedManifest(e.to_string()))?;
         let raw: RawManifest =
             toml::from_str(manifest_str).map_err(|e| AyError::MalformedManifest(e.to_string()))?;
+
+        // Container compatibility takes priority because a future format may
+        // assign different meaning to every manifest field, including `schema`.
+        let format = raw.pack.format.unwrap_or(1);
+        if format > PACK_FORMAT {
+            return Err(AyError::UnsupportedFormat {
+                found: format,
+                max: PACK_FORMAT,
+            });
+        }
 
         //  la puerta de la versión de esquema. Un pack más nuevo de lo que
         // este build sabe leer se RECHAZA con el número a la vista — abrirlo
@@ -1384,6 +1411,80 @@ schema     = {}
             other => panic!(
                 "esperaba UnsupportedSchema, salió {:?}",
                 other.map(|_| "abrió")
+            ),
+        }
+    }
+
+    #[test]
+    fn missing_format_is_legacy_format_one() {
+        let a = open_with_manifest(MANIFEST).expect("a legacy pack must use container format 1");
+        assert_eq!(
+            a.meta.format, None,
+            "the parsed metadata must remain faithful"
+        );
+    }
+
+    #[test]
+    fn supported_format_opens() {
+        let m = format!(
+            r#"
+[pack]
+name       = "Supported container"
+version    = "1.0.0"
+game_id    = "sonic2"
+ayther_min = "0.4.0"
+format     = {}
+"#,
+            PACK_FORMAT
+        );
+        let a = open_with_manifest(&m).expect("the supported container format must open");
+        assert_eq!(a.meta.format, Some(PACK_FORMAT));
+    }
+
+    #[test]
+    fn newer_format_is_rejected_with_versions() {
+        let m = format!(
+            r#"
+[pack]
+name       = "Future container"
+version    = "9.0.0"
+game_id    = "sonic2"
+ayther_min = "0.4.0"
+format     = {}
+"#,
+            PACK_FORMAT + 1
+        );
+        match open_with_manifest(&m) {
+            Err(AyError::UnsupportedFormat { found, max }) => {
+                assert_eq!((found, max), (PACK_FORMAT + 1, PACK_FORMAT));
+            }
+            other => panic!(
+                "expected UnsupportedFormat with both versions, got {:?}",
+                other.map(|_| "opened")
+            ),
+        }
+    }
+
+    #[test]
+    fn format_is_validated_before_schema() {
+        let m = format!(
+            r#"
+[pack]
+name       = "Future container and schema"
+version    = "9.0.0"
+game_id    = "sonic2"
+ayther_min = "0.4.0"
+format     = {}
+schema     = {}
+"#,
+            PACK_FORMAT + 1,
+            MANIFEST_SCHEMA + 1
+        );
+        match open_with_manifest(&m) {
+            Err(AyError::UnsupportedFormat { .. }) => {}
+            other => panic!(
+                "container compatibility must take priority, got {:?}",
+                other.map(|_| "opened")
             ),
         }
     }

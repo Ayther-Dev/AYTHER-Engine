@@ -29,7 +29,7 @@
 // no pueda cerrar la sesión: nunca se llega a abrirlo.
 // ---------------------------------------------------------------------------
 
-use crate::archive_vfs::MANIFEST_SCHEMA;
+use crate::archive_vfs::{MANIFEST_SCHEMA, PACK_FORMAT};
 use crate::pack_security::{
     EntryMetadata, MAX_ENTRY_COUNT, validate_archive_metadata, validate_archive_size,
     validate_canonical_logical_path,
@@ -190,6 +190,7 @@ struct LaxPack {
     game_id: Option<String>,
     ayther_min: Option<String>,
     schema: Option<u32>,
+    format: Option<u32>,
 }
 
 #[derive(Deserialize, Default)]
@@ -260,7 +261,7 @@ pub fn affects_compatibility(code: &str) -> bool {
     matches!(
         code.split('.').next().unwrap_or(""),
         // La sesión concreta: la ROM, la plataforma, el core, el motor.
-        "rom" | "platform" | "core" | "engine" | "schema" | "systems"
+        "rom" | "platform" | "core" | "engine" | "format" | "schema" | "systems"
         // El pack como ARCHIVO: si esto falla, no hay nada que correr.
         | "manifest" | "integrity" | "catalog" | "zip" | "io" | "signature"
     )
@@ -512,9 +513,23 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
         }
     };
 
+    // -- formato del contenedor ----------------------------------------------
+    // A future container may change the meaning of the remaining manifest, so
+    // do not derive secondary findings from fields this build cannot interpret.
+    let format = m.pack.format.unwrap_or(1);
+    if format > PACK_FORMAT {
+        r.error(
+            "format.newer",
+            format!(
+                "el pack declara formato de contenedor {} y este AYTHER entiende hasta {} \
+                 — hay que actualizar",
+                format, PACK_FORMAT
+            ),
+        );
+        return r;
+    }
+
     // -- esquema -------------------------------------------------------------
-    // Va PRIMERO: si el pack es de un formato más nuevo, todo lo que sigue se
-    // interpreta con reglas viejas y podría contradecirlo.
     let schema = m.pack.schema.unwrap_or(1);
     if schema > MANIFEST_SCHEMA {
         r.error(
@@ -995,6 +1010,47 @@ schema     = {}
             "hallazgos: {:?}",
             r.findings
         );
+    }
+
+    #[test]
+    fn newer_format_is_reported_as_incompatible() {
+        let p = bake(
+            "format",
+            &format!(
+                r#"
+[pack]
+name       = "Future container"
+version    = "9.0.0"
+game_id    = "sonic2"
+format     = {}
+"#,
+                PACK_FORMAT + 1
+            ),
+        );
+        let verdict = compat_grade(&p, &SessionCtx::default());
+        assert_eq!(verdict.grade, CompatGrade::Incompatible);
+    }
+
+    #[test]
+    fn format_diagnostic_takes_priority_over_schema() {
+        let p = bake(
+            "format_before_schema",
+            &format!(
+                r#"
+[pack]
+name       = "Future container and schema"
+version    = "9.0.0"
+game_id    = "sonic2"
+format     = {}
+schema     = {}
+"#,
+                PACK_FORMAT + 1,
+                MANIFEST_SCHEMA + 1
+            ),
+        );
+        let r = validate_path(&p, &SessionCtx::default());
+        let error_codes: Vec<_> = r.errors().map(|f| f.code).collect();
+        assert_eq!(error_codes, vec!["format.newer"]);
     }
 
     /// Un subsistema desconocido NO impide correr: es degradación opcional, y
