@@ -92,6 +92,13 @@ Broader renderer correctness, real-emulator and game coverage, decoder fixtures,
 cross-platform execution, and thread-safety testing remain incomplete, so
 buildability is not a stability claim.
 
+Detailed native contracts are maintained in
+[C++ API and implementation contracts](CPP_API_REFERENCE.md), with specialized
+documents for the [component model](COMPONENT_MODEL.md),
+[emulator extension ABI](EMULATOR_EXTENSION_ABI.md),
+[cinematic composition](CINEMATIC_PLANE_COMPOSITION.md), and
+[widescreen behavior](WIDESCREEN.md).
+
 ### Explicitly outside this repository
 
 - AYTHER Runtime: game-session executable and reference frontend;

@@ -725,7 +725,7 @@ Consumes a FrameView (the deterministic CPU output of AytherSession::step())
 
 Kept SEPARATE from AytherSession on purpose: the session stays Vulkan-free /
 headless (CI, determinism, future mobile); the renderer is the swappable GPU
-layer. See docs/architecture/r3-render-to-texture.md.
+layer. See docs/CPP_API_REFERENCE.md#rendering-and-vulkan.
 
 Lifecycle: init(ctx, w, h) → render(ctx, cmd, fv) per frame → shutdown(ctx).
 Single-owner; driven from the same thread as the session.
@@ -746,7 +746,7 @@ _The installed header (`include/ayther/ayther_renderer.h`) carries the full docu
 ayther_result.h — no-throw error model for the runtime / FFI boundary.
 
 The FFI never propagates exceptions or panics across the binary boundary
-(see docs/architecture/ayther-engine.md §4.1). Expected failures (corrupt
+(see docs/API_COMPATIBILITY.md#error-handling). Expected failures (corrupt
 pack, malformed TOML, missing ROM) surface as an ayther::Result, so the
 caller — especially ayther_lab — can show *why* something failed, not just
 that* it failed.
@@ -809,7 +809,7 @@ pipeline — emulator host + tile/sprite/audio hashing + substitution + Lua
 scripting + HD audio output — behind one object, and exposes the *result* of
 each frame as a plain-data FrameView for the frontend to render.
 
-Motor / frontend boundary (see docs/architecture/ayther-engine.md §7):
+Engine / frontend boundary (see docs/ARCHITECTURE.md#session-and-renderer-boundary):
 
   AytherSession (motor, this object)        Frontend (ayther_play / ayther_lab)
   ----------------------------------        -----------------------------------
@@ -844,7 +844,7 @@ _The installed header (`include/ayther/ayther_session.h`) carries the full docum
 ayther_unique_handle.h — RAII for opaque Rust handles.
 
 No raw opaque pointer from ayther_core lives loose in C++ (see
-docs/architecture/ayther-engine.md §4.1, §10). Every handle is wrapped at
+docs/API_COMPATIBILITY.md#ownership-and-lifetime). Every handle is wrapped at
 creation so Rust frees it deterministically on scope exit — even through an
 early return — which matters during hot-reload / scene restart.
 
@@ -994,8 +994,8 @@ ayther_api.h — COPIA del contrato del Core Fork. NO editar a mano.
 
 AYTHER_API_VERSION: v1.10 — sincronizar con davidlazarte/Genesis-Plus-GX
                     core/ayther/ayther_api.h (release ayther-abi-1.10,
-                    core v1.7.4 752a6ff7; guia: docs/ayther_integration_1.9.md §5.1,
-                    que sirve para 1.10)
+                    core v1.7.4 752a6ff7; integration contract:
+                    docs/EMULATOR_EXTENSION_ABI.md)
 
 COPIA ENTERA desde 1.9 (2026-08-26; 1.10 el mismo dia). Hasta 1.3-r2 se traia un recorte «solo
 lo que se consume»; con seis versiones aditivas encima (SYSTEM, controles en
@@ -1004,7 +1004,8 @@ no ahorra nada y esconde lo que hay para descubrir. Declarar un tipo NO es
 consumirlo: lo que el Engine LEE lo dicen sus suscripciones (pide solo los
 bits que consume, no AYTHER_SUB_ALL) y sus chequeos de capability.
 
-Tres cambios de SIGNIFICADO de 1.3 a 1.9, sin cambio de firma (guia §2):
+Three semantic changes from 1.3 to 1.9 did not change signatures; see
+docs/EMULATOR_EXTENSION_ABI.md#semantic-changes-through-abi-110:
  1. 0x10E / fallback_reasons en Mode 4 dice la verdad (ya no arranca en
     UNSUPPORTED_MODE; el Z80 marca CRAM/VRAM a mitad de frame). El Engine
     nunca tuvo un «es SMS → fallback siempre», asi que solo hay que seguir

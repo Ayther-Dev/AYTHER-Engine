@@ -211,7 +211,8 @@ int main() {
                 check(req != 0, "la sesion PIDIO suscripciones al iniciar");
                 // ABI 1.9: la sesión pide lo que CONSUME, no AYTHER_SUB_ALL —
                 // que ahora incluye ATTRIBUTION, LINE_* y FRAME_HASH, con
-                // costo por frame y sin lector en el Engine (guía §4).
+                // per-frame cost and no Engine consumer (see
+                // docs/EMULATOR_EXTENSION_ABI.md#subscriptions).
                 check(req == (RetroRunner::kEngineSubscriptions & sup),
                       "pidio lo que el Engine consume, acotado a lo soportado");
                 check((req & ~RetroRunner::kEngineSubscriptions) == 0,

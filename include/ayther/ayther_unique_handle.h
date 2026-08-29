@@ -3,7 +3,7 @@
 // ayther_unique_handle.h — RAII for opaque Rust handles.
 //
 // No raw opaque pointer from ayther_core lives loose in C++ (see
-// docs/architecture/ayther-engine.md §4.1, §10). Every handle is wrapped at
+// docs/API_COMPATIBILITY.md#ownership-and-lifetime). Every handle is wrapped at
 // creation so Rust frees it deterministically on scope exit — even through an
 // early return — which matters during hot-reload / scene restart.
 //

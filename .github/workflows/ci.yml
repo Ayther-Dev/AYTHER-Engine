@@ -35,6 +35,14 @@ jobs:
           -DAYTHER_ROOT=${{ github.workspace }}
           -P tools/check_repo_boundary.cmake
 
+      - name: Check documentation and license consistency
+        shell: pwsh
+        run: |
+          ./tools/check_doc_references.ps1
+          ./tools/dep_graph.ps1 -Check
+          ./tools/gen_api_reference.ps1 -Check
+          cmake -DAYTHER_REPO=${{ github.workspace }} -P tools/check_license.cmake
+
       - name: Check pull-request commit boundaries
         if: github.event_name == 'pull_request'
         shell: pwsh

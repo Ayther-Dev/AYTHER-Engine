@@ -2,7 +2,7 @@
 # background_spike — headless harness validating the Fondos motor: stitch a
 # scrolling plane into a full level strip + unwrap the wrapped VDP Hscroll, vs a
 # real ROM. No SDL / Vulkan (like determinism_spike); links ayther_core for
-# BackgroundStitcher + ScrollUnwrapper. See docs/design/componentes-plan.md §3.
+# BackgroundStitcher + ScrollUnwrapper. See docs/COMPONENT_MODEL.md#backgrounds.
 #
 # Built only when -DAYTHER_BUILD_SPIKE=ON.
 # ---------------------------------------------------------------------------

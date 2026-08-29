@@ -21,8 +21,9 @@ Use two cohesive layers within AYTHER Engine:
 
 The preferred native boundary is typed CXX declarations. A flat C ABI remains
 available for C consumers and selected pointer-heavy paths, but is not the
-preferred high-level product API. External frontends should consume an
-engine-owned session facade once implemented.
+preferred high-level product API. External frontends should consume the
+engine-owned session facade rather than assemble core implementation details
+directly.
 
 ## Consequences
 

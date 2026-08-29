@@ -3,7 +3,7 @@
 # Mode 3 (RAM anchoring) against a real ROM. No SDL / Vulkan: compiles
 # RetroRunner (like determinism_spike) and links the Rust core (ayther_core)
 # for ram_anchor::assign_sprites + the SAT parser. See
-# docs/design/estado-motor-componentes.md §3.4/§3.5.
+# docs/COMPONENT_MODEL.md#ram-anchoring-mode-3.
 #
 # Built only when -DAYTHER_BUILD_SPIKE=ON.
 # ---------------------------------------------------------------------------

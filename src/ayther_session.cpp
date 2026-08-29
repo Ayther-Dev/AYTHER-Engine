@@ -156,7 +156,7 @@ Result<std::unique_ptr<AytherSession>> AytherSession::create(const Config& cfg) 
     im.rom_path  = cfg.rom_path;
     im.activate_ayther_subscriptions();   // E-2 ()
 
-    // ABI 1.9 §5.1: qué hay del otro lado, dicho por el core y no deducido de
+    // SYSTEM reports what is on the other side; the Engine does not infer it
     // registros. Acá sólo lo que ya se sabe antes del primer frame (hardware y
     // región); el modo del VDP y el viewport se refrescan por frame en
     // refresh_abi_mirror() — al crear la sesión `vdp_mode` es 0 a propósito.
@@ -1748,7 +1748,7 @@ const FrameView& AytherSession::produce_frame() {
                                     "captura para la escena nueva\n", s);
                                 break;
                             }
-                        // ABI 1.10 (guía §5.1): `h40` describe el frame EMITIDO
+                        // ABI 1.10: `h40` describes the emitted frame
                         // (== viewport_w), no reg 12. En el frame de transición
                         // los registros ya cambiaron la geometría y el core la
                         // aplica al siguiente: `GEOMETRY_PENDING` dice que el
@@ -3896,7 +3896,7 @@ const FrameView& AytherSession::produce_frame() {
         AYTHER_LEGACY_READ_END
         v.scene_dirty = (raster > 0 ? 1 : 0)
                       | (im.layer_dim_want ? 2 : 0);
-        // ABI 1.9 §5.8: `> 0` sigue siendo fallback (arriba), pero dos bits
+        // A positive mask remains fallback, but two bits
         // dicen algo más que «el frame se partió» y conviene verlos en el log
         // una vez: OVERFLOW = la multicapa va a devolver RC_JOURNAL_OVERFLOW
         // (fallback, no prefijo); UNSUPPORTED_CONTROLS = un control que este

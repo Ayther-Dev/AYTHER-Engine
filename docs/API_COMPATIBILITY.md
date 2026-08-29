@@ -22,6 +22,10 @@ supported release.
 The Rust definitions are authoritative for exported functions and `#[repr(C)]`
 layouts. A shared-type change must update the header and ABI tests atomically.
 
+Content identities are compatibility surfaces even when no type layout
+changes. Their exact definitions and known-answer tests are documented in
+[Pack identity specification](IDENTITY_SPECIFICATION.md).
+
 ## Ownership and lifetime
 
 - A pointer returned by a `*_new`, `*_open`, or `*_load` function is owned by
@@ -41,6 +45,10 @@ Rust cannot validate the provenance of a foreign pointer. Passing dangling,
 misaligned, overlapping, or incorrectly sized memory is caller error and can
 cause undefined behavior.
 
+C++ owners of opaque Rust handles use the `unique_handle<T, Free>` adapter so a
+successful allocation acquires its matching destructor immediately. Loose raw
+owning handles are not an accepted engine-lifetime pattern.
+
 ## Layout and language rules
 
 Cross-boundary values use `#[repr(C)]`, fixed-width integer types, and explicit
@@ -51,6 +59,10 @@ in both C11 and C++20.
 Do not expose Rust enums, `bool` layout assumptions, `usize`, references,
 trait objects, unwinding, or allocator-owned containers directly without a
 documented C representation. Panics must not unwind across FFI.
+
+C++ exceptions must likewise not escape through C entry points. Expected
+failures use explicit status or result values; cleanup functions and
+destructors are non-throwing.
 
 ## Release and protocol version contract
 

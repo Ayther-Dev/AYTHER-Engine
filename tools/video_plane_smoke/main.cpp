@@ -6,7 +6,7 @@
 // había: 76/76 en ctest, video_shader 4/4, panorama sin fallos. Todos ésos
 // dicen «no rompí nada» — ninguno dice «el video ya no tapa los Sprites
 // vivos», que es la afirmación entera de la issue. Su diseño aprobado
-// (docs/design/cinematica-por-planos.md, sección «Verificación») pide
+// (docs/CINEMATIC_PLANE_COMPOSITION.md#verification) requires
 // exactamente este oráculo y nunca se escribió; la issue quedó abierta
 // esperando que alguien mirara una Cinemática a ojo.
 //

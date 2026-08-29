@@ -8,8 +8,8 @@
 //
 // # Por qué existe
 //
-// `docs/specs/pack-identities.md` especifica bit a bit cómo se calcula cada
-// identidad, y su §9 enumera los siete errores de re-implementación que
+// `docs/IDENTITY_SPECIFICATION.md` specifies every identity bit for bit, and
+// its reimplementation section lists the seven mistakes that
 // **compilan y no matchean nada**: usar el basis canónico de FNV en vez del
 // seed propio, olvidar el `^1` del word-swap donde va (o aplicarlo donde no
 // va), meter la línea de paleta en el hash de sprite —que es ciego a

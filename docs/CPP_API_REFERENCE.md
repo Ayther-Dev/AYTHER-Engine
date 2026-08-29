@@ -143,6 +143,32 @@ Asynchronous sprite decoding owns CPU buffers until the render thread pumps the
 completed uploads. Worker shutdown must wake the condition variable and join the
 thread before queues, caches, or the owning object are destroyed.
 
+The renderer targets an offscreen image with color-attachment, transfer-source,
+transfer-destination, and sampled usage. The frontend owns presentation. This
+keeps the session headless and lets another frontend sample the clean frame
+without treating the game as the whole window.
+
+The normal lifecycle is:
+
+1. the frontend creates `VkContext`;
+2. `AytherRenderer::init` creates device-dependent resources for one extent;
+3. each frame, the session produces `FrameView` and the renderer records into a
+   caller-provided command buffer;
+4. the frontend presents, samples, or reads back the offscreen target;
+5. resize waits for conflicting GPU work, then recreates the target and every
+   dependent framebuffer or descriptor;
+6. `shutdown(context)` releases renderer resources before the context dies.
+
+A shared command-buffer model currently keeps render and presentation in one
+submission. Independent renderer submission and a dedicated render thread are
+not part of the current contract. Layout transitions must cover every use of
+the offscreen image; a missing barrier is a correctness failure, not a portable
+driver optimization.
+
+Plane-aware video composition and widescreen behavior have dedicated contracts:
+[Cinematic plane composition](CINEMATIC_PLANE_COMPOSITION.md) and
+[Widescreen composition](WIDESCREEN.md).
+
 ### Video
 
 `VideoSource` abstracts random or ranged reads without transferring ownership
@@ -156,6 +182,19 @@ Recording data is deterministic state, not a general media container. Readers
 must validate lengths before allocation and treat compressed payloads as
 untrusted. Rewind owns a bounded ring of compressed states; enabling it has a
 memory cost proportional to state size, capture cadence, and requested history.
+
+### Determinism and headless oracles
+
+`AytherSession` is designed to step without Vulkan or an audio device. A
+headless oracle can therefore load a legally distributable fixture, run an
+ordered input stream, serialize state, restore it, and compare re-simulated
+frames and observations.
+
+Deterministic code uses emulation frames or recorded stream positions. Wall
+time, presentation timing, device callbacks, filesystem ordering, and GPU
+results must not feed back into session state. The guarantee remains conditional
+on deterministic behavior from the selected emulator core and all supplied
+inputs.
 
 ### Component serialization
 

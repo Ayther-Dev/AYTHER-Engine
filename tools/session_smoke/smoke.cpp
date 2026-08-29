@@ -13,7 +13,7 @@
 //   3. step() stays deterministic across serialize/unserialize (the .arp base).
 //
 // No audio device is opened (Config::enable_audio = false), so it runs in CI /
-// headless. See docs/architecture/ayther-engine.md §5, §6.1.
+// headless. See docs/CPP_API_REFERENCE.md#determinism-and-headless-oracles.
 // ---------------------------------------------------------------------------
 
 #include "ayther_session.h"

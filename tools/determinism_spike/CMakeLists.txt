@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # determinism_spike — headless harness validating risk #1 (savestate
 # re-simulation determinism). No SDL / Vulkan: compiles RetroRunner +
-# core_loader (header) only. See docs/architecture/ayther-engine.md §6.1.
+# core_loader (header) only. See docs/CPP_API_REFERENCE.md#determinism-and-headless-oracles.
 #
 # Built only when -DAYTHER_BUILD_SPIKE=ON.
 # ---------------------------------------------------------------------------

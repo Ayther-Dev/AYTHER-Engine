@@ -7,7 +7,10 @@
 | AYTHER Engine | Open-source core and native orchestration technology documented by this repository |
 | `ayther_core` | Rust library for identity, substitution, packs, scripting, patches, and audio-format processing |
 | `Ayther::core` | Partial installed CMake target for the static Rust core and C header |
-| `AytherSession` | Planned C++ facade that owns one emulation and enhancement session |
+| `AytherSession` | Implemented pre-release C++ facade that owns one emulation and enhancement session |
+| `AytherRenderer` | Pre-release Vulkan renderer that consumes `FrameView` and produces an offscreen image |
+| component | Logical animation, audio event, background, or anchored entity built from observed identities and context |
+| emulator extension ABI | Independently versioned protocol exposed by an AYTHER-aware libretro core; current implemented version is 1.10 |
 | `.ay` pack | ZIP-based container for metadata and optional replacement content; never a ROM container |
 | asset identity | Deterministic key derived from observed graphics, audio, or contextual state |
 | substitution | Resolution of an identity to optional replacement content |

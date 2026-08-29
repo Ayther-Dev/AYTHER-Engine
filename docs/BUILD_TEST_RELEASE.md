@@ -29,6 +29,22 @@ reports pre-existing drift and is a visible CI advisory until the baseline is
 normalized. An ignored benchmark is not a functional test failure, but must
 remain visible.
 
+## Repository documentation and policy checks
+
+Run these checks after changing documentation, public comments, dependencies,
+or license metadata:
+
+```text
+pwsh tools/check_doc_references.ps1
+pwsh tools/dep_graph.ps1 -Check
+cmake -DAYTHER_REPO=. -P tools/check_license.cmake
+pwsh tools/gen_api_reference.ps1 -Check
+```
+
+The documentation checker validates local Markdown links and `docs/...`
+references embedded in source, CMake, and PowerShell. The public API index and
+dependency graph are generated artifacts and must not be edited by hand.
+
 ## Headless native build
 
 Windows:
@@ -148,7 +164,8 @@ headers are promised as public surfaces.
 
 The checkout now includes `.github/workflows/ci.yml`. On pushes to `main`, pull
 requests, and manual dispatches it runs repository-boundary checks, locked Rust
-lint/tests/docs, dependency-notice verification, and the Windows/Linux headless
+lint/tests/docs, documentation-reference and license consistency checks,
+dependency-notice verification, and the Windows/Linux headless
 configure/build/test/install sequence. Pull requests additionally validate that
 individual commits do not mix the closed Lab boundary with FOSS paths.
 

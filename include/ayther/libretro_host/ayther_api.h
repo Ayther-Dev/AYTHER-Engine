@@ -3,8 +3,8 @@
 //
 // AYTHER_API_VERSION: v1.10 — sincronizar con davidlazarte/Genesis-Plus-GX
 //                     core/ayther/ayther_api.h (release ayther-abi-1.10,
-//                     core v1.7.4 752a6ff7; guia: docs/ayther_integration_1.9.md §5.1,
-//                     que sirve para 1.10)
+//                     core v1.7.4 752a6ff7; integration contract:
+//                     docs/EMULATOR_EXTENSION_ABI.md)
 //
 // COPIA ENTERA desde 1.9 (2026-08-26; 1.10 el mismo dia). Hasta 1.3-r2 se traia un recorte «solo
 // lo que se consume»; con seis versiones aditivas encima (SYSTEM, controles en
@@ -13,7 +13,8 @@
 // consumirlo: lo que el Engine LEE lo dicen sus suscripciones (pide solo los
 // bits que consume, no AYTHER_SUB_ALL) y sus chequeos de capability.
 //
-// Tres cambios de SIGNIFICADO de 1.3 a 1.9, sin cambio de firma (guia §2):
+// Three semantic changes from 1.3 to 1.9 did not change signatures; see
+// docs/EMULATOR_EXTENSION_ABI.md#semantic-changes-through-abi-110:
 //  1. 0x10E / fallback_reasons en Mode 4 dice la verdad (ya no arranca en
 //     UNSUPPORTED_MODE; el Z80 marca CRAM/VRAM a mitad de frame). El Engine
 //     nunca tuvo un «es SMS → fallback siempre», asi que solo hay que seguir

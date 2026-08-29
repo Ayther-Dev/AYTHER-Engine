@@ -20,6 +20,12 @@ owned by AYTHER Runtime, SDK, Play, Hub, or Lab.
 | [Generated public API index](PUBLIC_API_INDEX.md) | C++ consumers | Installed headers and their top-level declarations |
 | [C++ API and implementation contracts](CPP_API_REFERENCE.md) | C++ maintainers and integrators | Ownership, lifetime, threading, failure, and subsystem contracts |
 | [C++ engineering review](CPP_ENGINE_REVIEW.md) | Maintainers | Critical findings, hardcoding, design patterns, corrections, and performance opportunities |
+| [Component model](COMPONENT_MODEL.md) | Engine and tooling developers | Grouping, contextual resolution, animation, audio events, backgrounds, and RAM anchoring |
+| [Pack identity specification](IDENTITY_SPECIFICATION.md) | Pack tooling authors and integrators | Bit-exact identity algorithms, KATs, compatibility risks, and reimplementation hazards |
+| [Emulator extension ABI](EMULATOR_EXTENSION_ABI.md) | Emulator-core and Engine integrators | ABI 1.10 negotiation, capabilities, regions, snapshots, subscriptions, and fallback |
+| [Cinematic plane composition](CINEMATIC_PLANE_COMPOSITION.md) | Renderer maintainers | Plane masks, VDP priority, opaque-video policy, and GPU oracle |
+| [Widescreen composition](WIDESCREEN.md) | Renderer and pack developers | Implemented widening/gating contract and the planned HUD safe-zone boundary |
+| [Generated dependency graph](DEPENDENCY_GRAPH.md) | Maintainers | Cargo and CMake dependency edges generated from the current checkout |
 | [Pack and security model](PACK_SECURITY_MODEL.md) | Security reviewers and pack tooling authors | Container format, signature/integrity flow, Lua sandbox, and hardening gaps |
 | [Build, test, and release](BUILD_TEST_RELEASE.md) | Contributors and release engineers | Commands that work now, intended CMake flow, CI expectations, and release gates |
 | [Development environment](DEVELOPMENT_ENVIRONMENT.md) | Contributors | Windows/Linux toolchain installation and local setup |
@@ -52,3 +58,5 @@ instructions.
    update their owning document in the same change.
 5. Relative links must stay within this repository. Cross-repository references
    use stable product or artifact names, never local checkout paths.
+6. Generated documents are updated through their owning generator and are not
+   edited by hand.

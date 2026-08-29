@@ -8,7 +8,7 @@
 // scripting + HD audio output — behind one object, and exposes the *result* of
 // each frame as a plain-data FrameView for the frontend to render.
 //
-// Motor / frontend boundary (see docs/architecture/ayther-engine.md §7):
+// Engine / frontend boundary (see docs/ARCHITECTURE.md#session-and-renderer-boundary):
 //
 //   AytherSession (motor, this object)        Frontend (ayther_play / ayther_lab)
 //   ----------------------------------        -----------------------------------
@@ -1161,7 +1161,7 @@ public:
     ///
     /// The width comes from `widescreen_target_width()`: 398 with square pixels
     /// over 224 px, 427 preserving the displayed 4:3. What the pack default
-    /// should be is still open (see docs/design/widescreen-safe-zone.md).
+    /// should be is still open (see docs/WIDESCREEN.md#open-decisions).
     void set_widescreen(uint32_t logical_w) noexcept;
     uint32_t widescreen() const noexcept;
 
@@ -2251,7 +2251,8 @@ public:
     uint32_t    ayther_abi_version() const noexcept;
     const char* ayther_build_id()   const noexcept;
 
-    /// `SYSTEM` (ABI 1.5, guide 1.9 §5.1): what the core says about the content —
+    /// `SYSTEM` (ABI 1.5; see docs/EMULATOR_EXTENSION_ABI.md#observation-regions):
+    /// what the core says about the content —
     /// VDP mode (4/5, 0 while it has not chosen), h40, interlace, S/H, region and
     /// the viewport of the emitted frame with its offset (Game Gear: 160×144 at
     /// (48,24)). It refreshes per frame; `ok` = the core provides it.

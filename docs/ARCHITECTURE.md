@@ -61,6 +61,40 @@ emulator output where safe. Trust failures, incompatible schemas, invalid FFI
 inputs, and required-resource failures must be explicit; they must not be
 silently downgraded to successful activation.
 
+## Session and renderer boundary
+
+`AytherSession` owns emulation, identity state, substitutions, scripting,
+recording, and the CPU-visible result of a frame. It exposes that result as a
+plain-data `FrameView`. It does not own Vulkan and must remain usable in
+headless tests.
+
+`AytherRenderer` is a separate, device-dependent object. It consumes a
+`FrameView`, records work into a caller-provided command buffer, and renders to
+an offscreen image. A frontend may present that image, sample it in another UI,
+or read it back. Presentation policy remains outside the session.
+
+The frontend creates `VkContext` and must keep it alive longer than every
+renderer resource that depends on it. Renderer operations are thread-affine.
+Before resize, replacement, or destruction, the caller must ensure submitted
+GPU work no longer references the affected resources. The detailed lifecycle
+is documented in [C++ API and implementation contracts](CPP_API_REFERENCE.md#rendering-and-vulkan).
+
+## Determinism contract
+
+Given the same ROM bytes, compatible emulator core, initial state, pack,
+configuration, and ordered input stream, headless session stepping must produce
+the same deterministic state and identity observations. Rendering may vary with
+GPU implementation details but must never feed back into simulation.
+
+Savestate verification compares direct continuation with serialize → restore →
+re-simulate. Tests use frame-based clocks and stable fixtures. Wall time,
+audio-device cadence, filesystem iteration order, and unordered-container
+iteration must not alter simulation identity.
+
+Determinism is conditional on the emulator core and every input participating
+in the run. It is not a claim that arbitrary cores, drivers, or external scripts
+are deterministic.
+
 ## Core module map
 
 | Area | Modules |
@@ -71,6 +105,10 @@ silently downgraded to successful activation.
 | Content packs | `archive_vfs`, `pack_builder`, `pack_validate`, `pack_credits`, `file_watcher` |
 | Scripting and patches | `script_env`, `rom_patch`, `cheat_code` |
 | Native boundaries | `ffi` for `cxx`; `lib` for the flat C ABI and crate facade |
+
+Grouping and contextual resolution across these modules are specified in
+[Component model](COMPONENT_MODEL.md). Bit-exact keys are specified separately
+in [Pack identity specification](IDENTITY_SPECIFICATION.md).
 
 ## Trust boundaries
 

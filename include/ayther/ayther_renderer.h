@@ -10,7 +10,7 @@
 //
 // Kept SEPARATE from AytherSession on purpose: the session stays Vulkan-free /
 // headless (CI, determinism, future mobile); the renderer is the swappable GPU
-// layer. See docs/architecture/r3-render-to-texture.md.
+// layer. See docs/CPP_API_REFERENCE.md#rendering-and-vulkan.
 //
 // Lifecycle: init(ctx, w, h) → render(ctx, cmd, fv) per frame → shutdown(ctx).
 // Single-owner; driven from the same thread as the session.

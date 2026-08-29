@@ -2,7 +2,7 @@
 # session_smoke — headless runtime validation of AytherSession (R2.3 de-risk).
 # Unlike the determinism_spike (RetroRunner only), this links the full motor
 # (ayther_engine) + the Rust core, so it exercises the real step() pipeline.
-# See docs/architecture/ayther-engine.md §5.
+# See docs/CPP_API_REFERENCE.md#primary-session-contract.
 #
 # Built only when -DAYTHER_BUILD_SPIKE=ON.
 # ---------------------------------------------------------------------------

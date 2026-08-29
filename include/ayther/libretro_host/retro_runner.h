@@ -194,11 +194,12 @@ public:
 
     /// The ABI version the core declares (0 without the ABI). Major/minor via
     /// `AYTHER_ABI_VERSION_MAJOR/MINOR`. The rule is major == 1 and minor >=
-    /// whatever is needed, never `==`: the ABI is additive (guide 1.9 §3).
+    /// whatever is needed, never `==`: the ABI is additive (see
+    /// docs/EMULATOR_EXTENSION_ABI.md#version-negotiation).
     uint32_t ayther_abi_version() const { return ayther_api_ ? ayther_api_->abi_version : 0u; }
 
-    /// The subscriptions this Engine CONSUMES — and only those (ABI 1.9, guide
-    /// §4: "ask only for what will be read"). Up to ABI 1.3 this was
+    /// The subscriptions this Engine consumes — and only those (see
+    /// docs/EMULATOR_EXTENSION_ABI.md#subscriptions). Up to ABI 1.3 this was
     /// `AYTHER_SUB_ALL` and it made no difference, because the seven bits were
     /// the seven that were read. Since 1.9 `AYTHER_SUB_ALL` is 0xFFF and
     /// includes ATTRIBUTION (one byte per pixel), LINE_STATE / LINE_CRAM /
@@ -212,9 +213,8 @@ public:
         AYTHER_SUB_RASTER_TRACKING | AYTHER_SUB_AUDIO_WRITES | AYTHER_SUB_RECOMPOSITION |
         AYTHER_SUB_AUDIO_EVENTS;
 
-    /// Bits of `fallback_reasons` (snapshot) / 0x10E (legacy). The 1.9 header
-    /// does not name them; the integration guide §5.8 does, and that is where
-    /// they come from. `> 0` still means "fallback" to everyone; these two
+    /// Bits of `fallback_reasons` (snapshot) / 0x10E (legacy). `> 0` still
+    /// means "fallback" to every consumer; these two
     /// deserve distinguishing: OVERFLOW = the journal passed 256 events and
     /// `recompose_multilayer` returns RC_JOURNAL_OVERFLOW instead of a
     /// plausible prefix; UNSUPPORTED_CONTROLS = a control we asked for does not
@@ -271,8 +271,9 @@ public:
     /// viewport of the emitted frame with its offset (Game Gear = 160×144 at
     /// (48,24)). No subscription; it is filled on read. It is the source of
     /// truth for the mode instead of decoding registers: that decoding was
-    /// already fixed once in the core and the Engine's copy never found out
-    /// (guide §5.1). Returns UNSUPPORTED without the capability.
+    /// already fixed once in the core and the Engine's copy never found out.
+    /// Returns UNSUPPORTED without the capability. See
+    /// docs/EMULATOR_EXTENSION_ABI.md#observation-regions.
     AytherReadResult read_system_v1(ayther_system_v1& out) const;
 
     /// A whole region into the caller's buffer, validating the generation.

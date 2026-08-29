@@ -1,19 +1,13 @@
 # ---------------------------------------------------------------------------
-# dep_graph.ps1 — el grafo de dependencias se DERIVA, no se dibuja a mano (#557).
+# dep_graph.ps1 — derive the repository dependency graph from build metadata.
 #
-# Migrar el monorepo es cortar por las dependencias reales, y hacerlo con el
-# mapa equivocado es cortar por donde no es. El mapa estaba equivocado: el
-# README decía que `ayther_play` linkea `ayther_core` cuando su Cargo.toml no lo
-# listaba — un diagrama escrito a mano que envejeció sin que nadie se enterara.
-#
-# Acá el grafo sale de las dos fuentes de verdad:
+# The graph comes from the two build-system sources of truth:
 #
 #   · Rust  — `cargo metadata`, las dependencias por PATH entre crates propios;
 #   · C++   — `cmake --graphviz`, el grafo REAL de targets del build configurado.
 #
-# Y se compara contra el documento versionado. Un diagrama que no se puede
-# desactualizar en silencio es la única forma de que sirva el día de la
-# migración, que es dentro de meses y con las decisiones ya tomadas.
+# `-Check` compares the derived graph with the versioned document so dependency
+# drift cannot remain hidden in hand-maintained prose.
 #
 # Uso:
 #   pwsh tools/dep_graph.ps1            # regenera el documento
@@ -22,7 +16,7 @@
 param(
     [switch]$Check,
     [string]$BuildDir = "build",
-    [string]$Out = "docs/architecture/dependency-graph.md"
+    [string]$Out = "docs/DEPENDENCY_GRAPH.md"
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,69 +40,66 @@ foreach ($p in $meta.packages | Sort-Object name) {
 # -- C++: el grafo real de targets, si hay un build configurado --------------
 $cpp = @()
 $cpp_ok = $false
-# `Ayther::*` son los targets del PAQUETE (ADR-004 E8.1): runtime y sdk consumen
-# el motor por find_package, y graphviz no atraviesa el `$<LINK_ONLY:>` que une
-# `Ayther::engine` con `ayther_engine`. Se dibujan como nodos propios: la arista
-# `X -> Ayther::frontend` es exactamente la dependencia que existe.
-$miembros = @("ayther_engine", "ayther_runtime", "ayther_lab", "ayther_core",
-              "ayther_cxx", "ayther_ymfm", "ayther_play",
-              "Ayther::engine", "Ayther::frontend", "Ayther::core", "Ayther::cxx",
-              "ay_observe", "ay_conformance", "ay_test_core")
+# Keep only Engine repository targets. Product consumers live in separate
+# repositories and must not reappear as local graph members.
+$miembros = @("ayther_engine", "ayther_core", "ayther_cxx", "ayther_ymfm",
+              "ayther_vpx", "Ayther::engine", "Ayther::core", "Ayther::cxx",
+              "Ayther::ymfm", "Ayther::vpx")
 if (Test-Path (Join-Path $BuildDir "CMakeCache.txt")) {
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "ayther-depgraph"
     if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
     New-Item -ItemType Directory -Force $tmp | Out-Null
     cmake "--graphviz=$tmp/deps.dot" -S . -B $BuildDir | Out-Null
-    $dot = Get-Content "$tmp/deps.dot" -ErrorAction SilentlyContinue
-    foreach ($l in $dot) {
-        if ($l -match '//\s*(\S+)\s*->\s*(\S+)\s*$') {
-            $de = $Matches[1]; $a = $Matches[2]
-            # Sólo entre MIEMBROS del ecosistema: el grafo completo son cientos
-            # de aristas de oráculos y de vcpkg, y lo que se decide con este
-            # documento es dónde cortar el repo.
-            # Las auto-aristas son ruido del graphviz (el exe y su target
-            # homónimo), no una dependencia.
-            if ($miembros -contains $de -and $miembros -contains $a -and $de -ne $a) {
-                $cpp += "$de -> $a"
+    if ($LASTEXITCODE -eq 0 -and (Test-Path "$tmp/deps.dot")) {
+        $dot = Get-Content "$tmp/deps.dot"
+        foreach ($l in $dot) {
+            if ($l -match '//\s*(\S+)\s*->\s*(\S+)\s*$') {
+                $de = $Matches[1]; $a = $Matches[2]
+                # Keep repository/package members only. Third-party and test edges
+                # would obscure the installed Engine dependency boundary.
+                if ($miembros -contains $de -and $miembros -contains $a -and $de -ne $a) {
+                    $cpp += "$de -> $a"
+                }
             }
         }
+        $cpp = @($cpp | Sort-Object -Unique)
+        $cpp_ok = $true
+    } else {
+        Write-Warning "CMake graph generation failed; the C++ section was not derived."
     }
-    $cpp = @($cpp | Sort-Object -Unique)
-    $cpp_ok = $true
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
 # -- El documento ------------------------------------------------------------
 $sb = [System.Text.StringBuilder]::new()
-[void]$sb.AppendLine("# Grafo de dependencias del ecosistema")
+[void]$sb.AppendLine("# Generated dependency graph")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("> **GENERADO — no editar a mano.** `pwsh tools/dep_graph.ps1`.")
-[void]$sb.AppendLine("> CI lo verifica (`-Check`): si este archivo no coincide con lo que")
-[void]$sb.AppendLine("> declaran `Cargo.toml` y los `CMakeLists.txt`, el job falla. El mapa")
-[void]$sb.AppendLine("> escrito a mano ya se desactualizó una vez, y de eso salió #557.")
+[void]$sb.AppendLine("**Status:** generated from the current checkout")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("## Crates de Rust")
+[void]$sb.AppendLine("> **GENERATED — do not edit by hand.** Run `pwsh tools/dep_graph.ps1`.")
+[void]$sb.AppendLine("> `pwsh tools/dep_graph.ps1 -Check` verifies that this document still")
+[void]$sb.AppendLine("> matches `Cargo.toml` and the configured CMake target graph.")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("| crate | depende de (crates propios) |")
+[void]$sb.AppendLine("## Rust crates")
+[void]$sb.AppendLine()
+[void]$sb.AppendLine("| Crate | Local path dependencies |")
 [void]$sb.AppendLine("|---|---|")
 foreach ($r in $rust) {
     $d = if ($r.deps.Count) { ($r.deps -join ", ") } else { "—" }
     [void]$sb.AppendLine("| ``$($r.name)`` | $d |")
 }
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("## Targets de C++")
+[void]$sb.AppendLine("## C++ targets")
 [void]$sb.AppendLine()
 if ($cpp_ok) {
-    [void]$sb.AppendLine("Derivado de ``cmake --graphviz`` sobre el build configurado.")
-    [void]$sb.AppendLine("``Ayther::*`` es el paquete que publica el motor (``find_package(Ayther)``):")
-    [void]$sb.AppendLine("``Ayther::engine`` envuelve ``ayther_engine`` (el contrato, ``<ayther/...>``) y")
-    [void]$sb.AppendLine("``Ayther::frontend`` agrega la superficie de primera parte — ADR-004 E8.")
+    [void]$sb.AppendLine("Derived from ``cmake --graphviz`` over the configured build.")
+    [void]$sb.AppendLine("Only Engine repository and installed ``Ayther::*`` package targets are included.")
     [void]$sb.AppendLine()
     [void]$sb.AppendLine('```')
     foreach ($e in $cpp) { [void]$sb.AppendLine($e) }
     [void]$sb.AppendLine('```')
 } else {
-    [void]$sb.AppendLine("_Sin build configurado: esta sección no se derivó._")
+    [void]$sb.AppendLine("_No configured build was available, so this section was not derived._")
 }
 $nuevo = $sb.ToString() -replace "`r`n", "`n"
 
@@ -119,19 +110,19 @@ if ($Check) {
     # La sección de C++ sólo se compara cuando se pudo derivar: en un runner sin
     # build configurado, exigirla haría fallar por algo que no se midió.
     if (-not $cpp_ok) {
-        $viejo  = ($viejo  -split "## Targets de C\+\+")[0]
-        $nuevo  = ($nuevo  -split "## Targets de C\+\+")[0]
-        Write-Host "  (sin build: sólo se verifica el grafo de Rust)"
+        $viejo  = ($viejo  -split "## C\+\+ targets")[0]
+        $nuevo  = ($nuevo  -split "## C\+\+ targets")[0]
+        Write-Host "  (no configured build: checking the Rust graph only)"
     }
     if ($viejo.TrimEnd() -ne $nuevo.TrimEnd()) {
-        Write-Host "`nEl grafo del documento NO coincide con lo declarado." -ForegroundColor Red
-        Write-Host "Regeneralo con: pwsh tools/dep_graph.ps1"
+        Write-Host "`nThe documented graph does not match build metadata." -ForegroundColor Red
+        Write-Host "Regenerate it with: pwsh tools/dep_graph.ps1"
         exit 1
     }
-    Write-Host "  [ OK ] el grafo del documento coincide con lo declarado"
+    Write-Host "  [ OK ] the documented graph matches build metadata"
     exit 0
 }
 
 New-Item -ItemType Directory -Force (Split-Path $outPath) | Out-Null
 [System.IO.File]::WriteAllText($outPath, $nuevo)
-Write-Host "  escrito: $Out"
+Write-Host "  wrote: $Out"

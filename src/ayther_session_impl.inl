@@ -899,7 +899,8 @@ struct AytherSession::Impl {
                 "[AytherSession] get_subscriptions fallo — sin suscripciones\n");
             return;
         }
-        // Sólo lo que el Engine LEE (ABI 1.9, guía §4). AYTHER_SUB_ALL pasó
+        // Only what the Engine reads (docs/EMULATOR_EXTENSION_ABI.md#subscriptions).
+        // AYTHER_SUB_ALL became
         // de 0x7F a 0xFFF y los bits nuevos cuestan por frame sin que nadie
         // los consuma todavía — ver RetroRunner::kEngineSubscriptions.
         const uint32_t want = RetroRunner::kEngineSubscriptions & st.supported_mask;
@@ -931,12 +932,13 @@ struct AytherSession::Impl {
     ayther_frame_snapshot_v1 abi_snap{};
     bool                     abi_snap_ok = false;
     // ABI 1.5 `SYSTEM`: modo del VDP y viewport del contenido cargado, leído
-    // una vez al crear la sesión (guía 1.9 §5.1). `sys_ok` = el core lo dio;
+    // once when creating the session (docs/EMULATOR_EXTENSION_ABI.md#observation-regions).
+    // `sys_ok` = the core supplied it;
     // sin él (stock, fork viejo) se decodifican registros como siempre.
     ayther_system_v1         sys{};
     bool                     sys_ok = false;
     bool                     sys_logged = false;   ///< el primer frame con modo, una vez
-    // ABI 1.9 §5.8: los dos motivos de fallback que merecen aviso propio, una
+    // ABI fallback semantics: two reasons deserve a dedicated warning, once
     // vez por sesión — el resto de la máscara sigue siendo «fallback» a secas.
     bool                     raster_overflow_logged  = false;
     bool                     raster_unsupported_logged = false;

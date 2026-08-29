@@ -3,7 +3,7 @@
 // ayther_result.h — no-throw error model for the runtime / FFI boundary.
 //
 // The FFI never propagates exceptions or panics across the binary boundary
-// (see docs/architecture/ayther-engine.md §4.1). Expected failures (corrupt
+// (see docs/API_COMPATIBILITY.md#error-handling). Expected failures (corrupt
 // pack, malformed TOML, missing ROM) surface as an ayther::Result, so the
 // caller — especially ayther_lab — can show *why* something failed, not just
 // *that* it failed.

@@ -27,6 +27,19 @@ repository. AYTHER Runtime, SDK, Play, and Hub are separate products or services
 with their own artifacts, terms, and release responsibilities. An interface or
 integration point does not transfer license rights between products.
 
+## Repository license scope
+
+This repository contains the open-source AYTHER Engine: Rust core code, native
+engine code, public headers, tests, tools, shaders, and Engine documentation.
+Its root `LICENSE` and file-level notices control covered files. References to
+AYTHER Runtime, SDK, Play, Hub, or Lab describe integration boundaries; they do
+not include those products in this license or repository.
+
+Documentation must not recreate the former monorepo's directory-by-directory
+license matrix. Repository separation is now the boundary. Automated license
+checks should validate this repository's `LICENSE`, Cargo metadata, shipped
+notices, and this policy without assuming sibling product directories exist.
+
 ## Bring your own ROM and core
 
 AYTHER follows two distribution constraints:
