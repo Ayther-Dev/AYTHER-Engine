@@ -499,7 +499,7 @@ VkDescriptorSet VkSprite::get_mask_set(VkContext& ctx, const std::string& asset_
     const VkSampler smp = linear ? sampler_ : sampler_nn_;
     VkDescriptorImageInfo ii[2]{};
     VkWriteDescriptorSet  wr[2]{};
-    VkTexture* texs[2] = { asset.tex, mask.tex };
+    VkTexture* texs[2] = { asset.tex.get(), mask.tex.get() };
     for (int i = 0; i < 2; ++i) {
         ii[i].sampler     = smp;
         ii[i].imageView   = texs[i]->image_view();
@@ -552,10 +552,15 @@ void VkSprite::destroy_framebuffers(VkContext& ctx) {
 // ---------------------------------------------------------------------------
 // VkSprite::init / rebuild / shutdown
 // ---------------------------------------------------------------------------
+VkSprite::~VkSprite() {
+    if (context_) shutdown(*context_);
+}
+
 bool VkSprite::init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
                     VkImageView target_view,
                     const char* vert_spv_path, const char* frag_spv_path) {
     if (!ctx.is_ready()) return false;
+    context_ = &ctx;
 
     if (!create_render_pass(ctx, fmt))             return false;
     {
@@ -677,20 +682,11 @@ void VkSprite::shutdown(VkContext& ctx) {
     vkDeviceWaitIdle(ctx.device());
 
     // Destroy all sprite textures.
-    for (auto& [_, entry] : tex_cache_) {
-        if (entry.valid && entry.tex) {
-            entry.tex->shutdown(ctx);
-            delete entry.tex;
-        }
-    }
     tex_cache_.clear();
 
 
     // Video de la Cinemática (draw_video, ) — tres planos desde .
-    for (VkTexture*& t : video_tex_) {
-        if (!t) continue;
-        t->shutdown(ctx); delete t; t = nullptr;
-    }
+    for (auto& texture : video_tex_) texture.reset();
     video_ds_ = VK_NULL_HANDLE;   // liberado con su pool
     video_w_ = video_h_ = 0; video_seq_ = 0;
     if (video_pool_   != VK_NULL_HANDLE) { vkDestroyDescriptorPool(ctx.device(), video_pool_,   nullptr); video_pool_   = VK_NULL_HANDLE; }
@@ -727,6 +723,7 @@ void VkSprite::shutdown(VkContext& ctx) {
     if (pipe_layout_ != VK_NULL_HANDLE) { vkDestroyPipelineLayout     (ctx.device(), pipe_layout_, nullptr); pipe_layout_ = VK_NULL_HANDLE; }
     if (desc_layout_ != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(ctx.device(), desc_layout_, nullptr); desc_layout_ = VK_NULL_HANDLE; }
     if (render_pass_ != VK_NULL_HANDLE) { vkDestroyRenderPass         (ctx.device(), render_pass_, nullptr); render_pass_ = VK_NULL_HANDLE; }
+    context_ = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,12 +1072,11 @@ bool VkSprite::finish_upload(VkContext& ctx, VkCommandBuffer cmd, TexEntry& entr
     // ---- Allocate GPU texture (mipmapped: los assets se minifican) ---------
     // Vestuario (r8): la máscara sube R8/Gray8 — 1 byte por píxel, mismos mips
     // que el asset (se minifica con él).
-    entry.tex = new VkTexture();
+    entry.tex = std::make_unique<VkTexture>();
     if (!entry.tex->init(ctx, static_cast<uint32_t>(w), static_cast<uint32_t>(h),
                          /*mipmapped=*/true,
                          r8 ? TexImageFormat::R8 : TexImageFormat::Bgra8)) {
-        delete entry.tex;
-        entry.tex = nullptr;
+        entry.tex.reset();
         return false;
     }
     const auto t1 = std::chrono::steady_clock::now();
@@ -1115,9 +1111,7 @@ bool VkSprite::finish_upload(VkContext& ctx, VkCommandBuffer cmd, TexEntry& entr
         *ds = alloc_desc_set(ctx);
         if (*ds == VK_NULL_HANDLE) {
             std::fprintf(stderr, "[VkSprite] Descriptor set alloc failed: %s\n", path.c_str());
-            entry.tex->shutdown(ctx);
-            delete entry.tex;
-            entry.tex = nullptr;
+            entry.tex.reset();
             return false;
         }
     }
@@ -1549,12 +1543,10 @@ void VkSprite::draw_video(VkContext& ctx, VkCommandBuffer cmd, VkImage target_im
         if (video_tex_[0]) vkDeviceWaitIdle(ctx.device());
         for (int i = 0; i < 3; ++i) {
             if (!video_tex_[i]) continue;
-            video_tex_[i]->shutdown(ctx);
-            delete video_tex_[i];
-            video_tex_[i] = nullptr;
+            video_tex_[i].reset();
         }
         for (int i = 0; i < 3; ++i) {
-            video_tex_[i] = new VkTexture();
+            video_tex_[i] = std::make_unique<VkTexture>();
             // mipmapped=false: el video se dibuja ~1:1 o AMPLIADO, nunca
             // minificado, y la cadena de mips es justo el costo fijo por textura
             // que el presupuesto de 1 upload/frame existe para acotar.
@@ -1562,9 +1554,7 @@ void VkSprite::draw_video(VkContext& ctx, VkCommandBuffer cmd, VkImage target_im
                                      TexImageFormat::R8)) {
                 for (int k = 0; k <= i; ++k) {
                     if (!video_tex_[k]) continue;
-                    video_tex_[k]->shutdown(ctx);
-                    delete video_tex_[k];
-                    video_tex_[k] = nullptr;
+                    video_tex_[k].reset();
                 }
                 return;
             }
@@ -1679,12 +1669,6 @@ void VkSprite::clear_textures(VkContext& ctx) {
         decode_done_.clear();
         ++decode_gen_;
     }
-    for (auto& [_, entry] : tex_cache_) {
-        if (entry.valid && entry.tex) {
-            entry.tex->shutdown(ctx);
-            delete entry.tex;
-        }
-    }
     tex_cache_.clear();
     staging_release_.clear();   // : sin cache no queda staging que liberar
 
@@ -1770,9 +1754,7 @@ void VkSprite::evict(VkContext& ctx, const std::string& path) {
         TexEntry& e = it->second;
         if (e.tex) {
             if (!waited) { vkDeviceWaitIdle(ctx.device()); waited = true; }
-            e.tex->shutdown(ctx);
-            delete e.tex;
-            e.tex = nullptr;
+            e.tex.reset();
         }
         e.valid = false;
         e.stale = true;

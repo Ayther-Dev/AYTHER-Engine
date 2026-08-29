@@ -1,6 +1,6 @@
 # C++ engineering review
 
-**Status:** critical review; build/package findings resolved, runtime findings open
+**Status:** critical review; priority ownership/reentrancy findings resolved
 
 **Assessment date:** 2026-08-28
 
@@ -11,9 +11,9 @@ choices: explicit facade boundaries, widespread use of `unique_ptr`, typed
 enums, PImpl for major facades, idempotent cleanup in several subsystems, and
 capacity reuse in measured hot paths. It is not ready to be treated as a
 production engine target. Configure/build/install/consume verification now
-exists; the largest remaining risks are manual GPU ownership, process-visible
-callback dispatch, an oversized session implementation, mutable function-static
-render scratch state, and missing behavior/sanitizer oracles.
+exists; the remaining risks are missing sanitizer oracles and the longer-term
+decomposition of session runtime responsibilities into independently testable
+controllers.
 
 The recommendations below follow the C++ Core Guidelines. Performance items are
 hypotheses until a benchmark or profiler confirms them.
@@ -38,7 +38,7 @@ runtime contract.
 
 ### 2. Replace raw owning GPU pointers
 
-**Severity:** high
+**Severity:** resolved
 
 `VkSprite` stores and mutates owning `VkTexture*` values and performs several
 manual `new`, `shutdown`, `delete`, and null-reset sequences. Error branches and
@@ -56,9 +56,9 @@ entries. This applies RAII and removes duplicated cleanup paths.
 
 ### 3. Make Vulkan destruction structurally unavoidable
 
-**Severity:** high
+**Severity:** resolved
 
-Several Vulkan wrappers have default destructors and require callers to invoke
+Previously, several Vulkan wrappers had default destructors and required callers to invoke
 `shutdown(context)` explicitly. A missed call leaks resources; a late call may
 use a dead context. The type system does not encode the required order.
 
@@ -72,9 +72,9 @@ but make the destructor safe and authoritative.
 
 ### 4. Eliminate process-visible callback dispatch state
 
-**Severity:** high
+**Severity:** resolved
 
-`RetroRunner` routes C callbacks through a static `s_instance_` pointer and
+Previously, `RetroRunner` routed C callbacks through a static `s_instance_` pointer and
 reassigns it before operations. This is non-reentrant and creates a data race if
 two runners are driven concurrently. Reasserting the pointer narrows the window
 but does not create an ownership or synchronization guarantee.
@@ -87,10 +87,13 @@ itself solve callbacks that escape the initiating call.
 
 ### 5. Decompose `AytherSession::Impl`
 
-**Severity:** high
+**Severity:** resolved for translation-unit size; controller extraction remains
 
-`src/ayther_session.cpp` exceeds eleven thousand lines and its implementation
-object owns emulator observation, identity, packs, scripts, audio, video,
+The former `src/ayther_session.cpp` exceeded eleven thousand lines. Its private
+state/runtime definition now lives in `src/ayther_session_impl.inl`, while the
+facade operations remain in `src/ayther_session.cpp`; neither file exceeds the
+review threshold. The implementation object still owns emulator observation,
+identity, packs, scripts, audio, video,
 recording, rewind, export, compatibility, and authoring state. This makes
 invariants difficult to review and encourages temporal coupling.
 
@@ -102,7 +105,7 @@ machine and one error policy.
 
 ### 6. Move render scratch buffers out of function-static storage
 
-**Severity:** high
+**Severity:** resolved
 
 `ayther_renderer.cpp` uses multiple mutable `static std::vector` instances to
 retain capacity across frames. This avoids allocations but shares mutable state

@@ -16,6 +16,8 @@ struct AyArchive;   // opaque (ayther_core_ffi.h)
 class  VkContext;
 
 struct TileTexCache {
+    ~TileTexCache() = default;
+
     struct Entry { VkTexture tex; bool valid = false; };
     std::unordered_map<std::string, Entry> map;
 

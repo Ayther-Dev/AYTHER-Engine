@@ -30,7 +30,12 @@
 // ---------------------------------------------------------------------------
 
 use crate::archive_vfs::MANIFEST_SCHEMA;
+use crate::pack_security::{
+    EntryMetadata, MAX_ENTRY_COUNT, validate_archive_metadata, validate_archive_size,
+    validate_canonical_logical_path,
+};
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::io::Read;
 
 /// AYTHER release version compared with pack `ayther_min`.
@@ -422,6 +427,17 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
             return r;
         }
     };
+    let archive_size = match file.metadata() {
+        Ok(metadata) => metadata.len(),
+        Err(e) => {
+            r.error("io", format!("no se pudo medir el pack '{}': {}", path, e));
+            return r;
+        }
+    };
+    if let Err(e) = validate_archive_size(archive_size) {
+        r.error("security.policy", e.to_string());
+        return r;
+    }
     let mut zip = match zip::ZipArchive::new(file) {
         Ok(z) => z,
         Err(e) => {
@@ -429,6 +445,45 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
             return r;
         }
     };
+
+    let mut central_entries = Vec::with_capacity(zip.len());
+    for i in 0..zip.len() {
+        let entry = match zip.by_index_raw(i) {
+            Ok(entry) => entry,
+            Err(e) => {
+                r.error(
+                    "zip",
+                    format!("el directorio central del pack no se puede leer: {e}"),
+                );
+                return r;
+            }
+        };
+        if !entry.is_dir() {
+            central_entries.push((
+                entry.name().to_string(),
+                entry.size(),
+                entry.compressed_size(),
+            ));
+        }
+    }
+    if let Err(e) = validate_archive_metadata(
+        archive_size,
+        zip.len(),
+        central_entries
+            .iter()
+            .map(|(path, size, compressed)| EntryMetadata {
+                path,
+                uncompressed_size: *size,
+                compressed_size: *compressed,
+            }),
+    ) {
+        r.error("security.policy", e.to_string());
+        return r;
+    }
+    let names: Vec<String> = central_entries
+        .into_iter()
+        .map(|(path, _, _)| path)
+        .collect();
 
     // -- manifest.toml -------------------------------------------------------
     let mut manifest_txt = String::new();
@@ -588,7 +643,6 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
     }
 
     // -- firma e integridad --------------------------------------------------
-    let names: Vec<String> = zip.file_names().map(|s| s.to_string()).collect();
     let signed = names.iter().any(|n| n == "signature.bin");
     if !signed {
         if ctx.release_build {
@@ -626,6 +680,35 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
         }
         match toml::from_str::<LaxIntegrity>(&txt) {
             Ok(idx) => {
+                if idx.entry.len() > MAX_ENTRY_COUNT {
+                    r.error(
+                        "security.policy",
+                        format!(
+                            "integrity.toml declara {} entradas; el máximo es {MAX_ENTRY_COUNT}",
+                            idx.entry.len()
+                        ),
+                    );
+                    return r;
+                }
+                let mut indexed_paths = HashSet::with_capacity(idx.entry.len());
+                for entry in &idx.entry {
+                    if let Err(e) = validate_canonical_logical_path(&entry.path) {
+                        r.error("security.policy", e.to_string());
+                        return r;
+                    }
+                    if matches!(entry.path.as_str(), "integrity.toml" | "signature.bin")
+                        || !indexed_paths.insert(entry.path.to_ascii_lowercase())
+                    {
+                        r.error(
+                            "security.policy",
+                            format!(
+                                "integrity.toml repite o intenta indexar una ruta reservada: '{}'",
+                                entry.path
+                            ),
+                        );
+                        return r;
+                    }
+                }
                 let missing: Vec<&str> = idx
                     .entry
                     .iter()
@@ -1165,11 +1248,7 @@ supported = ["NTSC"]
         let d = tempfile::tempdir().unwrap();
         let p = pack(d.path(), "sin_manifest.ay", &[("assets/a.png", &[1])]);
         let r = validate_path(&p, &SessionCtx::default());
-        assert!(
-            codes(&r).contains(&"manifest.missing"),
-            "{:?}",
-            codes(&r)
-        );
+        assert!(codes(&r).contains(&"manifest.missing"), "{:?}", codes(&r));
     }
 
     #[test]
@@ -1181,11 +1260,7 @@ supported = ["NTSC"]
             &[("manifest.toml", b"esto no [[[ es toml")],
         );
         let r = validate_path(&p, &SessionCtx::default());
-        assert!(
-            codes(&r).contains(&"manifest.malformed"),
-            "{:?}",
-            codes(&r)
-        );
+        assert!(codes(&r).contains(&"manifest.malformed"), "{:?}", codes(&r));
     }
 
     /// Rejects a license that requires attribution when no contributor exists.
@@ -1199,11 +1274,7 @@ supported = ["NTSC"]
             &[("manifest.toml", man.as_bytes()), ("assets/a.png", &[1])],
         );
         let r = validate_path(&p, &SessionCtx::default());
-        assert!(
-            codes(&r).contains(&"provenance.missing"),
-            "{:?}",
-            codes(&r)
-        );
+        assert!(codes(&r).contains(&"provenance.missing"), "{:?}", codes(&r));
         assert!(r.has_errors());
 
         // Y con los créditos puestos, el mismo pack pasa: el hallazgo es por la
@@ -1238,11 +1309,7 @@ supported = ["NTSC"]
             ],
         );
         let r = validate_path(&p, &SessionCtx::default());
-        assert!(
-            codes(&r).contains(&"catalog.malformed"),
-            "{:?}",
-            codes(&r)
-        );
+        assert!(codes(&r).contains(&"catalog.malformed"), "{:?}", codes(&r));
     }
 
     #[test]
@@ -1325,5 +1392,44 @@ supported = ["NTSC"]
 
         let js = validate_path(&valid_pack(d.path(), "ok.ay"), &SessionCtx::default()).to_json();
         assert!(js.contains("\"valido\": true"), "{js}");
+    }
+
+    #[test]
+    fn unsafe_archive_path_is_a_security_error() {
+        let d = tempfile::tempdir().unwrap();
+        let p = pack(
+            d.path(),
+            "traversal.ay",
+            &[
+                ("manifest.toml", VALID_MANIFEST.as_bytes()),
+                ("../outside.bin", b"hostile"),
+            ],
+        );
+        let report = validate_path(&p, &SessionCtx::default());
+        assert!(
+            codes(&report).contains(&"security.policy"),
+            "{:?}",
+            codes(&report)
+        );
+    }
+
+    #[test]
+    fn duplicate_integrity_path_is_a_security_error() {
+        let d = tempfile::tempdir().unwrap();
+        let index = b"[[entry]]\npath='manifest.toml'\n[[entry]]\npath='MANIFEST.toml'\n";
+        let p = pack(
+            d.path(),
+            "duplicate_index.ay",
+            &[
+                ("manifest.toml", VALID_MANIFEST.as_bytes()),
+                ("integrity.toml", index),
+            ],
+        );
+        let report = validate_path(&p, &SessionCtx::default());
+        assert!(
+            codes(&report).contains(&"security.policy"),
+            "{:?}",
+            codes(&report)
+        );
     }
 }

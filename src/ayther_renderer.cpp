@@ -78,8 +78,34 @@ VkImageBlit full_to_rect(uint32_t srcW, uint32_t srcH,
 
 }  // namespace
 
+struct AytherRenderer::FrameScratch {
+    struct TileItem {
+        VkTexture* tex = nullptr;
+        VkImageBlit region{};
+    };
+
+    std::vector<VkIndexedPlane::CellQuad> scene_quads;
+    std::vector<uint8_t> plane_tile_tint;
+    std::vector<uint8_t> plane_tile_alpha;
+    std::vector<uint8_t> plane_focused;
+    std::vector<uint8_t> sub_has_anchor;
+    std::vector<uint8_t> plane_hi_anchor;
+    std::vector<uint8_t> plane_hi_drawn;
+    std::vector<TileItem> tile_items;
+    std::vector<VkImageBlit> tile_group;
+    std::vector<AytherSpriteSub> overlay_strip;
+    std::vector<uint8_t> overlay_alphas;
+    std::vector<uint8_t> overlay_tint;
+};
+
+AytherRenderer::AytherRenderer() : scratch_(std::make_unique<FrameScratch>()) {}
+AytherRenderer::~AytherRenderer() {
+    if (context_) shutdown(*context_);
+}
+
 bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h,
                           const char* shader_dir) {
+    context_ = &ctx;
     if (!emu_tex_.init(ctx, kEmuW, kEmuH)) {
         std::fprintf(stderr, "[AytherRenderer] emu texture init failed\n");
         return false;
@@ -152,6 +178,7 @@ void AytherRenderer::shutdown(VkContext& ctx) {
     emu_tex_.shutdown(ctx);
     compare_.shutdown(ctx);   //  (no-op si el A/B nunca se abrió)
     target_.shutdown(ctx);
+    context_ = nullptr;
 }
 
 // R-8 (): estado de carga del asset del SUB de un elemento — la clave
@@ -291,7 +318,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
     const float scene_sy = emu_h_ ? (float)canvas.height / (float)emu_h_ : 1.f;
     const int32_t scene_scissor =
         fv.scene_left_blank ? (int32_t)(8.f * scene_sx + 0.5f) : 0;
-    static std::vector<VkIndexedPlane::CellQuad> scene_quads;   // capacidad retenida
+    auto& scene_quads = scratch_->scene_quads;
     // Subs de sprite ANCLADOS a un elemento de la escena: los despacha el pase
     // de escena, en el z de la cadena. Se marca por la sola EXISTENCIA del ancla
     // en el inventario — no por haber dibujado. Esa distinción es la que hace que
@@ -322,8 +349,8 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
     // Tiles de plano: el sub SÍ sabe su capa (por el elemento que lo reclama),
     // así que A y B se distinguen. Una sola llamada mezcla capas, así que el
     // atenuado va POR SUB — tinte Q2.6 (64 = 1.0, 16 = 0.25) y opacidad 0-255.
-    static std::vector<uint8_t> plane_tile_tint;
-    static std::vector<uint8_t> plane_tile_alpha;
+    auto& plane_tile_tint = scratch_->plane_tile_tint;
+    auto& plane_tile_alpha = scratch_->plane_tile_alpha;
     plane_tile_tint.clear();
     plane_tile_alpha.clear();
     // Tinte E1 de la sesión (quads de SET con referencia autorada — el Objeto
@@ -338,7 +365,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
             plane_tile_tint.assign((size_t)fv.plane_tile_sub_count * 3, 64);
         plane_tile_alpha.assign((size_t)fv.plane_tile_sub_hi,
                                 (uint8_t)(255 * dim_op));
-        static std::vector<uint8_t> plane_focused;
+        auto& plane_focused = scratch_->plane_focused;
         plane_focused.assign(fv.plane_tile_sub_hi, 0);
         if (scene_ready)
             for (uint32_t i = 0; i < fv.scene_count; ++i) {
@@ -361,18 +388,18 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
         }
     }
 
-    static std::vector<uint8_t> sub_has_anchor;
+    auto& sub_has_anchor = scratch_->sub_has_anchor;
     sub_has_anchor.assign(fv.sprite_sub_count, 0);
     // Los subs de plano de ALTA prioridad con elemento en la escena se dibujan
     // INLINE en el pase pri-1 (z real de la cadena: un sprite pri-1 HD queda
     // DELANTE — las letras del título de GA sobre el isologotipo); la lane
     // PlaneTilesHi los saltea para no re-dibujarlos encima (mismo patrón que
     // la Panorámica: la lane queda como fallback del híbrido).
-    static std::vector<uint8_t> plane_hi_anchor;
+    auto& plane_hi_anchor = scratch_->plane_hi_anchor;
     plane_hi_anchor.assign(fv.plane_tile_sub_count, 0);
     // Un quad de SET (Objeto) es el sub de CIENTOS de elementos (el
     // isologotipo: 277 celdas) — se dibuja UNA vez, en el z del primero.
-    static std::vector<uint8_t> plane_hi_drawn;
+    auto& plane_hi_drawn = scratch_->plane_hi_drawn;
     plane_hi_drawn.assign(fv.plane_tile_sub_count, 0);
     if (scene_ready)
         for (uint32_t i = 0; i < fv.scene_count; ++i) {
@@ -815,8 +842,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
                 const float sy = static_cast<float>(canvas.height) /
                                  static_cast<float>(emu_h_ ? emu_h_ : kEmuH);
 
-                struct Item { VkTexture* tex; VkImageBlit region; };
-                static std::vector<Item> items;   // static: retains capacity across frames
+                auto& items = scratch_->tile_items;
                 items.clear();
 
                 for (uint32_t i = 0; i < fv.tile_sub_count; ++i) {
@@ -830,9 +856,10 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
                 }
 
                 std::sort(items.begin(), items.end(),
-                          [](const Item& a, const Item& b) { return a.tex < b.tex; });
+                          [](const FrameScratch::TileItem& a,
+                             const FrameScratch::TileItem& b) { return a.tex < b.tex; });
 
-                static std::vector<VkImageBlit> group;   // static: retains capacity
+                auto& group = scratch_->tile_group;
                 size_t j = 0;
                 while (j < items.size()) {
                     VkTexture* tex = items[j].tex;
@@ -1140,7 +1167,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
             float off = std::fmod(h * cc.factor + (float)(cc.drift_x * t),
                                   (float)cc.img_w);
             if (off > 0.f) off -= (float)cc.img_w;
-            static std::vector<AytherSpriteSub> strip;   // capacidad retenida
+            auto& strip = scratch_->overlay_strip;
             strip.clear();
             const int ew = (int)(emu_w_ ? emu_w_ : kEmuW);
             const int eh = (int)(emu_h_ ? emu_h_ : kEmuH);
@@ -1284,7 +1311,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
                     op *= 1.f - (cc.flicker_amp < 1.f ? cc.flicker_amp : 1.f)
                               * overlay_flicker_factor(fstep);
                 }
-                static std::vector<uint8_t> alphas;      // capacidad retenida
+                auto& alphas = scratch_->overlay_alphas;
                 const uint8_t* ap = nullptr;
                 if (op < 1.f) {
                     alphas.assign(strip.size(),
@@ -1296,7 +1323,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
                 // neutro). Sin CRAM de escena (core stock, frame no compuesto)
                 // no hay dato: se dibuja sin tinte, como siempre. El promedio
                 // salta el índice 0 (transparente), igual que el peak-hold.
-                static std::vector<uint8_t> tintq;       // capacidad retenida
+                auto& tintq = scratch_->overlay_tint;
                 const uint8_t* tp = nullptr;
                 if (cc.pal_line < 4 &&
                     (cc.ref_rgb[0] | cc.ref_rgb[1] | cc.ref_rgb[2]) &&

@@ -33,6 +33,10 @@ use sha2::{Digest, Sha256};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use crate::archive_vfs::{INTEGRITY_PATH, SIGNATURE_PATH, is_stored_entry, stream_chunk_size};
+use crate::pack_security::{
+    EntryMetadata, MAX_ENTRY_BYTES, MAX_ENTRY_COUNT, MAX_TOTAL_UNCOMPRESSED_BYTES,
+    normalize_logical_path, validate_archive_metadata, validate_archive_size,
+};
 
 // Dev signing seed — must match ay_pack's DEV_SIGNING_SEED and yield
 // archive_vfs::DEV_PUBLIC_KEY. RFC 8032 test vector. Not secret.
@@ -70,8 +74,11 @@ impl PackBuilder {
     /// Streamability is inferred from the normalized path. Use
     /// [`Self::add_bytes_stored`] to select it explicitly.
     pub fn add_bytes(&mut self, path: &str, data: Vec<u8>) -> bool {
-        let stored = is_stored_entry(&path.replace('\\', "/"));
-        self.add_bytes_stored(path, data, stored)
+        let Ok(normalized) = normalize_logical_path(path) else {
+            return false;
+        };
+        let stored = is_stored_entry(&normalized);
+        self.add_bytes_stored(&normalized, data, stored)
     }
 
     /// Stages an entry and explicitly selects whether it is stored uncompressed.
@@ -79,8 +86,27 @@ impl PackBuilder {
     /// A stored entry is addressable by range and receives per-chunk hashes in
     /// the integrity index.
     pub fn add_bytes_stored(&mut self, path: &str, data: Vec<u8>, stored: bool) -> bool {
-        let p = path.replace('\\', "/");
-        if p.is_empty() || p == SIGNATURE_PATH || p == INTEGRITY_PATH {
+        let Ok(p) = normalize_logical_path(path) else {
+            return false;
+        };
+        if p == SIGNATURE_PATH
+            || p == INTEGRITY_PATH
+            || self
+                .files
+                .keys()
+                .any(|existing| existing.eq_ignore_ascii_case(&p))
+            || self.files.len() >= MAX_ENTRY_COUNT
+            || data.len() as u64 > MAX_ENTRY_BYTES
+        {
+            return false;
+        }
+        let total = self
+            .files
+            .values()
+            .try_fold(data.len() as u64, |sum, bytes| {
+                sum.checked_add(bytes.len() as u64)
+            });
+        if total.is_none_or(|total| total > MAX_TOTAL_UNCOMPRESSED_BYTES) {
             return false;
         }
         if stored {
@@ -167,7 +193,41 @@ impl PackBuilder {
             zip.write_all(&s).map_err(|e| e.to_string())?;
         }
         zip.finish().map_err(|e| e.to_string())?;
+        if let Err(error) = Self::validate_output_policy(out) {
+            let _ = std::fs::remove_file(out);
+            return Err(error);
+        }
         Ok(())
+    }
+
+    fn validate_output_policy(out: &Path) -> Result<(), String> {
+        let file = std::fs::File::open(out).map_err(|e| e.to_string())?;
+        let archive_size = file.metadata().map_err(|e| e.to_string())?.len();
+        validate_archive_size(archive_size).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+        let mut entries = Vec::with_capacity(zip.len());
+        for index in 0..zip.len() {
+            let entry = zip.by_index_raw(index).map_err(|e| e.to_string())?;
+            if !entry.is_dir() {
+                entries.push((
+                    entry.name().to_string(),
+                    entry.size(),
+                    entry.compressed_size(),
+                ));
+            }
+        }
+        validate_archive_metadata(
+            archive_size,
+            zip.len(),
+            entries
+                .iter()
+                .map(|(path, size, compressed)| EntryMetadata {
+                    path,
+                    uncompressed_size: *size,
+                    compressed_size: *compressed,
+                }),
+        )
+        .map_err(|e| e.to_string())
     }
 
     ///  serialise the per-entry index that the signature covers. Sorted
@@ -427,5 +487,29 @@ mod tests {
         assert!(!b.add_bytes("integrity.toml", vec![4, 5, 6]));
         assert!(b.add_bytes("hd\\sprites\\x.png", vec![9]));
         assert_eq!(b.file_count(), 1);
+    }
+
+    #[test]
+    fn rejects_unsafe_and_duplicate_canonical_paths() {
+        let mut b = PackBuilder::new();
+        assert!(!b.add_bytes("../manifest.toml", vec![1]));
+        assert!(!b.add_bytes("C:\\manifest.toml", vec![1]));
+        assert!(!b.add_bytes("assets/héroe.png", vec![1]));
+        assert!(b.add_bytes("assets\\hero.png", vec![1]));
+        assert!(!b.add_bytes("assets/hero.png", vec![2]));
+        assert_eq!(b.file_count(), 1);
+    }
+
+    #[test]
+    fn refuses_to_emit_a_high_expansion_archive() {
+        let mut builder = PackBuilder::new();
+        assert!(builder.add_bytes(
+            "manifest.toml",
+            b"[pack]\nname='x'\nversion='1'\ngame_id='x'\n".to_vec()
+        ));
+        assert!(builder.add_bytes("assets/zeros.bin", vec![0; 1024 * 1024]));
+        let out = tmp("compression_bomb.ay");
+        assert!(builder.finish(true, &out).is_err());
+        assert!(!out.exists());
     }
 }

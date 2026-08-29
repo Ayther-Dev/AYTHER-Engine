@@ -10,9 +10,20 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// Static instance pointer — libretro callbacks are plain C, no userdata ptr
+// Thread-scoped callback target — libretro callbacks are plain C and provide
+// no userdata pointer. CallbackScope gives synchronous entry points stack-like
+// binding semantics without process-global writable dispatch state.
 // ---------------------------------------------------------------------------
-RetroRunner* RetroRunner::s_instance_ = nullptr;
+thread_local RetroRunner* RetroRunner::s_active_instance_ = nullptr;
+
+RetroRunner::CallbackScope::CallbackScope(RetroRunner& runner) noexcept
+    : previous_(s_active_instance_) {
+    s_active_instance_ = &runner;
+}
+
+RetroRunner::CallbackScope::~CallbackScope() noexcept {
+    s_active_instance_ = previous_;
+}
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -28,7 +39,7 @@ bool RetroRunner::init(const std::string& core_path, const std::string& rom_path
     if (!loader_.load(core_path)) return false;
     if (!load_symbols())          return false;
 
-    s_instance_ = this;
+    CallbackScope callback_scope{*this};
     // El core pregunta por el system directory ANTES de cargar el juego (en
     // retro_init), así que hay que tenerlo resuelto acá.
     //
@@ -99,10 +110,7 @@ bool RetroRunner::init(const std::string& core_path, const std::string& rom_path
 void RetroRunner::run_frame() {
     if (!running_) return;
     // Multi-instancia (, shadow core): los trampolines libretro rutean por
-    // s_instance_. Con DOS runners (cada uno con SU copia del DLL → estáticos
-    // separados), cada entry point que puede disparar callbacks re-aserta la
-    // instancia activa (single-thread → sin carrera).
-    s_instance_ = this;
+    CallbackScope callback_scope{*this};
     fn_retro_run();
     poll_frame_delta_();   // E-6 (): el delta es de ESTE frame
 }
@@ -144,7 +152,7 @@ void RetroRunner::poll_frame_delta_() {
 // ---------------------------------------------------------------------------
 void RetroRunner::shutdown() {
     if (!running_) return;
-    s_instance_ = this;   // unload/deinit pueden disparar env callbacks
+    CallbackScope callback_scope{*this}; // unload/deinit may invoke callbacks
     fn_retro_unload_game();
     fn_retro_deinit();
     running_ = false;
@@ -152,8 +160,6 @@ void RetroRunner::shutdown() {
     // colgando sería un puntero a un módulo que ya no está.
     ayther_api_              = nullptr;
     fn_ayther_get_interface_ = nullptr;
-    // No pisar el puntero si otra instancia (el runner principal) quedó activa.
-    if (s_instance_ == this) s_instance_ = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -530,8 +536,8 @@ bool RetroRunner::s_environment(unsigned cmd, void* data) {
     case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
         // Store the format so the TileHasher (Phase 2) and Vulkan renderer
         // (Phase 3) can interpret the framebuffer bytes correctly.
-        if (s_instance_)
-            s_instance_->pixel_format_ = *static_cast<const unsigned*>(data);
+        if (s_active_instance_)
+            s_active_instance_->pixel_format_ = *static_cast<const unsigned*>(data);
         return true;
 
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
@@ -542,7 +548,7 @@ bool RetroRunner::s_environment(unsigned cmd, void* data) {
         // hay BIOS. Con esto, `bios_CD_U.bin` junto a la ISO alcanza para que
         // un juego de Sega CD arranque, que es lo que el core espera.
         *static_cast<const char**>(data) =
-            s_instance_ ? s_instance_->system_dir_.c_str() : ".";
+            s_active_instance_ ? s_active_instance_->system_dir_.c_str() : ".";
         return true;
 
     case RETRO_ENVIRONMENT_GET_VARIABLE: {
@@ -558,9 +564,9 @@ bool RetroRunner::s_environment(unsigned cmd, void* data) {
         // vacía sería otra cosa —una opción puesta en nada— y algunos cores la
         // interpretan como valor válido.
         auto* var = static_cast<retro_variable*>(data);
-        if (!s_instance_ || !var || !var->key) return false;
-        const auto it = s_instance_->core_options_.find(var->key);
-        if (it == s_instance_->core_options_.end() || it->second.empty())
+        if (!s_active_instance_ || !var || !var->key) return false;
+        const auto it = s_active_instance_->core_options_.find(var->key);
+        if (it == s_active_instance_->core_options_.end() || it->second.empty())
             return false;
         // El puntero tiene que sobrevivir a la llamada: apunta al string del
         // mapa, que vive lo que vive el runner. Copiarlo a un buffer temporal
@@ -587,11 +593,11 @@ bool RetroRunner::s_environment(unsigned cmd, void* data) {
         // en la descripción y se deja el resto: quien las ofrezca necesita las
         // dos partes, y volver a parsear del lado del consumidor sería tener
         // dos parsers del mismo formato.
-        if (s_instance_ && data) {
-            s_instance_->declared_options_.clear();
+        if (s_active_instance_ && data) {
+            s_active_instance_->declared_options_.clear();
             for (auto* v = static_cast<const retro_variable*>(data);
                  v && v->key; ++v) {
-                s_instance_->declared_options_.emplace_back(
+                s_active_instance_->declared_options_.emplace_back(
                     v->key, v->value ? v->value : "");
             }
         }
@@ -609,16 +615,16 @@ bool RetroRunner::s_environment(unsigned cmd, void* data) {
 }
 
 void RetroRunner::s_video_refresh(const void* data, unsigned w, unsigned h, size_t pitch) {
-    if (s_instance_ && s_instance_->video_cb_)
-        s_instance_->video_cb_(data, w, h, pitch);
+    if (s_active_instance_ && s_active_instance_->video_cb_)
+        s_active_instance_->video_cb_(data, w, h, pitch);
     // Phase 1: no rendering — frame is silently dropped
 }
 
 void RetroRunner::s_audio_sample(int16_t, int16_t) {}
 
 size_t RetroRunner::s_audio_sample_batch(const int16_t* data, size_t frames) {
-    if (s_instance_ && s_instance_->audio_cb_)
-        return s_instance_->audio_cb_(data, frames);
+    if (s_active_instance_ && s_active_instance_->audio_cb_)
+        return s_active_instance_->audio_cb_(data, frames);
     return frames;
 }
 void   RetroRunner::s_input_poll() {}
@@ -628,10 +634,10 @@ void   RetroRunner::s_input_poll() {}
 // query (id 256) that some cores use to fetch all buttons at once.
 int16_t RetroRunner::s_input_state(unsigned port, unsigned device,
                                    unsigned /*index*/, unsigned id) {
-    if (!s_instance_)                 return 0;
+    if (!s_active_instance_)          return 0;
     if (device != RETRO_DEVICE_JOYPAD) return 0;
     if (static_cast<int>(port) >= kPorts) return 0;
-    const uint16_t buttons = s_instance_->input_[port];
+    const uint16_t buttons = s_active_instance_->input_[port];
     if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return static_cast<int16_t>(buttons);
     if (id >= 16)                     return 0;
     return (buttons >> id) & 1;

@@ -8,6 +8,8 @@
 // ---------------------------------------------------------------------------
 // init / shutdown
 // ---------------------------------------------------------------------------
+VkTexture::~VkTexture() { release(); }
+
 // Desglose de init (). La medición dijo primero que el 94% del upload vivía
 // acá dentro, después que las tres asignaciones (imagen device-local con su
 // cadena de mips, vista, staging host-visible MAPEADO) sumaban 10 ms de los
@@ -16,6 +18,9 @@
 // baratos, y es lo que delataría que volvió a entrar trabajo no cronometrado.
 bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmapped,
                      TexImageFormat::Value img_fmt) {
+    release();
+    device_ = ctx.device();
+    allocator_ = ctx.allocator();
     // : un canal para los planos del video. El resto del archivo asumia 4
     // bytes por pixel en cuatro lugares distintos (image, view, staging, paso
     // de fila); ahora sale de `bpp_` y no de una constante repetida.
@@ -112,21 +117,28 @@ bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmap
 }
 
 void VkTexture::shutdown(VkContext& ctx) {
+    (void)ctx;
+    release();
+}
+
+void VkTexture::release() noexcept {
     if (image_view_ != VK_NULL_HANDLE) {
-        vkDestroyImageView(ctx.device(), image_view_, nullptr);
+        vkDestroyImageView(device_, image_view_, nullptr);
         image_view_ = VK_NULL_HANDLE;
     }
     if (image_ != VK_NULL_HANDLE) {
-        vmaDestroyImage(ctx.allocator(), image_, image_alloc_);
+        vmaDestroyImage(allocator_, image_, image_alloc_);
         image_       = VK_NULL_HANDLE;
         image_alloc_ = nullptr;
     }
     if (staging_buf_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(ctx.allocator(), staging_buf_, staging_alloc_);
+        vmaDestroyBuffer(allocator_, staging_buf_, staging_alloc_);
         staging_buf_   = VK_NULL_HANDLE;
         staging_alloc_ = nullptr;
         staging_map_   = nullptr;
     }
+    device_ = VK_NULL_HANDLE;
+    allocator_ = nullptr;
 }
 
 size_t VkTexture::release_staging(VkContext& ctx) {

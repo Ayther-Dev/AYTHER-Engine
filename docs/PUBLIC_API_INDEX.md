@@ -1326,8 +1326,8 @@ Usage flags cover every consumer in one image:
   TRANSFER_SRC      — the frontend blit to the swapchain
   SAMPLED           — the Lab viewport (ImGui) / shader sampling
 
-Owned by AytherRenderer; recreated on resize. shutdown() must be called
-explicitly (the destructor does not — it has no VkContext).
+Owned by AytherRenderer and recreated on resize. Destruction is automatic;
+shutdown() remains available for deterministic early release.
 
 **Declara:** `VkContext`, `VkRenderTarget`, `VmaAllocation_T`
 
@@ -1419,4 +1419,3 @@ columna por lado dejaría huecos justo donde el parallax separa las bandas.
 **Declara:** `ayther`, `Coverage`, `ExtCell`, `widescreen_cols_per_side`, `widescreen_coverage`, `widescreen_plan`, `widescreen_target_width`
 
 _El header instalado (`include/ayther/widescreen.h`) lleva la documentación completa de cada símbolo._
-

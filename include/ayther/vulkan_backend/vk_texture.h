@@ -8,7 +8,7 @@
 // Usage:
 //   init(ctx, width, height)        — once
 //   upload(ctx, cmd, pixels, ...)   — inside a command buffer (begin..end)
-//   shutdown(ctx)
+//   shutdown(ctx)                    — optional early release
 //
 // The image layout at the end of upload() is
 //   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL (suitable for blit src).
@@ -22,6 +22,8 @@
 // (matches vk_context.h's treatment of VmaAllocator).
 struct VmaAllocation_T;
 using  VmaAllocation = VmaAllocation_T*;
+struct VmaAllocator_T;
+using  VmaAllocator = VmaAllocator_T*;
 
 class VkContext;  // forward
 
@@ -49,7 +51,7 @@ struct TexImageFormat {
 class VkTexture {
 public:
     VkTexture()  = default;
-    ~VkTexture() = default;   // shutdown() must be called explicitly
+    ~VkTexture();
 
     VkTexture(const VkTexture&)            = delete;
     VkTexture& operator=(const VkTexture&) = delete;
@@ -103,6 +105,10 @@ public:
     const InitCost& last_init_cost() const { return init_cost_; }
 
 private:
+    void release() noexcept;
+
+    VkDevice       device_    = VK_NULL_HANDLE;
+    VmaAllocator   allocator_ = nullptr;
     InitCost      init_cost_{};
 
     VkImage       image_       = VK_NULL_HANDLE;

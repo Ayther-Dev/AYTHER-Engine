@@ -150,8 +150,13 @@ uint32_t VkIndexedPlane::genesis_color_rgba(uint16_t packed) {
 // ---------------------------------------------------------------------------
 // init / shutdown
 // ---------------------------------------------------------------------------
+VkIndexedPlane::~VkIndexedPlane() {
+    if (context_) shutdown(*context_);
+}
+
 bool VkIndexedPlane::init(VkContext& ctx, const VkRenderTarget& target,
                           const char* vert_spv_path, const char* frag_spv_path) {
+    context_ = &ctx;
     extent_ = target.extent();
     if (!create_images(ctx)) { shutdown(ctx); return false; }
     if (!create_pipeline(ctx, target.format(), vert_spv_path, frag_spv_path)) {
@@ -467,6 +472,7 @@ void VkIndexedPlane::shutdown(VkContext& ctx) {
     if (pal_image_)   { vmaDestroyImage(ctx.allocator(), pal_image_, pal_alloc_); pal_image_ = VK_NULL_HANDLE; pal_alloc_ = nullptr; }
     if (pal_staging_) { vmaDestroyBuffer(ctx.allocator(), pal_staging_, pal_staging_alloc_); pal_staging_ = VK_NULL_HANDLE; pal_staging_alloc_ = nullptr; pal_staging_map_ = nullptr; }
     idx_uploaded_ = pal_uploaded_ = vram_seen_ = cram_seen_ = false;
+    context_ = nullptr;
 }
 
 // ---------------------------------------------------------------------------

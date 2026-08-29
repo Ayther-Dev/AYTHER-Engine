@@ -13,8 +13,9 @@
 //   TRANSFER_SRC      — the frontend blit to the swapchain
 //   SAMPLED           — the Lab viewport (ImGui) / shader sampling
 //
-// Owned by AytherRenderer; recreated on resize. shutdown() must be called
-// explicitly (the destructor does not — it has no VkContext).
+// Owned by AytherRenderer and recreated on resize. The target captures the
+// device/allocator handles it needs, so destruction is automatic; shutdown()
+// remains available for deterministic early release.
 // ---------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
 #include <cstdint>
@@ -23,13 +24,15 @@
 // <vk_mem_alloc.h> out of the frontend (matches vk_texture.h).
 struct VmaAllocation_T;
 using  VmaAllocation = VmaAllocation_T*;
+struct VmaAllocator_T;
+using  VmaAllocator = VmaAllocator_T*;
 
 class VkContext;
 
 class VkRenderTarget {
 public:
     VkRenderTarget()  = default;
-    ~VkRenderTarget() = default;   // shutdown() must be called explicitly
+    ~VkRenderTarget();
 
     VkRenderTarget(const VkRenderTarget&)            = delete;
     VkRenderTarget& operator=(const VkRenderTarget&) = delete;
@@ -56,6 +59,10 @@ public:
     VkExtent2D  extent()  const { return extent_;  }
 
 private:
+    void release() noexcept;
+
+    VkDevice       device_    = VK_NULL_HANDLE;
+    VmaAllocator   allocator_ = nullptr;
     VkImage       image_   = VK_NULL_HANDLE;
     VmaAllocation alloc_   = nullptr;
     VkImageView   view_    = VK_NULL_HANDLE;

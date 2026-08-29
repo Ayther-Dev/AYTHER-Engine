@@ -1,8 +1,8 @@
 # Pack and security model
 
-**Status:** implemented development trust model; production hardening incomplete
+**Status:** container hardening and development trust implemented; production trust incomplete
 
-**Last reviewed:** 2026-08-27
+**Last reviewed:** 2026-08-28
 
 An `.ay` pack is an untrusted ZIP container that supplies metadata and optional
 replacement assets. Passing validation means the bytes satisfy the implemented
@@ -31,13 +31,15 @@ therefore yield an experimental result and must not be presented as verified.
 
 ## Verification flow
 
-1. Open the ZIP without extracting its contents to the filesystem.
-2. Parse the manifest and integrity index with size and format checks.
-3. Verify the Ed25519 signature over the exact integrity-index bytes when a
+1. Reject containers whose central directory violates the shared path,
+   duplicate-name, entry-count, size, or compression-ratio policy.
+2. Open the ZIP without extracting its contents to the filesystem.
+3. Parse the manifest and integrity index with bounded reads and format checks.
+4. Verify the Ed25519 signature over the exact integrity-index bytes when a
    signature is required or present.
-4. Verify entry SHA-256 digests before treating content as trusted.
-5. Apply manifest, system, profile, region, and tier compatibility rules.
-6. Activate the pack only if the caller's policy accepts the result.
+5. Verify entry SHA-256 digests before treating content as trusted.
+6. Apply manifest, system, profile, region, and tier compatibility rules.
+7. Activate the pack only if the caller's policy accepts the result.
 
 Debug builds may accept unsigned packs with a warning. Release builds reject
 unsigned packs. This difference is intentional for authoring, but callers must
@@ -50,19 +52,24 @@ verified ranged reads backed by chunk hashes. The implementation uses chunks of
 at least 64 KiB and caps an entry at 2,048 chunks. Older packs without an
 integrity index require resident full-entry hashing.
 
-These mechanisms reduce memory pressure and support media streaming; they do
-not replace total archive, entry-count, compression-ratio, nesting, or
-decompression-time limits. Those limits require explicit review before release.
+The shared container policy currently allows at most 4 GiB on disk, 8,192 file
+entries, 1 GiB per uncompressed entry, 8 GiB total declared uncompressed data,
+8 MiB per metadata/script entry, and a 200:1 expansion ratio. Reads are bounded
+again at the point of decompression and must match the central-directory size.
+Media decoders still require their own decoded-image, decoded-audio, nesting,
+and processing-time limits.
 
 ## Path handling
 
-The VFS reads archive entries directly and does not extract them to disk, which
-reduces filesystem traversal exposure. The builder normalizes backslashes and
-rejects empty and reserved integrity/signature names, but it does not yet provide
-a comprehensive canonical-path and traversal policy. Producers and consumers
-must reject absolute paths, drive-qualified paths, `..` segments, duplicate
-canonical names, ambiguous Unicode forms, and platform-specific aliases before
-production use.
+The VFS reads archive entries directly and does not extract them to disk. The
+builder, reader, and diagnostic validator share one canonical path policy.
+Builder paths normalize backslashes to `/`; readers require that normalized form
+already be present because signatures authenticate exact name bytes. The policy
+rejects absolute and drive/stream-qualified paths, empty, `.` and `..` segments,
+duplicates, control characters, trailing-dot/space aliases, and Windows device
+names. Entry paths are restricted to printable ASCII during the pre-release
+format phase, eliminating Unicode-normalization ambiguity; localized labels stay
+in UTF-8 metadata.
 
 ## Lua sandbox
 
@@ -88,8 +95,7 @@ and requires a separate allowlist, provenance, and isolation policy.
 
 - trusted-key registry with scoped identities, expiry, rotation, and revocation;
 - protected signing service with no private key in source or developer builds;
-- canonical logical-path validation shared by builder and reader;
-- explicit archive, entry, decompression, image, audio, and script memory limits;
+- decoded image, audio, and script-memory/time limits beyond container bytes;
 - signature-policy tests covering missing, malformed, unknown, expired, and
   revoked keys;
 - fuzzing and adversarial fixtures for ZIP, TOML, patches, media, scripts, and

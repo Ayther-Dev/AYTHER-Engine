@@ -79,6 +79,11 @@ use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Mutex;
 
+use crate::pack_security::{
+    EntryMetadata, MAX_ENTRY_BYTES, MAX_ENTRY_COUNT, MAX_METADATA_BYTES, PackPolicyViolation,
+    validate_archive_metadata, validate_archive_size, validate_canonical_logical_path,
+};
+
 // ---------------------------------------------------------------------------
 // Dev test key (RFC 8032 test vector — clearly not a production key)
 // ---------------------------------------------------------------------------
@@ -329,6 +334,8 @@ pub enum AyError {
     MalformedManifest(String),
     /// The detached signature is missing or invalid under the active policy.
     BadSignature,
+    /// The container violates path or resource-consumption policy.
+    PolicyViolation(PackPolicyViolation),
     /// The manifest requires a schema newer than this build understands.
     UnsupportedSchema {
         /// Schema declared by the pack.
@@ -346,6 +353,11 @@ impl From<std::io::Error> for AyError {
 impl From<zip::result::ZipError> for AyError {
     fn from(e: zip::result::ZipError) -> Self {
         AyError::Zip(e)
+    }
+}
+impl From<PackPolicyViolation> for AyError {
+    fn from(e: PackPolicyViolation) -> Self {
+        AyError::PolicyViolation(e)
     }
 }
 
@@ -378,6 +390,7 @@ struct StreamInfo {
 struct EntryLoc {
     name: String,
     size: u64,
+    compressed_size: u64,
     data_start: u64,
     stored: bool,
 }
@@ -515,6 +528,8 @@ impl AyArchive {
     /// index, schema, or signature cannot be accepted.
     pub fn open_verbose(path: &str) -> Result<Self, AyError> {
         let file = std::fs::File::open(path)?;
+        let archive_size = file.metadata()?.len();
+        validate_archive_size(archive_size)?;
         let mut zip = zip::ZipArchive::new(file)?;
 
         // ---- Central directory: names + sizes, nothing decompressed --------
@@ -530,10 +545,20 @@ impl AyArchive {
             names.push(EntryLoc {
                 name: entry.name().to_string(),
                 size: entry.size(),
+                compressed_size: entry.compressed_size(),
                 data_start: entry.data_start(),
                 stored: entry.compression() == zip::CompressionMethod::Stored,
             });
         }
+        validate_archive_metadata(
+            archive_size,
+            zip.len(),
+            names.iter().map(|entry| EntryMetadata {
+                path: &entry.name,
+                uncompressed_size: entry.size,
+                compressed_size: entry.compressed_size,
+            }),
+        )?;
 
         if names.iter().any(|e| e.name == INTEGRITY_PATH) {
             Self::open_lazy(zip, &names, path)
@@ -552,8 +577,23 @@ impl AyArchive {
                 continue;
             }
             let name = entry.name().to_string();
-            let mut data = Vec::with_capacity(entry.size() as usize);
-            entry.read_to_end(&mut data)?;
+            let declared_size = entry.size();
+            let capacity = usize::try_from(declared_size).map_err(|_| {
+                PackPolicyViolation::new(format!(
+                    "entry '{name}' cannot fit in this platform's address space"
+                ))
+            })?;
+            let mut data = Vec::with_capacity(capacity);
+            entry
+                .by_ref()
+                .take(MAX_ENTRY_BYTES + 1)
+                .read_to_end(&mut data)?;
+            if data.len() as u64 != declared_size {
+                return Err(PackPolicyViolation::new(format!(
+                    "entry '{name}' decompressed to a size different from its central-directory declaration"
+                ))
+                .into());
+            }
             files.insert(name, data);
         }
 
@@ -589,8 +629,29 @@ impl AyArchive {
             name: &str,
         ) -> Result<Vec<u8>, AyError> {
             let mut e = zip.by_name(name)?;
-            let mut v = Vec::with_capacity(e.size() as usize);
-            e.read_to_end(&mut v)?;
+            validate_canonical_logical_path(name)?;
+            if e.size() > MAX_METADATA_BYTES {
+                return Err(PackPolicyViolation::new(format!(
+                    "metadata entry '{name}' exceeds {MAX_METADATA_BYTES} bytes"
+                ))
+                .into());
+            }
+            let declared_size = e.size();
+            let capacity = usize::try_from(declared_size).map_err(|_| {
+                PackPolicyViolation::new(format!(
+                    "metadata entry '{name}' cannot fit in this platform's address space"
+                ))
+            })?;
+            let mut v = Vec::with_capacity(capacity);
+            e.by_ref()
+                .take(MAX_METADATA_BYTES + 1)
+                .read_to_end(&mut v)?;
+            if v.len() as u64 != declared_size {
+                return Err(PackPolicyViolation::new(format!(
+                    "metadata entry '{name}' decompressed to a size different from its central-directory declaration"
+                ))
+                .into());
+            }
             Ok(v)
         }
 
@@ -611,34 +672,69 @@ impl AyArchive {
             .map_err(|e| AyError::MalformedManifest(format!("integrity.toml: {}", e)))?;
         let raw: RawIntegrity = toml::from_str(integrity_str)
             .map_err(|e| AyError::MalformedManifest(format!("integrity.toml: {}", e)))?;
+        if raw.entry.len() > MAX_ENTRY_COUNT {
+            return Err(PackPolicyViolation::new(format!(
+                "integrity.toml declares {} entries; maximum is {MAX_ENTRY_COUNT}",
+                raw.entry.len()
+            ))
+            .into());
+        }
 
         let mut index: HashMap<String, LazyEntry> = HashMap::with_capacity(raw.entry.len());
         //  hashes por trozo a la espera del offset, que sale del
         // directorio central en el cruce de más abajo.
         let mut pending: HashMap<String, (u64, Vec<[u8; 32]>)> = HashMap::new();
         for e in raw.entry {
+            validate_canonical_logical_path(&e.path)?;
+            if e.path == INTEGRITY_PATH || e.path == SIGNATURE_PATH {
+                return Err(PackPolicyViolation::new(format!(
+                    "integrity.toml cannot index reserved entry '{}'",
+                    e.path
+                ))
+                .into());
+            }
+            if index.contains_key(&e.path) {
+                return Err(PackPolicyViolation::new(format!(
+                    "integrity.toml contains duplicate path '{}'",
+                    e.path
+                ))
+                .into());
+            }
             let sha256 = hex32(&e.sha256).ok_or_else(|| {
                 AyError::MalformedManifest(format!(
                     "integrity.toml: sha256 inválido para '{}'",
                     e.path
                 ))
             })?;
-            if let (Some(chunk), Some(list)) = (e.chunk, e.chunks.as_ref()) {
-                let bad = |m: &str| {
-                    AyError::MalformedManifest(format!("integrity.toml: '{}' {}", e.path, m))
-                };
-                if chunk == 0 {
-                    return Err(bad("chunk = 0"));
-                }
-                if list.len() as u64 != e.size.div_ceil(chunk) {
-                    return Err(bad("declara una cantidad de trozos que no \
+            match (e.chunk, e.chunks.as_ref()) {
+                (Some(chunk), Some(list)) => {
+                    let bad = |m: &str| {
+                        AyError::MalformedManifest(format!("integrity.toml: '{}' {}", e.path, m))
+                    };
+                    if chunk < STREAM_CHUNK_MIN || !chunk.is_power_of_two() {
+                        return Err(bad("declara un tamaño de trozo inválido"));
+                    }
+                    if list.len() as u64 > STREAM_CHUNK_MAX_COUNT {
+                        return Err(bad("supera el máximo de trozos por entrada"));
+                    }
+                    if list.len() as u64 != e.size.div_ceil(chunk) {
+                        return Err(bad("declara una cantidad de trozos que no \
                                     corresponde a su tamaño"));
+                    }
+                    let mut hashes = Vec::with_capacity(list.len());
+                    for h in list {
+                        hashes
+                            .push(hex32(h).ok_or_else(|| bad("tiene un hash de trozo inválido"))?);
+                    }
+                    pending.insert(e.path.clone(), (chunk, hashes));
                 }
-                let mut hashes = Vec::with_capacity(list.len());
-                for h in list {
-                    hashes.push(hex32(h).ok_or_else(|| bad("tiene un hash de trozo inválido"))?);
+                (None, None) => {}
+                _ => {
+                    return Err(AyError::MalformedManifest(format!(
+                        "integrity.toml: '{}' debe declarar chunk y chunks juntos",
+                        e.path
+                    )));
                 }
-                pending.insert(e.path.clone(), (chunk, hashes));
             }
             index.insert(
                 e.path,
@@ -1008,11 +1104,19 @@ impl AyArchive {
             Backend::Resident(m) => m.get(&actual).cloned(),
             Backend::Lazy { zip, index, .. } => {
                 let le = index.get(&actual)?;
-                let mut data = Vec::with_capacity(le.size as usize);
+                let capacity = usize::try_from(le.size).ok()?;
+                let mut data = Vec::with_capacity(capacity);
                 {
                     let mut z = zip.lock().ok()?;
                     let mut entry = z.by_name(&actual).ok()?;
-                    entry.read_to_end(&mut data).ok()?;
+                    entry
+                        .by_ref()
+                        .take(MAX_ENTRY_BYTES + 1)
+                        .read_to_end(&mut data)
+                        .ok()?;
+                }
+                if data.len() as u64 != le.size {
+                    return None;
                 }
                 if Sha256::digest(&data)[..] != le.sha256 {
                     eprintln!(
@@ -1053,7 +1157,7 @@ impl AyArchive {
         if off >= le.size || len == 0 {
             return None;
         }
-        let end = (off + len as u64).min(le.size);
+        let end = off.checked_add(len as u64)?.min(le.size);
 
         // Superset alineado al trozo: se lee lo que hace falta para poder
         // VERIFICAR, y recién después se recorta a lo pedido.
@@ -2120,5 +2224,47 @@ systems = ["tiles"]
         assert_eq!(arch.read("graphics/a.png"), Some(b"flat-legacy".to_vec()));
         assert_eq!(arch.file_size("graphics/a.png"), Some(11));
         let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn rejects_traversing_archive_entries() {
+        let out = tmp("traversal.ay");
+        let file = std::fs::File::create(&out).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (path, bytes) in [
+            ("manifest.toml", MANIFEST.as_bytes()),
+            ("../outside.bin", b"hostile".as_slice()),
+        ] {
+            zip.start_file(path, options).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap();
+
+        assert!(matches!(
+            AyArchive::open_verbose(out.to_str().unwrap()),
+            Err(AyError::PolicyViolation(_))
+        ));
+        let _ = std::fs::remove_file(out);
+    }
+
+    #[test]
+    fn rejects_high_expansion_zip_entry_before_reading_it() {
+        let out = tmp("compression_bomb.ay");
+        let file = std::fs::File::create(&out).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("manifest.toml", options).unwrap();
+        zip.write_all(MANIFEST.as_bytes()).unwrap();
+        zip.start_file("assets/zeros.bin", options).unwrap();
+        zip.write_all(&vec![0; 1024 * 1024]).unwrap();
+        zip.finish().unwrap();
+
+        assert!(matches!(
+            AyArchive::open_verbose(out.to_str().unwrap()),
+            Err(AyError::PolicyViolation(_))
+        ));
+        let _ = std::fs::remove_file(out);
     }
 }

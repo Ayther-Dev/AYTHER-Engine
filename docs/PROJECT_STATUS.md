@@ -44,7 +44,8 @@ trust decision, or a compatibility promise to third-party integrators.
 | Installable package | Pre-release | Core and native packages install namespaced targets, headers, shaders, and notices; external Windows consumers pass with VPX disabled and enabled |
 | CI and release workflows | Baseline present | `.github/workflows/ci.yml` checks repository boundaries, locked Rust gates, dependency notices, and headless configure/build/test/install on Windows and Linux; native and release pipelines remain pending |
 | Third-party inventory | Implemented for validated builds | Cargo graph, vcpkg ports, vendored revisions, and shipped license material are recorded; release CI enforcement remains pending |
-| Production pack trust | Missing | The code embeds a public RFC test key; no production key registry or rotation path is present |
+| Pack container security | Implemented baseline | Builder, reader, and validator share canonical paths, duplicate rejection, archive/entry/metadata limits, and compression-ratio defenses |
+| Production pack trust | Missing | The code embeds a public RFC test key; no production key registry, expiry, scope, revocation, or rotation path is present |
 
 ## Version contract
 
@@ -71,8 +72,9 @@ when their own boundary changes and must carry migration and conformance tests.
 - tile, sprite, pose, animation, background, and audio identity/substitution
   primitives;
 - RAM conditions, AOB scanning, entity anchoring, and game profiles;
-- signed/lazy `.ay` archives, integrity indexes, manifest schema handling,
-  profiles, tiers, regional resolution, credits, and compatibility reports;
+- signed/lazy `.ay` archives, integrity indexes, canonical path and ZIP resource
+  limits, manifest schema handling, profiles, tiers, regional resolution,
+  credits, and compatibility reports;
 - constrained Lua execution and runtime substitution overrides;
 - in-memory IPS/BPS patching;
 - SoundFont conversion, trimming, synthesis, and mapping;
@@ -126,9 +128,8 @@ other platforms is research or roadmap work, not a present capability.
    key rotation/revocation process, and release-mode acceptance tests.
 6. Enforce generation and shipment of complete transitive third-party notices
    for every release artifact.
-7. Complete security review of archive resource limits, logical path
-   canonicalization, scripting lifetimes, FFI ownership, and dynamic library
-   loading.
+7. Complete security review of media-decoder limits, scripting lifetimes, FFI
+   ownership, dynamic library loading, and adversarial fuzz coverage.
 8. Produce one clean clone → configure → build → test → install → consume cycle
    on each supported platform in protected CI.
 

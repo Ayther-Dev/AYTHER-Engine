@@ -502,28 +502,30 @@ public:
 
     /// Size in bytes of a serialized state, or 0 if unsupported.
     size_t serialize_size() const {
-        return fn_retro_serialize_size ? fn_retro_serialize_size() : 0;
+        if (!fn_retro_serialize_size) return 0;
+        CallbackScope callback_scope{*const_cast<RetroRunner*>(this)};
+        return fn_retro_serialize_size();
     }
     /// Capture the current state into `out`. Returns false on failure.
-    /// (Multi-instancia : cada entry point re-aserta s_instance_ — con un
-    /// shadow core activo los callbacks deben rutear a ESTA instancia.)
+    /// CallbackScope binds this operation to the current thread; a nested
+    /// shadow-core call restores this runner when it returns.
     bool serialize(std::vector<uint8_t>& out) const {
         const size_t n = serialize_size();
         if (!fn_retro_serialize || n == 0) return false;
-        s_instance_ = const_cast<RetroRunner*>(this);
+        CallbackScope callback_scope{*const_cast<RetroRunner*>(this)};
         out.resize(n);
         return fn_retro_serialize(out.data(), out.size());
     }
     /// Restore a state captured by serialize(). Returns false on failure.
     bool unserialize(const std::vector<uint8_t>& data) {
         if (!fn_retro_unserialize || data.empty()) return false;
-        s_instance_ = this;
+        CallbackScope callback_scope{*this};
         return fn_retro_unserialize(data.data(), data.size());
     }
     /// Soft reset (retro_reset).
     void reset() {
         if (!fn_retro_reset) return;
-        s_instance_ = this;
+        CallbackScope callback_scope{*this};
         fn_retro_reset();
     }
 
@@ -581,6 +583,21 @@ public:
     }
 
 private:
+    /// Binds synchronous libretro C callbacks to the runner executing on this
+    /// thread. Nested calls restore the previous target, so callback dispatch
+    /// is reentrant instead of relying on process-global mutable state.
+    class CallbackScope {
+    public:
+        explicit CallbackScope(RetroRunner& runner) noexcept;
+        ~CallbackScope() noexcept;
+
+        CallbackScope(const CallbackScope&) = delete;
+        CallbackScope& operator=(const CallbackScope&) = delete;
+
+    private:
+        RetroRunner* previous_ = nullptr;
+    };
+
     static constexpr int kPorts = 2;
     uint16_t input_[kPorts] = { 0, 0 };
 
@@ -648,7 +665,7 @@ private:
     bool     running_      = false;
 
     // ----- Static trampolines (libretro needs plain C callbacks) -----
-    static RetroRunner* s_instance_;
+    static thread_local RetroRunner* s_active_instance_;
 
     static bool   s_environment(unsigned cmd, void* data);
     static void   s_video_refresh(const void* data, unsigned w, unsigned h, size_t pitch);

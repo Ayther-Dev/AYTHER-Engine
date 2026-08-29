@@ -6,12 +6,17 @@
 #include <vk_mem_alloc.h>   // real VMA API (header forward-declares the handle)
 #include <cstdio>
 
+VkRenderTarget::~VkRenderTarget() { release(); }
+
 bool VkRenderTarget::init(VkContext& ctx, uint32_t width, uint32_t height,
                           VkFormat format) {
     if (width == 0 || height == 0) {
         std::fprintf(stderr, "[VkRenderTarget] init: zero extent\n");
         return false;
     }
+    release();
+    device_ = ctx.device();
+    allocator_ = ctx.allocator();
     format_ = format;
     extent_ = { width, height };
 
@@ -82,17 +87,24 @@ bool VkRenderTarget::resize(VkContext& ctx, uint32_t width, uint32_t height) {
 }
 
 void VkRenderTarget::shutdown(VkContext& ctx) {
+    (void)ctx;
+    release();
+}
+
+void VkRenderTarget::release() noexcept {
     if (sampler_ != VK_NULL_HANDLE) {
-        vkDestroySampler(ctx.device(), sampler_, nullptr);
+        vkDestroySampler(device_, sampler_, nullptr);
         sampler_ = VK_NULL_HANDLE;
     }
     if (view_ != VK_NULL_HANDLE) {
-        vkDestroyImageView(ctx.device(), view_, nullptr);
+        vkDestroyImageView(device_, view_, nullptr);
         view_ = VK_NULL_HANDLE;
     }
     if (image_ != VK_NULL_HANDLE) {
-        vmaDestroyImage(ctx.allocator(), image_, alloc_);
+        vmaDestroyImage(allocator_, image_, alloc_);
         image_ = VK_NULL_HANDLE;
         alloc_ = nullptr;
     }
+    device_ = VK_NULL_HANDLE;
+    allocator_ = nullptr;
 }

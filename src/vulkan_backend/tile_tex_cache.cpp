@@ -94,8 +94,7 @@ void TileTexCache::pump(VkContext& ctx) {
 }
 
 void TileTexCache::shutdown(VkContext& ctx) {
+    (void)ctx;
     staging_release_.clear();   // : los Entry* dejan de existir
-    for (auto& [_, e] : map)
-        if (e.valid) e.tex.shutdown(ctx);
     map.clear();
 }

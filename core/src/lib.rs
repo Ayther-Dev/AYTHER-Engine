@@ -48,6 +48,7 @@ pub mod instrument_map;
 pub mod memory_aob;
 pub mod pack_builder;
 pub mod pack_credits; // Pack provenance and credits for Play and Hub.
+pub mod pack_security;
 pub mod pack_validate; // Compatibility with the current session.
 pub mod ram_anchor;
 pub mod rom_patch; // User-supplied IPS/BPS patches applied in memory.

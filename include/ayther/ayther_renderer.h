@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
 #include <cstdint>
+#include <memory>
 
 #include "vulkan_backend/vk_render_target.h"
 #include "vulkan_backend/vk_texture.h"        // emu-frame texture
@@ -42,12 +43,12 @@ struct SceneElement;   // ayther_session.h — R-8: sub_texture_state()
 ///
 /// The renderer borrows `VkContext`; the context and its device must outlive
 /// every renderer resource. All methods are render-thread affine and are not
-/// safe for concurrent use. shutdown() is mandatory before destroying the
-/// borrowed context, including after partial initialization.
+/// safe for concurrent use. Destruction releases initialized resources;
+/// shutdown() remains available for deterministic release before the context.
 class AytherRenderer {
 public:
-    AytherRenderer()  = default;
-    ~AytherRenderer() = default;   // shutdown() must be called explicitly
+    AytherRenderer();
+    ~AytherRenderer();
 
     AytherRenderer(const AytherRenderer&)            = delete;
     AytherRenderer& operator=(const AytherRenderer&) = delete;
@@ -221,6 +222,8 @@ public:
     bool capture_compare_now(VkContext& ctx);
 
 private:
+    struct FrameScratch;
+
     // Genesis Mode 5 max framebuffer — the native canvas the tile grid maps onto.
     static constexpr uint32_t kEmuW = 320;
     static constexpr uint32_t kEmuH = 240;
@@ -246,6 +249,11 @@ private:
     bool           indexed_ok_ = false;
     bool           checker_    = false;   // R-8 (): modo UV checker
     int            focus_layer_ = -1;     // capa enfocada (-1 = ninguna)
+    // Capacity-retaining temporary storage belongs to this renderer instance.
+    // Keeping it behind an implementation object avoids exposing render-only
+    // element types in the public header while preserving allocation reuse.
+    std::unique_ptr<FrameScratch> scratch_;
+    VkContext* context_ = nullptr;
 };
 
 }  // namespace ayther

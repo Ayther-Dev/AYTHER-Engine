@@ -39,6 +39,9 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
-- None.
+- Pack builders, readers, and validators now share canonical logical-path
+  enforcement, duplicate-name rejection, bounded metadata reads, archive and
+  entry size ceilings, total expansion limits, and ZIP compression-ratio
+  defenses.
 
 <!-- Comparison links will be added with the first published tag. -->

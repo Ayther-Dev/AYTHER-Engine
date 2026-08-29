@@ -38,7 +38,7 @@ class VkRenderTarget;
 class VkIndexedPlane {
 public:
     VkIndexedPlane()  = default;
-    ~VkIndexedPlane() = default;   // shutdown() must be called explicitly
+    ~VkIndexedPlane();
 
     VkIndexedPlane(const VkIndexedPlane&)            = delete;
     VkIndexedPlane& operator=(const VkIndexedPlane&) = delete;
@@ -116,6 +116,7 @@ public:
     static uint32_t genesis_color_rgba(uint16_t packed);
 
 private:
+    VkContext* context_ = nullptr;
     bool create_images(VkContext& ctx);
     bool create_pipeline(VkContext& ctx, VkFormat fmt,
                          const char* vert_spv_path, const char* frag_spv_path);

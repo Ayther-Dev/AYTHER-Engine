@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -47,6 +48,12 @@ namespace ayther { struct AnimHdFrame; }   // ayther_animation.h (C-S2)
 
 class VkSprite {
 public:
+    VkSprite() = default;
+    ~VkSprite();
+
+    VkSprite(const VkSprite&) = delete;
+    VkSprite& operator=(const VkSprite&) = delete;
+
     // ---- Lifecycle -----------------------------------------------------------
 
     /// Initialise the render pass, alpha-blend pipeline, sampler, descriptor
@@ -60,8 +67,8 @@ public:
     /// The pipeline and render pass are format-fixed — they survive resizes.
     void rebuild(VkContext& ctx, uint32_t w, uint32_t h, VkImageView target_view);
 
-    /// Destroy all Vulkan objects.  Must be called before vkDeviceWaitIdle
-    /// and device destruction.
+/// Deterministic early release. The destructor performs the same idempotent
+/// cleanup when the sprite owner leaves scope.
     void shutdown(VkContext& ctx);
 
     // ---- Per-frame draw ------------------------------------------------------
@@ -211,6 +218,7 @@ public:
     void set_dim(float d, float a = 1.0f) noexcept { dim_ = d; dim_a_ = a; }
 
 private:
+    VkContext* context_ = nullptr;
     // ---- Vulkan objects ----
     VkRenderPass          render_pass_  = VK_NULL_HANDLE;
     VkDescriptorSetLayout desc_layout_  = VK_NULL_HANDLE;
@@ -282,7 +290,7 @@ private:
     VkDescriptorSet  video_ds_   = VK_NULL_HANDLE;
     /// : tres texturas R8 (luma + los dos cromas a la mitad) en vez de una
     /// BGRA8. Se suben 1,5 bytes por píxel en lugar de 4.
-    VkTexture*       video_tex_[3] = { nullptr, nullptr, nullptr };
+    std::unique_ptr<VkTexture> video_tex_[3];
     /// Pipeline propio del video: mismo render pass y mismo push constant que el
     /// de sprites, distinto fragment shader y tres bindings.
     VkDescriptorSetLayout video_layout_      = VK_NULL_HANDLE;
@@ -299,7 +307,7 @@ private:
     // LINEAR (arte HD MINIFICADO — un máster 1296² dibujado a ~72px con NEAREST
     // se ve pixelado). El draw elige por-quad según la dirección del escalado.
     struct TexEntry {
-        VkTexture*      tex          = nullptr;  // heap-allocated (non-movable type)
+        std::unique_ptr<VkTexture> tex;
         VkDescriptorSet desc_set     = VK_NULL_HANDLE;   // sampler NEAREST
         VkDescriptorSet desc_set_lin = VK_NULL_HANDLE;   // sampler LINEAR (minificación)
         bool            valid    = false;

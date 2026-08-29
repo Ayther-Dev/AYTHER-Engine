@@ -157,6 +157,7 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/ayther_sdk.cpp
     src/ayther_sdk_version.cpp
     src/ayther_session.cpp
+    src/ayther_session_impl.inl
     src/ayther_video.cpp
     src/psg_synth.cpp
     src/retro_runner.cpp
@@ -169,6 +170,9 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/vulkan_backend/vk_sprite.cpp
     src/vulkan_backend/vk_texture.cpp
     src/vulkan_backend/vma_impl.cpp)
+
+set_source_files_properties(src/ayther_session_impl.inl
+    PROPERTIES HEADER_FILE_ONLY TRUE)
 
 # Installed engine headers are an explicit compatibility surface. Keep this
 # allowlist deliberately small: implementation components remain available to
