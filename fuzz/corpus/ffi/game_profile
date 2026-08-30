@@ -1,0 +1,7 @@
+[[anchor]]
+kind = "player"
+base = 45064
+count = 1
+stride = 64
+x_offset = 8
+y_offset = 12

@@ -4,6 +4,8 @@
 /out/
 /dist/
 /target/
+/fuzz/target/
+/fuzz/artifacts/
 /vcpkg_installed/
 /install/
 CMakeFiles/

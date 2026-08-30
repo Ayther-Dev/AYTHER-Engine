@@ -1,0 +1,38 @@
+[package]
+name = "ayther-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+ayther_core = { path = "../core" }
+libfuzzer-sys = "0.4"
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[[bin]]
+name = "packs"
+path = "fuzz_targets/packs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi"
+path = "fuzz_targets/ffi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decoders"
+path = "fuzz_targets/decoders.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

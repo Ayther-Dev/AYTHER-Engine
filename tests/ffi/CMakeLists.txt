@@ -8,6 +8,7 @@
 add_executable(ayther_core_ffi_tests ayther_core_ffi_test.cpp)
 
 target_link_libraries(ayther_core_ffi_tests PRIVATE Ayther::core)
+ayther_instrument_target(ayther_core_ffi_tests)
 
 target_compile_definitions(ayther_core_ffi_tests PRIVATE
     "AYTHER_CMAKE_PROJECT_VERSION=\"${PROJECT_VERSION}\"")

@@ -9,6 +9,9 @@ option(AYTHER_BUILD_RENDERER  "Build the Vulkan renderer"             OFF)
 option(AYTHER_BUILD_GPU_TESTS "Build tests that require a Vulkan GPU" OFF)
 option(AYTHER_ENABLE_VPX      "Enable VPX video decoding"             OFF)
 option(AYTHER_CARGO_LOCKED    "Pass --locked to Cargo"                ON)
+option(AYTHER_ENABLE_ASAN     "Enable AddressSanitizer on native targets" OFF)
+option(AYTHER_ENABLE_UBSAN    "Enable UndefinedBehaviorSanitizer on native targets" OFF)
+option(AYTHER_ENABLE_COVERAGE "Enable native source coverage instrumentation" OFF)
 
 if(AYTHER_BUILD_ENGINE OR AYTHER_BUILD_RENDERER OR AYTHER_BUILD_GPU_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "renderer")
@@ -40,12 +43,15 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(GNUInstallDirs)
+include(AytherInstrumentation)
 
 set(CMAKE_C_STANDARD            11)
 set(CMAKE_C_STANDARD_REQUIRED   ON)
 set(CMAKE_CXX_STANDARD          20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS        OFF)
+
+ayther_configure_instrumentation()
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(WARNING
@@ -112,6 +118,7 @@ target_include_directories(ayther_ymfm SYSTEM PUBLIC
 
 add_library(ayther::ymfm ALIAS ayther_ymfm)
 add_library(Ayther::ymfm ALIAS ayther_ymfm)
+ayther_instrument_target(ayther_ymfm)
 
 # tools/build_libvpx.ps1 installs the optional VP9 decoder here. Keep the
 # imported target conditional so a checkout without local third-party binaries
@@ -250,6 +257,7 @@ set_target_properties(ayther_engine PROPERTIES
 set_target_properties(ayther_ymfm PROPERTIES EXPORT_NAME ymfm)
 
 add_library(Ayther::engine ALIAS ayther_engine)
+ayther_instrument_target(ayther_engine)
 
 set(AYTHER_ENGINE_SOURCES_PRESENT ON)
 
@@ -388,6 +396,9 @@ message(STATUS "  engine ................ ${AYTHER_BUILD_ENGINE}")
 message(STATUS "  renderer .............. ${AYTHER_BUILD_RENDERER}")
 message(STATUS "  gpu tests ............. ${AYTHER_BUILD_GPU_TESTS}")
 message(STATUS "  VPX decoding .......... ${AYTHER_ENABLE_VPX}")
+message(STATUS "  AddressSanitizer ...... ${AYTHER_ENABLE_ASAN}")
+message(STATUS "  UndefinedSanitizer .... ${AYTHER_ENABLE_UBSAN}")
+message(STATUS "  native coverage ....... ${AYTHER_ENABLE_COVERAGE}")
 message(STATUS "  libvpx target ......... ${AYTHER_VPX_TARGET_AVAILABLE}")
 message(STATUS "  C++ sources present ... ${AYTHER_ENGINE_SOURCES_PRESENT}")
 if(AYTHER_BUILD_ENGINE)

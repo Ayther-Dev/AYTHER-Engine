@@ -1,0 +1,10 @@
+[pack]
+name = "Fuzz seed"
+version = "1.0.0"
+game_id = "sonic2"
+author = "CI"
+ayther_min = "0.1.0"
+schema = 2
+
+[systems]
+included = ["sprites", "music"]
