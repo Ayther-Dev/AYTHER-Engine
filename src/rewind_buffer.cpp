@@ -2,6 +2,7 @@
 // rewind_buffer.cpp — zstd-compressed savestate ring. See rewind_buffer.h.
 // ---------------------------------------------------------------------------
 #include "rewind_buffer.h"
+#include "log.h"
 
 #include <zstd.h>
 #include <cstdio>
@@ -34,7 +35,10 @@ void RewindBuffer::push(const std::vector<uint8_t>& raw) {
     std::vector<uint8_t> blob(bound);
     const size_t n = ZSTD_compress(blob.data(), bound, raw.data(), raw.size(), kZstdLevel);
     if (ZSTD_isError(n)) {
-        std::fprintf(stderr, "[RewindBuffer] compress failed: %s\n", ZSTD_getErrorName(n));
+        ayther::log::write(ayther::log::Severity::Error,
+            "rewind", "compress_failed",
+            "compress failed: %s",
+            ZSTD_getErrorName(n));
         return;
     }
     blob.resize(n);
@@ -62,7 +66,10 @@ bool RewindBuffer::pop(std::vector<uint8_t>& out_raw) {
     const size_t n = ZSTD_decompress(out_raw.data(), out_raw.size(),
                                      blob.data(), blob.size());
     if (ZSTD_isError(n)) {
-        std::fprintf(stderr, "[RewindBuffer] decompress failed: %s\n", ZSTD_getErrorName(n));
+        ayther::log::write(ayther::log::Severity::Error,
+            "rewind", "decompress_failed",
+            "decompress failed: %s",
+            ZSTD_getErrorName(n));
         return false;
     }
     out_raw.resize(n);

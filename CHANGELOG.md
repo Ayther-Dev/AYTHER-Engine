@@ -47,6 +47,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   archive from a clean checkout.
 - Separate informational Rust and C++ coverage reports on every pull request,
   and `clang-tidy` over the translation units a change touches.
+- `ayther::RuntimeOptions`: every `AYTHER_*` environment option is read once,
+  validated, and injected into subsystems as an immutable value.
+- `ayther::log`: structured records carrying severity, component, a stable event
+  id, and typed fields, dispatched to a sink the frontend installs. `log.h`
+  joins the installed public header surface so a host can install one.
+- `session::PackRuntime`: pack activation, the trust registry, profiles,
+  declared systems, asset lookup, and validation, unit tested without an
+  emulator core, an audio device, or a Vulkan context.
 
 ### Changed
 
@@ -60,6 +68,11 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - The release version contract accepts pre-release tags such as `v0.1.0-rc.1`.
 - First-party C++ compiles with warnings as errors; vendored ymfm and the
   `tools/` probes remain explicitly exempt.
+- Engine code no longer writes to `stderr` or `stdout` directly. All 173 call
+  sites now emit structured log records; the only console writer left is the
+  central fallback used when no sink is installed.
+- A malformed `AYTHER_*` option is reported and ignored instead of being parsed
+  by `atoi`, which could not distinguish a typo from a deliberate zero.
 
 ### Deprecated
 
@@ -71,6 +84,9 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- None.
+- `ayther_pack_profile_field(pack, i, "name")` returned nothing. The Rust side
+  still matched the pre-rebrand spelling `"nombre"` while the C header and every
+  caller used `"name"`, so a pack's profile display name never reached a C++
+  consumer. Both spellings are accepted now.
 
 <!-- Comparison links will be added with the first published tag. -->

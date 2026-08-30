@@ -9,6 +9,8 @@
 add_executable(determinism_spike
     spike.cpp
     ${CMAKE_SOURCE_DIR}/src/retro_runner.cpp   # motor tech (post-R1 migration)
+    ${CMAKE_SOURCE_DIR}/src/log.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime_options.cpp
 )
 
 target_include_directories(determinism_spike PRIVATE

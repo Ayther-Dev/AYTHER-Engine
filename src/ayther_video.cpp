@@ -2,9 +2,10 @@
 // ayther_video.cpp — ver ayther_video.h
 // ---------------------------------------------------------------------------
 #include "ayther_video.h"
+#include "log.h"
 
 #include "ayther_core_ffi.h"   // : la fuente del pack lee por rango
-#include "ayther_env.h"        // AYTHER_VIDEO_THREADS
+#include "runtime_options.h"   // AYTHER_VIDEO_THREADS
 #include "ayther_file.h"
 
 #include <algorithm>
@@ -374,9 +375,9 @@ bool VideoClip::open(std::unique_ptr<VideoSource> src, const uint8_t* idx,
     unsigned threads = std::thread::hardware_concurrency();
     if (threads == 0) threads = 1;
     if (threads > 8) threads = 8;
-    if (const char* t = ayther::env_get("AYTHER_VIDEO_THREADS")) {
-        const int forced = std::atoi(t);
-        if (forced >= 1 && forced <= 64) threads = unsigned(forced);
+    if (const uint32_t forced = RuntimeOptions::process().video_threads();
+        forced != RuntimeOptions::kVideoThreadsAuto) {
+        threads = forced;
     }
 
     vpx_codec_dec_cfg_t cfg{};
@@ -431,7 +432,10 @@ const VideoFrameView* VideoClip::decode(uint32_t index) {
         // Un trozo que no verifica llega hasta acá: se pierde el frame, no el
         // clip. `have` queda como estaba, así que la pantalla conserva el
         // último frame bueno en vez de parpadear a negro.
-        std::fprintf(stderr, "[video] frame %u: no se pudo leer el paquete\n", index);
+        ayther::log::write(ayther::log::Severity::Error,
+            "video", "frame_pudo_leer_paquete",
+            "frame %u: no se pudo leer el paquete",
+            index);
         return nullptr;
     }
     const auto t0 = std::chrono::steady_clock::now();

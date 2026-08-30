@@ -94,15 +94,24 @@ state/runtime definition now lives in `src/ayther_session_impl.inl`, while the
 facade operations remain in `src/ayther_session.cpp`; neither file exceeds the
 review threshold. `EmulationObserver` now owns ABI subscriptions, frame mirrors,
 and legacy observation fallback, while `RecordingController` owns the live-take
-state machine, CSR histories, and baked keyframes. Both remain private engine
-components behind the `AytherSession` facade, and recording is independently
-unit tested. The implementation object still owns identity, packs, scripts,
-audio, video, rewind, export, compatibility, and authoring state, so further
-cohesive extraction remains warranted.
+state machine, CSR histories, and baked keyframes. `PackRuntime` now owns pack
+activation, the trust registry, profile enumeration and matching, declared
+systems, asset lookup, and validation; the session keeps only the coordination
+that actually needs it, because APPLYING a profile writes to audio buses and the
+subsystem mask while REPORTING what a profile says does not. All three remain
+private engine components behind the `AytherSession` facade, and all three are
+independently unit tested without an emulator core, an audio device, or a Vulkan
+context.
+
+The implementation object still owns identity, scripts, audio, video, rewind,
+export, compatibility, and authoring state. `AudioRuntime` and `VideoRuntime`
+are the remaining extractions, and they are the ones that will move the line
+count: `src/ayther_session.cpp` is still around eight thousand lines against a
+five thousand line target.
 
 **Correction:** retain `AytherSession` as the facade, but delegate to cohesive
-owners such as `EmulationObserver`, `PackRuntime`, `FrameIdentityPipeline`,
-`AudioRuntime`, `VideoRuntime`, and `RecordingController`. Pass narrow typed
+owners. `EmulationObserver`, `RecordingController`, and `PackRuntime` exist;
+`FrameIdentityPipeline`, `AudioRuntime`, and `VideoRuntime` do not yet. Pass narrow typed
 inputs between them. Each component should have an independently testable state
 machine and one error policy.
 

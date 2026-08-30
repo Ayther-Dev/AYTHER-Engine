@@ -89,7 +89,7 @@ $engineHeaders = @(
     'audio_asset_level.h', 'audio_match_rule.h', 'ayther_animation.h',
     'ayther_audio_events.h', 'ayther_layers.h', 'ayther_mode3.h',
     'ayther_result.h', 'ayther_sdk.h', 'ayther_sdk_version.h',
-    'ayther_session.h')
+    'ayther_session.h', 'log.h')
 
 if ($Kind -eq 'core') {
     # --- Proving the negative: this is NOT an engine package --------------

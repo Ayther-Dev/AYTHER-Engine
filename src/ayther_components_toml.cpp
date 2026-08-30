@@ -5,6 +5,7 @@
 // ---------------------------------------------------------------------------
 
 #include "ayther_components_toml.h"
+#include "log.h"
 #include "ayther_parse.h"
 
 #include <toml++/toml.hpp>
@@ -108,7 +109,10 @@ size_t parse_animations_toml(const std::string& text, AnimationPlayer& into) {
     try {
         tbl = toml::parse(text);
     } catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] animations.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "animations_toml_parse_error",
+            "animations.toml: parse error: %s",
+            e.what());
         return 0;
     }
     const toml::array* anims = tbl["animation"].as_array();
@@ -154,7 +158,10 @@ size_t parse_audio_events_toml(const std::string& text, AudioEventSubstitution& 
     try {
         tbl = toml::parse(text);
     } catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] audio_events.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "audio_events_toml_parse",
+            "audio_events.toml: parse error: %s",
+            e.what());
         return 0;
     }
     const toml::array* events = tbl["event"].as_array();
@@ -186,7 +193,10 @@ parse_audio_event_sig_list(const std::string& text, const char* field) {
     try {
         tbl = toml::parse(text);
     } catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] audio_events.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "audio_events_toml_parse_2",
+            "audio_events.toml: parse error: %s",
+            e.what());
         return out;
     }
     const toml::array* events = tbl["event"].as_array();
@@ -215,7 +225,10 @@ parse_audio_event_tails(const std::string& text) {
     try {
         tbl = toml::parse(text);
     } catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] audio_events.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "audio_events_toml_parse_3",
+            "audio_events.toml: parse error: %s",
+            e.what());
         return out;
     }
     const toml::array* events = tbl["event"].as_array();
@@ -243,7 +256,10 @@ parse_audio_event_loops(const std::string& text) {
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] audio_events.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "audio_events_toml_parse_4",
+            "audio_events.toml: parse error: %s",
+            e.what());
         return out;
     }
     const toml::array* events = tbl["event"].as_array();
@@ -275,7 +291,10 @@ parse_audio_event_gains(const std::string& text) {
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] audio_events.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "audio_events_toml_parse_5",
+            "audio_events.toml: parse error: %s",
+            e.what());
         return out;
     }
     const toml::array* events = tbl["event"].as_array();
@@ -303,7 +322,10 @@ parse_audio_event_fades(const std::string& text) {
     try {
         tbl = toml::parse(text);
     } catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] audio_events.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "audio_events_toml_parse_6",
+            "audio_events.toml: parse error: %s",
+            e.what());
         return out;
     }
     const toml::array* events = tbl["event"].as_array();
@@ -390,7 +412,10 @@ size_t parse_plane_sets_toml(const std::string& text,
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] plane_sets.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "plane_sets_toml_parse",
+            "plane_sets.toml: parse error: %s",
+            e.what());
         return 0;
     }
     return parse_plane_sets_from(tbl, out_sets, out_fonts);
@@ -524,7 +549,10 @@ size_t parse_screens_toml(const std::string& text, std::vector<PackScreen>& out)
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] screens.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "screens_toml_parse_error",
+            "screens.toml: parse error: %s",
+            e.what());
         return 0;
     }
     return parse_screens_from(tbl, out);
@@ -638,7 +666,10 @@ size_t parse_panoramas_toml(const std::string& text, std::vector<PackPanorama>& 
     // proyecto sin dejar rastro (la Panorámica «Demo», 2026-07-31).
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] panoramas.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "panoramas_toml_parse_error",
+            "panoramas.toml: parse error: %s",
+            e.what());
         return 0;
     }
     return parse_panoramas_from(tbl, out);
@@ -785,7 +816,10 @@ size_t parse_instruments_toml(const std::string& text, std::vector<PackInstrumen
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] instruments.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "instruments_toml_parse_error",
+            "instruments.toml: parse error: %s",
+            e.what());
         return 0;
     }
     const auto* arr = tbl["instrument"].as_array();
@@ -817,7 +851,10 @@ size_t parse_kinematics_toml(const std::string& text, std::vector<PackKinematic>
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] kinematics.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "kinematics_toml_parse_error",
+            "kinematics.toml: parse error: %s",
+            e.what());
         return 0;
     }
     return parse_kinematics_from(tbl, out);
@@ -944,8 +981,10 @@ size_t parse_plane_sequences_toml(const std::string& text,
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] plane_sequences.toml: parse error: %s\n",
-                     e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "plane_sequences_toml_parse",
+            "plane_sequences.toml: parse error: %s",
+            e.what());
         return 0;
     }
     return parse_plane_sequences_from(tbl, out);
@@ -1039,7 +1078,10 @@ size_t parse_enhance_toml(const std::string& text, std::vector<PackEnhance>& out
     toml::table tbl;
     try { tbl = toml::parse(text); }
     catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Componentes] enhance: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "enhance_parse_error",
+            "enhance: parse error: %s",
+            e.what());
         return 0;
     }
     return parse_enhance_from(tbl, out);
@@ -1134,7 +1176,10 @@ size_t parse_elements_toml(const std::string& text,
         // TODAS las Identidades, no una familia. Por eso avisa fuerte: el
         // antecedente es la Panorámica «Demo» de 2026-07-31, que desapareció
         // sin dejar rastro.
-        std::fprintf(stderr, "[Componentes] elements.toml: parse error: %s\n", e.what());
+        ayther::log::write(ayther::log::Severity::Error,
+            "components", "elements_toml_parse_error",
+            "elements.toml: parse error: %s",
+            e.what());
         return 0;
     }
     size_t n = 0;

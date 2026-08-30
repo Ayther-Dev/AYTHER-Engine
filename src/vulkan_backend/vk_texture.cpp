@@ -1,5 +1,6 @@
 #include <chrono>
 #include "vulkan_backend/vk_texture.h"
+#include "log.h"
 #include "vulkan_backend/vk_context.h"
 #include <vk_mem_alloc.h>   // real VMA API (header forward-declares the handle only)
 #include <cstdio>
@@ -57,7 +58,9 @@ bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmap
 
     if (vmaCreateImage(ctx.allocator(), &img, &ai,
                        &image_, &image_alloc_, nullptr) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkTexture] vmaCreateImage failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.texture", "vmacreateimage_failed",
+            "vmaCreateImage failed");
         return false;
     }
 
@@ -72,7 +75,9 @@ bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmap
     vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, mip_levels_, 0, 1 };
 
     if (vkCreateImageView(ctx.device(), &vi, nullptr, &image_view_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkTexture] vkCreateImageView failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.texture", "vkcreateimageview_failed",
+            "vkCreateImageView failed");
         return false;
     }
 
@@ -93,7 +98,9 @@ bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmap
     VmaAllocationInfo sinfo{};
     if (vmaCreateBuffer(ctx.allocator(), &bi, &sai,
                         &staging_buf_, &staging_alloc_, &sinfo) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkTexture] vmaCreateBuffer (staging) failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.texture", "vmacreatebuffer_staging_failed",
+            "vmaCreateBuffer (staging) failed");
         return false;
     }
     staging_map_ = sinfo.pMappedData;
@@ -101,9 +108,12 @@ bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmap
     const auto tD = std::chrono::steady_clock::now();
 
     if (vk_verbose_logging())
-        std::fprintf(stdout,
-            "[VkTexture] Ready  %ux%u  staging=%zu bytes\n",
-            max_w, max_h, static_cast<size_t>(staging_size));
+        ayther::log::write(ayther::log::Severity::Info,
+            "vulkan.texture", "ready_x_staging_bytes",
+            "Ready  %ux%u  staging=%zu bytes",
+            max_w,
+            max_h,
+            static_cast<size_t>(staging_size));
 
     {
         const auto tE = std::chrono::steady_clock::now();
@@ -201,9 +211,11 @@ void VkTexture::upload(VkContext& ctx, VkCommandBuffer cmd,
     if (!staging_map_) {
         // release_staging() ya corrió: esta textura era de UN upload ().
         if (image_ != VK_NULL_HANDLE)
-            std::fprintf(stderr,
-                "[VkTexture] upload tras release_staging IGNORADO (%ux%u)\n",
-                width_, height_);
+            ayther::log::write(ayther::log::Severity::Warning,
+                "vulkan.texture", "upload_tras_release_staging",
+                "upload tras release_staging IGNORADO (%ux%u)",
+                width_,
+                height_);
         return;
     }
 

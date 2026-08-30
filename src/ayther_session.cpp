@@ -11,7 +11,8 @@
 // frontend renders. Audio output stays inside the session.
 // ---------------------------------------------------------------------------
 
-#include "ayther_env.h"
+#include "runtime_options.h"
+#include "log.h"
 #include "ayther_file.h"
 #include "ayther_parse.h"
 #include "ayther_session.h"
@@ -32,6 +33,7 @@
 #include "rewind_buffer.h"                 // RewindBuffer (R6)
 #include "ayther_recording.h"              // AytherRecording (R7)
 #include "session/emulation_observer.h"
+#include "session/pack_runtime.h"
 #include "session/recording_controller.h"
 #include "ayther_video.h"                  // VideoClip: el paso-video ()
 #include "ayther_core_ffi.h"                // ayther_sf2_* ()
@@ -152,7 +154,18 @@ Result<std::unique_ptr<AytherSession>> AytherSession::create(const Config& cfg) 
     im.runner.set_patch_path(cfg.patch_path);
 
     // Emulator host — the only hard failure.
-    if (!im.runner.init(cfg.core_path, cfg.rom_path)) {
+    // Every AYTHER_* option is read ONCE, here, and injected downwards. A
+    // subsystem that wants one takes it as a parameter; none of them reaches
+    // for the environment on its own any more.
+    const RuntimeOptions& options = RuntimeOptions::process();
+    for (const std::string& diagnostic : options.diagnostics()) {
+        ayther::log::write(ayther::log::Severity::Warning,
+            "session", "option_ignored",
+            "option ignored: %s",
+            diagnostic.c_str());
+    }
+
+    if (!im.runner.init(cfg.core_path, cfg.rom_path, options)) {
         return Error{ ErrorCode::NotFound,
                       "RetroRunner::init failed (core or ROM): " + cfg.core_path };
     }
@@ -168,18 +181,23 @@ Result<std::unique_ptr<AytherSession>> AytherSession::create(const Config& cfg) 
     if (im.runner.has_ayther_v1()) {
         if (im.observer.system_available()) {
             const ayther_system_v1& system = im.observer.system();
-            std::fprintf(stdout, "[AytherSession] SYSTEM: hw=0x%02X %s lines=%u "
-                         "(modo y viewport, por frame)\n",
-                         system.system_hw, system.region_pal ? "PAL" : "NTSC",
-                         system.lines_per_frame);
+            ayther::log::write(ayther::log::Severity::Info,
+                "session", "system_hw_x_lines",
+                "SYSTEM: hw=0x%02X %s lines=%u "
+                         "(modo y viewport, por frame)",
+                system.system_hw,
+                system.region_pal ? "PAL" : "NTSC",
+                system.lines_per_frame);
         }
     }
 
     // HD audio output — non-fatal (a missing device just means muted playback).
     if (cfg.enable_audio) {
-        im.audio_enabled = im.audio.init();
+        im.audio_enabled = im.audio.init(options);
         if (!im.audio_enabled)
-            std::fprintf(stderr, "[AytherSession] audio init failed — continuing muted\n");
+            ayther::log::write(ayther::log::Severity::Error,
+                "session", "audio_init_failed_continuing",
+                "audio init failed — continuing muted");
         // : el camino UNIFICADO es el ÚNICO. Pasó los oráculos (1×1 vs
         // catch-up byte-idéntico) y el A/B de oído del 2026-08-10 (Golden Axe,
         // attract completo: 66 voces HD con skew de colocación 0 sostenido).
@@ -255,16 +273,17 @@ Result<std::unique_ptr<AytherSession>> AytherSession::create(const Config& cfg) 
     // AYTHER_VOICE_ROUTER=0 restituye el camino viejo, entero, sin recompilar.
     // Es la salida de emergencia mientras el router sea nuevo; el día que sobre,
     // se retira junto con el camino viejo.
-    {
-        const char* v = ayther::env_get("AYTHER_VOICE_ROUTER");
-        session->set_voice_router(!(v && v[0] == '0'));
-    }
-    if (const char* d = ayther::env_get("AYTHER_SF2_DUMP"))
+    session->set_voice_router(options.voice_router());
+    if (const char* d = options.sf2_dump().empty()
+                           ? nullptr : options.sf2_dump().c_str())
         session->impl_->sf2_dump = ayther::file_open(d, "wb");
-    if (const char* d = ayther::env_get("AYTHER_VOICE_DUMP")) {
+    if (const char* d = options.voice_dump().empty()
+                           ? nullptr : options.voice_dump().c_str()) {
         session->impl_->voice_dump = ayther::file_open(d, "wb");
-        std::fprintf(stdout, "[voice] tee del router: %s (f32 estéreo crudo)\n",
-                     session->impl_->voice_dump ? d : "NO PUDE ABRIR");
+        ayther::log::write(ayther::log::Severity::Info,
+            "audio.voice", "tee_router_f_est_reo",
+            "tee del router: %s (f32 estéreo crudo)",
+            session->impl_->voice_dump ? d : "NO PUDE ABRIR");
     }
 
     return session;
@@ -301,24 +320,14 @@ Result<void> AytherSession::set_pack(const std::string& pack_path) {
     im.escalation.clear();
     im.subsystems_on   |= im.auto_disabled_on;
     im.auto_disabled_on = 0;
-    im.pack.reset();                 // close old pack (RAII)
-    im.pack_path.clear();
-    // : el perfil elegido era del pack VIEJO. Dos packs pueden tener un
-    // «enhanced» cada uno y no ser el mismo — arrastrar la pista haría que el
-    // pack nuevo se reportara en un perfil que nadie eligió para él.
-    im.profile_hint.clear();
+    im.pack.close();                 // close old pack (RAII)
 
-    if (pack_path.empty() || !fs::exists(pack_path))
-        return Result<void>::ok();   // no pack — a valid state
+    if (Result<void> opened = im.pack.open(pack_path); !opened) {
+        return opened;
+    }
+    if (!im.pack) return Result<void>::ok();   // no pack - a valid state
 
-    AyArchive* p = ayther_pack_open(pack_path.c_str());
-    if (!p)
-        return Result<void>::fail(ErrorCode::BadFormat,
-                                  "pack exists but failed to open: " + pack_path);
-
-    im.pack.reset(p);
-    im.pack_path = pack_path;
-    im.load_pack_into(p);
+    im.load_pack_into(im.pack.get());
     // : el pack arranca en SU perfil predeterminado, no en el estado que
     // hubiera dejado el pack anterior. Sin esto, cargar un pack después de
     // haber apagado un subsistema a mano lo mostraría a medias y el autor
@@ -333,11 +342,11 @@ Result<void> AytherSession::set_pack(const std::string& pack_path) {
 }
 
 Result<void> AytherSession::reload_pack() {
-    if (impl_->pack_path.empty()) return Result<void>::ok();
-    return set_pack(impl_->pack_path);
+    if (impl_->pack.path().empty()) return Result<void>::ok();
+    return set_pack(impl_->pack.path());
 }
 
-bool AytherSession::has_pack() const noexcept { return static_cast<bool>(impl_->pack); }
+bool AytherSession::has_pack() const noexcept { return impl_->pack.loaded(); }
 
 // ---------------------------------------------------------------------------
 // Input
@@ -955,10 +964,12 @@ const FrameView& AytherSession::produce_frame() {
                 if (e.schema != AYTHER_LAYOUT_AUDIO_EVENT_V1) {
                     if (!im.pcm_schema_warned) {
                         im.pcm_schema_warned = true;
-                        std::fprintf(stderr,
-                            "[AytherSession] evento de PCM con schema %u; este "
-                            "Engine lee %u — se ignoran\n",
-                            e.schema, AYTHER_LAYOUT_AUDIO_EVENT_V1);
+                        ayther::log::write(ayther::log::Severity::Warning,
+                            "session", "evento_pcm_schema_este",
+                            "evento de PCM con schema %u; este "
+                            "Engine lee %u — se ignoran",
+                            e.schema,
+                            AYTHER_LAYOUT_AUDIO_EVENT_V1);
                     }
                     continue;
                 }
@@ -1503,9 +1514,10 @@ const FrameView& AytherSession::produce_frame() {
                 im.sprite_hasher.get(), im.sprite_occs, kMaxSpriteOccs);
         } else if (!im.vram_warned) {
             im.vram_warned = true;
-            std::fprintf(stderr,
-                "[AytherSession] core exposes no VRAM (RETRO_MEMORY_VIDEO_RAM) — "
-                "sprite detection disabled. Use a core build that exposes VRAM.\n");
+            ayther::log::write(ayther::log::Severity::Warning,
+                "session", "core_exposes_vram_retro",
+                "core exposes no VRAM (RETRO_MEMORY_VIDEO_RAM) — "
+                "sprite detection disabled. Use a core build that exposes VRAM.");
         }
     }
     const float sprite_ms = ms_since(t_sprite);
@@ -1559,11 +1571,13 @@ const FrameView& AytherSession::produce_frame() {
                                                 kMaxPlaneTileOccs, &plane_occ_dropped);
             if (plane_occ_dropped && !im.plane_occ_warned) {
                 im.plane_occ_warned = true;
-                std::fprintf(stderr,
-                    "[planos] catalogo de tiles LLENO: %u tile(s) unico(s) fuera "
+                ayther::log::write(ayther::log::Severity::Warning,
+                    "planes", "catalogo_tiles_lleno_tile",
+                    "catalogo de tiles LLENO: %u tile(s) unico(s) fuera "
                     "de %u de cupo. Con overlays selectivos es tolerable; en una "
-                    "recomposicion por elemento serian celdas sin dibujar.\n",
-                    plane_occ_dropped, kMaxPlaneTileOccs);
+                    "recomposicion por elemento serian celdas sin dibujar.",
+                    plane_occ_dropped,
+                    kMaxPlaneTileOccs);
             }
             // Fase 2b: re-armar la máscara de supresión por plano (id 0x105) con las
             // occurrences recién vistas: hash oculto → bit (plano, patrón, paleta).
@@ -1706,10 +1720,12 @@ const FrameView& AytherSession::produce_frame() {
                         for (int s : steps)
                             if (s > kBgMaxStepPx || s < -kBgMaxStepPx) {
                                 im.bg_scene_cut = true;
-                                std::fprintf(stderr,
-                                    "[fondos] corte de escena detectado (delta "
+                                ayther::log::write(ayther::log::Severity::Warning,
+                                    "backgrounds", "corte_escena_detectado_delta",
+                                    "corte de escena detectado (delta "
                                     "%d px) — stitch congelado; reiniciá la "
-                                    "captura para la escena nueva\n", s);
+                                    "captura para la escena nueva",
+                                    s);
                                 break;
                             }
                         // ABI 1.10: `h40` describes the emitted frame
@@ -3867,16 +3883,18 @@ const FrameView& AytherSession::produce_frame() {
         if (im.observer.snapshot_available()) {
             if ((raster & RetroRunner::kRasterReasonJournalOverflow) &&
                 im.observer.mark_raster_overflow_logged()) {
-                std::fprintf(stderr,
-                    "[AytherSession] journal raster desbordado (>256 eventos en "
-                    "un frame): fallback al frame emitido, sin recomposicion\n");
+                ayther::log::write(ayther::log::Severity::Warning,
+                    "session", "journal_raster_desbordado_eventos",
+                    "journal raster desbordado (>256 eventos en "
+                    "un frame): fallback al frame emitido, sin recomposicion");
             }
             if ((raster & RetroRunner::kRasterReasonUnsupportedControls) &&
                 im.observer.mark_raster_unsupported_logged()) {
-                std::fprintf(stderr,
-                    "[AytherSession] el core rechazo un control de render en "
+                ayther::log::write(ayther::log::Severity::Error,
+                    "session", "core_rechazo_control_render",
+                    "el core rechazo un control de render en "
                     "este modo (UNSUPPORTED_MODE): la sustitucion afectada "
-                    "queda apagada en vez de a medias\n");
+                    "queda apagada en vez de a medias");
             }
         }
         // bit2: hscroll por línea/celda CON variación real en el span visible.
@@ -4346,124 +4364,80 @@ void AytherSession::set_subsystems_enabled_mask(uint32_t mask) noexcept {
 // siempre la declarativa: alguien apaga un subsistema a mano y el label sigue
 // diciendo «Mejorado» sobre algo que ya no lo es.
 uint32_t AytherSession::profile_count() const noexcept {
-    return impl_->pack ? ayther_pack_profile_count(impl_->pack.get()) : 0;
+    return impl_->pack.profile_count();
 }
 
 std::string AytherSession::profile_id(uint32_t i) const {
-    if (!impl_->pack) return {};
-    const char* s = ayther_pack_profile_field(impl_->pack.get(), i, "id");
-    return s ? s : "";
+    const auto entry = impl_->pack.profile(i);
+    return entry ? entry->id : std::string{};
 }
 
 std::string AytherSession::profile_name(uint32_t i) const {
-    if (!impl_->pack) return {};
-    const char* s = ayther_pack_profile_field(impl_->pack.get(), i, "name");
-    return s ? s : "";
+    const auto entry = impl_->pack.profile(i);
+    return entry ? entry->name : std::string{};
 }
 
 bool AytherSession::set_profile(const std::string& id) {
-    if (!impl_->pack || id.empty()) return false;
-    const int32_t i = ayther_pack_profile_index(impl_->pack.get(), id.c_str());
-    // Un perfil que no existe NO se aproxima: aplicar «lo más parecido» dejaría
-    // al usuario viendo algo que no pidió sin que nada lo diga.
-    if (i < 0) return false;
+    // The pack reports what the profile SAYS; applying it to the buses and
+    // the subsystem mask is coordination, so it stays here.
+    const auto entry = impl_->pack.profile_by_id(id);
+    if (!entry) return false;
 
-    set_subsystems_enabled_mask(
-        ayther_pack_profile_systems(impl_->pack.get(), (uint32_t)i));
-    // Los buses se setean TODOS —los que el perfil silencia y los que no—
-    // porque cambiar de perfil tiene que dejar el audio en el estado del perfil
-    // nuevo, no en la unión con el anterior.
-    const uint32_t muted =
-        ayther_pack_profile_muted_buses(impl_->pack.get(), (uint32_t)i);
-    for (uint32_t b = 0; b < kAudioBusCount; ++b)
-        set_bus_muted(static_cast<AudioBus>(b), (muted & (1u << b)) != 0);
-    impl_->profile_hint = id;
+    set_subsystems_enabled_mask(entry->systems);
+    // Every bus is set - the ones the profile mutes and the ones it does
+    // not - because switching profiles must leave the audio in the NEW
+    // profile's state, not in the union with the previous one.
+    for (uint32_t b = 0; b < kAudioBusCount; ++b) {
+        set_bus_muted(static_cast<AudioBus>(b),
+                      (entry->muted_buses & (1u << b)) != 0);
+    }
+    impl_->pack.set_profile_hint(id);
     return true;
 }
 
 std::string AytherSession::active_profile() const {
-    if (!impl_->pack) return {};
-    const uint32_t sys = subsystems_enabled_mask();
     uint32_t muted = 0;
-    for (uint32_t b = 0; b < kAudioBusCount; ++b)
+    for (uint32_t b = 0; b < kAudioBusCount; ++b) {
         if (bus_muted(static_cast<AudioBus>(b))) muted |= (1u << b);
-
-    // La ELECCIÓN del usuario primero, pero sólo si el estado la sostiene: dos
-    // perfiles pueden tener el mismo efecto (uno recortado coincide con otro
-    // más chico) y ahí deducirlo del estado devolvería cualquiera de los dos.
-    // Verificarla en vez de creerle es lo que evita tener dos verdades.
-    const uint32_t n = ayther_pack_profile_count(impl_->pack.get());
-    auto matches = [&](uint32_t i) {
-        return ayther_pack_profile_systems(impl_->pack.get(), i) == sys
-            && ayther_pack_profile_muted_buses(impl_->pack.get(), i) == muted;
-    };
-    if (!impl_->profile_hint.empty()) {
-        const int32_t h = ayther_pack_profile_index(impl_->pack.get(),
-                                                    impl_->profile_hint.c_str());
-        if (h >= 0 && matches((uint32_t)h)) return impl_->profile_hint;
     }
-    for (uint32_t i = 0; i < n; ++i) {
-        if (!matches(i)) continue;
-        const char* id = ayther_pack_profile_field(impl_->pack.get(), i, "id");
-        return id ? id : "";
-    }
-    // Vacío es un resultado legítimo: el usuario tocó algo y el estado dejó de
-    // ser el que cualquier perfil describe. Ése es el «custom» del alcance de
-    // la issue — no se declara, se alcanza.
-    return {};
+    return impl_->pack.active_profile(subsystems_enabled_mask(), muted);
 }
 
 bool AytherSession::apply_default_profile() {
-    if (!impl_->pack) return false;
-    const uint32_t i = ayther_pack_default_profile(impl_->pack.get());
-    const char* id = ayther_pack_profile_field(impl_->pack.get(), i, "id");
-    return id && set_profile(id);
+    const auto entry = impl_->pack.default_profile();
+    return entry && !entry->id.empty() && set_profile(entry->id);
 }
 
 // -- Validación de packs () ---------------------------------------------
 std::vector<AytherSession::PackFinding>
 AytherSession::validate_pack(const std::string& pack_path) const {
-    std::vector<PackFinding> out;
-    if (pack_path.empty()) return out;
-
-    // El contexto sale de la sesión: la plataforma (Sega CD vs cartucho la sabe
-    // el runner) y el build_id del core cargado. La ROM NO se declara acá — el
-    // Engine no calcula su CRC32, y decir «no se sabe» hace que el informe lo
-    // reporte como no verificado en vez de darlo por bueno. El frontend que sí
-    // lo tenga (el Lab lo tiene: el game_id del proyecto es "crc32:…") puede
-    // llamar al FFI directamente con ese dato.
-    const std::string plat = impl_->runner.cd_media() ? "segacd" : "megadrive";
-    // El build_id del core NO viene NUL-terminado (es un span de la ABI), así
-    // que se copia: pasar el puntero crudo leería de más.
-    std::string build_id;
-    if (const ayther_interface_v1* api = impl_->runner.ayther_api())
-        if (api->build_id && api->build_id_size)
-            build_id.assign(api->build_id, api->build_id_size);
-
-    AytherValidateCtx ctx{};
-    ctx.rom_crc32      = 0;
-    ctx.has_rom        = false;
-    ctx.platform       = plat.c_str();
-    ctx.core_build_id  = build_id.empty() ? nullptr : build_id.c_str();
-    ctx.engine_version = nullptr;
+    // Only the CONTEXT comes from the session: the platform is something the
+    // runner knows and the build_id belongs to the loaded core. The ROM is
+    // deliberately not declared - the Engine does not compute its CRC32, and
+    // saying "unknown" makes the report treat it as unverified instead of
+    // assuming it is fine. A frontend that does have it (the Lab does: the
+    // project's game_id is "crc32:...") can call the FFI with that itself.
+    session::PackRuntime::ValidateContext context;
+    context.platform = impl_->runner.cd_media() ? "segacd" : "megadrive";
+    // The core's build_id is NOT NUL-terminated (it is an ABI span), so it
+    // is copied: passing the raw pointer would read past the end.
+    if (const ayther_interface_v1* api = impl_->runner.ayther_api()) {
+        if (api->build_id && api->build_id_size) {
+            context.core_build_id.assign(api->build_id, api->build_id_size);
+        }
+    }
 #ifdef NDEBUG
-    ctx.release_build  = true;
+    context.release_build = true;
 #else
-    ctx.release_build  = false;
+    context.release_build = false;
 #endif
 
-    AytherPackReport* rep = ayther_pack_validate(pack_path.c_str(), &ctx);
-    if (!rep) return out;
-    const uint32_t n = ayther_pack_report_count(rep);
-    out.reserve(n);
-    for (uint32_t i = 0; i < n; ++i) {
-        const char* code = ayther_pack_report_code(rep, i);
-        const char* msg  = ayther_pack_report_message(rep, i);
-        out.push_back(PackFinding{
-            ayther_pack_report_severity(rep, i) == 0,
-            code ? code : "", msg ? msg : ""});
+    std::vector<PackFinding> out;
+    for (const session::PackRuntime::Finding& finding :
+             session::PackRuntime::validate(pack_path, context)) {
+        out.push_back(PackFinding{finding.blocking, finding.code,
+                                  finding.message});
     }
-    ayther_pack_report_free(rep);
     return out;
 }
 
@@ -4549,10 +4523,10 @@ std::string AytherSession::degradation_message() const {
                     "Se sigue oyendo el juego original.";
     // El PACK, porque con los assets nombrados por hash es lo único que permite
     // volver al proyecto que lo horneó.
-    if (!im.pack_path.empty()) {
-        const size_t slash = im.pack_path.find_last_of("/\\");
-        m += "  (pack: " + (slash == std::string::npos ? im.pack_path
-                                                       : im.pack_path.substr(slash + 1)) + ")";
+    if (!im.pack.path().empty()) {
+        const size_t slash = im.pack.path().find_last_of("/\\");
+        m += "  (pack: " + (slash == std::string::npos ? im.pack.path()
+                                                       : im.pack.path().substr(slash + 1)) + ")";
     }
     return m;
 }
@@ -4703,11 +4677,19 @@ void AytherSession::Impl::video_tick(const std::string& path) {
             // resolver contra ningún log de horneado.
             const char* bid = pack ? ayther_pack_build_id(pack.get()) : nullptr;
             if (bid && *bid)
-                std::fprintf(stderr, "[video] %s - %s build %s: %s\n",
-                             path.c_str(), ayther_pack_game_id(pack.get()),
-                             bid, err.c_str());
+                ayther::log::write(ayther::log::Severity::Warning,
+                    "video", "build",
+                    "%s - %s build %s: %s",
+                    path.c_str(),
+                    ayther_pack_game_id(pack.get()),
+                    bid,
+                    err.c_str());
             else
-                std::fprintf(stderr, "[video] %s: %s\n", path.c_str(), err.c_str());
+                ayther::log::write(ayther::log::Severity::Warning,
+                    "video", "message",
+                    "%s: %s",
+                    path.c_str(),
+                    err.c_str());
         }
         // Se cachea AUNQUE haya fallado: sin esto se reintentaría abrir (y
         // loguear) el mismo clip roto en cada frame — el patrón de negative
@@ -4766,14 +4748,20 @@ void AytherSession::Impl::video_tick(const std::string& path) {
       : vframes > (int64_t)last ? last
                            : (uint32_t)vframes;
 
-    if (const char* dbg = ayther::env_get("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
-        std::fprintf(stderr,
-                     "[video] f=%llu kin=%llx step=%u off=%u anchor=%lld d=%lld "
-                     "rate=%.3f idx=%u/%u\n",
-                     (unsigned long long)frame_index,
-                     (unsigned long long)kine_active, kine_step, off,
-                     (long long)vid.anchor, (long long)d, rate, idx,
-                     clip->frame_count());
+    if (RuntimeOptions::process().video_debug())
+        ayther::log::write(ayther::log::Severity::Warning,
+            "video", "f_kin_step_off",
+            "f=%llu kin=%llx step=%u off=%u anchor=%lld d=%lld "
+                     "rate=%.3f idx=%u/%u",
+            (unsigned long long)frame_index,
+            (unsigned long long)kine_active,
+            kine_step,
+            off,
+            (long long)vid.anchor,
+            (long long)d,
+            rate,
+            idx,
+            clip->frame_count());
 
     if (const ayther::VideoFrameView* f = clip->decode(idx)) {
         vid_out = *f;
@@ -4801,9 +4789,12 @@ void AytherSession::Impl::video_tick(const std::string& path) {
     // uso legítimo por sí solo. Se aplica mientras el video corre y lo devuelve
     // video_audio_stop().
     if (audio.game_gain() != ggain)
-        if (const char* dbg = ayther::env_get("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
-            std::fprintf(stderr, "[video/audio] banda sonora %.0f%% -> %.0f%%\n",
-                         audio.game_gain() * 100.0, ggain * 100.0);
+        if (RuntimeOptions::process().video_debug())
+            ayther::log::write(ayther::log::Severity::Warning,
+                "video.audio", "banda_sonora",
+                "banda sonora %.0f%% -> %.0f%%",
+                audio.game_gain() * 100.0,
+                ggain * 100.0);
     audio.set_game_gain(ggain);
     if (aud.empty()) {
         // Sin pista: sólo se corta el stream, el ducking SIGUE (lo pidió la
@@ -4841,10 +4832,13 @@ void AytherSession::Impl::video_tick(const std::string& path) {
         if (vaud.on) audio.stop_sfx_by_key(kVideoAudioKey);
         audio.play_oneshot_asset_file(aud, kVideoAudioKey,
                                       double(off) / gfps, again);
-        if (const char* dbg = ayther::env_get("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
-            std::fprintf(stderr, "[video/audio] resync f=%llu t=%.3fs %s\n",
-                         (unsigned long long)frame_index, double(off) / gfps,
-                         aud.c_str());
+        if (RuntimeOptions::process().video_debug())
+            ayther::log::write(ayther::log::Severity::Warning,
+                "video.audio", "resync_f_t_s",
+                "resync f=%llu t=%.3fs %s",
+                (unsigned long long)frame_index,
+                double(off) / gfps,
+                aud.c_str());
         vaud.kin    = kine_active;
         vaud.anchor = (int64_t)frame_index - (int64_t)off;   // informativo
         vaud.gain   = again;
@@ -5069,8 +5063,12 @@ void AytherSession::enable_rewind(bool on, int seconds) {
         const uint32_t cap      = static_cast<uint32_t>(fps * (seconds > 0 ? seconds : 10));
         impl_->rewind.configure(state_size, cap);
         impl_->rewind.set_enabled(state_size > 0);
-        std::fprintf(stdout, "[AytherSession] Rewind on: %u frames (~%ds), state=%zu B\n",
-                     cap, seconds, state_size);
+        ayther::log::write(ayther::log::Severity::Info,
+            "session", "rewind_frames_s_state",
+            "Rewind on: %u frames (~%ds), state=%zu B",
+            cap,
+            seconds,
+            state_size);
     } else {
         impl_->rewind.set_enabled(false);
     }
@@ -5581,7 +5579,9 @@ void AytherSession::record_start() {
         im.recording.start(std::move(initial_state));
     } else {
         im.recording.stop();
-        std::fprintf(stderr, "[AytherSession] record_start: serialize failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "session", "record_start_serialize_failed",
+            "record_start: serialize failed");
     }
 }
 
@@ -5677,8 +5677,12 @@ uint32_t AytherSession::replay_start_frame(const AytherRecording& rec, uint32_t 
 const FrameView* AytherSession::replay_seek(const AytherRecording& rec, uint32_t frame,
                                             bool quiet) {
     Impl& im = *impl_;
-    std::fprintf(stderr, "[dbgsk] replay_seek f=%u pos=%d quiet=%d\n",
-                 frame, im.replay_pos, (int)quiet);
+    ayther::log::write(ayther::log::Severity::Warning,
+        "debug", "replay_seek_f_pos",
+        "replay_seek f=%u pos=%d quiet=%d",
+        frame,
+        im.replay_pos,
+        (int)quiet);
     if (rec.empty()) return nullptr;
     im.chunk.active = false;   // un seek directo supersede cualquier seek en chunks
 
@@ -6440,9 +6444,11 @@ void AytherSession::set_instrument_assigns(const InstrumentAssign* a, uint32_t n
         if (!im.synths.count(a[i].patch)) {
             AytherSf2* sy = im.load_sf2_shared(sf);
             if (!sy)
-                std::fprintf(stderr, "[sf2] no se pudo cargar '%s' (ni del pack "
-                             "ni de disco) — ese timbre suena con su chip\n",
-                             sf.c_str());
+                ayther::log::write(ayther::log::Severity::Error,
+                    "audio.sf2", "pudo_cargar_ni_pack",
+                    "no se pudo cargar '%s' (ni del pack "
+                             "ni de disco) — ese timbre suena con su chip",
+                    sf.c_str());
             // Se cachea AUNQUE sea nulo: sin esto se reintentaría (y se
             // loguearía) por cada asignación que lo referencie.
             im.synths[a[i].patch] = sy;
@@ -6529,7 +6535,10 @@ void AytherSession::set_voice_router(bool on) noexcept {
         // ventanas en el próximo produce.
         im.audio.clear_synth();
     }
-    std::fprintf(stdout, "[voice] router de canales por voz: %s\n", on ? "PUESTO" : "sacado");
+    ayther::log::write(ayther::log::Severity::Info,
+        "audio.voice", "router_canales_voz",
+        "router de canales por voz: %s",
+        on ? "PUESTO" : "sacado");
 }
 
 bool AytherSession::voice_router() const noexcept { return impl_->voice_router_on; }
@@ -6785,8 +6794,12 @@ AytherSession::SeekStep AytherSession::replay_seek_chunk(const AytherRecording& 
     SeekStep r{};
     if (rec.empty()) { r.done = true; return r; }
     const uint32_t target = frame < rec.frame_count() ? frame : rec.frame_count() - 1;
-    std::fprintf(stderr, "[dbgsk] seek_chunk f=%u pos=%d activo=%d\n",
-                 frame, im.replay_pos, (int)im.chunk.active);
+    ayther::log::write(ayther::log::Severity::Warning,
+        "debug", "seek_chunk_f_pos",
+        "seek_chunk f=%u pos=%d activo=%d",
+        frame,
+        im.replay_pos,
+        (int)im.chunk.active);
 
     // (Re)inicia si no hay chunk activo o cambió el objetivo/grabación.
     if (!im.chunk.active || im.chunk.rec != &rec || im.chunk.target != target) {
@@ -7084,8 +7097,12 @@ AytherSession::Layers AytherSession::recompose_layers() {
         // de ser un diagnostico y pasa a tapar todo lo demas.
         if (im.layers_error_logged != st) {
             im.layers_error_logged = st;
-            std::fprintf(stderr, "[AytherSession] capas VDP no disponibles: %s "
-                                 "(status %d)\n", multilayer_motivo(st), st);
+            ayther::log::write(ayther::log::Severity::Warning,
+                "session", "capas_vdp_disponibles_status",
+                "capas VDP no disponibles: %s "
+                                 "(status %d)",
+                multilayer_motivo(st),
+                st);
         }
         return out;   // vacio: ni composite ni capas (transaccional)
     };

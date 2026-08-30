@@ -7,6 +7,7 @@
 // its swapchain. Sprite + post-process passes land in R3.2.
 // ---------------------------------------------------------------------------
 #include "ayther_renderer.h"
+#include "log.h"
 #include "ayther_env.h"
 
 #include "ayther_session.h"               // FrameView
@@ -104,15 +105,21 @@ AytherRenderer::~AytherRenderer() {
     if (context_) shutdown(*context_);
 }
 
-bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h,
-                          const char* shader_dir) {
+bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w,
+                          uint32_t canvas_h, const char* shader_dir,
+                          const RuntimeOptions& options) {
+    options_ = options;
     context_ = &ctx;
     if (!emu_tex_.init(ctx, kEmuW, kEmuH)) {
-        std::fprintf(stderr, "[AytherRenderer] emu texture init failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "renderer", "emu_texture_init_failed",
+            "emu texture init failed");
         return false;
     }
     if (!target_.init(ctx, canvas_w, canvas_h)) {
-        std::fprintf(stderr, "[AytherRenderer] offscreen target init failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "renderer", "offscreen_target_init_failed",
+            "offscreen target init failed");
         return false;
     }
 
@@ -123,7 +130,9 @@ bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h,
                               (dir + "sprite.vert.spv").c_str(),
                               (dir + "sprite.frag.spv").c_str());
     if (!sprite_ok_)
-        std::fprintf(stderr, "[AytherRenderer] sprite overlay disabled (no shaders)\n");
+        ayther::log::write(ayther::log::Severity::Warning,
+            "renderer", "sprite_overlay_disabled_shaders",
+            "sprite overlay disabled (no shaders)");
 
     // R-5 (): pipeline indexado del compose sin blit. Opcional como el de
     // sprites: sin shaders, el camino de escena cae al blit del emulador.
@@ -131,7 +140,9 @@ bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h,
                                 (dir + "indexed_plane.vert.spv").c_str(),
                                 (dir + "indexed_plane.frag.spv").c_str());
     if (!indexed_ok_)
-        std::fprintf(stderr, "[AytherRenderer] scene compose disabled (no shaders)\n");
+        ayther::log::write(ayther::log::Severity::Warning,
+            "renderer", "scene_compose_disabled_shaders",
+            "scene compose disabled (no shaders)");
     return true;
 }
 
@@ -261,13 +272,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
     //
     // Y NO se le aplica al VIDEO (): una textura persistente que se re-sube
     // cada frame no crea imagen, ni mips, ni descriptores — no pasa por acá.
-    static const uint32_t kUploadBudget = [] {
-        const char* v = ayther::env_get("AYTHER_UPLOAD_BUDGET");
-        if (!v || !*v) return 2u;
-        const long n = std::strtol(v, nullptr, 10);
-        return n < 1 ? 1u : (n > 16 ? 16u : (uint32_t)n);
-    }();
-    if (sprite_ok_) sprite_.pump_uploads(ctx, cmd, kUploadBudget);
+    if (sprite_ok_) sprite_.pump_uploads(ctx, cmd, options_.upload_budget());
     // : liberar el staging de tiles ya garantizados por fence (1×/frame).
     tile_cache_.pump(ctx);
 
@@ -1289,10 +1294,16 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
             if (clipped) {
                 static uint64_t warned = 0;   // 1.ª vez y luego cada ~10 s clippeados
                 if (warned++ % 600 == 0)
-                    std::fprintf(stderr, "[AytherRenderer] Acetato \"%s\": tileado 2D"
-                                 " recortado a %zu quads (img %ux%u sobre %dx%d)\n",
-                                 cc.asset, kMaxOverlayQuads,
-                                 cc.img_w, cc.img_h, ew, eh);
+                    ayther::log::write(ayther::log::Severity::Warning,
+                        "renderer", "acetato_tileado_d_recortado",
+                        "Acetato \"%s\": tileado 2D"
+                                 " recortado a %zu quads (img %ux%u sobre %dx%d)",
+                        cc.asset,
+                        kMaxOverlayQuads,
+                        cc.img_w,
+                        cc.img_h,
+                        ew,
+                        eh);
             }
             if (!strip.empty()) {
                 // : opacidad por-quad (reusa el canal de alphas de ) y
@@ -1502,14 +1513,21 @@ bool AytherRenderer::readback_init(VkContext& ctx) {
     VmaAllocationInfo info{};
     if (vmaCreateBuffer(ctx.allocator(), &bi, &aci, &rb_buf_, &rb_alloc_, &info)
             != VK_SUCCESS) {
-        std::fprintf(stderr, "[AytherRenderer] readback buffer (%ux%u) failed\n",
-                     e.width, e.height);
+        ayther::log::write(ayther::log::Severity::Error,
+            "renderer", "readback_buffer_x_failed",
+            "readback buffer (%ux%u) failed",
+            e.width,
+            e.height);
         readback_shutdown(ctx);
         return false;
     }
     rb_map_ = info.pMappedData;
-    std::fprintf(stdout, "[AytherRenderer] readback listo %ux%u (%zu MB)\n",
-                 e.width, e.height, static_cast<size_t>(bi.size) >> 20);
+    ayther::log::write(ayther::log::Severity::Info,
+        "renderer", "readback_listo_x_mb",
+        "readback listo %ux%u (%zu MB)",
+        e.width,
+        e.height,
+        static_cast<size_t>(bi.size) >> 20);
     return rb_map_ != nullptr;
 }
 

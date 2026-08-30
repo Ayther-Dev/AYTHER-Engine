@@ -1568,7 +1568,12 @@ pub unsafe extern "C" fn ayther_pack_profile_field(
         };
         let v = match f {
             "id" => p.id.clone(),
-            "nombre" => p.display_name().to_string(),
+            // "name" is what the C header documents and what every caller
+            // passes. "nombre" is the pre-rebrand spelling: it stayed matched
+            // here after the rename while the header already said "name", so
+            // the display name never reached a C++ caller at all. Both are
+            // accepted for the same reason ayther_env keeps AETHER_ working.
+            "name" | "nombre" => p.display_name().to_string(),
             "description" => p.description.clone().unwrap_or_default(),
             _ => return std::ptr::null(),
         };

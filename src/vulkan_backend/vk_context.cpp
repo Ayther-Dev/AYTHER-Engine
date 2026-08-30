@@ -1,5 +1,6 @@
 #include "vulkan_backend/vk_context.h"
-#include "ayther_env.h"
+#include "log.h"
+#include "runtime_options.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
@@ -20,8 +21,7 @@ static constexpr bool kValidation = true;
 // en vivo y consultarlo por textura sería otro costo por objeto.
 bool vk_verbose_logging() {
     static const bool on = [] {
-        const char* v = ayther::env_get("AYTHER_VK_VERBOSE");
-        return v && *v && std::strcmp(v, "0") != 0;
+        return ayther::RuntimeOptions::process().vulkan_verbose();
     }();
     return on;
 }
@@ -50,8 +50,10 @@ bool VkContext::init(SDL_Window* window) {
 
     auto inst_ret = inst_builder.build();
     if (!inst_ret) {
-        std::fprintf(stderr, "[VkContext] Instance creation failed: %s\n",
-                     inst_ret.error().message().c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.context", "instance_creation_failed",
+            "Instance creation failed: %s",
+            inst_ret.error().message().c_str());
         return false;
     }
     vkb::Instance vkb_inst = inst_ret.value();
@@ -62,8 +64,10 @@ bool VkContext::init(SDL_Window* window) {
     // 2. Window surface (SDL3)
     // -----------------------------------------------------------------------
     if (!SDL_Vulkan_CreateSurface(window, instance_, nullptr, &surface_)) {
-        std::fprintf(stderr, "[VkContext] Surface creation failed: %s\n",
-                     SDL_GetError());
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.context", "surface_creation_failed",
+            "Surface creation failed: %s",
+            SDL_GetError());
         return false;
     }
 
@@ -78,8 +82,10 @@ bool VkContext::init(SDL_Window* window) {
         .select();
 
     if (!phys_ret) {
-        std::fprintf(stderr, "[VkContext] No suitable GPU: %s\n",
-                     phys_ret.error().message().c_str());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "vulkan.context", "suitable_gpu",
+            "No suitable GPU: %s",
+            phys_ret.error().message().c_str());
         return false;
     }
     vkb::PhysicalDevice vkb_phys = phys_ret.value();
@@ -92,8 +98,10 @@ bool VkContext::init(SDL_Window* window) {
     vkb::DeviceBuilder dev_builder(vkb_phys);
     auto dev_ret = dev_builder.build();
     if (!dev_ret) {
-        std::fprintf(stderr, "[VkContext] Device creation failed: %s\n",
-                     dev_ret.error().message().c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.context", "device_creation_failed",
+            "Device creation failed: %s",
+            dev_ret.error().message().c_str());
         return false;
     }
     vkb::Device vkb_dev = dev_ret.value();
@@ -105,7 +113,9 @@ bool VkContext::init(SDL_Window* window) {
     auto pqi = vkb_dev.get_queue_index(vkb::QueueType::present);
 
     if (!gq || !pq || !gqi || !pqi) {
-        std::fprintf(stderr, "[VkContext] Queue retrieval failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.context", "queue_retrieval_failed",
+            "Queue retrieval failed");
         return false;
     }
     graphics_queue_  = gq.value();
@@ -124,13 +134,19 @@ bool VkContext::init(SDL_Window* window) {
     vma_info.vulkanApiVersion = VK_API_VERSION_1_1;
 
     if (vmaCreateAllocator(&vma_info, &allocator_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkContext] VMA allocator creation failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.context", "vma_allocator_creation_failed",
+            "VMA allocator creation failed");
         return false;
     }
 
-    std::fprintf(stdout, "[VkContext] Ready — GPU: %s  queues G=%u P=%u  validation=%s\n",
-                 gpu_name_.c_str(), graphics_family_, present_family_,
-                 kValidation ? "on" : "off");
+    ayther::log::write(ayther::log::Severity::Info,
+        "vulkan.context", "ready_gpu_queues_g",
+        "Ready — GPU: %s  queues G=%u P=%u  validation=%s",
+        gpu_name_.c_str(),
+        graphics_family_,
+        present_family_,
+        kValidation ? "on" : "off");
     return true;
 }
 
@@ -169,5 +185,7 @@ void VkContext::shutdown() {
     vkDestroyInstance(instance_, nullptr);
     instance_ = VK_NULL_HANDLE;
 
-    std::fprintf(stdout, "[VkContext] Shutdown complete.\n");
+    ayther::log::write(ayther::log::Severity::Info,
+        "vulkan.context", "shutdown_complete",
+        "Shutdown complete.");
 }

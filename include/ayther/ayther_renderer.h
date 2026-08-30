@@ -23,6 +23,7 @@
 #include <memory>
 
 #include "vulkan_backend/vk_render_target.h"
+#include "runtime_options.h"
 #include "vulkan_backend/vk_texture.h"        // emu-frame texture
 #include "vulkan_backend/tile_tex_cache.h"    // HD tile textures
 #include "vulkan_backend/vk_sprite.h"         // HD sprite overlay (R3.2)
@@ -58,7 +59,8 @@ public:
     // viewport size. `shader_dir` locates the SPIR-V (sprite.*.spv); if the
     // shaders are missing the sprite overlay is disabled (emu+tiles still work).
     bool init(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h,
-              const char* shader_dir);
+              const char* shader_dir,
+              const RuntimeOptions& options = RuntimeOptions::process());
 
     // Recreate at a new canvas size (window / viewport resize).
     bool resize(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h);
@@ -231,6 +233,10 @@ public:
     bool capture_compare_now(VkContext& ctx);
 
 private:
+    /// Injected at init(); held by value so the renderer never outlives a
+    /// reference to somebody else's options.
+    RuntimeOptions options_;
+
     struct FrameScratch;
 
     // Genesis Mode 5 max framebuffer — the native canvas the tile grid maps onto.

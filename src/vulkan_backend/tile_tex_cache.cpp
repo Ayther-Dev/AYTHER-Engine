@@ -7,6 +7,7 @@
 // and link these symbols).
 // ---------------------------------------------------------------------------
 #include "vulkan_backend/tile_tex_cache.h"
+#include "log.h"
 #include "vulkan_backend/vk_context.h"
 #include "ayther_core_ffi.h"   // ayther_pack_file_size / ayther_pack_read
 
@@ -36,7 +37,10 @@ VkTexture* TileTexCache::get_or_load(const std::string& asset_path,
     // ---- Read from pack ----
     int64_t file_sz = ayther_pack_file_size(pack, asset_path.c_str());
     if (file_sz <= 0) {
-        std::fprintf(stderr, "[TileTexCache] not found: %s\n", asset_path.c_str());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "vulkan.tiles", "found",
+            "not found: %s",
+            asset_path.c_str());
         return nullptr;
     }
     std::vector<uint8_t> raw(static_cast<size_t>(file_sz));
@@ -48,7 +52,10 @@ VkTexture* TileTexCache::get_or_load(const std::string& asset_path,
     uint8_t* pixels = stbi_load_from_memory(
         raw.data(), static_cast<int>(raw.size()), &w, &h, &ch, 4);
     if (!pixels) {
-        std::fprintf(stderr, "[TileTexCache] decode failed: %s\n", asset_path.c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.tiles", "decode_failed",
+            "decode failed: %s",
+            asset_path.c_str());
         return nullptr;
     }
 
@@ -59,7 +66,10 @@ VkTexture* TileTexCache::get_or_load(const std::string& asset_path,
     // ---- Upload to GPU ----
     if (!entry.tex.init(ctx, static_cast<uint32_t>(w), static_cast<uint32_t>(h))) {
         stbi_image_free(pixels);
-        std::fprintf(stderr, "[TileTexCache] VkTexture::init failed: %s\n", asset_path.c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.tiles", "vktexture_init_failed",
+            "VkTexture::init failed: %s",
+            asset_path.c_str());
         return nullptr;
     }
     entry.tex.upload(ctx, cmd, pixels,
@@ -72,7 +82,12 @@ VkTexture* TileTexCache::get_or_load(const std::string& asset_path,
     // Tile = UN solo upload: staging a la lista diferida ().
     staging_release_.push_back({ &entry, tick_ + kStagingLingerPumps });
     if (vk_verbose_logging())   // una línea por asset = ~5 ms de consola ()
-        std::fprintf(stdout, "[TileTexCache] loaded: %s (%dx%d)\n", asset_path.c_str(), w, h);
+        ayther::log::write(ayther::log::Severity::Info,
+            "vulkan.tiles", "loaded_x",
+            "loaded: %s (%dx%d)",
+            asset_path.c_str(),
+            w,
+            h);
     return &entry.tex;
 }
 
@@ -89,8 +104,11 @@ void TileTexCache::pump(VkContext& ctx) {
     }
     staging_release_.erase(keep, staging_release_.end());
     if (freed && vk_verbose_logging())
-        std::fprintf(stdout, "[TileTexCache] staging liberado: %d tex (+%zu KB)\n",
-                     n, freed / 1024);
+        ayther::log::write(ayther::log::Severity::Info,
+            "vulkan.tiles", "staging_liberado_tex_kb",
+            "staging liberado: %d tex (+%zu KB)",
+            n,
+            freed / 1024);
 }
 
 void TileTexCache::shutdown(VkContext& ctx) {

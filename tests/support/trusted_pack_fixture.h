@@ -55,6 +55,14 @@ public:
             error_buffer, error_capacity);
     }
 
+    /// The baked pack and the registry that vouches for it. A caller that
+    /// opens the pack through its own code path -- rather than through open()
+    /// below -- needs both.
+    [[nodiscard]] std::string pack_path() const { return pack_path_.string(); }
+    [[nodiscard]] std::string registry_path() const {
+        return registry_path_.string();
+    }
+
     [[nodiscard]] AyArchive* open() {
         if (archive_ == nullptr) {
             archive_ = ayther_pack_open_trusted(

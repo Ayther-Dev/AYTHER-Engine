@@ -11,6 +11,8 @@
 add_executable(mode3_spike
     spike.cpp
     ${CMAKE_SOURCE_DIR}/src/retro_runner.cpp   # motor tech, header-only deps
+    ${CMAKE_SOURCE_DIR}/src/log.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime_options.cpp
 )
 
 target_include_directories(mode3_spike PRIVATE

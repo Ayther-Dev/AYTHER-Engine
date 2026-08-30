@@ -208,7 +208,7 @@ v0.1.x distributes **three artifact families**, on Windows and Linux:
 | Archive | Targets | Headers | Shaders | Native dependencies |
 |---|---|---|---|---|
 | `ayther-core-<tag>-<platform>.zip` | `Ayther::core` | `ayther_core_ffi.h`, `ayther_version.h` | none | none |
-| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the above plus the ten-header engine allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, vk-bootstrap, toml++, zstd |
+| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the above plus the eleven-header engine allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, vk-bootstrap, toml++, zstd |
 | `ayther-engine-vpx-<tag>-<platform>.zip` | the above plus `Ayther::vpx` | the above plus `vpx/` when bundled | compiled SPIR-V | the above plus libvpx |
 
 Windows builds and bundles libvpx through `tools/build_libvpx.ps1`, so the
@@ -222,7 +222,7 @@ a convention, it is enforced in three places:
   in both directions. The engine kinds must contain their targets, headers,
   shaders, and dependency notices; the core kind must **demonstrably not**
   contain the engine archive, the ymfm archive, the engine target export, the
-  shaders, or any of the ten engine headers.
+  shaders, or any of the eleven engine headers.
 - `tools/gen_release_sbom.ps1` takes the artifact family, so an SBOM cannot
   describe a core-only tree as an "AYTHER Engine" distribution.
 - `tools/gen_release_notes.ps1` writes the scope table into the release body,

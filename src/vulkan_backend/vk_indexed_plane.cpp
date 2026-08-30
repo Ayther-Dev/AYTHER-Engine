@@ -8,6 +8,7 @@
 //     insertarse en la cadena de AytherRenderer sin barreras nuevas.
 // ---------------------------------------------------------------------------
 #include "vulkan_backend/vk_indexed_plane.h"
+#include "log.h"
 #include "vulkan_backend/vk_context.h"
 #include "vulkan_backend/vk_render_target.h"
 #include "ayther_file.h"
@@ -26,14 +27,21 @@ constexpr uint32_t kPalW = 64;    // 4 líneas × 16 colores
 std::vector<uint32_t> load_spv(const char* path) {
     FILE* f = ayther::file_open(path, "rb");
     if (!f) {
-        std::fprintf(stderr, "[VkIndexedPlane] Cannot open shader: %s\n", path);
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "cannot_open_shader",
+            "Cannot open shader: %s",
+            path);
         return {};
     }
     std::fseek(f, 0, SEEK_END);
     long sz = std::ftell(f);
     std::rewind(f);
     if (sz <= 0 || (sz % 4) != 0) {
-        std::fprintf(stderr, "[VkIndexedPlane] Bad SPIR-V size (%ld): %s\n", sz, path);
+        ayther::log::write(ayther::log::Severity::Warning,
+            "vulkan.plane", "bad_spir_v_size",
+            "Bad SPIR-V size (%ld): %s",
+            sz,
+            path);
         std::fclose(f);
         return {};
     }
@@ -72,7 +80,11 @@ bool make_image(VkContext& ctx, uint32_t w, uint32_t h, VkFormat fmt,
     VmaAllocationCreateInfo ai{};
     ai.usage = VMA_MEMORY_USAGE_AUTO;
     if (vmaCreateImage(ctx.allocator(), &ii, &ai, &image, &alloc, nullptr) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] vmaCreateImage %ux%u failed\n", w, h);
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "vmacreateimage_x_failed",
+            "vmaCreateImage %ux%u failed",
+            w,
+            h);
         return false;
     }
     VkImageViewCreateInfo vi{};
@@ -82,7 +94,9 @@ bool make_image(VkContext& ctx, uint32_t w, uint32_t h, VkFormat fmt,
     vi.format           = fmt;
     vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
     if (vkCreateImageView(ctx.device(), &vi, nullptr, &view) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] vkCreateImageView failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "vkcreateimageview_failed",
+            "vkCreateImageView failed");
         return false;
     }
     return true;
@@ -100,7 +114,10 @@ bool make_staging(VkContext& ctx, VkDeviceSize size,
     ai.usage = VMA_MEMORY_USAGE_AUTO;
     VmaAllocationInfo info{};
     if (vmaCreateBuffer(ctx.allocator(), &bi, &ai, &buf, &alloc, &info) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] staging (%zu B) failed\n", (size_t)size);
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "staging_b_failed",
+            "staging (%zu B) failed",
+            (size_t)size);
         return false;
     }
     map = info.pMappedData;
@@ -176,7 +193,9 @@ bool VkIndexedPlane::init(VkContext& ctx, const VkRenderTarget& target,
     fi.height          = extent_.height;
     fi.layers          = 1;
     if (vkCreateFramebuffer(ctx.device(), &fi, nullptr, &framebuffer_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] vkCreateFramebuffer failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "vkcreateframebuffer_failed",
+            "vkCreateFramebuffer failed");
         shutdown(ctx);
         return false;
     }
@@ -200,7 +219,9 @@ bool VkIndexedPlane::rebuild(VkContext& ctx, const VkRenderTarget& target) {
     fi.height          = extent_.height;
     fi.layers          = 1;
     if (vkCreateFramebuffer(ctx.device(), &fi, nullptr, &framebuffer_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] rebuild framebuffer failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "rebuild_framebuffer_failed",
+            "rebuild framebuffer failed");
         return false;
     }
     return true;
@@ -225,7 +246,9 @@ bool VkIndexedPlane::create_images(VkContext& ctx) {
     si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     if (vkCreateSampler(ctx.device(), &si, nullptr, &sampler_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] vkCreateSampler failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "vkcreatesampler_failed",
+            "vkCreateSampler failed");
         return false;
     }
     return true;
@@ -279,7 +302,9 @@ bool VkIndexedPlane::create_pipeline(VkContext& ctx, VkFormat fmt,
     rp_info.dependencyCount = 2;
     rp_info.pDependencies   = deps;
     if (vkCreateRenderPass(ctx.device(), &rp_info, nullptr, &render_pass_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] vkCreateRenderPass failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "vkcreaterenderpass_failed",
+            "vkCreateRenderPass failed");
         return false;
     }
 
@@ -291,7 +316,9 @@ bool VkIndexedPlane::create_pipeline(VkContext& ctx, VkFormat fmt,
     if (!vert_mod || !frag_mod) {
         if (vert_mod) vkDestroyShaderModule(ctx.device(), vert_mod, nullptr);
         if (frag_mod) vkDestroyShaderModule(ctx.device(), frag_mod, nullptr);
-        std::fprintf(stderr, "[VkIndexedPlane] vkCreateShaderModule failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "vkcreateshadermodule_failed",
+            "vkCreateShaderModule failed");
         return false;
     }
 
@@ -414,7 +441,10 @@ bool VkIndexedPlane::create_pipeline(VkContext& ctx, VkFormat fmt,
     vkDestroyShaderModule(ctx.device(), vert_mod, nullptr);
     vkDestroyShaderModule(ctx.device(), frag_mod, nullptr);
     if (res != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkIndexedPlane] vkCreateGraphicsPipelines failed (%d)\n", res);
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.plane", "vkcreategraphicspipelines_failed",
+            "vkCreateGraphicsPipelines failed (%d)",
+            res);
         return false;
     }
 

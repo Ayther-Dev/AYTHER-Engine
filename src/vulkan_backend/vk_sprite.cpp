@@ -25,6 +25,7 @@
 // ---------------------------------------------------------------------------
 
 #include "vulkan_backend/vk_sprite.h"
+#include "log.h"
 #include "vulkan_backend/vk_context.h"
 #include "vulkan_backend/vk_texture.h"
 #include "ayther_animation.h"  // ayther::AnimHdFrame (draw_anim, C-S2)
@@ -57,14 +58,21 @@
 static std::vector<uint32_t> load_spv(const char* path) {
     FILE* f = ayther::file_open(path, "rb");
     if (!f) {
-        std::fprintf(stderr, "[VkSprite] Cannot open shader: %s\n", path);
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "cannot_open_shader",
+            "Cannot open shader: %s",
+            path);
         return {};
     }
     std::fseek(f, 0, SEEK_END);
     long sz = std::ftell(f);
     std::rewind(f);
     if (sz <= 0 || (sz % 4) != 0) {
-        std::fprintf(stderr, "[VkSprite] Bad SPIR-V size (%ld) for: %s\n", sz, path);
+        ayther::log::write(ayther::log::Severity::Warning,
+            "vulkan.sprite", "bad_spir_v_size",
+            "Bad SPIR-V size (%ld) for: %s",
+            sz,
+            path);
         std::fclose(f);
         return {};
     }
@@ -139,7 +147,9 @@ bool VkSprite::create_render_pass(VkContext& ctx, VkFormat fmt) {
     rp_info.pDependencies   = deps;
 
     if (vkCreateRenderPass(ctx.device(), &rp_info, nullptr, &render_pass_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkSprite] vkCreateRenderPass failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "vkcreaterenderpass_failed",
+            "vkCreateRenderPass failed");
         return false;
     }
     return true;
@@ -167,7 +177,9 @@ bool VkSprite::create_pipeline(VkContext& ctx,
     if (!vert_mod || !frag_mod) {
         if (vert_mod) vkDestroyShaderModule(ctx.device(), vert_mod, nullptr);
         if (frag_mod) vkDestroyShaderModule(ctx.device(), frag_mod, nullptr);
-        std::fprintf(stderr, "[VkSprite] vkCreateShaderModule failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "vkcreateshadermodule_failed",
+            "vkCreateShaderModule failed");
         return false;
     }
 
@@ -313,8 +325,10 @@ bool VkSprite::create_pipeline(VkContext& ctx,
         blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
         if (vkCreateGraphicsPipelines(ctx.device(), VK_NULL_HANDLE,
                                       1, &gp_info, nullptr, out_pipeline_add) != VK_SUCCESS) {
-            std::fprintf(stderr, "[VkSprite] pipeline aditivo no disponible: "
-                                 "blend=1 va a dibujar con alpha normal\n");
+            ayther::log::write(ayther::log::Severity::Warning,
+                "vulkan.sprite", "pipeline_aditivo_disponible_blend",
+                "pipeline aditivo no disponible: "
+                                 "blend=1 va a dibujar con alpha normal");
             *out_pipeline_add = VK_NULL_HANDLE;
         }
     }
@@ -334,9 +348,12 @@ bool VkSprite::create_pipeline(VkContext& ctx,
             VkShaderModule vfm = vfrag.empty() ? VK_NULL_HANDLE
                                                : make_shader_module(ctx, vfrag);
             if (!vfm) {
-                std::fprintf(stderr, "[VkSprite] variante de blend no disponible "
+                ayther::log::write(ayther::log::Severity::Warning,
+                    "vulkan.sprite", "variante_blend_disponible_ese",
+                    "variante de blend no disponible "
                                      "(%s): ese modo va a dibujar con alpha "
-                                     "normal\n", bv.frag_spv);
+                                     "normal",
+                    bv.frag_spv);
                 continue;
             }
             stages[1].module = vfm;
@@ -345,9 +362,11 @@ bool VkSprite::create_pipeline(VkContext& ctx,
             blend_att.colorBlendOp        = bv.color_op;   //  (MIN/MAX ignoran factores)
             if (vkCreateGraphicsPipelines(ctx.device(), VK_NULL_HANDLE,
                                           1, &gp_info, nullptr, bv.out) != VK_SUCCESS) {
-                std::fprintf(stderr, "[VkSprite] pipeline de blend (%s) falló: "
-                                     "ese modo va a dibujar con alpha normal\n",
-                             bv.frag_spv);
+                ayther::log::write(ayther::log::Severity::Warning,
+                    "vulkan.sprite", "pipeline_blend_fall_ese",
+                    "pipeline de blend (%s) falló: "
+                                     "ese modo va a dibujar con alpha normal",
+                    bv.frag_spv);
                 *bv.out = VK_NULL_HANDLE;
             }
             vkDestroyShaderModule(ctx.device(), vfm, nullptr);
@@ -358,7 +377,10 @@ bool VkSprite::create_pipeline(VkContext& ctx,
     vkDestroyShaderModule(ctx.device(), frag_mod, nullptr);
 
     if (res != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkSprite] vkCreateGraphicsPipelines failed (%d)\n", res);
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "vkcreategraphicspipelines_failed",
+            "vkCreateGraphicsPipelines failed (%d)",
+            res);
         return false;
     }
     return true;
@@ -382,7 +404,9 @@ bool VkSprite::create_sampler(VkContext& ctx) {
     si.maxLod       = VK_LOD_CLAMP_NONE;
 
     if (vkCreateSampler(ctx.device(), &si, nullptr, &sampler_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkSprite] vkCreateSampler failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "vkcreatesampler_failed",
+            "vkCreateSampler failed");
         return false;
     }
     return true;
@@ -412,7 +436,9 @@ bool VkSprite::create_desc_pool(VkContext& ctx) {
 
     VkDescriptorPool pool = VK_NULL_HANDLE;
     if (vkCreateDescriptorPool(ctx.device(), &pi, nullptr, &pool) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkSprite] vkCreateDescriptorPool failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "vkcreatedescriptorpool_failed",
+            "vkCreateDescriptorPool failed");
         return false;
     }
     desc_pools_.push_back(pool);
@@ -453,7 +479,9 @@ bool VkSprite::create_mask_pool(VkContext& ctx) {
     pi.pPoolSizes    = &pool_size;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     if (vkCreateDescriptorPool(ctx.device(), &pi, nullptr, &pool) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkSprite] mask descriptor pool failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "mask_descriptor_pool_failed",
+            "mask descriptor pool failed");
         return false;
     }
     mask_pools_.push_back(pool);
@@ -535,7 +563,9 @@ bool VkSprite::create_framebuffer(VkContext& ctx, VkImageView view, uint32_t w, 
     fi.height          = fb_h_;
     fi.layers          = 1;
     if (vkCreateFramebuffer(ctx.device(), &fi, nullptr, &framebuffers_[0]) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkSprite] vkCreateFramebuffer failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.sprite", "vkcreateframebuffer_failed",
+            "vkCreateFramebuffer failed");
         return false;
     }
     return true;
@@ -600,8 +630,11 @@ bool VkSprite::init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
         const std::string video_frag = dir + "video.frag.spv";
         if (!create_pipeline(ctx, vert_spv_path, video_frag.c_str(), 3,
                              &video_layout_, &video_pipe_layout_, &video_pipeline_)) {
-            std::fprintf(stderr, "[VkSprite] pipeline de video no disponible (%s): "
-                                 "la Cinematica no se va a dibujar\n", video_frag.c_str());
+            ayther::log::write(ayther::log::Severity::Warning,
+                "vulkan.sprite", "pipeline_video_disponible_cinematica",
+                "pipeline de video no disponible (%s): "
+                                 "la Cinematica no se va a dibujar",
+                video_frag.c_str());
             video_pipeline_ = VK_NULL_HANDLE;
         }
         // Vestuario: pipeline de 2 samplers (asset + máscara R8) con
@@ -611,9 +644,11 @@ bool VkSprite::init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
         const std::string mask_frag = dir + "sprite_mask.frag.spv";
         if (!create_pipeline(ctx, vert_spv_path, mask_frag.c_str(), 2,
                              &mask_layout_, &mask_pipe_layout_, &mask_pipeline_)) {
-            std::fprintf(stderr, "[VkSprite] pipeline de Vestuario no disponible (%s): "
-                                 "las mascaras de tinte no se van a aplicar\n",
-                         mask_frag.c_str());
+            ayther::log::write(ayther::log::Severity::Warning,
+                "vulkan.sprite", "pipeline_vestuario_disponible_mascaras",
+                "pipeline de Vestuario no disponible (%s): "
+                                 "las mascaras de tinte no se van a aplicar",
+                mask_frag.c_str());
             mask_pipeline_ = VK_NULL_HANDLE;
         }
     }
@@ -633,7 +668,9 @@ bool VkSprite::init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
         si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.maxLod       = 0.25f;
         if (vkCreateSampler(ctx.device(), &si, nullptr, &sampler_nn_) != VK_SUCCESS) {
-            std::fprintf(stderr, "[VkSprite] nearest sampler failed\n");
+            ayther::log::write(ayther::log::Severity::Error,
+                "vulkan.sprite", "nearest_sampler_failed",
+                "nearest sampler failed");
             return false;
         }
         // Pool propio del VIDEO (): `clear_textures` resetea `pool_` en el
@@ -649,13 +686,18 @@ bool VkSprite::init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
         pi.poolSizeCount = 1;
         pi.pPoolSizes = &ps;
         if (vkCreateDescriptorPool(ctx.device(), &pi, nullptr, &video_pool_) != VK_SUCCESS) {
-            std::fprintf(stderr, "[VkSprite] video descriptor pool failed\n");
+            ayther::log::write(ayther::log::Severity::Error,
+                "vulkan.sprite", "video_descriptor_pool_failed",
+                "video descriptor pool failed");
             return false;
         }
     }
 
-    std::fprintf(stdout, "[VkSprite] Sprite pipeline ready  (%ux%u)\n",
-                 fb_w_, fb_h_);
+    ayther::log::write(ayther::log::Severity::Info,
+        "vulkan.sprite", "sprite_pipeline_ready_x",
+        "Sprite pipeline ready  (%ux%u)",
+        fb_w_,
+        fb_h_);
     return true;
 }
 
@@ -664,8 +706,11 @@ void VkSprite::rebuild(VkContext& ctx, uint32_t w, uint32_t h, VkImageView targe
     vkDeviceWaitIdle(ctx.device());
     destroy_framebuffers(ctx);
     create_framebuffer(ctx, target_view, w, h);
-    std::fprintf(stdout, "[VkSprite] Rebuilt framebuffer  (%ux%u)\n",
-                 fb_w_, fb_h_);
+    ayther::log::write(ayther::log::Severity::Info,
+        "vulkan.sprite", "rebuilt_framebuffer_x",
+        "Rebuilt framebuffer  (%ux%u)",
+        fb_w_,
+        fb_h_);
 }
 
 void VkSprite::shutdown(VkContext& ctx) {
@@ -826,7 +871,10 @@ void VkSprite::enqueue_decode(const std::string& key, const std::string& path,
         // Hot-reload: -2 = vigilar la APARICIÓN del archivo en poll_disk.
         entry.pending    = false;
         entry.disk_mtime = -2;
-        std::fprintf(stderr, "[VkSprite] Asset not found (pack/disk): %s\n", path.c_str());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "vulkan.sprite", "asset_found_pack_disk",
+            "Asset not found (pack/disk): %s",
+            path.c_str());
         return;
     }
 
@@ -954,9 +1002,12 @@ void VkSprite::pump_uploads(VkContext& ctx, VkCommandBuffer cmd, int max_uploads
         if (freed) {
             staging_freed_total_ += freed;
             if (vk_verbose_logging())
-                std::fprintf(stdout,
-                    "[VkSprite] staging liberado: %d tex (+%zu KB, total %zu KB)\n",
-                    n, freed / 1024, staging_freed_total_ / 1024);
+                ayther::log::write(ayther::log::Severity::Info,
+                    "vulkan.sprite", "staging_liberado_tex_kb",
+                    "staging liberado: %d tex (+%zu KB, total %zu KB)",
+                    n,
+                    freed / 1024,
+                    staging_freed_total_ / 1024);
         }
     }
 
@@ -975,7 +1026,10 @@ void VkSprite::pump_uploads(VkContext& ctx, VkCommandBuffer cmd, int max_uploads
         TexEntry& entry = it->second;
         entry.pending = false;
         if (d.bgra.empty()) {                            // decode falló → negative-cache
-            std::fprintf(stderr, "[VkSprite] PNG decode failed: %s\n", d.path.c_str());
+            ayther::log::write(ayther::log::Severity::Error,
+                "vulkan.sprite", "png_decode_failed",
+                "PNG decode failed: %s",
+                d.path.c_str());
             continue;
         }
         // MEDICIÓN DEL UPLOAD (). El presupuesto de 1 upload/frame se fijó
@@ -998,12 +1052,18 @@ void VkSprite::pump_uploads(VkContext& ctx, VkCommandBuffer cmd, int max_uploads
             // el upload entero. Queda detrás de AYTHER_VK_VERBOSE; el agregado
             // de abajo conserva media/max, que era para lo que se leía.
             if (vk_verbose_logging())
-                std::fprintf(stdout,
-                    "[VkSprite] Loaded: %s  (%dx%d)  upload %.2f ms · %.2f MB · "
-                    "%.1f GB/s  [max %.2f · media %.2f de %d]\n",
-                    d.path.c_str(), d.w, d.h, up_ms, mb,
+                ayther::log::write(ayther::log::Severity::Info,
+                    "vulkan.sprite", "loaded_x_upload_ms",
+                    "Loaded: %s  (%dx%d)  upload %.2f ms · %.2f MB · "
+                    "%.1f GB/s  [max %.2f · media %.2f de %d]",
+                    d.path.c_str(),
+                    d.w,
+                    d.h,
+                    up_ms,
+                    mb,
                     up_ms > 0.0 ? (mb / 1024.0) / (up_ms / 1000.0) : 0.0,
-                    upload_ms_max_, upload_ms_total_ / (double)upload_count_,
+                    upload_ms_max_,
+                    upload_ms_total_ / (double)upload_count_,
                     upload_count_);
             // Partición acumulada: es el número que cerró el issue . Se
             // reporta en ms POR UPLOAD, no en porcentajes: los porcentajes de la
@@ -1015,16 +1075,24 @@ void VkSprite::pump_uploads(VkContext& ctx, VkCommandBuffer cmd, int max_uploads
                 const double n  = (double)upload_count_;
                 const double it = up_img_ms_ + up_view_ms_ + up_stg_ms_ +
                                   up_log_ms_;
-                std::fprintf(stdout,
-                    "[VkSprite] %d uploads · %.1f MB · media %.2f ms · max %.2f ms\n"
+                ayther::log::write(ayther::log::Severity::Info,
+                    "vulkan.sprite", "uploads_mb_media_ms",
+                    "%d uploads · %.1f MB · media %.2f ms · max %.2f ms\n"
                     "           ms/upload: imagen %.3f · vista %.3f · staging %.3f"
                     " · pixeles %.3f · descriptores %.3f · log %.3f\n"
-                    "           control: init medido %.3f, partes suman %.3f\n",
-                    upload_count_, upload_mb_total_,
-                    upload_ms_total_ / n, upload_ms_max_,
-                    up_img_ms_ / n, up_view_ms_ / n, up_stg_ms_ / n,
-                    up_copy_ms_ / n, up_desc_ms_ / n, up_log_ms_ / n,
-                    up_init_ms_ / n, it / n);
+                    "           control: init medido %.3f, partes suman %.3f",
+                    upload_count_,
+                    upload_mb_total_,
+                    upload_ms_total_ / n,
+                    upload_ms_max_,
+                    up_img_ms_ / n,
+                    up_view_ms_ / n,
+                    up_stg_ms_ / n,
+                    up_copy_ms_ / n,
+                    up_desc_ms_ / n,
+                    up_log_ms_ / n,
+                    up_init_ms_ / n,
+                    it / n);
             }
             // Asset = UN solo upload: el staging se libera en diferido ().
             staging_release_.push_back(
@@ -1111,7 +1179,10 @@ bool VkSprite::finish_upload(VkContext& ctx, VkCommandBuffer cmd, TexEntry& entr
         if (*ds != VK_NULL_HANDLE) continue;
         *ds = alloc_desc_set(ctx);
         if (*ds == VK_NULL_HANDLE) {
-            std::fprintf(stderr, "[VkSprite] Descriptor set alloc failed: %s\n", path.c_str());
+            ayther::log::write(ayther::log::Severity::Error,
+                "vulkan.sprite", "descriptor_set_alloc_failed",
+                "Descriptor set alloc failed: %s",
+                path.c_str());
             entry.tex.reset();
             return false;
         }
@@ -1684,7 +1755,9 @@ void VkSprite::clear_textures(VkContext& ctx) {
     for (VkDescriptorPool pool : mask_pools_)
         vkResetDescriptorPool(ctx.device(), pool, 0);
 
-    std::fprintf(stdout, "[VkSprite] Texture cache cleared (pack hotreload)\n");
+    ayther::log::write(ayther::log::Severity::Info,
+        "vulkan.sprite", "texture_cache_cleared_pack",
+        "Texture cache cleared (pack hotreload)");
 }
 
 // ---------------------------------------------------------------------------
@@ -1724,8 +1797,10 @@ void VkSprite::poll_disk(VkContext& ctx) {
     std::sort(dirty.begin(), dirty.end());
     dirty.erase(std::unique(dirty.begin(), dirty.end()), dirty.end());
     for (const auto& p : dirty) {
-        std::fprintf(stdout, "[VkSprite] Asset cambiado en disco -> reload: %s\n",
-                     p.c_str());
+        ayther::log::write(ayther::log::Severity::Info,
+            "vulkan.sprite", "asset_cambiado_disco_reload",
+            "Asset cambiado en disco -> reload: %s",
+            p.c_str());
         evict(ctx, p);
     }
 }

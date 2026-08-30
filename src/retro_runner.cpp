@@ -1,4 +1,5 @@
 #include "libretro_host/retro_runner.h"
+#include "log.h"
 #include "ayther_core_ffi.h"   //  EM-7.4: el patcher IPS/BPS
 #include "ayther_env.h"
 #include <algorithm>
@@ -35,7 +36,8 @@ RetroRunner::~RetroRunner() { shutdown(); }
 // ---------------------------------------------------------------------------
 // init — load DLL + ROM, wire callbacks, kick off the core
 // ---------------------------------------------------------------------------
-bool RetroRunner::init(const std::string& core_path, const std::string& rom_path) {
+bool RetroRunner::init(const std::string& core_path, const std::string& rom_path,
+                       const ayther::RuntimeOptions& options) {
     if (!loader_.load(core_path)) return false;
     if (!load_symbols())          return false;
 
@@ -49,16 +51,18 @@ bool RetroRunner::init(const std::string& core_path, const std::string& rom_path
     // juegos, y de hecho acá no lo hacen — las ISOs están en la carpeta de
     // ROMs del usuario y los BIOS en el repo.
     {
-        const char* env = ayther::env_get("AYTHER_SYSTEM_DIR");
-        if (env && *env) {
-            system_dir_ = env;
+        if (!options.system_dir().empty()) {
+            system_dir_ = options.system_dir();
         } else {
             const size_t sep = rom_path.find_last_of("/\\");
             system_dir_ = sep == std::string::npos ? std::string(".")
                                                    : rom_path.substr(0, sep);
             if (system_dir_.empty()) system_dir_ = ".";
         }
-        std::fprintf(stdout, "[RetroRunner] system dir: %s\n", system_dir_.c_str());
+        ayther::log::write(ayther::log::Severity::Info,
+            "emulator", "system_dir",
+            "system dir: %s",
+            system_dir_.c_str());
     }
 
     // ¿El medio es un DISCO? Es lo que distingue al Sega CD, y con él a los dos
@@ -89,16 +93,22 @@ bool RetroRunner::init(const std::string& core_path, const std::string& rom_path
 
     retro_system_info sysinfo{};
     fn_retro_get_system_info(&sysinfo);
-    std::fprintf(stdout, "[RetroRunner] Core: %s %s\n",
-                 sysinfo.library_name, sysinfo.library_version);
+    ayther::log::write(ayther::log::Severity::Info,
+        "emulator", "core",
+        "Core: %s %s",
+        sysinfo.library_name,
+        sysinfo.library_version);
 
     if (!load_rom(rom_path)) return false;
 
     // Cache RAM pointer — 64 KB 68000 work RAM
     ram_ptr_  = fn_retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
     ram_size_ = fn_retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
-    std::fprintf(stdout, "[RetroRunner] Work RAM: %p  size: %zu bytes\n",
-                 ram_ptr_, ram_size_);
+    ayther::log::write(ayther::log::Severity::Info,
+        "emulator", "work_ram_size_bytes",
+        "Work RAM: %p  size: %zu bytes",
+        ram_ptr_,
+        ram_size_);
 
     running_ = true;
     return true;
@@ -212,19 +222,22 @@ bool RetroRunner::load_symbols() {
         // por capability + struct_size, nunca por `minor ==`.
         ayther_api_ = fn_ayther_get_interface_(AYTHER_ABI_VERSION_1_0);
         if (!ayther_api_) {
-            std::fprintf(stderr,
-                "[RetroRunner] ayther_get_interface devolvio NULL para v1.0 — "
-                "core con ABI pero de otra version\n");
+            ayther::log::write(ayther::log::Severity::Warning,
+                "emulator", "ayther_get_interface_devolvio",
+                "ayther_get_interface devolvio NULL para v1.0 — "
+                "core con ABI pero de otra version");
         } else if (AYTHER_ABI_VERSION_MAJOR(ayther_api_->abi_version) != 1) {
-            std::fprintf(stderr,
-                "[RetroRunner] ABI AYTHER major %u (se entiende la 1) — se "
-                "sigue por el camino legacy\n",
+            ayther::log::write(ayther::log::Severity::Warning,
+                "emulator", "abi_ayther_major_entiende",
+                "ABI AYTHER major %u (se entiende la 1) — se "
+                "sigue por el camino legacy",
                 AYTHER_ABI_VERSION_MAJOR(ayther_api_->abi_version));
             ayther_api_ = nullptr;
         } else {
-            std::fprintf(stdout,
-                "[RetroRunner] ABI AYTHER v%u.%u negociada. build_id=%.*s  "
-                "caps=0x%016llX\n",
+            ayther::log::write(ayther::log::Severity::Info,
+                "emulator", "abi_ayther_v_negociada",
+                "ABI AYTHER v%u.%u negociada. build_id=%.*s  "
+                "caps=0x%016llX",
                 AYTHER_ABI_VERSION_MAJOR(ayther_api_->abi_version),
                 AYTHER_ABI_VERSION_MINOR(ayther_api_->abi_version),
                 static_cast<int>(ayther_api_->build_id_size),
@@ -232,8 +245,9 @@ bool RetroRunner::load_symbols() {
                 static_cast<unsigned long long>(ayther_api_->capabilities));
         }
     } else {
-        std::fprintf(stdout,
-            "[RetroRunner] sin ayther_get_interface — core stock/legacy\n");
+        ayther::log::write(ayther::log::Severity::Info,
+            "emulator", "sin_ayther_get_interface",
+            "sin ayther_get_interface — core stock/legacy");
     }
 
     return ok;
@@ -413,10 +427,12 @@ uint32_t RetroRunner::poll_audio_events_v1(ayther_audio_event_v1* out,
             static bool warned = false;
             if (!warned) {
                 warned = true;
-                std::fprintf(stderr,
-                    "[RetroRunner] el core dice event_size=%u y este Engine "
-                    "conoce %zu — no se leen eventos de audio\n",
-                    st.event_size, sizeof(ayther_audio_event_v1));
+                ayther::log::write(ayther::log::Severity::Warning,
+                    "emulator", "core_dice_event_size",
+                    "el core dice event_size=%u y este Engine "
+                    "conoce %zu — no se leen eventos de audio",
+                    st.event_size,
+                    sizeof(ayther_audio_event_v1));
             }
             return 0;
         }
@@ -452,7 +468,10 @@ RetroRunner::write_control_v1(uint32_t region, const void* data, uint32_t bytes,
 bool RetroRunner::load_rom(const std::string& rom_path) {
     std::ifstream file(rom_path, std::ios::binary | std::ios::ate);
     if (!file) {
-        std::fprintf(stderr, "[RetroRunner] Cannot open ROM: %s\n", rom_path.c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "emulator", "cannot_open_rom",
+            "Cannot open ROM: %s",
+            rom_path.c_str());
         return false;
     }
 
@@ -466,8 +485,10 @@ bool RetroRunner::load_rom(const std::string& rom_path) {
     if (!patch_path_.empty()) {
         std::ifstream pf(patch_path_, std::ios::binary | std::ios::ate);
         if (!pf) {
-            std::fprintf(stderr, "[RetroRunner] no se pudo abrir el parche: %s\n",
-                         patch_path_.c_str());
+            ayther::log::write(ayther::log::Severity::Error,
+                "emulator", "pudo_abrir_parche",
+                "no se pudo abrir el parche: %s",
+                patch_path_.c_str());
             return false;
         }
         const auto pn = static_cast<size_t>(pf.tellg());
@@ -493,18 +514,27 @@ bool RetroRunner::load_rom(const std::string& rom_path) {
             // Se FALLA en vez de seguir con la ROM sin parchear: arrancar el
             // juego en ingles cuando el usuario pidio la traduccion parece que
             // el parche no hizo nada, y nadie sabe por que.
-            std::fprintf(stderr, "[RetroRunner] el parche no se pudo aplicar: %s\n",
-                         err[0] ? err : "motivo desconocido");
+            ayther::log::write(ayther::log::Severity::Error,
+                "emulator", "parche_pudo_aplicar",
+                "el parche no se pudo aplicar: %s",
+                err[0] ? err : "motivo desconocido");
             return false;
         }
         parcheada.resize((size_t)n);
         data.swap(parcheada);
-        std::fprintf(stdout, "[RetroRunner] parche aplicado: %s  (%zu KB -> %zu KB)\n",
-                     patch_path_.c_str(), size / 1024, data.size() / 1024);
+        ayther::log::write(ayther::log::Severity::Info,
+            "emulator", "parche_aplicado_kb_kb",
+            "parche aplicado: %s  (%zu KB -> %zu KB)",
+            patch_path_.c_str(),
+            size / 1024,
+            data.size() / 1024);
     }
 
-    std::fprintf(stdout, "[RetroRunner] ROM: %s  (%zu KB)\n",
-                 rom_path.c_str(), size / 1024);
+    ayther::log::write(ayther::log::Severity::Info,
+        "emulator", "rom_kb",
+        "ROM: %s  (%zu KB)",
+        rom_path.c_str(),
+        size / 1024);
 
     retro_game_info game_info{};
     game_info.path = rom_path.c_str();
@@ -512,15 +542,21 @@ bool RetroRunner::load_rom(const std::string& rom_path) {
     game_info.size = data.size();   //  EM-7.4: el parche puede extenderla
 
     if (!fn_retro_load_game(&game_info)) {
-        std::fprintf(stderr, "[RetroRunner] retro_load_game failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "emulator", "retro_load_game_failed",
+            "retro_load_game failed");
         return false;
     }
 
     retro_system_av_info av{};
     fn_retro_get_system_av_info(&av);
     fps_ = (av.timing.fps > 0.0) ? av.timing.fps : 60.0;
-    std::fprintf(stdout, "[RetroRunner] AV: %ux%u @ %.4f fps\n",
-                 av.geometry.base_width, av.geometry.base_height, fps_);
+    ayther::log::write(ayther::log::Severity::Info,
+        "emulator", "av_x_fps",
+        "AV: %ux%u @ %.4f fps",
+        av.geometry.base_width,
+        av.geometry.base_height,
+        fps_);
     return true;
 }
 

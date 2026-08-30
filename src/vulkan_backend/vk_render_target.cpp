@@ -2,6 +2,7 @@
 // VkRenderTarget — offscreen color image (R3). See vk_render_target.h.
 // ---------------------------------------------------------------------------
 #include "vulkan_backend/vk_render_target.h"
+#include "log.h"
 #include "vulkan_backend/vk_context.h"
 #include <vk_mem_alloc.h>   // real VMA API (header forward-declares the handle)
 #include <cstdio>
@@ -11,7 +12,9 @@ VkRenderTarget::~VkRenderTarget() { release(); }
 bool VkRenderTarget::init(VkContext& ctx, uint32_t width, uint32_t height,
                           VkFormat format) {
     if (width == 0 || height == 0) {
-        std::fprintf(stderr, "[VkRenderTarget] init: zero extent\n");
+        ayther::log::write(ayther::log::Severity::Warning,
+            "vulkan.target", "init_zero_extent",
+            "init: zero extent");
         return false;
     }
     release();
@@ -42,7 +45,9 @@ bool VkRenderTarget::init(VkContext& ctx, uint32_t width, uint32_t height,
 
     if (vmaCreateImage(ctx.allocator(), &img, &ai, &image_, &alloc_, nullptr)
             != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkRenderTarget] vmaCreateImage failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.target", "vmacreateimage_failed",
+            "vmaCreateImage failed");
         return false;
     }
 
@@ -55,7 +60,9 @@ bool VkRenderTarget::init(VkContext& ctx, uint32_t width, uint32_t height,
     vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
     if (vkCreateImageView(ctx.device(), &vi, nullptr, &view_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkRenderTarget] vkCreateImageView failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.target", "vkcreateimageview_failed",
+            "vkCreateImageView failed");
         return false;
     }
 
@@ -71,12 +78,18 @@ bool VkRenderTarget::init(VkContext& ctx, uint32_t width, uint32_t height,
     si.maxLod       = 1.0f;
 
     if (vkCreateSampler(ctx.device(), &si, nullptr, &sampler_) != VK_SUCCESS) {
-        std::fprintf(stderr, "[VkRenderTarget] vkCreateSampler failed\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.target", "vkcreatesampler_failed",
+            "vkCreateSampler failed");
         return false;
     }
 
-    std::fprintf(stdout, "[VkRenderTarget] Ready  %ux%u  fmt=%d\n",
-                 width, height, static_cast<int>(format));
+    ayther::log::write(ayther::log::Severity::Info,
+        "vulkan.target", "ready_x_fmt",
+        "Ready  %ux%u  fmt=%d",
+        width,
+        height,
+        static_cast<int>(format));
     return true;
 }
 

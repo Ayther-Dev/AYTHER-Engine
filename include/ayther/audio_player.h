@@ -53,6 +53,7 @@
 #include "audio_hd_mixer.h"
 #include "audio_asset_level.h"
 #include "ayther_core_ffi.h"
+#include "runtime_options.h"
 
 #include <cstdint>
 #include <string>
@@ -98,7 +99,11 @@ public:
     /// Open the default SDL3 audio device and create the emulator stream.
     /// Must be called after SDL_Init(SDL_INIT_AUDIO).
     /// Returns true on success; false leaves the player in a safe no-op state.
-    bool init();
+    ///
+    /// `options` is injected rather than read from the environment here, so a
+    /// test can drive the PCM tee without touching the process environment.
+    bool init(const ayther::RuntimeOptions& options =
+                  ayther::RuntimeOptions::process());
 
     /// Flush all one-shot streams, unbind the emulator stream, and close the
     /// audio device.  Safe to call even if init() was never called or failed.
@@ -497,6 +502,12 @@ public:
     float drc_queue_avg() const { return drc_queue_avg_; }
 
 private:
+    // ---- Injected configuration ---------------------------------------------
+
+    /// Held by value: the player outlives whatever expression produced it, and
+    /// a dangling reference to the options would be a hard bug to see.
+    ayther::RuntimeOptions options_;
+
     // ---- SDL objects --------------------------------------------------------
 
     SDL_AudioDeviceID device_     = 0;        ///< logical audio device

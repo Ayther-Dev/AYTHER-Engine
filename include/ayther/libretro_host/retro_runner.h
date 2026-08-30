@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include "core_loader.h"
+#include "runtime_options.h"
 #include "libretro.h"
 #include "ayther_api.h"   // Versioned AYTHER core-extension contract.
 
@@ -36,7 +37,11 @@ public:
     RetroRunner& operator=(const RetroRunner&) = delete;
 
     // Load the core DLL and the ROM file. Returns false on any error.
-    bool init(const std::string& core_path, const std::string& rom_path);
+    // `options` supplies the system directory instead of the runner reading
+    // the environment itself.
+    bool init(const std::string& core_path, const std::string& rom_path,
+              const ayther::RuntimeOptions& options =
+                  ayther::RuntimeOptions::process());
 
     // Advance emulation by exactly one hardware tick.
     void run_frame();

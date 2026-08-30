@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 #include "ayther_config.h"
+#include "log.h"
 #include "ayther_env.h"
 
 #include <toml++/toml.hpp>
@@ -159,8 +160,11 @@ AytherConfig AytherConfig::load() {
     std::error_code ec;
     fs::create_directories(dir, ec);
     if (ec) {
-        std::fprintf(stderr, "[Config] Cannot create config dir %s: %s\n",
-                     dir.string().c_str(), ec.message().c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "config", "cannot_create_config_dir",
+            "Cannot create config dir %s: %s",
+            dir.string().c_str(),
+            ec.message().c_str());
         return cfg;  // return defaults
     }
 
@@ -173,8 +177,11 @@ AytherConfig AytherConfig::load() {
             fs::copy(legacy_dir, dir,
                      fs::copy_options::recursive |
                          fs::copy_options::skip_existing, ec);
-            std::fprintf(stdout, "[Config] migrada config legacy %s -> %s\n",
-                         legacy_dir.string().c_str(), dir.string().c_str());
+            ayther::log::write(ayther::log::Severity::Info,
+                "config", "migrada_config_legacy",
+                "migrada config legacy %s -> %s",
+                legacy_dir.string().c_str(),
+                dir.string().c_str());
         }
     }
     if (!fs::exists(file)) {
@@ -187,8 +194,11 @@ AytherConfig AytherConfig::load() {
     try {
         tbl = toml::parse_file(file.string());
     } catch (const toml::parse_error& e) {
-        std::fprintf(stderr, "[Config] Parse error in %s: %s — using defaults\n",
-                     file.string().c_str(), e.description().data());
+        ayther::log::write(ayther::log::Severity::Error,
+            "config", "parse_error_using_defaults",
+            "Parse error in %s: %s — using defaults",
+            file.string().c_str(),
+            e.description().data());
         return cfg;
     }
 
@@ -264,8 +274,10 @@ void AytherConfig::save() const {
     const std::filesystem::path file = config_file();
     std::ofstream f(file);
     if (!f.is_open()) {
-        std::fprintf(stderr, "[Config] Cannot write %s\n",
-                     file.string().c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "config", "cannot_write",
+            "Cannot write %s",
+            file.string().c_str());
         return;
     }
 

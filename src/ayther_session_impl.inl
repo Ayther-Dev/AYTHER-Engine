@@ -18,8 +18,7 @@ struct AytherSession::Impl {
     AudioEventPtr   audio_event_det;   // C-A2: eventos por comandos de chip (recording-céntrico)
     AudioSubPtr     audio_sub;
     ScriptPtr       script;
-    PackPtr         pack;
-    std::string     pack_path;
+    session::PackRuntime pack;   // activation, profiles, trust, assets
 
     bool        audio_enabled = false;        // HD audio output (motor-owned)
     bool        vram_warned   = false;        // one-shot: core exposes no VRAM
@@ -644,7 +643,6 @@ struct AytherSession::Impl {
     /// la UI le mostraría «Fiel». Guardar la elección lo resuelve sin
     /// introducir una segunda verdad, porque en cuanto el estado deja de
     /// coincidir la pista se descarta.
-    std::string profile_hint;
     // -- Buses de audio () ----------------------------------------------
     /// Volumen por bus (índice = AudioBus). 1.0 = como se autoró.
     float bus_gain[kAudioBusCount] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -1308,20 +1306,25 @@ struct AytherSession::Impl {
         // El PACK en el registro (): el asset y la causa ya estaban, pero
         // de qué pack venía, no — y con los nombres por hash () eso es lo
         // único que permite volver al proyecto que lo horneó.
-        std::fprintf(stderr, "[degradación] %s no se pudo reproducir (pack: %s) "
-                             "— %zu/%zu del subsistema\n",
-                     asset.c_str(),
-                     pack_path.empty() ? "(sin pack)" : pack_path.c_str(),
-                     escalation.count(si), escalation.threshold());
+        ayther::log::write(ayther::log::Severity::Error,
+            "degradaci_n", "pudo_reproducir_pack_subsistema",
+            "%s no se pudo reproducir (pack: %s) "
+                             "— %zu/%zu del subsistema",
+            asset.c_str(),
+            pack.path().empty() ? "(sin pack)" : pack.path().c_str(),
+            escalation.count(si),
+            escalation.threshold());
 
         if (!cruzo) return;
         if (!sub_on(sub)) return;   // ya estaba apagado: nada que escalar
         subsystems_on   &= ~subsystem_bit(sub);
         auto_disabled_on |= subsystem_bit(sub);
-        std::fprintf(stderr, "[degradación] %s APAGADO tras %zu archivos que no "
-                             "se pudieron reproducir — se sigue con el original\n",
-                     sub == Subsystem::Music ? "música HD" : "efectos HD",
-                     escalation.count(si));
+        ayther::log::write(ayther::log::Severity::Warning,
+            "degradaci_n", "apagado_tras_archivos_pudieron",
+            "%s APAGADO tras %zu archivos que no "
+                             "se pudieron reproducir — se sigue con el original",
+            sub == Subsystem::Music ? "música HD" : "efectos HD",
+            escalation.count(si));
     }
 
     /// : ¿este sonido está silenciado por su BUS? Se pregunta por FIRMA,
@@ -2020,16 +2023,22 @@ struct AytherSession::Impl {
         // Cada ~5 s. No por frame: un fprintf por frame ya se llevó el 92% del
         // «costo de upload» una vez (), y acá el dato no cambia tan rápido.
         if (vr_ticks % 300 == 0)
-            std::fprintf(stdout,
-                "[voice] ticks=%llu frames_chip=%llu cebados=%llu sin_entrada=%llu "
+            ayther::log::write(ayther::log::Severity::Info,
+                "audio.voice", "ticks_frames_chip_cebados",
+                "ticks=%llu frames_chip=%llu cebados=%llu sin_entrada=%llu "
                 "sustituidas=%llu atraso=%zu cola_max=%zu cebados_sueltos=%llu "
-                "resyncs=%llu sf2_rms=%.5f sf2_pico=%.5f\n",
-                (unsigned long long)vr_ticks, (unsigned long long)vr_frames,
-                (unsigned long long)vr_primes, (unsigned long long)vr_starved,
+                "resyncs=%llu sf2_rms=%.5f sf2_pico=%.5f",
+                (unsigned long long)vr_ticks,
+                (unsigned long long)vr_frames,
+                (unsigned long long)vr_primes,
+                (unsigned long long)vr_starved,
                 (unsigned long long)voice_router.stats().substituted,
-                vr_backlog, vr_pend_max,
-                (unsigned long long)vr_skipped, (unsigned long long)vr_resyncs,
-                vr_sf2_rms, vr_sf2_peak);
+                vr_backlog,
+                vr_pend_max,
+                (unsigned long long)vr_skipped,
+                (unsigned long long)vr_resyncs,
+                vr_sf2_rms,
+                vr_sf2_peak);
         return true;
     }
 
@@ -2110,9 +2119,10 @@ struct AytherSession::Impl {
                 voice_prime_writes.shrink_to_fit();
                 voice_prime_offsets.clear();
                 voice_prime_state.clear();
-                std::fprintf(stdout,
-                    "[voice] toma demasiado larga para cachear escrituras: "
-                    "el cebado tras un seek degrada a reset\n");
+                ayther::log::write(ayther::log::Severity::Info,
+                    "audio.voice", "toma_demasiado_larga_para",
+                    "toma demasiado larga para cachear escrituras: "
+                    "el cebado tras un seek degrada a reset");
                 return false;
             }
             voice_prime_writes.insert(voice_prime_writes.end(), w, w + wc);
@@ -2976,9 +2986,11 @@ struct AytherSession::Impl {
         // a buscar en un log que no existe.
         if (p) {
             const char* bid = ayther_pack_build_id(p);
-            std::fprintf(stderr, "[pack] %s build %s\n",
-                         ayther_pack_game_id(p),
-                         (bid && *bid) ? bid : "(legacy, sin build id)");
+            ayther::log::write(ayther::log::Severity::Warning,
+                "pack", "build",
+                "%s build %s",
+                ayther_pack_game_id(p),
+                (bid && *bid) ? bid : "(legacy, sin build id)");
         }
         // : la fuente PACK de la mejora por software se rearma desde cero
         // con cada pack (la fuente Lab, set_enhanced_elements, no se toca).
@@ -3190,8 +3202,10 @@ struct AytherSession::Impl {
 
         if (const std::string t = read_text("game_profile.toml"); !t.empty()) {
             if (auto r = mode3.load_profile_str(t); !r) {
-                std::fprintf(stderr, "[pack] game_profile.toml inválido: %s\n",
-                             r.error.message.c_str());
+                ayther::log::write(ayther::log::Severity::Error,
+                    "pack", "game_profile_toml_inv_lido",
+                    "game_profile.toml inválido: %s",
+                    r.error.message.c_str());
             } else if (const std::string es =
                            read_text("entity_substitutions.toml");
                        !es.empty()) {
@@ -3261,8 +3275,11 @@ struct AytherSession::Impl {
                 for (uint64_t h : e.hashes) { element_enhance_pack[e.layer][h] = e.k; ++n; }
             }
             rebuild_enhance_sets();
-            std::fprintf(stderr, "[pack] mejora por software: %zu identidad(es), %zu (capa,hash)\n",
-                         pk_enh.size(), n);
+            ayther::log::write(ayther::log::Severity::Warning,
+                "pack", "mejora_software_identidad_es",
+                "mejora por software: %zu identidad(es), %zu (capa,hash)",
+                pk_enh.size(),
+                n);
         }
 
         // Utilería (CU002) y Glifos (CU005): el catálogo multi-tile de Pintar.
@@ -3394,9 +3411,11 @@ struct AytherSession::Impl {
             if (!synths.count(patch)) {
                 AytherSf2* sy = load_sf2_shared(as.soundfont);
                 if (!sy)
-                    std::fprintf(stderr,
-                        "[sf2] pack: no se pudo cargar '%s' — ese timbre "
-                        "suena con su chip\n", as.soundfont.c_str());
+                    ayther::log::write(ayther::log::Severity::Error,
+                        "audio.sf2", "pack_pudo_cargar_ese",
+                        "pack: no se pudo cargar '%s' — ese timbre "
+                        "suena con su chip",
+                        as.soundfont.c_str());
                 // Se cachea AUNQUE sea nulo, igual que en el camino del
                 // frontend: sin esto se reintentaria por cada asignacion.
                 synths[patch] = sy;

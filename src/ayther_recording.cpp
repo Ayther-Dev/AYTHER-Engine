@@ -31,6 +31,7 @@
 //   u32 hash_algo        (kSpriteHashAlgo con que se capturó la historia; <v8 = 0)
 // ---------------------------------------------------------------------------
 #include "ayther_recording.h"
+#include "log.h"
 
 #include <zstd.h>
 
@@ -82,10 +83,15 @@ bool get_u64(std::istream& i, uint64_t& v) {
 // save
 // ---------------------------------------------------------------------------
 bool AytherRecording::save(const std::string& path) const {
-    if (empty()) { std::fprintf(stderr, "[Recording] refuse to save empty take\n"); return false; }
+    if (empty()) { ayther::log::write(ayther::log::Severity::Warning,
+        "recording", "refuse_save_empty_take",
+        "refuse to save empty take"); return false; }
 
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (!f) { std::fprintf(stderr, "[Recording] cannot open %s\n", path.c_str()); return false; }
+    if (!f) { ayther::log::write(ayther::log::Severity::Error,
+        "recording", "cannot_open",
+        "cannot open %s",
+        path.c_str()); return false; }
 
     // Compress the initial savestate.
     const size_t bound = ZSTD_compressBound(initial_state.size());
@@ -93,7 +99,10 @@ bool AytherRecording::save(const std::string& path) const {
     const size_t n = ZSTD_compress(comp.data(), bound,
                                    initial_state.data(), initial_state.size(), kZstdLevel);
     if (ZSTD_isError(n)) {
-        std::fprintf(stderr, "[Recording] compress failed: %s\n", ZSTD_getErrorName(n));
+        ayther::log::write(ayther::log::Severity::Error,
+            "recording", "compress_failed",
+            "compress failed: %s",
+            ZSTD_getErrorName(n));
         return false;
     }
     comp.resize(n);
@@ -154,9 +163,15 @@ bool AytherRecording::save(const std::string& path) const {
     // v8: algoritmo de hash con que se capturó la historia de sprites.
     put_u32(f, hash_algo);
 
-    std::fprintf(stdout, "[Recording] saved %s  (%u frames, state %zu→%zu B, %zu sprite-hashes, %zu keyframes)\n",
-                 path.c_str(), frame_count(), initial_state.size(), comp.size(),
-                 have_hashes ? sprite_hashes.size() : 0u, keyframes.size());
+    ayther::log::write(ayther::log::Severity::Info,
+        "recording", "saved_frames_state_b",
+        "saved %s  (%u frames, state %zu→%zu B, %zu sprite-hashes, %zu keyframes)",
+        path.c_str(),
+        frame_count(),
+        initial_state.size(),
+        comp.size(),
+        have_hashes ? sprite_hashes.size() : 0u,
+        keyframes.size());
     return f.good();
 }
 
@@ -243,7 +258,10 @@ std::optional<AytherRecording> AytherRecording::load(const std::string& path) {
     const size_t n = ZSTD_decompress(rec.initial_state.data(), raw_size,
                                      comp.data(), comp_size);
     if (ZSTD_isError(n) || n != raw_size) {
-        std::fprintf(stderr, "[Recording] decompress failed for %s\n", path.c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "recording", "decompress_failed",
+            "decompress failed for %s",
+            path.c_str());
         return std::nullopt;
     }
 
@@ -361,10 +379,14 @@ std::optional<AytherRecording> AytherRecording::load(const std::string& path) {
         if (get_u32(f, algo)) rec.hash_algo = algo;
     }
 
-    std::fprintf(stdout, "[Recording] loaded %s  (%u frames%s, %zu keyframes, hash_algo %u)\n",
-                 path.c_str(), frames,
-                 rec.hash_offsets.empty() ? "" : ", +hash history",
-                 rec.keyframes.size(), rec.hash_algo);
+    ayther::log::write(ayther::log::Severity::Info,
+        "recording", "loaded_frames_keyframes_hash",
+        "loaded %s  (%u frames%s, %zu keyframes, hash_algo %u)",
+        path.c_str(),
+        frames,
+        rec.hash_offsets.empty() ? "" : ", +hash history",
+        rec.keyframes.size(),
+        rec.hash_algo);
     return rec;
 }
 

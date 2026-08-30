@@ -166,11 +166,15 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/ayther_session.cpp
     src/ayther_session_impl.inl
     src/ayther_video.cpp
+    src/log.cpp
     src/psg_synth.cpp
     src/retro_runner.cpp
     src/rewind_buffer.cpp
+    src/runtime_options.cpp
     src/session/emulation_observer.cpp
     src/session/emulation_observer.h
+    src/session/pack_runtime.cpp
+    src/session/pack_runtime.h
     src/session/recording_controller.cpp
     src/session/recording_controller.h
     src/voice_router.cpp
@@ -198,7 +202,8 @@ set(AYTHER_ENGINE_PUBLIC_HEADER_NAMES
     ayther_result.h
     ayther_sdk.h
     ayther_sdk_version.h
-    ayther_session.h)
+    ayther_session.h
+    log.h)
 
 set(AYTHER_ENGINE_PUBLIC_HEADERS "${AYTHER_ENGINE_PUBLIC_HEADER_NAMES}")
 list(TRANSFORM AYTHER_ENGINE_PUBLIC_HEADERS

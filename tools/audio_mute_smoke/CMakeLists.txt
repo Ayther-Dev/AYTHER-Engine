@@ -9,6 +9,8 @@
 add_executable(audio_mute_smoke
     smoke.cpp
     ${CMAKE_SOURCE_DIR}/src/retro_runner.cpp
+    ${CMAKE_SOURCE_DIR}/src/log.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime_options.cpp
 )
 
 target_include_directories(audio_mute_smoke PRIVATE

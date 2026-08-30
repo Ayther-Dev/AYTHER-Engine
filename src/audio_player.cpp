@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 
 #include "ayther_env.h"
+#include "log.h"
 #include "audio_player.h"
 #include "ayther_file.h"
 #include "audio_live_resume.h"
@@ -78,15 +79,18 @@ static constexpr SDL_AudioSpec kEmuSpec = {
 // AudioPlayer::init
 // ---------------------------------------------------------------------------
 
-bool AudioPlayer::init() {
+bool AudioPlayer::init(const ayther::RuntimeOptions& options) {
+    options_ = options;
     // El subsistema de audio, si el host no lo levantó. El Lab lo hace en su
     // SDL_Init, pero un probe que crea una AytherSession no tiene por qué saber
     // que hay un SDL debajo — y sin esto el device no abre y la sesión sigue
     // «muted», que es un oráculo de audio que pasa sin medir nada. SDL cuenta
     // referencias, así que llamarlo de más no molesta a quien ya lo inicializó.
     if (!SDL_WasInit(SDL_INIT_AUDIO) && !SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-        std::fprintf(stderr, "[AudioPlayer] SDL_InitSubSystem(AUDIO) failed: %s\n",
-                     SDL_GetError());
+        ayther::log::write(ayther::log::Severity::Error,
+            "audio.player", "sdl_initsubsystem_audio_failed",
+            "SDL_InitSubSystem(AUDIO) failed: %s",
+            SDL_GetError());
         return false;
     }
     // Open the default playback device.
@@ -94,23 +98,29 @@ bool AudioPlayer::init() {
     // with different specs will be resampled/converted automatically.
     device_ = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
     if (!device_) {
-        std::fprintf(stderr, "[AudioPlayer] SDL_OpenAudioDevice failed: %s\n",
-                     SDL_GetError());
+        ayther::log::write(ayther::log::Severity::Error,
+            "audio.player", "sdl_openaudiodevice_failed",
+            "SDL_OpenAudioDevice failed: %s",
+            SDL_GetError());
         return false;
     }
 
     // Query the actual device format so we can create matching streams.
     SDL_AudioSpec dev_spec = {};
     SDL_GetAudioDeviceFormat(device_, &dev_spec, nullptr);
-    std::fprintf(stdout,
-        "[AudioPlayer] device opened — fmt=%d  ch=%d  Hz=%d\n",
-        dev_spec.format, dev_spec.channels, dev_spec.freq);
+    ayther::log::write(ayther::log::Severity::Info,
+        "audio.player", "device_opened_fmt_ch",
+        "device opened — fmt=%d  ch=%d  Hz=%d",
+        dev_spec.format,
+        dev_spec.channels,
+        dev_spec.freq);
 
     // Create the continuous emulator stream: S16LE stereo → device native.
     emu_stream_ = SDL_CreateAudioStream(&kEmuSpec, &dev_spec);
     if (!emu_stream_) {
-        std::fprintf(stderr,
-            "[AudioPlayer] SDL_CreateAudioStream (emu) failed: %s\n",
+        ayther::log::write(ayther::log::Severity::Error,
+            "audio.player", "sdl_createaudiostream_emu_failed",
+            "SDL_CreateAudioStream (emu) failed: %s",
             SDL_GetError());
         SDL_CloseAudioDevice(device_);
         device_ = 0;
@@ -119,7 +129,8 @@ bool AudioPlayer::init() {
 
     // : tee opcional del PCM del emulador a WAV (AYTHER_AUDIO_DUMP=<ruta>).
     // Header con tamanos placeholder; se parchea al cerrar (shutdown).
-    if (const char* dump_path = ayther::env_get("AYTHER_AUDIO_DUMP")) {
+    if (!options_.audio_dump().empty()) {
+        const char* dump_path = options_.audio_dump().c_str();
         FILE* f = ayther::file_open(dump_path, "wb");
         if (f) {
             const uint8_t hdr[44] = {
@@ -132,15 +143,22 @@ bool AudioPlayer::init() {
             std::fwrite(hdr, 1, sizeof(hdr), f);
             dump_ = f;
             dump_data_bytes_ = 0;
-            std::fprintf(stdout, "[AudioPlayer] tee WAV activo: %s\n", dump_path);
+            ayther::log::write(ayther::log::Severity::Info,
+                "audio.player", "tee_wav_activo",
+                "tee WAV activo: %s",
+                dump_path);
         } else {
-            std::fprintf(stderr, "[AudioPlayer] tee WAV: no pude abrir %s\n", dump_path);
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "tee_wav_pude_abrir",
+                "tee WAV: no pude abrir %s",
+                dump_path);
         }
     }
 
     if (!SDL_BindAudioStream(device_, emu_stream_)) {
-        std::fprintf(stderr,
-            "[AudioPlayer] SDL_BindAudioStream (emu) failed: %s\n",
+        ayther::log::write(ayther::log::Severity::Error,
+            "audio.player", "sdl_bindaudiostream_emu_failed",
+            "SDL_BindAudioStream (emu) failed: %s",
             SDL_GetError());
         SDL_DestroyAudioStream(emu_stream_);
         emu_stream_ = nullptr;
@@ -161,8 +179,10 @@ bool AudioPlayer::init() {
     static constexpr SDL_AudioSpec kSynthSpec = { SDL_AUDIO_F32, 2, 44100 };
     synth_stream_ = SDL_CreateAudioStream(&kSynthSpec, &dev_spec);
     if (synth_stream_ && !SDL_BindAudioStream(device_, synth_stream_)) {
-        std::fprintf(stderr, "[AudioPlayer] SDL_BindAudioStream (synth) failed: %s\n",
-                     SDL_GetError());
+        ayther::log::write(ayther::log::Severity::Error,
+            "audio.player", "sdl_bindaudiostream_synth_failed",
+            "SDL_BindAudioStream (synth) failed: %s",
+            SDL_GetError());
         SDL_DestroyAudioStream(synth_stream_);
         synth_stream_ = nullptr;
     }
@@ -259,7 +279,10 @@ void AudioPlayer::shutdown() {
         std::fseek(f, 40, SEEK_SET); std::fwrite(&data_sz, 4, 1, f);
         std::fclose(f);
         dump_ = nullptr;
-        std::fprintf(stdout, "[AudioPlayer] tee WAV cerrado (%u bytes de PCM)\n", data_sz);
+        ayther::log::write(ayther::log::Severity::Info,
+            "audio.player", "tee_wav_cerrado_bytes",
+            "tee WAV cerrado (%u bytes de PCM)",
+            data_sz);
     }
     stop_all_sfx();
     stop_all_events();
@@ -377,10 +400,12 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
                     SDL_PutAudioStreamData(emu_stream_, zeros.data(),
                                            prime * 2 * static_cast<int>(sizeof(int16_t)));
                     drc_queue_avg_ = kDrcTargetFrames;   // no arrastrar el EMA viejo
-                    std::fprintf(stderr,
-                        "[AudioPlayer] stall %llums → prime %d frames de silencio\n",
+                    ayther::log::write(ayther::log::Severity::Warning,
+                        "audio.player", "stall_ms_prime_frames",
+                        "stall %llums → prime %d frames de silencio",
                         static_cast<unsigned long long>(
-                            last_flush_ms_ ? now - last_flush_ms_ : 0), prime);
+                            last_flush_ms_ ? now - last_flush_ms_ : 0),
+                        prime);
                 }
             }
             last_flush_ms_ = now;
@@ -473,9 +498,11 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
                     const uint64_t now = SDL_GetTicks();
                     if (now - last_starve_log_ms_ > 1000) {
                         last_starve_log_ms_ = now;
-                        std::fprintf(stderr,
-                            "[AudioPlayer] backlog %.0f frames (<%.0f): starving x%llu\n",
-                            queued, kTarget * 0.25f,
+                        ayther::log::write(ayther::log::Severity::Warning,
+                            "audio.player", "backlog_frames_starving_x",
+                            "backlog %.0f frames (<%.0f): starving x%llu",
+                            queued,
+                            kTarget * 0.25f,
                             static_cast<unsigned long long>(starved_frames_));
                     }
                 }
@@ -527,9 +554,11 @@ void AudioPlayer::play_substitutions(AyArchive*            pack,
         // Create a one-shot stream: WAV spec → device spec.
         SDL_AudioStream* stream = SDL_CreateAudioStream(&wav->spec, &dev_spec);
         if (!stream) {
-            std::fprintf(stderr,
-                "[AudioPlayer] CreateAudioStream SFX failed (%s): %s\n",
-                path.c_str(), SDL_GetError());
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "createaudiostream_sfx_failed",
+                "CreateAudioStream SFX failed (%s): %s",
+                path.c_str(),
+                SDL_GetError());
             continue;
         }
 
@@ -540,9 +569,11 @@ void AudioPlayer::play_substitutions(AyArchive*            pack,
         SDL_FlushAudioStream(stream);   // EOS — stream drains then reports 0
 
         if (!SDL_BindAudioStream(device_, stream)) {
-            std::fprintf(stderr,
-                "[AudioPlayer] BindAudioStream SFX failed (%s): %s\n",
-                path.c_str(), SDL_GetError());
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "bindaudiostream_sfx_failed",
+                "BindAudioStream SFX failed (%s): %s",
+                path.c_str(),
+                SDL_GetError());
             SDL_DestroyAudioStream(stream);
             continue;
         }
@@ -550,8 +581,11 @@ void AudioPlayer::play_substitutions(AyArchive*            pack,
         sfx_streams_.push_back({ stream, sub.hash });
         playing.insert(sub.hash);
 
-        std::fprintf(stdout, "[AudioPlayer] SFX start: %s  hash=%016" PRIx64 "\n",
-                     path.c_str(), sub.hash);
+        ayther::log::write(ayther::log::Severity::Info,
+            "audio.player", "sfx_start_hash",
+            "SFX start: %s  hash=%016" PRIx64 "",
+            path.c_str(),
+            sub.hash);
     }
 }
 
@@ -612,8 +646,11 @@ bool AudioPlayer::play_oneshot_asset_file(const std::string& path, uint64_t key,
     SDL_AudioStream* stream = SDL_CreateAudioStream(&wav->spec, &dev_spec);
     if (!stream) {
         ++hd_start_fails_;
-        std::fprintf(stderr, "[AudioPlayer] CreateAudioStream (evento) falló (%s): %s\n",
-                     path.c_str(), SDL_GetError());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "audio.player", "createaudiostream_evento_fall",
+            "CreateAudioStream (evento) falló (%s): %s",
+            path.c_str(),
+            SDL_GetError());
         return false;
     }
     SDL_PutAudioStreamData(stream, wav->pcm.data() + off,
@@ -623,8 +660,11 @@ bool AudioPlayer::play_oneshot_asset_file(const std::string& path, uint64_t key,
     SDL_FlushAudioStream(stream);   // EOS → drena y reporta 0 (tick lo reapea)
     if (!SDL_BindAudioStream(device_, stream)) {
         ++hd_start_fails_;
-        std::fprintf(stderr, "[AudioPlayer] BindAudioStream (evento) falló (%s): %s\n",
-                     path.c_str(), SDL_GetError());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "audio.player", "bindaudiostream_evento_fall",
+            "BindAudioStream (evento) falló (%s): %s",
+            path.c_str(),
+            SDL_GetError());
         SDL_DestroyAudioStream(stream);
         return false;
     }
@@ -1036,7 +1076,10 @@ void AudioPlayer::play_oneshot_pcm(const int16_t* pcm, size_t frames) {
     SDL_GetAudioDeviceFormat(device_, &dev, nullptr);
     preview_stream_ = SDL_CreateAudioStream(&src, &dev);
     if (!preview_stream_) {
-        std::fprintf(stderr, "[AudioPlayer] preview CreateAudioStream: %s\n", SDL_GetError());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "audio.player", "preview_createaudiostream",
+            "preview CreateAudioStream: %s",
+            SDL_GetError());
         return;
     }
     SDL_PutAudioStreamData(preview_stream_, pcm,
@@ -1082,14 +1125,20 @@ bool AudioPlayer::decode_audio_bytes(WavEntry& entry,
     if (ext == "wav") {
         SDL_IOStream* io = SDL_IOFromMem(const_cast<uint8_t*>(raw.data()), raw.size());
         if (!io) {
-            std::fprintf(stderr, "[AudioPlayer] SDL_IOFromMem failed: %s\n", SDL_GetError());
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "sdl_iofrommem_failed",
+                "SDL_IOFromMem failed: %s",
+                SDL_GetError());
             return false;
         }
         SDL_AudioSpec spec    = {};
         uint8_t*      buf     = nullptr;
         uint32_t      buf_len = 0;
         if (!SDL_LoadWAV_IO(io, /*close_io=*/true, &spec, &buf, &buf_len)) {
-            std::fprintf(stderr, "[AudioPlayer] SDL_LoadWAV_IO: %s\n", SDL_GetError());
+            ayther::log::write(ayther::log::Severity::Warning,
+                "audio.player", "sdl_loadwav_io",
+                "SDL_LoadWAV_IO: %s",
+                SDL_GetError());
             return false;
         }
         entry.spec = spec;
@@ -1103,7 +1152,9 @@ bool AudioPlayer::decode_audio_bytes(WavEntry& entry,
         const int n_samples = stb_vorbis_decode_memory(
             raw.data(), static_cast<int>(raw.size()), &channels, &sample_rate, &decoded);
         if (n_samples < 0 || !decoded) {
-            std::fprintf(stderr, "[AudioPlayer] stb_vorbis_decode_memory failed\n");
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "stb_vorbis_decode_memory",
+                "stb_vorbis_decode_memory failed");
             return false;
         }
         entry.spec.format = SDL_AUDIO_S16; entry.spec.channels = channels; entry.spec.freq = sample_rate;
@@ -1119,7 +1170,9 @@ bool AudioPlayer::decode_audio_bytes(WavEntry& entry,
         drflac_int16* decoded = drflac_open_memory_and_read_pcm_frames_s16(
             raw.data(), raw.size(), &channels, &sample_rate, &total_frames, nullptr);
         if (!decoded) {
-            std::fprintf(stderr, "[AudioPlayer] drflac decode failed\n");
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "drflac_decode_failed",
+                "drflac decode failed");
             return false;
         }
         entry.spec.format = SDL_AUDIO_S16;
@@ -1131,7 +1184,10 @@ bool AudioPlayer::decode_audio_bytes(WavEntry& entry,
         drflac_free(decoded, nullptr);
     }
     else {
-        std::fprintf(stderr, "[AudioPlayer] formato no soportado: '%s'\n", ext.c_str());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "audio.player", "formato_soportado",
+            "formato no soportado: '%s'",
+            ext.c_str());
         return false;
     }
     return !entry.pcm.empty();
@@ -1181,7 +1237,10 @@ AudioPlayer::get_wav(AyArchive* pack, const std::string& asset_path) {
 
     const int64_t sz = ayther_pack_file_size(pack, asset_path.c_str());
     if (sz <= 0) {
-        std::fprintf(stderr, "[AudioPlayer] asset not in pack: %s\n", asset_path.c_str());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "audio.player", "asset_pack",
+            "asset not in pack: %s",
+            asset_path.c_str());
         return nullptr;
     }
     std::vector<uint8_t> raw(static_cast<size_t>(sz));
@@ -1249,13 +1308,19 @@ AudioPlayer::get_wav_disk(const std::string& abs_path) {
     stat_fingerprint(abs_path, &entry.fp_mtime, &entry.fp_size);
     std::ifstream f(abs_path, std::ios::binary | std::ios::ate);
     if (!f) {
-        std::fprintf(stderr, "[AudioPlayer] no se pudo abrir el asset: %s\n", abs_path.c_str());
+        ayther::log::write(ayther::log::Severity::Error,
+            "audio.player", "pudo_abrir_asset",
+            "no se pudo abrir el asset: %s",
+            abs_path.c_str());
         return nullptr;
     }
     const std::streamsize sz = f.tellg();
     if (sz <= 0) {
         entry.err = AssetError::Empty;
-        std::fprintf(stderr, "[AudioPlayer] asset vacío: %s\n", abs_path.c_str());
+        ayther::log::write(ayther::log::Severity::Warning,
+            "audio.player", "asset_vac_o",
+            "asset vacío: %s",
+            abs_path.c_str());
         return nullptr;
     }
     f.seekg(0);

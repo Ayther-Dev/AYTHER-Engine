@@ -1,6 +1,7 @@
 #include "session/emulation_observer.h"
+#include "log.h"
 
-#include "ayther_env.h"
+#include "runtime_options.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -29,21 +30,28 @@ void EmulationObserver::activate_subscriptions(RetroRunner& runner) {
     ayther_subscription_state_v1 state{};
     state.struct_size = sizeof(state);
     if (api->get_subscriptions(&state, sizeof(state)) != AYTHER_STATUS_OK) {
-        std::fprintf(stderr, "[AytherSession] get_subscriptions fallo — sin suscripciones\n");
+        ayther::log::write(ayther::log::Severity::Error,
+            "session", "get_subscriptions_fallo_sin",
+            "get_subscriptions fallo — sin suscripciones");
         return;
     }
     const uint32_t wanted = RetroRunner::kEngineSubscriptions & state.supported_mask;
     const int32_t result = api->set_subscriptions(wanted);
     if (result != AYTHER_STATUS_OK) {
-        std::fprintf(stderr, "[AytherSession] set_subscriptions fallo: %d\n", result);
+        ayther::log::write(ayther::log::Severity::Error,
+            "session", "set_subscriptions_fallo",
+            "set_subscriptions fallo: %d",
+            result);
         return;
     }
     requested_ = wanted;
     subscriptions_verified_ = false;
-    std::fprintf(stdout,
-                 "[AytherSession] suscripciones AYTHER pedidas: 0x%08X "
-                 "(soportadas: 0x%08X)\n",
-                 wanted, state.supported_mask);
+    ayther::log::write(ayther::log::Severity::Info,
+        "session", "suscripciones_ayther_pedidas_x",
+        "suscripciones AYTHER pedidas: 0x%08X "
+                 "(soportadas: 0x%08X)",
+        wanted,
+        state.supported_mask);
 }
 
 void EmulationObserver::verify_subscriptions(RetroRunner& runner) {
@@ -55,13 +63,17 @@ void EmulationObserver::verify_subscriptions(RetroRunner& runner) {
     state.struct_size = sizeof(state);
     if (api->get_subscriptions(&state, sizeof(state)) != AYTHER_STATUS_OK) return;
     if (state.active_mask == requested_) {
-        std::fprintf(stdout, "[AytherSession] suscripciones AYTHER activas: 0x%08X\n",
-                     state.active_mask);
+        ayther::log::write(ayther::log::Severity::Info,
+            "session", "suscripciones_ayther_activas_x",
+            "suscripciones AYTHER activas: 0x%08X",
+            state.active_mask);
     } else {
-        std::fprintf(stderr,
-                     "[AytherSession] suscripciones DESALINEADAS — activas=0x%08X "
-                     "pedidas=0x%08X\n",
-                     state.active_mask, requested_);
+        ayther::log::write(ayther::log::Severity::Warning,
+            "session", "suscripciones_desalineadas_activas_x",
+            "suscripciones DESALINEADAS — activas=0x%08X "
+                     "pedidas=0x%08X",
+            state.active_mask,
+            requested_);
     }
     subscriptions_verified_ = true;
 }
@@ -78,8 +90,7 @@ void EmulationObserver::initialize_system(RetroRunner& runner) {
 
 bool EmulationObserver::mirror_enabled() {
     static const bool enabled = [] {
-        const char* value = ayther::env_get("AYTHER_ABI_MIRROR");
-        return !(value && value[0] == '0');
+        return RuntimeOptions::process().abi_mirror();
     }();
     return enabled;
 }
@@ -97,14 +108,22 @@ void EmulationObserver::refresh(RetroRunner& runner) {
     system_ok_ = runner.read_system_v1(system_).ok();
     if (system_ok_ && !system_logged_ && system_.vdp_mode != 0) {
         system_logged_ = true;
-        std::fprintf(stdout,
-                     "[AytherSession] SYSTEM: hw=0x%02X vdp_mode=%u h40=%u interlace=%u "
-                     "sh=%u %s lines=%u viewport=%ux%u@(%u,%u) geometry_pending=%u\n",
-                     system_.system_hw, system_.vdp_mode, system_.h40, system_.interlace,
-                     system_.shadow_highlight, system_.region_pal ? "PAL" : "NTSC",
-                     system_.lines_per_frame, system_.viewport_w, system_.viewport_h,
-                     system_.viewport_x, system_.viewport_y,
-                     static_cast<unsigned>(system_.flags & AYTHER_SYSTEM_GEOMETRY_PENDING));
+        ayther::log::write(ayther::log::Severity::Info,
+            "session", "system_hw_x_vdp",
+            "SYSTEM: hw=0x%02X vdp_mode=%u h40=%u interlace=%u "
+                     "sh=%u %s lines=%u viewport=%ux%u@(%u,%u) geometry_pending=%u",
+            system_.system_hw,
+            system_.vdp_mode,
+            system_.h40,
+            system_.interlace,
+            system_.shadow_highlight,
+            system_.region_pal ? "PAL" : "NTSC",
+            system_.lines_per_frame,
+            system_.viewport_w,
+            system_.viewport_h,
+            system_.viewport_x,
+            system_.viewport_y,
+            static_cast<unsigned>(system_.flags & AYTHER_SYSTEM_GEOMETRY_PENDING));
     }
 
     auto read_region = [&](std::vector<uint8_t>& destination, size_t legacy_size,
@@ -168,9 +187,10 @@ EmulationObserver::AudioWritesView EmulationObserver::audio_writes(
         }
         if (result.status == AYTHER_STATUS_NOT_SUBSCRIBED && !audio_warned_) {
             audio_warned_ = true;
-            std::fprintf(stderr,
-                         "[AytherSession] AUDIO_WRITES sin suscripcion — "
-                         "las escrituras siguen por el camino legacy\n");
+            ayther::log::write(ayther::log::Severity::Warning,
+                "session", "audio_writes_sin_suscripcion",
+                "AUDIO_WRITES sin suscripcion — "
+                         "las escrituras siguen por el camino legacy");
         }
         if (!legacy_fallback) return {};
     }
@@ -190,9 +210,10 @@ EmulationObserver::ParsedSpritesView EmulationObserver::parsed_sprites(RetroRunn
         }
         if (result.status == AYTHER_STATUS_NOT_SUBSCRIBED && !sprites_warned_) {
             sprites_warned_ = true;
-            std::fprintf(stderr,
-                         "[AytherSession] SPRITE_CAPTURE sin suscripcion — "
-                         "los sprites siguen por el camino legacy\n");
+            ayther::log::write(ayther::log::Severity::Warning,
+                "session", "sprite_capture_sin_suscripcion",
+                "SPRITE_CAPTURE sin suscripcion — "
+                         "los sprites siguen por el camino legacy");
         }
     }
     AYTHER_OBSERVER_LEGACY_BEGIN
