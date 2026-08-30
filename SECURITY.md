@@ -6,8 +6,9 @@ AYTHER Engine has not yet published a stable version. During initial
 development, reports will be evaluated against the `main` branch. This section
 will be replaced with a version matrix after the first stable release.
 
-No security-support lifetime or production pack trust guarantee is currently
-offered. The implemented development model and its known gaps are documented in
+No security-support lifetime or operated Hub trust registry is currently
+offered. The implemented production trust policy and remaining operational
+gaps are documented in
 [Pack and security model](docs/PACK_SECURITY_MODEL.md).
 
 ## Reporting a vulnerability

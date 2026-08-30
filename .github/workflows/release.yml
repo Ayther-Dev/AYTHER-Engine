@@ -1,0 +1,233 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+
+jobs:
+  validate:
+    name: Validate release contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out the exact tag and history
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag and product versions agree
+        shell: pwsh
+        run: ./tools/check_release_version.ps1 -Tag '${{ github.ref_name }}'
+
+      - name: Run locked Rust release gates
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --all-targets --locked
+          cargo doc --workspace --no-deps --locked
+
+      - name: Prove production trust in optimized code
+        run: >-
+          cargo test -p ayther_core --release --locked
+          production_signed_pack_round_trips_with_explicit_trust_store
+
+      - name: Prove the development key is rejected in optimized code
+        run: >-
+          cargo test -p ayther_core --release --locked
+          development_signature_is_rejected_in_release
+
+  build:
+    name: Build reproducible ${{ matrix.platform }} package
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            preset: linux-release
+            platform: linux-x86_64
+            native_flags: -ffile-prefix-map=${{ github.workspace }}=/usr/src/ayther
+          - os: windows-latest
+            preset: windows-release
+            platform: windows-x86_64
+            native_flags: /Brepro /pathmap:${{ github.workspace }}=/usr/src/ayther
+    env:
+      CFLAGS: ${{ matrix.native_flags }}
+      CXXFLAGS: ${{ matrix.native_flags }}
+      RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/usr/src/ayther -C strip=debuginfo
+    steps:
+      - name: Check out the exact tag and history
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set the canonical build timestamp
+        shell: pwsh
+        run: |
+          $epoch = git show -s --format=%ct '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0 -or $epoch -notmatch '^\d+$') {
+            throw 'Could not derive SOURCE_DATE_EPOCH from the tagged commit.'
+          }
+          "SOURCE_DATE_EPOCH=$epoch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Fetch the exact locked Rust dependency graph
+        run: cargo fetch --locked
+
+      - name: Configure optimized core package
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build optimized core package
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Install into an isolated prefix
+        run: >-
+          cmake --install build/${{ matrix.preset }}
+          --prefix '${{ runner.temp }}/ayther-install'
+
+      - name: Generate deterministic SPDX SBOM
+        shell: pwsh
+        run: >-
+          ./tools/gen_release_sbom.ps1
+          -InstallDirectory '${{ runner.temp }}/ayther-install'
+          -OutputFile 'release-out/ayther-engine-${{ github.ref_name }}-${{ matrix.platform }}.spdx.json'
+          -Platform '${{ matrix.platform }}'
+          -SourceDateEpoch $env:SOURCE_DATE_EPOCH
+
+      - name: Package the install tree twice
+        shell: pwsh
+        run: |
+          $name = 'ayther-engine-${{ github.ref_name }}-${{ matrix.platform }}'
+          ./tools/package_release.ps1 `
+            -InputDirectory '${{ runner.temp }}/ayther-install' `
+            -OutputFile "release-out/$name.zip" `
+            -ArchiveRoot $name `
+            -SourceDateEpoch $env:SOURCE_DATE_EPOCH
+          ./tools/package_release.ps1 `
+            -InputDirectory '${{ runner.temp }}/ayther-install' `
+            -OutputFile "repro-check/$name.zip" `
+            -ArchiveRoot $name `
+            -SourceDateEpoch $env:SOURCE_DATE_EPOCH
+
+      - name: Require byte-identical repeated packaging
+        shell: pwsh
+        run: |
+          $name = 'ayther-engine-${{ github.ref_name }}-${{ matrix.platform }}.zip'
+          $first = (Get-FileHash -Algorithm SHA256 "release-out/$name").Hash
+          $second = (Get-FileHash -Algorithm SHA256 "repro-check/$name").Hash
+          if ($first -ne $second) {
+            throw "Packaging is not reproducible: $first != $second"
+          }
+
+      - name: Upload immutable release inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-out/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Sign, attest, and publish
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download immutable build outputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: release-out
+          merge-multiple: true
+
+      - name: Generate deterministic checksums
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem -LiteralPath release-out -File |
+            Where-Object Name -NotLike '*.sigstore.json' |
+            Sort-Object Name
+          if ($assets.Count -ne 4) {
+            throw "Expected two archives and two SBOMs, found $($assets.Count)."
+          }
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $asset.FullName).Hash.ToLowerInvariant()
+            "$hash *$($asset.Name)"
+          }
+          [System.IO.File]::WriteAllLines(
+            (Join-Path $PWD 'release-out/CHECKSUMS.sha256'),
+            $lines,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Install verified Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign every release asset with GitHub OIDC
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem -LiteralPath release-out -File |
+            Where-Object Name -NotLike '*.sigstore.json' |
+            Sort-Object Name
+          foreach ($asset in $assets) {
+            cosign sign-blob --yes `
+              --bundle "$($asset.FullName).sigstore.json" `
+              $asset.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Cosign failed for '$($asset.Name)'."
+            }
+          }
+
+      - name: Attest SLSA build provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/*.zip
+
+      - name: Attest Linux SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/ayther-engine-${{ github.ref_name }}-linux-x86_64.zip
+          sbom-path: release-out/ayther-engine-${{ github.ref_name }}-linux-x86_64.spdx.json
+
+      - name: Attest Windows SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/ayther-engine-${{ github.ref_name }}-windows-x86_64.zip
+          sbom-path: release-out/ayther-engine-${{ github.ref_name }}-windows-x86_64.spdx.json
+
+      - name: Publish immutable pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem -LiteralPath release-out -File | Sort-Object Name
+          $arguments = @(
+            'release', 'create', '${{ github.ref_name }}',
+            '--verify-tag', '--prerelease', '--generate-notes',
+            '--title', 'AYTHER Engine ${{ github.ref_name }}'
+          ) + @($assets.FullName)
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub release publication failed.'
+          }

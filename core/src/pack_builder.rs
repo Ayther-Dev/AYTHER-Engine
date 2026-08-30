@@ -37,6 +37,7 @@ use crate::pack_security::{
     EntryMetadata, MAX_ENTRY_BYTES, MAX_ENTRY_COUNT, MAX_TOTAL_UNCOMPRESSED_BYTES,
     normalize_logical_path, validate_archive_metadata, validate_archive_size,
 };
+use crate::pack_trust::{DEVELOPMENT_KEY_ID, SignatureEnvelope};
 
 // Dev signing seed — must match ay_pack's DEV_SIGNING_SEED and yield
 // archive_vfs::DEV_PUBLIC_KEY. RFC 8032 test vector. Not secret.
@@ -140,17 +141,49 @@ impl PackBuilder {
     /// integrity.toml bytes. Requires `manifest.toml`.
     /// Entries are written in sorted order for a deterministic archive.
     pub fn finish(&self, sign: bool, out: &Path) -> Result<(), String> {
+        if sign {
+            let signing_key = SigningKey::from_bytes(&DEV_SIGNING_SEED);
+            self.finish_with_signer(Some((DEVELOPMENT_KEY_ID, &signing_key)), out)
+        } else {
+            self.finish_with_signer(None, out)
+        }
+    }
+
+    /// Writes a pack signed by caller-supplied production key material.
+    ///
+    /// The corresponding public key and `key_id` must be distributed through a
+    /// [`crate::pack_trust::TrustStore`]. The private key is borrowed and is
+    /// never persisted by the builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the key identifier, staged pack, output path, ZIP,
+    /// or final archive policy is invalid.
+    pub fn finish_with_signing_key(
+        &self,
+        key_id: &str,
+        signing_key: &SigningKey,
+        out: &Path,
+    ) -> Result<(), String> {
+        self.finish_with_signer(Some((key_id, signing_key)), out)
+    }
+
+    fn finish_with_signer(
+        &self,
+        signer: Option<(&str, &SigningKey)>,
+        out: &Path,
+    ) -> Result<(), String> {
         if !self.files.contains_key("manifest.toml") {
             return Err("pack has no manifest.toml".into());
         }
 
         let integrity = Self::integrity_toml_with(&self.files, &self.stored);
-        let sig: Option<Vec<u8>> = if sign {
-            let sk = SigningKey::from_bytes(&DEV_SIGNING_SEED);
-            Some(sk.sign(integrity.as_bytes()).to_bytes().to_vec())
-        } else {
-            None
-        };
+        let sig = signer
+            .map(|(key_id, signing_key)| {
+                let signature = signing_key.sign(integrity.as_bytes()).to_bytes();
+                SignatureEnvelope::encode(key_id, signature).map_err(|error| error.to_string())
+            })
+            .transpose()?;
 
         let file = std::fs::File::create(out)
             .map_err(|e| format!("creating '{}': {}", out.display(), e))?;
@@ -294,6 +327,7 @@ mod tests {
         game_id = \"sonic2\"\nayther_min = \"0.8.0\"\n\
         [regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n";
 
+    #[cfg(debug_assertions)]
     #[test]
     fn signed_pack_round_trips_through_archive() {
         let mut b = PackBuilder::new();
@@ -317,6 +351,95 @@ mod tests {
         );
         assert_eq!(arch.meta.game_id, "sonic2");
         let _ = std::fs::remove_file(&out);
+    }
+
+    fn production_registry(signing_key: &SigningKey, revoked: bool) -> String {
+        let public_key = signing_key
+            .verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        format!(
+            "version = 1\n\n[[keys]]\n\
+             id = \"hub-test-2026\"\n\
+             algorithm = \"ed25519\"\n\
+             public_key = \"{public_key}\"\n\
+             not_before_unix = 0\n\
+             not_after_unix = 4102444800\n\
+             revoked = {revoked}\n\
+             games = [\"sonic2\"]\n"
+        )
+    }
+
+    #[test]
+    fn production_signed_pack_round_trips_with_explicit_trust_store() {
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let trust_store =
+            crate::pack_trust::TrustStore::from_toml(&production_registry(&signing_key, false))
+                .expect("valid production registry");
+        let mut builder = PackBuilder::new();
+        assert!(builder.add_bytes("manifest.toml", MANIFEST.as_bytes().to_vec()));
+        let out = tmp("production-signed.ay");
+        builder
+            .finish_with_signing_key("hub-test-2026", &signing_key, &out)
+            .expect("production signature");
+
+        let archive = crate::archive_vfs::AyArchive::open_with_trust_store(
+            out.to_str().expect("UTF-8 temp path"),
+            &trust_store,
+        )
+        .expect("trusted production pack");
+
+        assert_eq!(archive.meta.game_id, "sonic2");
+        let _ = std::fs::remove_file(out);
+    }
+
+    #[test]
+    fn production_trust_store_rejects_unsigned_pack_in_all_builds() {
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let trust_store =
+            crate::pack_trust::TrustStore::from_toml(&production_registry(&signing_key, false))
+                .expect("valid production registry");
+        let mut builder = PackBuilder::new();
+        assert!(builder.add_bytes("manifest.toml", MANIFEST.as_bytes().to_vec()));
+        let out = tmp("production-unsigned.ay");
+        builder
+            .finish(false, &out)
+            .expect("unsigned authoring pack");
+
+        let result = crate::archive_vfs::AyArchive::open_with_trust_store(
+            out.to_str().expect("UTF-8 temp path"),
+            &trust_store,
+        );
+
+        assert!(matches!(
+            result,
+            Err(crate::archive_vfs::AyError::Trust(
+                crate::pack_trust::TrustError::MissingSignature
+            ))
+        ));
+        let _ = std::fs::remove_file(out);
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn development_signature_is_rejected_in_release() {
+        let mut builder = PackBuilder::new();
+        assert!(builder.add_bytes("manifest.toml", MANIFEST.as_bytes().to_vec()));
+        let out = tmp("development-rejected.ay");
+        builder.finish(true, &out).expect("development pack");
+
+        let result =
+            crate::archive_vfs::AyArchive::open_verbose(out.to_str().expect("UTF-8 temp path"));
+
+        assert!(matches!(
+            result,
+            Err(crate::archive_vfs::AyError::Trust(
+                crate::pack_trust::TrustError::UnknownKey(_)
+            ))
+        ));
+        let _ = std::fs::remove_file(out);
     }
 
     ///  vector FIJO del formato de integrity.toml, con la misma entrada

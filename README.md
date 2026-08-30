@@ -12,9 +12,10 @@ is not modified or redistributed.
 
 > [!WARNING]
 > **Early-development software.** This repository has not published a stable
-> release. The Rust core, C ABI, native C++ engine and installable CMake package
-> are present, but renderer/audio integration oracles, release automation and
-> production signing infrastructure are still absent. Do not treat the current
+> release. The Rust core, C ABI, native C++ engine, installable CMake package,
+> explicit pack trust policy, and reproducible pre-release automation are
+> present, but broader renderer/audio oracles and operational Hub keys remain.
+> Do not treat the current
 > API, ABI, file format, or security model as a production commitment.
 
 ## Current repository status
@@ -23,12 +24,12 @@ is not modified or redistributed.
 |---|---|---|
 | `ayther_core` Rust library | Implemented | `core/`; 360 unit tests pass and one benchmark is ignored |
 | Typed Rust/C++ bridge | Implemented on the Rust side | `core/src/ffi.rs`; generated through `cxx` |
-| Legacy flat C ABI | Implemented, unstable | `core/src/lib.rs`; independent ABI revision currently returns `5` |
-| `.ay` pack VFS, validation, and signing | Implemented with development trust only | Manifest schema `2`; embedded RFC test key, no production key registry |
+| Legacy flat C ABI | Implemented, unstable | `core/src/lib.rs`; independent ABI revision currently returns `7` |
+| `.ay` pack VFS, validation, and signing | Production policy implemented | Manifest schema `2`; explicit scoped/expiring/revocable public-key registry; optimized builds reject the RFC test key |
 | C++ `ayther_engine` | Buildable, pre-release | `Ayther::engine` declares all 24 sources and links the manifest-mode SDL3/Vulkan stack, core, and ymfm |
 | C++/ABI/integration tests | Partial | One headless C++ ABI test is present; renderer, audio, and full integration suites are pending |
 | Installable SDK surface | Pre-release | `find_package(Ayther)` exposes `Ayther::core`, `Ayther::engine`, and `Ayther::ymfm`; VPX builds also expose `Ayther::vpx` |
-| Stable release | Not available | The version contract is aligned; remaining release gates stay open |
+| Stable release | Not available | Reproducible signed pre-releases are automated; native, hardware, fixture, operational-key, and review gates stay open |
 
 The authoritative, date-stamped assessment is in
 [Project status](docs/PROJECT_STATUS.md). It deliberately distinguishes working
@@ -90,9 +91,9 @@ commands and remaining gates. Toolchain installation details remain in the
 
 Treat packs, scripts, ROMs, patches, emulator cores, and media as untrusted
 input. Validation must happen before a pack becomes active. Debug builds allow
-unsigned packs with a warning; release builds reject them. Signed packs in the
-current code are verified only against a public development test key, so this is
-not yet a production chain of trust.
+unsigned packs with a warning; release builds reject them and the public test
+key. Production hosts must supply the explicit trust registry documented in the
+security model; Hub's operational keys are not stored in this repository.
 
 Read [Pack and security model](docs/PACK_SECURITY_MODEL.md) before integrating
 the library, and report vulnerabilities privately as described in

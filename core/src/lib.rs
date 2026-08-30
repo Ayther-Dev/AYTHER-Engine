@@ -49,6 +49,7 @@ pub mod memory_aob;
 pub mod pack_builder;
 pub mod pack_credits; // Pack provenance and credits for Play and Hub.
 pub mod pack_security;
+pub mod pack_trust;
 pub mod pack_validate; // Compatibility with the current session.
 pub mod ram_anchor;
 pub mod rom_patch; // User-supplied IPS/BPS patches applied in memory.
@@ -71,7 +72,7 @@ pub const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// This counter is independent from [`RELEASE_VERSION`] and changes only when
 /// that ABI contract changes.
-pub const CORE_C_ABI_REVISION: u32 = 6;
+pub const CORE_C_ABI_REVISION: u32 = 7;
 
 use audio_hasher::{AudioHasher, AudioOccurrence, AudioSubstitutor};
 use vram_sprite::{SpriteHasher, SpriteSubstitutor};
@@ -830,6 +831,43 @@ pub unsafe extern "C" fn ayther_pack_open(path: *const std::os::raw::c_char) -> 
                 Some(a) => Box::into_raw(Box::new(a)),
                 None => std::ptr::null_mut(),
             },
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+}
+
+/// Opens a `.ay` pack using an explicit production public-key registry.
+///
+/// Both paths must be UTF-8. Returns null when the registry cannot be loaded or
+/// when the pack fails container, signature, key-validity, revocation, or scope
+/// policy. Caller must free a successful handle with [`ayther_pack_close`].
+#[unsafe(no_mangle)]
+/// # Safety
+///
+/// `path` and `trust_registry` must point to readable NUL-terminated strings for
+/// the duration of this call.
+pub unsafe extern "C" fn ayther_pack_open_trusted(
+    path: *const std::os::raw::c_char,
+    trust_registry: *const std::os::raw::c_char,
+) -> *mut AyArchive {
+    // SAFETY: The caller provides readable NUL-terminated strings as documented.
+    unsafe {
+        if path.is_null() || trust_registry.is_null() {
+            return std::ptr::null_mut();
+        }
+        let Ok(path) = std::ffi::CStr::from_ptr(path).to_str() else {
+            return std::ptr::null_mut();
+        };
+        let Ok(registry_path) = std::ffi::CStr::from_ptr(trust_registry).to_str() else {
+            return std::ptr::null_mut();
+        };
+        let Ok(trust_store) =
+            crate::pack_trust::TrustStore::from_path(std::path::Path::new(registry_path))
+        else {
+            return std::ptr::null_mut();
+        };
+        match AyArchive::open_with_trust_store(path, &trust_store) {
+            Ok(archive) => Box::into_raw(Box::new(archive)),
             Err(_) => std::ptr::null_mut(),
         }
     }

@@ -1,8 +1,8 @@
 # Build, test, and release
 
-**Status:** Rust, Windows headless, native, native-VPX, and package consumption verified
+**Status:** CI, reproducible core packaging, signing, and attestations implemented
 
-**Last verified:** 2026-08-27
+**Last verified:** 2026-08-30
 
 This guide separates commands that work in the current checkout from release
 gates that remain open. Tool installation is covered by
@@ -177,8 +177,39 @@ not promise the required Vulkan hardware. A manual dispatch exposes the boolean
 only tests labelled `gpu` (Linux uses Mesa plus a virtual display). This is an
 explicit omission, not a successful GPU oracle.
 
-Security scanning, artifact signing, publication, and a representative physical
-GPU/driver matrix remain release blockers.
+The tag-only `.github/workflows/release.yml` validates the version contract,
+runs the locked Rust gates plus optimized production-trust acceptance tests,
+and builds the core SDK on Windows and Linux. It derives `SOURCE_DATE_EPOCH`
+from the tagged commit, remaps build paths, packages each install tree twice,
+and requires byte-identical SHA-256 digests before publication.
+
+Each candidate carries an SPDX 2.3 SBOM generated from the locked Cargo graph
+and exact installed files. The protected publish job creates SHA-256 checksums,
+keyless Sigstore bundles for every asset, SLSA build provenance, and signed SBOM
+attestations, then creates a GitHub pre-release. Private signing keys and
+long-lived CI credentials are not used; OIDC credentials are short-lived.
+
+Repository administrators must configure the `release` environment with
+required reviewers, protect `v*` tags, and restrict workflow changes with
+CODEOWNERS/branch protection. Without those repository controls, the workflow
+mechanics alone are not a protected release boundary.
+
+A consumer verifies a downloaded archive with all three independent records:
+
+```text
+sha256sum --check CHECKSUMS.sha256
+gh attestation verify ayther-engine-v0.1.0-linux-x86_64.zip \
+  --repo Ayther-Dev/AYTHER-Engine
+cosign verify-blob \
+  --bundle ayther-engine-v0.1.0-linux-x86_64.zip.sigstore.json \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/Ayther-Dev/AYTHER-Engine/.github/workflows/release.yml@refs/tags/v[0-9].*$' \
+  ayther-engine-v0.1.0-linux-x86_64.zip
+```
+
+The native engine, physical GPU/driver matrix, real-emulator fixtures, and the
+remaining security review are still release blockers; automated publications
+remain marked as pre-releases.
 
 A release-capable pipeline must run on every supported platform and retain:
 
@@ -202,8 +233,8 @@ evidence is archived:
 
 1. clean configure/build/test/install/consume logs for every supported platform;
 2. logs proving the release/protocol version contract and baselines agree;
-3. production key registry, rotation and revocation procedure, and acceptance
-   tests for signed and unsigned packs;
+3. provisioned production registry and evidence that the documented rotation
+   and revocation procedure is exercised by the shipping host;
 4. complete transitive notices and source-offer obligations for shipped code;
 5. security review of pack parsing, paths, limits, scripting, FFI, and dynamic
    library loading;

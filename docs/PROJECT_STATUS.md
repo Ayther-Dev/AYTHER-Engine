@@ -1,6 +1,6 @@
 # Project status
 
-**Assessment date:** 2026-08-28
+**Assessment date:** 2026-08-30
 
 **Repository phase:** early construction and stabilization
 
@@ -18,8 +18,9 @@ installable, out-of-tree-consumable `Ayther::core` and a complete 24-source
 libvpx. The repository is nevertheless incomplete as a release distribution. A
 baseline CI workflow now covers repository policy, Rust quality, headless and
 native Windows/Linux builds, VPX on both platforms, and out-of-tree package
-consumers. GPU jobs are explicitly opt-in and skipped by default; protected
-release automation and production trust configuration remain open.
+consumers. GPU jobs are explicitly opt-in and skipped by default. Reproducible
+pre-release automation and production trust primitives are present;
+operational key provisioning and broader release gates remain open.
 
 The current checkout is appropriate for core development and documentation
 work. It is not appropriate for a public binary release, a production pack
@@ -42,10 +43,10 @@ trust decision, or a compatibility promise to third-party integrators.
 | Root CMake project | Implemented, pre-release | Corrosion owns Cargo integration; CMake exposes core, engine, ymfm, and optional VPX targets |
 | Engine tests and tools | Partial | Headless ABI tests and native CPU/audio/renderer integration probes are present; real-emulator, cross-platform, and broader hardware coverage remain incomplete |
 | Installable package | Pre-release | Core and native packages install namespaced targets, headers, shaders, and notices; external Windows consumers pass with VPX disabled and enabled |
-| CI and release workflows | Expanded baseline | `.github/workflows/ci.yml` checks repository boundaries, locked Rust gates, headless and native Windows/Linux builds, VPX on both platforms, installed-package consumers, and explicitly opt-in GPU jobs; protected release automation remains pending |
+| CI and release workflows | Reproducible pre-release path | CI covers the build/test matrix; tag releases compare rebuilt core packages, emit SPDX SBOMs, checksums, Sigstore bundles, SLSA provenance, and signed SBOM attestations before protected publication |
 | Third-party inventory | Implemented for validated builds | Cargo graph, vcpkg ports, vendored revisions, and shipped license material are recorded; release CI enforcement remains pending |
 | Pack container security | Implemented baseline | Builder, reader, and validator share canonical paths, duplicate rejection, archive/entry/metadata limits, and compression-ratio defenses |
-| Production pack trust | Missing | The code embeds a public RFC test key; no production key registry, expiry, scope, revocation, or rotation path is present |
+| Production pack trust | Implemented primitive, provisioning pending | Explicit public-key registries enforce identity, validity, revocation and game scope; optimized builds reject the RFC test key; Hub operational keys remain external |
 
 ## Version contract
 
@@ -56,7 +57,7 @@ The policy and bump rules are recorded in
 | Axis | Current value | Meaning | Status |
 |---|---:|---|---|
 | AYTHER release | `0.1.0` | Cargo, CMake, vcpkg, SDK headers/library, pack validation, and Lua | Unified and cross-language tested |
-| Flat C ABI revision | `5` | Value returned by `ayther_core_version()` | Independent, unstable protocol revision |
+| Flat C ABI revision | `7` | Value returned by `ayther_core_version()` | Adds explicit trusted pack open without changing existing layouts |
 | Pack manifest schema | `2` | Highest schema accepted and written | Independent format revision |
 | Emulator extension ABI | `1.10` | AYTHER-aware libretro core negotiation | Independent major/minor protocol |
 | SDK C API revision | `1` | `AYTHER_SDK_C_API_VERSION` | Independent facade revision |
@@ -131,8 +132,8 @@ other platforms is research or roadmap work, not a present capability.
 3. Pass deterministic CPU renderer tests and explicit GPU-required tests, with
    skipped hardware reported rather than represented as passing.
 4. Enforce the accepted version contract and protocol baselines in protected CI.
-5. Replace development-only signing with an explicit production trust store,
-   key rotation/revocation process, and release-mode acceptance tests.
+5. Provision Hub's operational keys and exercise the implemented trust-store
+   rotation/revocation process through a shipping host.
 6. Enforce generation and shipment of complete transitive third-party notices
    for every release artifact.
 7. Complete security review of media-decoder limits, scripting lifetimes, FFI

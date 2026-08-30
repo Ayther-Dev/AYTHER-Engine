@@ -49,6 +49,11 @@ does not alter any existing function signature or C-compatible layout; consumers
 built against revision 5 continue to use the unchanged subset, while consumers
 that call the new symbol must relink against revision 6 or later.
 
+Flat C ABI revision 7 adds `ayther_pack_open_trusted()` for explicit production
+trust registries. This is also additive: existing callers retain revision-6
+behavior, while production hosts that use the new symbol must relink against
+revision 7 or later.
+
 ## Consequences
 
 Consumers can display one AYTHER release version without guessing. Compatibility

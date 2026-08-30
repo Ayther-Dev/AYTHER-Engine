@@ -137,6 +137,13 @@ struct AyArchive;  // opaque — do not dereference
 /// Free the handle with ayther_pack_close().
 AyArchive* ayther_pack_open(const char* path);
 
+/// Open a .ay pack under an explicit production trust registry. The TOML
+/// registry contains public Ed25519 keys, validity, revocation and game scope;
+/// private keys are never loaded by the runtime. Returns NULL on any trust or
+/// pack error. Free the handle with ayther_pack_close().
+AyArchive* ayther_pack_open_trusted(const char* path,
+                                    const char* trust_registry);
+
 /// Destroy an AyArchive and release its memory.
 void ayther_pack_close(AyArchive* pack);
 

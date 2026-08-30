@@ -7,6 +7,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Added explicit production pack trust registries with Ed25519 signer identity,
+  validity windows, revocation, game scope, and release-mode rejection of the
+  public development key.
+- Added reproducible tag releases with SPDX SBOMs, SHA-256 checksums, keyless
+  Sigstore bundles, SLSA provenance, and signed SBOM attestations.
+
 ### Added
 
 - Initial repository documentation structure.

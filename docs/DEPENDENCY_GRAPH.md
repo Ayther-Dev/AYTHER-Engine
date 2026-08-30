@@ -14,11 +14,4 @@
 
 ## C++ targets
 
-Derived from `cmake --graphviz` over the configured build.
-Only Engine repository and installed `Ayther::*` package targets are included.
-
-```
-ayther_cxx -> ayther_core
-ayther_engine -> ayther_core
-ayther_engine -> ayther_ymfm
-```
+_No configured build was available, so this section was not derived._

@@ -68,10 +68,12 @@
 //
 // ## Key trust model
 //
-//   DEV_PUBLIC_KEY  — embedded here; ay_pack --create-dev uses the matching seed.
-//   Hub packs use a production key; the engine trusts a key registry (v0.5+).
+//   Development builds accept the public RFC 8032 authoring key. Production
+//   callers provide a TrustStore whose entries carry identity, validity,
+//   revocation and game scope. Release builds never accept the development key.
 // ---------------------------------------------------------------------------
 
+#[cfg(debug_assertions)]
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -83,17 +85,11 @@ use crate::pack_security::{
     EntryMetadata, MAX_ENTRY_BYTES, MAX_ENTRY_COUNT, MAX_METADATA_BYTES, PackPolicyViolation,
     validate_archive_metadata, validate_archive_size, validate_canonical_logical_path,
 };
-
-// ---------------------------------------------------------------------------
-// Dev test key (RFC 8032 test vector — clearly not a production key)
-// ---------------------------------------------------------------------------
-/// ED25519 verifying key corresponding to the DEV_SIGNING_SEED in ay_pack.
-/// THIS IS A PUBLIC TEST KEY — it is safe to embed in open-source code.
-/// Derived with: `ay_pack show-dev-keys`
-const DEV_PUBLIC_KEY: [u8; 32] = [
-    0xad, 0x25, 0xd7, 0x0a, 0x95, 0xc2, 0xc0, 0x8d, 0x12, 0x0f, 0x43, 0x71, 0x28, 0x12, 0x53, 0xe9,
-    0xfb, 0xe6, 0x07, 0x90, 0x67, 0x22, 0x30, 0xcb, 0xc2, 0x7a, 0x68, 0x7a, 0x27, 0x89, 0x42, 0x3b,
-];
+#[cfg(debug_assertions)]
+use crate::pack_trust::DEVELOPMENT_PUBLIC_KEY;
+use crate::pack_trust::{
+    DEVELOPMENT_KEY_ID, SignatureEnvelope, TrustError, TrustStore, VerifiedSigner,
+};
 
 /// Entry names with structural meaning — never served as assets.
 pub const INTEGRITY_PATH: &str = "integrity.toml";
@@ -344,6 +340,8 @@ pub enum AyError {
     MalformedManifest(String),
     /// The detached signature is missing or invalid under the active policy.
     BadSignature,
+    /// The signature failed the configured production trust policy.
+    Trust(TrustError),
     /// The container violates path or resource-consumption policy.
     PolicyViolation(PackPolicyViolation),
     /// The manifest requires a schema newer than this build understands.
@@ -375,6 +373,27 @@ impl From<zip::result::ZipError> for AyError {
 impl From<PackPolicyViolation> for AyError {
     fn from(e: PackPolicyViolation) -> Self {
         AyError::PolicyViolation(e)
+    }
+}
+impl From<TrustError> for AyError {
+    fn from(error: TrustError) -> Self {
+        AyError::Trust(error)
+    }
+}
+
+enum AcceptedSigner {
+    #[cfg(debug_assertions)]
+    Development,
+    Production(VerifiedSigner),
+}
+
+impl AcceptedSigner {
+    fn authorize_game(&self, game_id: &str) -> Result<(), AyError> {
+        match self {
+            #[cfg(debug_assertions)]
+            Self::Development => Ok(()),
+            Self::Production(signer) => signer.authorize_game(game_id).map_err(AyError::from),
+        }
     }
 }
 
@@ -544,6 +563,21 @@ impl AyArchive {
     /// Returns [`AyError`] when the file, ZIP container, manifest, integrity
     /// index, schema, or signature cannot be accepted.
     pub fn open_verbose(path: &str) -> Result<Self, AyError> {
+        Self::open_with_policy(path, None)
+    }
+
+    /// Opens a pack under an explicit production public-key registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AyError`] for container or manifest failures and
+    /// [`AyError::Trust`] when signer identity, validity, revocation, scope, or
+    /// signature verification fails.
+    pub fn open_with_trust_store(path: &str, trust_store: &TrustStore) -> Result<Self, AyError> {
+        Self::open_with_policy(path, Some(trust_store))
+    }
+
+    fn open_with_policy(path: &str, trust_store: Option<&TrustStore>) -> Result<Self, AyError> {
         let file = std::fs::File::open(path)?;
         let archive_size = file.metadata()?.len();
         validate_archive_size(archive_size)?;
@@ -578,15 +612,19 @@ impl AyArchive {
         )?;
 
         if names.iter().any(|e| e.name == INTEGRITY_PATH) {
-            Self::open_lazy(zip, &names, path)
+            Self::open_lazy(zip, &names, path, trust_store)
         } else {
-            Self::open_resident(zip, path)
+            Self::open_resident(zip, path, trust_store)
         }
     }
 
     /// Legacy path: load everything, verify the whole-content hash. Unchanged
     /// behaviour for every pack baked before.
-    fn open_resident(mut zip: zip::ZipArchive<std::fs::File>, path: &str) -> Result<Self, AyError> {
+    fn open_resident(
+        mut zip: zip::ZipArchive<std::fs::File>,
+        path: &str,
+        trust_store: Option<&TrustStore>,
+    ) -> Result<Self, AyError> {
         let mut files: HashMap<String, Vec<u8>> = HashMap::new();
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i)?;
@@ -617,20 +655,24 @@ impl AyArchive {
         let manifest_bytes = files.get("manifest.toml").ok_or(AyError::MissingManifest)?;
 
         // ---- Verify signature (whole-content hash) -------------------------
-        let signed = match files.get(SIGNATURE_PATH) {
-            None => false,
+        let signer = match files.get(SIGNATURE_PATH) {
+            None => None,
             Some(sig) => {
                 let hash = Self::compute_content_hash(&files);
-                Self::verify_signature(&hash, sig)?;
-                true
+                Some(Self::verify_signature(&hash, sig, trust_store)?)
             }
         };
-        Self::enforce_signature_policy(signed, path)?;
+        Self::enforce_signature_policy(signer.is_some(), path, trust_store.is_some())?;
 
         let manifest_bytes = manifest_bytes.clone();
         // Pack LEGACY: sin integrity.toml no hay conjunto de hashes del que
         // derivar el build id, y decir uno inventado sería peor que no decirlo.
-        Self::finish_open(&manifest_bytes, Backend::Resident(files), String::new())
+        Self::finish_open(
+            &manifest_bytes,
+            Backend::Resident(files),
+            String::new(),
+            signer,
+        )
     }
 
     ///  index-only open. Reads exactly three entries (integrity.toml,
@@ -640,6 +682,7 @@ impl AyArchive {
         mut zip: zip::ZipArchive<std::fs::File>,
         names: &[EntryLoc],
         path: &str,
+        trust_store: Option<&TrustStore>,
     ) -> Result<Self, AyError> {
         fn read_entry(
             zip: &mut zip::ZipArchive<std::fs::File>,
@@ -675,14 +718,13 @@ impl AyArchive {
         let integrity_bytes = read_entry(&mut zip, INTEGRITY_PATH)?;
 
         // ---- Signature covers the integrity.toml BYTES ----------------------
-        let signed = if names.iter().any(|e| e.name == SIGNATURE_PATH) {
+        let signer = if names.iter().any(|e| e.name == SIGNATURE_PATH) {
             let sig = read_entry(&mut zip, SIGNATURE_PATH)?;
-            Self::verify_signature(&integrity_bytes, &sig)?;
-            true
+            Some(Self::verify_signature(&integrity_bytes, &sig, trust_store)?)
         } else {
-            false
+            None
         };
-        Self::enforce_signature_policy(signed, path)?;
+        Self::enforce_signature_policy(signer.is_some(), path, trust_store.is_some())?;
 
         // ---- Parse the index -------------------------------------------------
         let integrity_str = std::str::from_utf8(&integrity_bytes)
@@ -816,6 +858,7 @@ impl AyArchive {
                 raw: Mutex::new(raw_handle),
             },
             build_id_from_integrity(&integrity_bytes),
+            signer,
         )
     }
 
@@ -828,6 +871,7 @@ impl AyArchive {
         manifest_bytes: &[u8],
         backend: Backend,
         build_id: String,
+        signer: Option<AcceptedSigner>,
     ) -> Result<Self, AyError> {
         let manifest_str = std::str::from_utf8(manifest_bytes)
             .map_err(|e| AyError::MalformedManifest(e.to_string()))?;
@@ -861,6 +905,9 @@ impl AyArchive {
         // `unwrap_or_default` gives an empty CString if game_id contains an
         // interior NUL — safe but would surface as an empty string on the C side.
         let meta = raw.pack;
+        if let Some(signer) = signer {
+            signer.authorize_game(&meta.game_id)?;
+        }
         let game_id_cstr = std::ffi::CString::new(meta.game_id.as_str()).unwrap_or_default();
 
         //  máscara de tiers del manifest; el tier activo arranca en el MÁS
@@ -897,10 +944,17 @@ impl AyArchive {
         })
     }
 
-    /// Unsigned packs: allowed (with a warning) in dev builds, rejected in
-    /// release. Same policy as always — shared by both open paths.
-    fn enforce_signature_policy(signed: bool, path: &str) -> Result<(), AyError> {
+    /// Unsigned packs are rejected whenever explicit production trust is in
+    /// force. Authoring opens retain the legacy debug/release policy.
+    fn enforce_signature_policy(
+        signed: bool,
+        path: &str,
+        production_policy: bool,
+    ) -> Result<(), AyError> {
         if !signed {
+            if production_policy {
+                return Err(TrustError::MissingSignature.into());
+            }
             #[cfg(not(debug_assertions))]
             {
                 let _ = path;
@@ -919,15 +973,42 @@ impl AyArchive {
     // signature helpers
     // -----------------------------------------------------------------------
 
-    /// Verify `sig_bytes` (64-byte ED25519) over `msg` with the dev key.
-    fn verify_signature(msg: &[u8], sig_bytes: &[u8]) -> Result<(), AyError> {
-        if sig_bytes.len() != 64 {
-            return Err(AyError::BadSignature);
+    fn verify_signature(
+        msg: &[u8],
+        sig_bytes: &[u8],
+        trust_store: Option<&TrustStore>,
+    ) -> Result<AcceptedSigner, AyError> {
+        if let Some(store) = trust_store {
+            return store
+                .verify(msg, sig_bytes)
+                .map(AcceptedSigner::Production)
+                .map_err(AyError::from);
         }
-        let vk = VerifyingKey::from_bytes(&DEV_PUBLIC_KEY).map_err(|_| AyError::BadSignature)?;
-        let sig_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| AyError::BadSignature)?;
-        vk.verify(msg, &Signature::from_bytes(&sig_arr))
-            .map_err(|_| AyError::BadSignature)
+
+        #[cfg(debug_assertions)]
+        {
+            let signature = if sig_bytes.len() == 64 {
+                sig_bytes.try_into().map_err(|_| AyError::BadSignature)?
+            } else {
+                let envelope = SignatureEnvelope::decode(sig_bytes).map_err(AyError::from)?;
+                if envelope.key_id != DEVELOPMENT_KEY_ID {
+                    return Err(TrustError::UnknownKey(envelope.key_id).into());
+                }
+                envelope.signature
+            };
+            let key = VerifyingKey::from_bytes(&DEVELOPMENT_PUBLIC_KEY)
+                .map_err(|_| AyError::BadSignature)?;
+            key.verify(msg, &Signature::from_bytes(&signature))
+                .map_err(|_| AyError::BadSignature)?;
+            Ok(AcceptedSigner::Development)
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let key_id = SignatureEnvelope::decode(sig_bytes)
+                .map(|envelope| envelope.key_id)
+                .unwrap_or_else(|_| DEVELOPMENT_KEY_ID.into());
+            Err(TrustError::UnknownKey(key_id).into())
+        }
     }
 
     /// Legacy content hash: SHA-256 over all entries except `signature.bin`,
