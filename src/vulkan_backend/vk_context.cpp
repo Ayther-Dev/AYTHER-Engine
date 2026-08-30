@@ -1,4 +1,5 @@
 #include "vulkan_backend/vk_context.h"
+#include "ayther_env.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
@@ -19,7 +20,7 @@ static constexpr bool kValidation = true;
 // en vivo y consultarlo por textura sería otro costo por objeto.
 bool vk_verbose_logging() {
     static const bool on = [] {
-        const char* v = std::getenv("AYTHER_VK_VERBOSE");
+        const char* v = ayther::env_get("AYTHER_VK_VERBOSE");
         return v && *v && std::strcmp(v, "0") != 0;
     }();
     return on;

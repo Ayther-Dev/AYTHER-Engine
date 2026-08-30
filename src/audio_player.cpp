@@ -24,6 +24,7 @@
 
 #include "ayther_env.h"
 #include "audio_player.h"
+#include "ayther_file.h"
 #include "audio_live_resume.h"
 #include "ayther_core_ffi.h"
 
@@ -119,7 +120,7 @@ bool AudioPlayer::init() {
     // : tee opcional del PCM del emulador a WAV (AYTHER_AUDIO_DUMP=<ruta>).
     // Header con tamanos placeholder; se parchea al cerrar (shutdown).
     if (const char* dump_path = ayther::env_get("AYTHER_AUDIO_DUMP")) {
-        FILE* f = std::fopen(dump_path, "wb");
+        FILE* f = ayther::file_open(dump_path, "wb");
         if (f) {
             const uint8_t hdr[44] = {
                 'R','I','F','F', 0,0,0,0, 'W','A','V','E',

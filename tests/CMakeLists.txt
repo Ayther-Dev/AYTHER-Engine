@@ -58,7 +58,7 @@ add_subdirectory(ffi)
 add_subdirectory(
     "${PROJECT_SOURCE_DIR}/tools/sf2_synth_smoke"
     "${PROJECT_BINARY_DIR}/tools/sf2_synth_smoke")
-ayther_instrument_target(sf2_synth_smoke)
+ayther_instrument_target(sf2_synth_smoke NO_STRICT_WARNINGS)
 
 if(NOT AYTHER_BUILD_ENGINE)
     return()
@@ -138,7 +138,7 @@ foreach(_ayther_tool_test IN LISTS _ayther_native_tool_tests)
         "${PROJECT_BINARY_DIR}/tools/${_ayther_tool_test}")
     target_include_directories("${_ayther_tool_test}" PRIVATE
         "${PROJECT_SOURCE_DIR}/include/ayther")
-    ayther_instrument_target("${_ayther_tool_test}")
+    ayther_instrument_target("${_ayther_tool_test}" NO_STRICT_WARNINGS)
 endforeach()
 
 if(AYTHER_ENABLE_VPX)
@@ -150,7 +150,7 @@ if(AYTHER_ENABLE_VPX)
         target_include_directories("${_ayther_vpx_test}" PRIVATE
             "${PROJECT_SOURCE_DIR}/include/ayther")
         target_link_libraries("${_ayther_vpx_test}" PRIVATE ayther_test_support)
-        ayther_instrument_target("${_ayther_vpx_test}")
+        ayther_instrument_target("${_ayther_vpx_test}" NO_STRICT_WARNINGS)
     endforeach()
 endif()
 
@@ -169,7 +169,7 @@ if(AYTHER_BUILD_GPU_TESTS)
             "${PROJECT_BINARY_DIR}/tools/${_ayther_gpu_test}")
         target_include_directories("${_ayther_gpu_test}" PRIVATE
             "${PROJECT_SOURCE_DIR}/include/ayther")
-        ayther_instrument_target("${_ayther_gpu_test}")
+        ayther_instrument_target("${_ayther_gpu_test}" NO_STRICT_WARNINGS)
     endforeach()
 endif()
 

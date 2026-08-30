@@ -12,6 +12,8 @@
 // ---------------------------------------------------------------------------
 
 #include "ayther_env.h"
+#include "ayther_file.h"
+#include "ayther_parse.h"
 #include "ayther_session.h"
 #include "panorama_cover.h"
 #include "cram_palette.h"        //  EM-9.4: la CRAM, con su oraculo   // : la regla de cobertura, testeable sin ROM
@@ -254,13 +256,13 @@ Result<std::unique_ptr<AytherSession>> AytherSession::create(const Config& cfg) 
     // Es la salida de emergencia mientras el router sea nuevo; el día que sobre,
     // se retira junto con el camino viejo.
     {
-        const char* v = std::getenv("AYTHER_VOICE_ROUTER");
+        const char* v = ayther::env_get("AYTHER_VOICE_ROUTER");
         session->set_voice_router(!(v && v[0] == '0'));
     }
-    if (const char* d = std::getenv("AYTHER_SF2_DUMP"))
-        session->impl_->sf2_dump = std::fopen(d, "wb");
-    if (const char* d = std::getenv("AYTHER_VOICE_DUMP")) {
-        session->impl_->voice_dump = std::fopen(d, "wb");
+    if (const char* d = ayther::env_get("AYTHER_SF2_DUMP"))
+        session->impl_->sf2_dump = ayther::file_open(d, "wb");
+    if (const char* d = ayther::env_get("AYTHER_VOICE_DUMP")) {
+        session->impl_->voice_dump = ayther::file_open(d, "wb");
         std::fprintf(stdout, "[voice] tee del router: %s (f32 estéreo crudo)\n",
                      session->impl_->voice_dump ? d : "NO PUDE ABRIR");
     }
@@ -3213,7 +3215,6 @@ const FrameView& AytherSession::produce_frame() {
     // por Poses, ver ROADMAP/limpieza.)
     uint32_t n_sprite_subs = 0;
     uint32_t n_claimed_total = 0;    // subs de pose-set (índices [0, n) en sprite_subs)
-    bool     pose_matched = false;   // ¿una pose-override reclamó miembros este frame?
     if (n_sprite_occs > 0) {
         std::memset(im.sprite_claimed, 0, n_sprite_occs);   // claims de pose-sets
         uint32_t n_pose = 0;
@@ -3249,7 +3250,6 @@ const FrameView& AytherSession::produce_frame() {
 
         const uint32_t n_claimed_subs = n_pose;
         n_claimed_total = n_claimed_subs;
-        pose_matched = (n_pose > 0);   // sólo entonces vale la pena el compose de pose
 
         // 3. Lista de occs SIN reclamar para el per-sprite.
         const AytherSpriteOccurrence* sprite_input = im.sprite_occs;
@@ -4766,7 +4766,7 @@ void AytherSession::Impl::video_tick(const std::string& path) {
       : vframes > (int64_t)last ? last
                            : (uint32_t)vframes;
 
-    if (const char* dbg = std::getenv("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
+    if (const char* dbg = ayther::env_get("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
         std::fprintf(stderr,
                      "[video] f=%llu kin=%llx step=%u off=%u anchor=%lld d=%lld "
                      "rate=%.3f idx=%u/%u\n",
@@ -4801,7 +4801,7 @@ void AytherSession::Impl::video_tick(const std::string& path) {
     // uso legítimo por sí solo. Se aplica mientras el video corre y lo devuelve
     // video_audio_stop().
     if (audio.game_gain() != ggain)
-        if (const char* dbg = std::getenv("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
+        if (const char* dbg = ayther::env_get("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
             std::fprintf(stderr, "[video/audio] banda sonora %.0f%% -> %.0f%%\n",
                          audio.game_gain() * 100.0, ggain * 100.0);
     audio.set_game_gain(ggain);
@@ -4841,7 +4841,7 @@ void AytherSession::Impl::video_tick(const std::string& path) {
         if (vaud.on) audio.stop_sfx_by_key(kVideoAudioKey);
         audio.play_oneshot_asset_file(aud, kVideoAudioKey,
                                       double(off) / gfps, again);
-        if (const char* dbg = std::getenv("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
+        if (const char* dbg = ayther::env_get("AYTHER_VIDEO_DEBUG"); dbg && *dbg == '1')
             std::fprintf(stderr, "[video/audio] resync f=%llu t=%.3fs %s\n",
                          (unsigned long long)frame_index, double(off) / gfps,
                          aud.c_str());

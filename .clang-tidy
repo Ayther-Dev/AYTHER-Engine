@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# clang-tidy — first-party C++ only.
+#
+# The opening scope is deliberately narrow (P1.7): ownership, lifetime, casts,
+# virtual destructors, and concurrency. Everything in `Checks` is reported;
+# only `WarningsAsErrors` blocks CI, which keeps the C-style-cast sweep visible
+# without failing a pull request over the pre-existing pile of them.
+#
+# Vendored code needs no exclusion here: ymfm and the vcpkg tree are pulled in
+# as SYSTEM includes, and clang-tidy does not diagnose system headers.
+# ---------------------------------------------------------------------------
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-virtual-class-destructor,
+  concurrency-*
+
+WarningsAsErrors: >
+  clang-analyzer-*,
+  bugprone-*,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-virtual-class-destructor,
+  concurrency-*
+
+HeaderFilterRegex: '(include/ayther|src)/'
+FormatStyle: none

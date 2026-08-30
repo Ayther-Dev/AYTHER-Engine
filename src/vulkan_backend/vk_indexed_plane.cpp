@@ -10,6 +10,7 @@
 #include "vulkan_backend/vk_indexed_plane.h"
 #include "vulkan_backend/vk_context.h"
 #include "vulkan_backend/vk_render_target.h"
+#include "ayther_file.h"
 #include <vk_mem_alloc.h>   // real VMA API (header forward-declares the handle only)
 
 #include <cstdio>
@@ -23,7 +24,7 @@ constexpr uint32_t kIdxH = 256;   // 32 filas de tiles (2048 patrones)
 constexpr uint32_t kPalW = 64;    // 4 líneas × 16 colores
 
 std::vector<uint32_t> load_spv(const char* path) {
-    FILE* f = std::fopen(path, "rb");
+    FILE* f = ayther::file_open(path, "rb");
     if (!f) {
         std::fprintf(stderr, "[VkIndexedPlane] Cannot open shader: %s\n", path);
         return {};

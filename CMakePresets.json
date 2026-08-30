@@ -155,6 +155,36 @@
       }
     },
     {
+      "name": "linux-native-asan",
+      "displayName": "Linux Native Engine + AddressSanitizer",
+      "description": "Complete native engine and CPU CTests under ASan",
+      "inherits": "linux-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AYTHER_ENABLE_ASAN": "ON"
+      }
+    },
+    {
+      "name": "linux-native-ubsan",
+      "displayName": "Linux Native Engine + UndefinedBehaviorSanitizer",
+      "description": "Complete native engine and CPU CTests under UBSan",
+      "inherits": "linux-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AYTHER_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "linux-native-coverage",
+      "displayName": "Linux Native Engine Coverage",
+      "description": "Informational LLVM source coverage for first-party C++",
+      "inherits": "linux-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AYTHER_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
       "name": "linux-native-gpu",
       "displayName": "Linux Native Engine + GPU Tests",
       "description": "Complete C++ engine with Vulkan GPU test executables",
@@ -200,6 +230,18 @@
     {
       "name": "linux-native-vpx",
       "configurePreset": "linux-native-vpx"
+    },
+    {
+      "name": "linux-native-asan",
+      "configurePreset": "linux-native-asan"
+    },
+    {
+      "name": "linux-native-ubsan",
+      "configurePreset": "linux-native-ubsan"
+    },
+    {
+      "name": "linux-native-coverage",
+      "configurePreset": "linux-native-coverage"
     },
     {
       "name": "linux-native-gpu",
@@ -280,6 +322,51 @@
       },
       "execution": {
         "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-native-asan",
+      "configurePreset": "linux-native-asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "linux-native-ubsan",
+      "configurePreset": "linux-native-ubsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "linux-native-coverage",
+      "configurePreset": "linux-native-coverage",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
       }
     },
     {

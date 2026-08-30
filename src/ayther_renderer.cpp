@@ -7,6 +7,7 @@
 // its swapchain. Sprite + post-process passes land in R3.2.
 // ---------------------------------------------------------------------------
 #include "ayther_renderer.h"
+#include "ayther_env.h"
 
 #include "ayther_session.h"               // FrameView
 #include "ayther_layers.h"                // R-4 (): stack de capas
@@ -261,7 +262,7 @@ void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
     // Y NO se le aplica al VIDEO (): una textura persistente que se re-sube
     // cada frame no crea imagen, ni mips, ni descriptores — no pasa por acá.
     static const uint32_t kUploadBudget = [] {
-        const char* v = std::getenv("AYTHER_UPLOAD_BUDGET");
+        const char* v = ayther::env_get("AYTHER_UPLOAD_BUDGET");
         if (!v || !*v) return 2u;
         const long n = std::strtol(v, nullptr, 10);
         return n < 1 ? 1u : (n > 16 ? 16u : (uint32_t)n);

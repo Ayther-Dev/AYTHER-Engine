@@ -16,6 +16,7 @@
 // ---------------------------------------------------------------------------
 #include "audio_hd_mixer.h"
 #include "audio_player.h"
+#include "ayther_file.h"
 
 #include <SDL3/SDL.h>
 
@@ -48,7 +49,7 @@ HdMixPcm ramp_pcm(size_t frames) {
 
 // WAV S16 estéreo 44100 con un tono no nulo — para el player real.
 bool write_tone_wav(const std::string& path, uint32_t frames) {
-    FILE* f = std::fopen(path.c_str(), "wb");
+    FILE* f = ayther::file_open(path.c_str(), "wb");
     if (!f) return false;
     const uint32_t data_sz = frames * 4;
     const uint32_t riff_sz = 36u + data_sz;

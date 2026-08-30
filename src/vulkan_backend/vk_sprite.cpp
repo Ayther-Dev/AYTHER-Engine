@@ -29,6 +29,7 @@
 #include "vulkan_backend/vk_texture.h"
 #include "ayther_animation.h"  // ayther::AnimHdFrame (draw_anim, C-S2)
 #include "ayther_core_ffi.h"   // AytherSpriteSub, ayther_pack_*
+#include "ayther_file.h"
 
 // stb_image declaration only — STB_IMAGE_IMPLEMENTATION is in main.cpp.
 #include <stb_image.h>
@@ -54,7 +55,7 @@
 // vkGetSwapchainImagesKHR calls needed.
 
 static std::vector<uint32_t> load_spv(const char* path) {
-    FILE* f = std::fopen(path, "rb");
+    FILE* f = ayther::file_open(path, "rb");
     if (!f) {
         std::fprintf(stderr, "[VkSprite] Cannot open shader: %s\n", path);
         return {};
@@ -795,7 +796,7 @@ void VkSprite::enqueue_decode(const std::string& key, const std::string& path,
     }
     bool from_disk = false;
     if (raw.empty()) {
-        FILE* f = std::fopen(path.c_str(), "rb");
+        FILE* f = ayther::file_open(path.c_str(), "rb");
         if (f) {
             std::fseek(f, 0, SEEK_END);
             long sz = std::ftell(f);

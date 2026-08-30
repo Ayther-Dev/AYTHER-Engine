@@ -12,6 +12,7 @@
 // pausa y el retorno de cut_transport_audio() (cuadros descartados).
 // ---------------------------------------------------------------------------
 #include "audio_player.h"
+#include "ayther_file.h"
 
 #include <SDL3/SDL.h>
 
@@ -32,7 +33,7 @@ void check(bool ok, const std::string& what) {
 
 // WAV S16 estéreo 44100 con un tono no nulo — el asset HD de los one-shot.
 bool write_tone_wav(const std::string& path, uint32_t frames) {
-    FILE* f = std::fopen(path.c_str(), "wb");
+    FILE* f = ayther::file_open(path.c_str(), "wb");
     if (!f) return false;
     const uint32_t data_sz = frames * 4;
     const uint32_t riff_sz = 36u + data_sz;

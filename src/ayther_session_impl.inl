@@ -2258,7 +2258,7 @@ struct AytherSession::Impl {
                 return nullptr;
             return ayther_sf2_new_shared(sfkey, norm.data(), norm.size(), 44100);
         }
-        std::FILE* fh = std::fopen(sf.c_str(), "rb");
+        std::FILE* fh = ayther::file_open(sf.c_str(), "rb");
         if (!fh) return nullptr;
         std::fseek(fh, 0, SEEK_END);
         const long fsz = std::ftell(fh);
@@ -3138,7 +3138,7 @@ struct AytherSession::Impl {
                     // "r,g,b" en decimal, como lo escribe el writer.
                     const std::string v = quoted(line);
                     int c[3] = {0, 0, 0};
-                    std::sscanf(v.c_str(), "%d,%d,%d", &c[0], &c[1], &c[2]);
+                    (void)ayther::parse_comma_separated_ints(v, c);
                     for (int k = 0; k < 3; ++k)
                         cur.content.ref_rgb[k] =
                             uint8_t(c[k] < 0 ? 0 : (c[k] > 255 ? 255 : c[k]));

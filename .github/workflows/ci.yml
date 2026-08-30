@@ -23,6 +23,11 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CMAKE_BUILD_PARALLEL_LEVEL: 2
+  CARGO_AUDIT_VERSION: 0.22.0
+  CARGO_FUZZ_VERSION: 0.13.1
+  CARGO_LLVM_COV_VERSION: 0.8.2
+  FUZZ_NIGHTLY: nightly-2026-08-25
+  CLANG_TIDY_VERSION: 18
 
 jobs:
   repository-policy:
@@ -85,6 +90,15 @@ jobs:
       - name: Test Rust targets
         run: cargo test --workspace --all-targets --locked
 
+      - name: Install the pinned Rust dependency auditor
+        run: >-
+          cargo install cargo-audit
+          --version "${CARGO_AUDIT_VERSION}"
+          --locked
+
+      - name: Audit Rust dependencies
+        run: cargo audit --deny warnings
+
       - name: Build Rust documentation
         run: cargo doc --workspace --no-deps --locked
 
@@ -146,6 +160,178 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  sanitizers:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux native ASan
+            preset: linux-native-asan
+            runtime_options: ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          - name: Linux native UBSan
+            preset: linux-native-ubsan
+            runtime_options: UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Select the runner vcpkg installation
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache Cargo inputs and outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.preset }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.preset }}-
+            ${{ runner.os }}-native-
+            ${{ runner.os }}-cargo-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Run CPU CTests under the sanitizer
+        shell: bash
+        run: env ${{ matrix.runtime_options }} ctest --preset ${{ matrix.preset }}
+
+      - name: Retain sanitizer diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitizer-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  fuzz-smoke:
+    name: Fuzz smoke (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - packs
+          - decoders
+          - ffi
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Install the pinned fuzz toolchain
+        run: |
+          rustup toolchain install "${FUZZ_NIGHTLY}" --profile minimal
+          cargo install cargo-fuzz --version "${CARGO_FUZZ_VERSION}" --locked
+
+      - name: Exercise the seeded corpus
+        run: >-
+          cargo +"${FUZZ_NIGHTLY}" fuzz run ${{ matrix.target }}
+          fuzz/corpus/${{ matrix.target }}
+          --
+          -max_total_time=30
+          -max_len=1048576
+          -print_final_stats=1
+
+      - name: Retain fuzz crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+          retention-days: 30
+
+  rust-coverage:
+    name: Rust coverage (informational baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Install pinned Rust coverage tooling
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked
+
+      - name: Generate Rust coverage
+        run: |
+          mkdir -p coverage/rust
+          cargo llvm-cov --workspace --all-targets --locked \
+            --lcov --output-path coverage/rust/rust.lcov
+          cargo llvm-cov report --summary-only | tee coverage/rust/summary.txt
+
+      - name: Publish Rust coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-rust
+          path: coverage/rust
+          if-no-files-found: error
+          retention-days: 14
+
+  cpp-coverage:
+    name: C++ coverage (informational baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Select the runner vcpkg installation
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure coverage build
+        run: cmake --preset linux-native-coverage
+
+      - name: Build coverage targets
+        run: cmake --build --preset linux-native-coverage
+
+      - name: Run CPU CTests with LLVM profiles
+        shell: bash
+        run: |
+          mkdir -p build/linux-native-coverage/coverage-profiles
+          LLVM_PROFILE_FILE='${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw' \
+            ctest --preset linux-native-coverage
+
+      - name: Generate C++ coverage
+        shell: bash
+        run: >-
+          bash tools/collect_cpp_coverage.sh
+          build/linux-native-coverage
+          coverage/cpp
+
+      - name: Publish C++ coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-cpp
+          path: coverage/cpp
+          if-no-files-found: error
+          retention-days: 14
+
   native:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -186,6 +372,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Select the runner vcpkg installation
         shell: pwsh
@@ -235,6 +423,27 @@ jobs:
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Install the pinned clang-tidy
+        if: matrix.preset == 'linux-native'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes "clang-tidy-${CLANG_TIDY_VERSION}"
+
+      - name: Run high-severity clang-tidy checks on modified sources
+        if: matrix.preset == 'linux-native'
+        shell: bash
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CLANG_TIDY: clang-tidy-${{ env.CLANG_TIDY_VERSION }}
+        run: |
+          base_revision="${BASE_REVISION}"
+          if [[ -z "${base_revision}" || "${base_revision}" =~ ^0+$ ]]; then
+            base_revision="$(git rev-parse HEAD^)"
+          fi
+          bash tools/run_clang_tidy_changed.sh \
+            "${base_revision}" \
+            build/${{ matrix.preset }}
 
       - name: Test native targets
         run: ctest --preset ${{ matrix.preset }}

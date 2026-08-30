@@ -3,6 +3,18 @@
 
 function(ayther_configure_instrumentation)
     add_library(ayther_instrumentation INTERFACE)
+    add_library(ayther_strict_warnings INTERFACE)
+
+    if(MSVC)
+        target_compile_options(ayther_strict_warnings INTERFACE /W4 /WX)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(ayther_strict_warnings INTERFACE
+            -Wall -Wextra -Wpedantic -Werror)
+    else()
+        message(FATAL_ERROR
+            "AYTHER warnings-as-errors require Clang, GCC, or MSVC; got "
+            "${CMAKE_CXX_COMPILER_ID}.")
+    endif()
 
     if(AYTHER_ENABLE_ASAN OR AYTHER_ENABLE_UBSAN)
         if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -33,16 +45,28 @@ function(ayther_configure_instrumentation)
             message(FATAL_ERROR
                 "AYTHER native coverage requires Clang or GCC; got ${CMAKE_CXX_COMPILER_ID}.")
         endif()
-        target_compile_options(ayther_instrumentation INTERFACE
-            --coverage -O0 -g)
-        target_link_options(ayther_instrumentation INTERFACE --coverage)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            target_compile_options(ayther_instrumentation INTERFACE
+                -fprofile-instr-generate -fcoverage-mapping -O0 -g)
+            target_link_options(ayther_instrumentation INTERFACE
+                -fprofile-instr-generate -fcoverage-mapping)
+        else()
+            target_compile_options(ayther_instrumentation INTERFACE
+                --coverage -O0 -g)
+            target_link_options(ayther_instrumentation INTERFACE --coverage)
+        endif()
     endif()
 endfunction()
 
 function(ayther_instrument_target target_name)
+    cmake_parse_arguments(ARG "NO_STRICT_WARNINGS" "" "" ${ARGN})
     if(NOT TARGET "${target_name}")
         message(FATAL_ERROR "Cannot instrument missing target: ${target_name}")
     endif()
     target_link_libraries("${target_name}" PRIVATE
         $<BUILD_INTERFACE:ayther_instrumentation>)
+    if(NOT ARG_NO_STRICT_WARNINGS)
+        target_link_libraries("${target_name}" PRIVATE
+            $<BUILD_INTERFACE:ayther_strict_warnings>)
+    endif()
 endfunction()

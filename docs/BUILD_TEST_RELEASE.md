@@ -42,6 +42,60 @@ The documentation checker validates local Markdown links and `docs/...`
 references embedded in source, CMake, and PowerShell. The public API index and
 dependency graph are generated artifacts and must not be edited by hand.
 
+## Sanitizers, fuzzing, coverage, and static analysis
+
+These gates run on Linux with Clang. Each has a preset so a local run and CI
+execute the same configuration:
+
+```text
+cmake --preset linux-native-asan   && cmake --build --preset linux-native-asan
+ctest --preset linux-native-asan
+cmake --preset linux-native-ubsan  && cmake --build --preset linux-native-ubsan
+ctest --preset linux-native-ubsan
+```
+
+Both sanitizer presets build `Debug`, compile with `-fno-sanitize-recover=all`,
+and run every CPU CTest; tests labelled `gpu` are excluded because the runners
+promise no Vulkan hardware. A finding aborts the process, so any report is a
+failure rather than a logged warning.
+
+The Rust vulnerability gate and the fuzz smoke targets:
+
+```text
+cargo audit --deny warnings
+cargo +nightly fuzz run packs    fuzz/corpus/packs    -- -max_total_time=30
+cargo +nightly fuzz run decoders fuzz/corpus/decoders -- -max_total_time=30
+cargo +nightly fuzz run ffi      fuzz/corpus/ffi      -- -max_total_time=30
+```
+
+`.cargo/audit.toml` holds the advisory exception list and is empty on purpose:
+an unlisted advisory fails the build. Each fuzz target is seeded from
+`fuzz/corpus/<target>` and CI keeps `fuzz/artifacts/<target>` when a target
+crashes.
+
+Coverage is reported per language and is informational for now — Rust through
+`cargo llvm-cov`, C++ through the `linux-native-coverage` preset and
+`tools/collect_cpp_coverage.sh`. Both land as pull-request artifacts
+(`coverage-rust`, `coverage-cpp`). No threshold blocks a merge yet; adding one
+is the next step, and it needs a recorded baseline first.
+
+First-party C++ compiles with warnings as errors (`/W4 /WX`, or
+`-Wall -Wextra -Wpedantic -Werror`). Vendored `ymfm` and the smoke tools and
+probes under `tools/` are exempt via `ayther_instrument_target(...
+NO_STRICT_WARNINGS)`; the engine, the unit and integration tests, and the FFI
+tests are not.
+
+`clang-tidy` runs only over the translation units a change actually touches:
+
+```text
+bash tools/run_clang_tidy_changed.sh <base-revision> build/linux-native
+```
+
+`.clang-tidy` is the single definition of scope for CI, an IDE, and a local
+run. Analyzer, `bugprone-*`, ownership, virtual-destructor, and concurrency
+findings block; the C-style-cast sweep is reported without blocking so the
+existing pile stays visible without failing pull requests.
+
 ## Headless native build
 
 Windows:
@@ -169,6 +223,24 @@ required native matrix additionally configures, builds, tests, and installs
 `tests/package_consumer/` from outside the producer tree. Pull requests
 additionally validate that individual commits do not mix the closed Lab
 boundary with FOSS paths.
+
+Five further jobs run on every pull request. `Linux native ASan` and
+`Linux native UBSan` build the complete engine and run the CPU CTests under
+their sanitizer, uploading `Testing/Temporary/LastTest.log` on failure.
+`Fuzz smoke` runs the `packs`, `decoders`, and `ffi` targets for 30 seconds
+each against their seeded corpus and keeps any crash as an artifact. The Rust
+audit runs inside the `rust` job with a pinned `cargo-audit`. Coverage is
+published by `rust-coverage` and `cpp-coverage` as separate artifacts, and
+`clang-tidy` runs inside the `linux-native` matrix entry over the touched
+translation units only.
+
+Every one of those jobs is defined to fail the workflow on a finding, but a
+failing job blocks a merge only once a repository administrator marks it as a
+required status check. Until `Linux native ASan`, `Linux native UBSan`, the
+three `Fuzz smoke (...)` jobs, `rust`, and `Linux native + package consumer`
+are listed in the branch-protection rule for `main`, the mechanics alone do not
+make them mandatory. The two coverage jobs are deliberately not required while
+they remain informational.
 
 The `GPU (Windows, opt-in)` and `GPU (Linux, opt-in)` jobs are deliberately
 skipped in ordinary push and pull-request runs because GitHub-hosted runners do

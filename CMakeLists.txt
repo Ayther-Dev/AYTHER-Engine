@@ -118,7 +118,7 @@ target_include_directories(ayther_ymfm SYSTEM PUBLIC
 
 add_library(ayther::ymfm ALIAS ayther_ymfm)
 add_library(Ayther::ymfm ALIAS ayther_ymfm)
-ayther_instrument_target(ayther_ymfm)
+ayther_instrument_target(ayther_ymfm NO_STRICT_WARNINGS)
 
 # tools/build_libvpx.ps1 installs the optional VP9 decoder here. Keep the
 # imported target conditional so a checkout without local third-party binaries

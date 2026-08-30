@@ -155,7 +155,7 @@ size_t VkTexture::release_staging(VkContext& ctx) {
 // ---------------------------------------------------------------------------
 // Convert a line of RGB565 pixels to BGRA8 in the staging buffer.
 static void convert_rgb565_to_bgra8(const uint8_t* src, uint8_t* dst,
-                                     uint32_t w, size_t src_pitch) {
+                                     uint32_t w) {
     for (uint32_t y = 0; y < 1; ++y) {   // called per-row
         const uint16_t* s = reinterpret_cast<const uint16_t*>(src);
         uint8_t*        d = dst;
@@ -218,14 +218,14 @@ void VkTexture::upload(VkContext& ctx, VkCommandBuffer cmd,
     for (uint32_t y = 0; y < h; ++y) {
         switch (fmt) {
             case TexPixelFormat::Rgb565:
-                convert_rgb565_to_bgra8(src_row, dst_row, w, pitch);
+                convert_rgb565_to_bgra8(src_row, dst_row, w);
                 break;
             case TexPixelFormat::Xrgb8888:
                 convert_xrgb8888_to_bgra8(src_row, dst_row, w);
                 break;
             case TexPixelFormat::Rgb1555:
                 // Treat as Rgb565 (close enough for emulator display)
-                convert_rgb565_to_bgra8(src_row, dst_row, w, pitch);
+                convert_rgb565_to_bgra8(src_row, dst_row, w);
                 break;
             case TexPixelFormat::Bgra8888:
                 // Already BGRA — direct copy, preserves alpha channel.

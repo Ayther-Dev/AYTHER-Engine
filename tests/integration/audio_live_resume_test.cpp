@@ -16,6 +16,7 @@
 #include "audio_live_resume.h"
 #include "audio_player.h"
 #include "ayther_core_ffi.h"
+#include "ayther_file.h"
 #include "trusted_pack_fixture.h"
 
 #include <SDL3/SDL.h>
@@ -219,7 +220,7 @@ int main() {
     // El one-shot de DISCO ya tenía offset (#220/#388): pasado el final es
     // éxito sin stream — mismo contrato que el pack.
     {
-        FILE* f = std::fopen("resume_tone.wav", "wb");
+        FILE* f = ayther::file_open("resume_tone.wav", "wb");
         check(f && std::fwrite(wav.data(), 1, wav.size(), f) == wav.size(),
               "tono suelto de disco escrito");
         if (f) std::fclose(f);

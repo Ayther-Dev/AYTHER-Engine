@@ -5,6 +5,7 @@
 
 #include "ayther_core_ffi.h"   // : la fuente del pack lee por rango
 #include "ayther_env.h"        // AYTHER_VIDEO_THREADS
+#include "ayther_file.h"
 
 #include <algorithm>
 #include <thread>
@@ -142,8 +143,12 @@ uint64_t rd64(const uint8_t* p) {
 /// dentro del archivo y que ninguno pase el tope de tamaño. Que el offset tenga
 /// realmente un keyframe VP9 lo decide el decoder, y si no lo tiene se pierde
 /// ESE frame — el índice dice dónde mirar, no qué hay.
-bool parse_index(const uint8_t* idx, size_t n, uint64_t src_size,
-                 std::vector<Packet>* out) {
+///
+/// Sólo lo consume la ruta con VP9. Se compila igual sin decoder —en vez de
+/// esconderlo tras el #ifdef— para que el parser no se pudra en silencio.
+[[maybe_unused]] bool parse_index(const uint8_t* idx, size_t n,
+                                  uint64_t src_size,
+                                  std::vector<Packet>* out) {
     if (!idx || n < kIdxHeader) return false;
     if (std::memcmp(idx, "AYIX", 4) != 0) return false;
     if (rd32(idx + 4) != kIdxVersion) return false;
@@ -219,7 +224,7 @@ struct FileSource final : VideoSource {
 
 std::unique_ptr<VideoSource> video_source_from_file(const std::string& path) {
     auto s = std::make_unique<FileSource>();
-    s->f = std::fopen(path.c_str(), "rb");
+    s->f = ayther::file_open(path.c_str(), "rb");
     if (!s->f) return nullptr;
 #ifdef _WIN32
     if (_fseeki64(s->f, 0, SEEK_END) != 0) return nullptr;

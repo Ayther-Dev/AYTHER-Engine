@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 #include "ayther_config.h"
+#include "ayther_env.h"
 
 #include <toml++/toml.hpp>
 
@@ -20,9 +21,9 @@ namespace {
 /// Returns the user's home directory (USERPROFILE on Windows, HOME elsewhere).
 std::string home_dir() {
 #ifdef _WIN32
-    const char* p = std::getenv("USERPROFILE");
+    const char* p = ayther::env_get("USERPROFILE");
 #else
-    const char* p = std::getenv("HOME");
+    const char* p = ayther::env_get("HOME");
 #endif
     return p ? std::string(p) : ".";
 }
@@ -32,10 +33,10 @@ std::string home_dir() {
 ///   Others  : ~/.config
 std::string appdata_dir() {
 #ifdef _WIN32
-    const char* p = std::getenv("APPDATA");
+    const char* p = ayther::env_get("APPDATA");
     return p ? std::string(p) : home_dir();
 #else
-    const char* p = std::getenv("XDG_CONFIG_HOME");
+    const char* p = ayther::env_get("XDG_CONFIG_HOME");
     if (p && *p) return std::string(p);
     return (std::filesystem::path(home_dir()) / ".config").string();
 #endif
@@ -81,7 +82,7 @@ void AytherConfig::apply_defaults() {
 
     if (rom_library.empty()) {
 #ifdef _WIN32
-        const char* docs = std::getenv("USERPROFILE");
+        const char* docs = ayther::env_get("USERPROFILE");
         rom_library = docs ? (fs::path(docs) / "Documents").string() : home_dir();
 #else
         rom_library = home_dir();
@@ -90,7 +91,7 @@ void AytherConfig::apply_defaults() {
 
     if (projects_dir.empty()) {
 #ifdef _WIN32
-        const char* docs = std::getenv("USERPROFILE");
+        const char* docs = ayther::env_get("USERPROFILE");
         auto base = docs ? fs::path(docs) / "Documents" : fs::path(home_dir());
 #else
         auto base = fs::path(home_dir()) / "Documents";

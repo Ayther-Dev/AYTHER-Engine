@@ -17,6 +17,7 @@
 // audio_player_pause_test).
 // ---------------------------------------------------------------------------
 #include "audio_player.h"
+#include "ayther_file.h"
 
 #include <SDL3/SDL.h>
 
@@ -36,7 +37,7 @@ void check(bool ok, const std::string& what) {
 }
 
 bool write_bytes(const std::string& path, const void* data, size_t n) {
-    FILE* f = std::fopen(path.c_str(), "wb");
+    FILE* f = ayther::file_open(path.c_str(), "wb");
     if (!f) return false;
     if (n) std::fwrite(data, 1, n, f);
     std::fclose(f);

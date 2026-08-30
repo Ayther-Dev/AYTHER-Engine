@@ -5,6 +5,7 @@
 // ---------------------------------------------------------------------------
 
 #include "ayther_components_toml.h"
+#include "ayther_parse.h"
 
 #include <toml++/toml.hpp>
 
@@ -429,10 +430,11 @@ size_t parse_plane_sets_from(const toml::table& tbl,
         d.h_cells = uint16_t((*s)["h_cells"].value<int64_t>().value_or(0));
         // : "x,y" en pixeles. Ausente = (0,0) = el Objeto no se re-ancla.
         if (const auto ov = (*s)["off"].value<std::string>()) {
-            int ox = 0, oy = 0;
-            std::sscanf(ov->c_str(), "%d,%d", &ox, &oy);
-            d.off_x = (int16_t)ox;
-            d.off_y = (int16_t)oy;
+            int offset[2] = {0, 0};
+            if (ayther::parse_comma_separated_ints(*ov, offset)) {
+                d.off_x = static_cast<int16_t>(offset[0]);
+                d.off_y = static_cast<int16_t>(offset[1]);
+            }
         }
         d.font_id = parse_hex(*s, "font");
         d.ch      = (*s)["ch"].value<std::string>().value_or(std::string());

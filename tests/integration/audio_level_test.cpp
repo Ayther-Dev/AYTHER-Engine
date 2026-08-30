@@ -19,6 +19,7 @@
 // No abre device de audio: medir es decodificar y recorrer muestras.
 // ---------------------------------------------------------------------------
 #include "audio_player.h"
+#include "ayther_file.h"
 
 #include <cmath>
 #include <cstdio>
@@ -40,7 +41,7 @@ void check(bool ok, const char* what) {
 /// una meseta de verdad, que es lo que el detector tiene que ver).
 bool write_wav(const std::filesystem::path& p, int16_t amp, uint32_t frames,
                int flat_run = 0) {
-    std::FILE* f = std::fopen(p.string().c_str(), "wb");
+    std::FILE* f = ayther::file_open(p.string().c_str(), "wb");
     if (!f) return false;
     const uint32_t data = frames * 4, riff = 36 + data;
     auto u32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };

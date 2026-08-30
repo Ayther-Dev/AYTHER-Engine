@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# cargo-audit — the vulnerability gate for the locked Rust graph (P1.3).
+#
+# CI runs `cargo audit --deny warnings` with the version pinned by
+# CARGO_AUDIT_VERSION in .github/workflows/ci.yml, so an advisory that is not
+# listed below fails the build.
+#
+# `ignore` IS THE EXCEPTION LIST, and it is empty on purpose. Adding an entry
+# is a decision, not a formality: give the RUSTSEC id, why the advisory cannot
+# reach this code, and what removes the entry again. An exception without a
+# route out is a vulnerability with paperwork.
+# ---------------------------------------------------------------------------
+
+[advisories]
+ignore = []
+informational_warnings = ["unmaintained", "unsound", "notice"]
+severity_threshold = "low"
+
+[output]
+deny = ["unmaintained", "unsound", "yanked"]
+format = "terminal"
+quiet = false
+show_tree = true
+
+[yanked]
+enabled = true
+update_index = true
