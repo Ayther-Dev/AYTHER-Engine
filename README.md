@@ -1,8 +1,6 @@
 # AYTHER Engine
 
-<p align="center">
-  <img src="docs/assets/branding/ayther-engine-logo.svg" alt="AYTHER Engine" width="128">
-</p>
+<img src="docs/assets/branding/ayther-engine-logo.svg" alt="AYTHER Engine" width="128">
 
 AYTHER Engine is the open-source runtime technology behind real-time audiovisual
 remastering for retro 2D games. It observes graphics, memory, and sound produced
@@ -42,8 +40,8 @@ from one repository:
 
 ```mermaid
 flowchart LR
-    Consumer[Runtime or authoring frontend] --> Engine[C++ ayther_engine<br/>session · emulator host · render · audio]
-    Engine --> Core[Rust ayther_core<br/>identity · packs · validation · scripting]
+    Consumer[Runtime or authoring frontend] --> Engine["C++ ayther_engine<br/>session · emulator host · render · audio"]
+    Engine --> Core["Rust ayther_core<br/>identity · packs · validation · scripting"]
     Pack[Signed .ay pack] --> Core
     Rom[User-provided ROM] --> Emulator[User-provided libretro core]
     Emulator --> Engine
