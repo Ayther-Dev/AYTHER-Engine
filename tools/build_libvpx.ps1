@@ -57,18 +57,26 @@ $makeCandidates = @(
 $make = $makeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $make) { Need 'Falta un make usable.' 'scoop install make' }
 
-$bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+$bashCandidates = @(
+    (Join-Path $env:ProgramW6432 'Git\bin\bash.exe'),
+    (Join-Path $env:ProgramW6432 'Git\usr\bin\bash.exe'),
+    (Join-Path $env:ProgramFiles 'Git\bin\bash.exe'),
+    (Join-Path $env:ProgramFiles 'Git\usr\bin\bash.exe'),
+    (Join-Path $env:USERPROFILE 'scoop\apps\git\current\bin\bash.exe')
+)
+$bash = $bashCandidates |
+    Where-Object { Test-Path $_ } |
+    Select-Object -First 1
 if (-not $bash) {
-    $bashCandidates = @(
-        (Join-Path $env:ProgramW6432 'Git\bin\bash.exe'),
-        (Join-Path $env:ProgramW6432 'Git\usr\bin\bash.exe'),
-        (Join-Path $env:ProgramFiles 'Git\bin\bash.exe'),
-        (Join-Path $env:ProgramFiles 'Git\usr\bin\bash.exe'),
-        (Join-Path $env:USERPROFILE 'scoop\apps\git\current\bin\bash.exe')
-    )
-    $bash = $bashCandidates |
-        Where-Object { Test-Path $_ } |
-        Select-Object -First 1
+    $pathBash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+    # System32\bash.exe is the WSL launcher. The commands below intentionally
+    # use Git-Bash paths such as C:/work, which WSL cannot resolve.
+    if ($pathBash -and
+        -not $pathBash.Equals(
+            (Join-Path $env:SystemRoot 'System32\bash.exe'),
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        $bash = $pathBash
+    }
 }
 if (-not $bash) { Need 'Falta bash (el configure de libvpx es un script sh).' 'Instalar Git for Windows' }
 
