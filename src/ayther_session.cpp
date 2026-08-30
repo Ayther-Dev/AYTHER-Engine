@@ -29,6 +29,8 @@
 #include "libretro_host/retro_runner.h"    // RetroRunner (emulator host)
 #include "rewind_buffer.h"                 // RewindBuffer (R6)
 #include "ayther_recording.h"              // AytherRecording (R7)
+#include "session/emulation_observer.h"
+#include "session/recording_controller.h"
 #include "ayther_video.h"                  // VideoClip: el paso-video ()
 #include "ayther_core_ffi.h"                // ayther_sf2_* ()
 
@@ -155,18 +157,20 @@ Result<std::unique_ptr<AytherSession>> AytherSession::create(const Config& cfg) 
     im.core_path = cfg.core_path;   // : para instanciar el shadow core (lazy)
     im.rom_path  = cfg.rom_path;
     im.activate_ayther_subscriptions();   // E-2 ()
+    im.observer.initialize_system(im.runner);
 
     // SYSTEM reports what is on the other side; the Engine does not infer it
     // registros. Acá sólo lo que ya se sabe antes del primer frame (hardware y
     // región); el modo del VDP y el viewport se refrescan por frame en
     // refresh_abi_mirror() — al crear la sesión `vdp_mode` es 0 a propósito.
     if (im.runner.has_ayther_v1()) {
-        im.sys_ok = im.runner.read_system_v1(im.sys).ok();
-        if (im.sys_ok)
+        if (im.observer.system_available()) {
+            const ayther_system_v1& system = im.observer.system();
             std::fprintf(stdout, "[AytherSession] SYSTEM: hw=0x%02X %s lines=%u "
                          "(modo y viewport, por frame)\n",
-                         im.sys.system_hw, im.sys.region_pal ? "PAL" : "NTSC",
-                         im.sys.lines_per_frame);
+                         system.system_hw, system.region_pal ? "PAL" : "NTSC",
+                         system.lines_per_frame);
+        }
     }
 
     // HD audio output — non-fatal (a missing device just means muted playback).
@@ -338,7 +342,7 @@ bool AytherSession::has_pack() const noexcept { return static_cast<bool>(impl_->
 // ---------------------------------------------------------------------------
 void AytherSession::set_input(int port, uint16_t buttons) noexcept {
     impl_->runner.set_input(port, buttons);
-    if (port == 0) impl_->last_input0 = buttons;   // logged into the recording each step
+    if (port == 0) impl_->recording.set_input(buttons);
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +356,7 @@ const FrameView& AytherSession::step() {
     if (im.rewind.enabled() && im.runner.serialize(im.rewind_scratch))
         im.rewind.push(im.rewind_scratch);
     // Recording capture (R7): log the input that produces this frame.
-    if (im.rec_active) im.rec_inputs.push_back(im.last_input0);
+    im.recording.capture_input();
     ++im.frame_index;
     const FrameView& v = produce_frame();
     //  EM-7.3: los cheats del jugador, DESPUES de correr el frame.
@@ -389,28 +393,24 @@ const FrameView& AytherSession::step() {
 
     // R7b: log this frame's occurrence summary for the timeline lanes.
     // R7c: log this frame's sprite hashes (CSR) for the per-hash presence lane.
-    if (im.rec_active) {
-        im.rec_stats.push_back({ static_cast<uint16_t>(v.sprite_occ_count),
-                                 static_cast<uint16_t>(v.tile_occ_count),
-                                 static_cast<uint16_t>(v.audio_occ_count),
-                                 static_cast<uint16_t>(v.plane_a_count),
-                                 static_cast<uint16_t>(v.plane_b_count),
-                                 static_cast<uint16_t>(v.plane_w_count) });
-        for (uint32_t i = 0; i < v.sprite_occ_count; ++i)
-            im.rec_hashes.push_back(v.sprite_occs[i].hash);
-        im.rec_hash_off.push_back(static_cast<uint32_t>(im.rec_hashes.size()));
-        // .arp v7: hashes de audio de este frame (CSR) para las filas por-sonido.
-        for (uint32_t i = 0; i < v.audio_occ_count; ++i)
-            im.rec_audio_hashes.push_back(v.audio_occs[i].hash);
-        im.rec_audio_off.push_back(static_cast<uint32_t>(im.rec_audio_hashes.size()));
+    if (im.recording.active()) {
+        im.recording.capture_frame(
+            {static_cast<uint16_t>(v.sprite_occ_count),
+             static_cast<uint16_t>(v.tile_occ_count),
+             static_cast<uint16_t>(v.audio_occ_count),
+             static_cast<uint16_t>(v.plane_a_count),
+             static_cast<uint16_t>(v.plane_b_count),
+             static_cast<uint16_t>(v.plane_w_count)},
+            {v.sprite_occs, v.sprite_occ_count},
+            {v.audio_occs, v.audio_occ_count});
         // Keyframe horneado (R7e): tras producir este frame, el estado da arranque
         // al SIGUIENTE frame de la toma (= rec_inputs.size()). Capturarlo en los
         // múltiplos de kReplayKeyInterval → seeks ≤ N frames sin re-simular desde 0.
-        const uint32_t rframe = static_cast<uint32_t>(im.rec_inputs.size());
-        if (rframe % kReplayKeyInterval == 0) {
+        const uint32_t rframe = static_cast<uint32_t>(im.recording.frame_count());
+        if (im.recording.keyframe_due(kReplayKeyInterval)) {
             std::vector<uint8_t> st;
             if (im.runner.serialize(st) && !st.empty())
-                im.rec_keyframes.emplace_back(rframe, std::move(st));
+                im.recording.add_keyframe(rframe, std::move(st));
         }
     }
     return v;
@@ -912,29 +912,11 @@ const FrameView& AytherSession::produce_frame() {
         // E-3 (): dual-path. `ayther_audio_write_v1` y RetroRunner::AudioWrite
         // tienen el mismo layout (cycle u32, addr u16, data u8, chip u8), así que
         // el consumidor de abajo no distingue de dónde vinieron.
-        AYTHER_LEGACY_READ_BEGIN
-        const auto* aw = im.runner.audio_writes();
-        uint32_t    naw = im.runner.audio_write_count();
-        AYTHER_LEGACY_READ_END
         static_assert(sizeof(ayther_audio_write_v1) == sizeof(RetroRunner::AudioWrite),
                       "el layout de la escritura de chip tiene que coincidir");
-        if (im.abi_snap_ok) {
-            im.abi_audio.resize(im.abi_snap.audio_write_count);
-            const auto ra = im.runner.read_audio_writes_v1(
-                im.abi_audio.data(),
-                static_cast<uint32_t>(im.abi_audio.size()), im.abi_snap);
-            if (ra.ok()) {
-                aw  = reinterpret_cast<const RetroRunner::AudioWrite*>(
-                          im.abi_audio.data());
-                naw = ra.count;
-            } else if (ra.status == AYTHER_STATUS_NOT_SUBSCRIBED &&
-                       !im.abi_audio_warned) {
-                im.abi_audio_warned = true;
-                std::fprintf(stderr,
-                    "[AytherSession] AUDIO_WRITES sin suscripcion — "
-                    "las escrituras siguen por el camino legacy\n");
-            }
-        }
+        const auto observed_audio = im.observer.audio_writes(im.runner);
+        const auto* aw = observed_audio.data;
+        const uint32_t naw = observed_audio.count;
         im.chip_writes.clear();
         if (aw && naw > 0) {
             static_assert(sizeof(RetroRunner::AudioWrite) == sizeof(AytherAudioWrite),
@@ -1495,31 +1477,11 @@ const FrameView& AytherSession::produce_frame() {
             // contra la generación del snapshot; sin ABI, del puntero de
             // siempre. El hasher espera entradas de 10 bytes en los dos casos
             // — `ayther_sprite_v1` ES ese layout, así que no hay conversión.
-            AYTHER_LEGACY_READ_BEGIN
-            const uint8_t* psp = im.runner.parsed_sprites();
-            uint32_t       pn  = im.runner.parsed_sprite_count();
-            AYTHER_LEGACY_READ_END
             static_assert(sizeof(ayther_sprite_v1) == 10,
                           "el hasher lee entradas de 10 bytes");
-            bool abi_sprites_ok = false;   // : la ABI respondió (aunque vacío)
-            if (im.abi_snap_ok) {
-                im.abi_sprites.resize(im.abi_snap.parsed_sprite_count);
-                const auto rs = im.runner.read_parsed_sprites_v1(
-                    im.abi_sprites.data(),
-                    static_cast<uint32_t>(im.abi_sprites.size()), im.abi_snap);
-                if (rs.ok()) {
-                    psp = reinterpret_cast<const uint8_t*>(im.abi_sprites.data());
-                    pn  = rs.count;
-                    im.abi_sprite_count = rs.count;   // lo LEIDO, no el buffer
-                    abi_sprites_ok      = true;
-                } else if (rs.status == AYTHER_STATUS_NOT_SUBSCRIBED &&
-                           !im.abi_sprites_warned) {
-                    im.abi_sprites_warned = true;
-                    std::fprintf(stderr,
-                        "[AytherSession] SPRITE_CAPTURE sin suscripcion — "
-                        "los sprites siguen por el camino legacy\n");
-                }
-            }
+            const auto observed_sprites = im.observer.parsed_sprites(im.runner);
+            const uint8_t* psp = observed_sprites.data;
+            const uint32_t pn = observed_sprites.count;
             // : CUANDO LA ABI CONTESTA, MANDA — aunque conteste "ninguno".
             // El fork publica los sprites que el VDP parseó en el frame; una
             // lista VACÍA significa que no dibujó ninguno (pantalla de mapa,
@@ -1528,7 +1490,7 @@ const FrameView& AytherSession::produce_frame() {
             // limpiar: 60 sprites fantasma sobre el mapa de Golden Axe, con sus
             // parches y sus recortes negros. El fallback a VRAM queda para lo
             // que siempre fue suyo: cores sin la capacidad (stock).
-            if (abi_sprites_ok || (psp && pn > 0)) {
+            if (observed_sprites.abi || (psp && pn > 0)) {
                 ayther_sprite_hasher_process_sprites(
                     im.sprite_hasher.get(), psp, pn, vram, vsz);
             } else {
@@ -1755,13 +1717,14 @@ const FrameView& AytherSession::produce_frame() {
                         // viewport y VDP_REGS hablan de dos frames distintos, y
                         // ese frame no se cose — mezclar las dos geometrías es
                         // exactamente lo que el flag vino a impedir.
-                        const bool geo_pending = im.sys_ok &&
-                            (im.sys.flags & AYTHER_SYSTEM_GEOMETRY_PENDING) != 0;
+                        const bool geo_pending = im.observer.system_available() &&
+                            (im.observer.system().flags & AYTHER_SYSTEM_GEOMETRY_PENDING) != 0;
                         if (!im.bg_scene_cut && !geo_pending) {
                         // h40 lo dice SYSTEM cuando el core lo da (ABI 1.5):
                         // la decodificación de reg 12 ya se corrigió una vez
                         // del lado del core sin que esta copia se enterara.
-                        const bool h40 = im.sys_ok ? im.sys.h40 != 0
+                        const bool h40 = im.observer.system_available()
+                            ? im.observer.system().h40 != 0
                                                    : (regs[0x0C] & 0x81) == 0x81;
                         const int scr_cols = h40 ? 40 : 32, scr_rows = 28;
                         struct L { uint8_t plane; uint32_t base; int64_t camx, camy; };
@@ -3890,8 +3853,8 @@ const FrameView& AytherSession::produce_frame() {
         // E-3 (): con ABI la señal viene en el snapshot del frame
         // (`fallback_reasons`); sin ABI, del contador legacy 0x10E.
         AYTHER_LEGACY_READ_BEGIN
-        const uint32_t raster = im.abi_snap_ok
-            ? im.runner.read_raster_fallback_v1(im.abi_snap)
+        const uint32_t raster = im.observer.snapshot_available()
+            ? im.runner.read_raster_fallback_v1(im.observer.snapshot())
             : im.runner.raster_dirty();
         AYTHER_LEGACY_READ_END
         v.scene_dirty = (raster > 0 ? 1 : 0)
@@ -3901,17 +3864,15 @@ const FrameView& AytherSession::produce_frame() {
         // una vez: OVERFLOW = la multicapa va a devolver RC_JOURNAL_OVERFLOW
         // (fallback, no prefijo); UNSUPPORTED_CONTROLS = un control que este
         // Engine pidió no aplica en este modo (el core lo rechazó).
-        if (im.abi_snap_ok) {
+        if (im.observer.snapshot_available()) {
             if ((raster & RetroRunner::kRasterReasonJournalOverflow) &&
-                !im.raster_overflow_logged) {
-                im.raster_overflow_logged = true;
+                im.observer.mark_raster_overflow_logged()) {
                 std::fprintf(stderr,
                     "[AytherSession] journal raster desbordado (>256 eventos en "
                     "un frame): fallback al frame emitido, sin recomposicion\n");
             }
             if ((raster & RetroRunner::kRasterReasonUnsupportedControls) &&
-                !im.raster_unsupported_logged) {
-                im.raster_unsupported_logged = true;
+                im.observer.mark_raster_unsupported_logged()) {
                 std::fprintf(stderr,
                     "[AytherSession] el core rechazo un control de render en "
                     "este modo (UNSUPPORTED_MODE): la sustitucion afectada "
@@ -4004,10 +3965,7 @@ void AytherSession::reset() {
     // E-2 (): las suscripciones NO se serializan y el core las limpia con
     // retro_reset — sin volver a pedirlas, todo lo que se observa por la ABI
     // quedaría mudo desde acá en adelante, y en silencio.
-    if (im.ayther_subs_requested && im.runner.has_ayther_v1()) {
-        im.ayther_subs_verified = false;
-        im.runner.ayther_api()->set_subscriptions(im.ayther_subs_requested);
-    }
+    im.observer.reapply_subscriptions(im.runner);
     im.rewind.clear();           // timeline branched
     im.poke_dirty = false;       // estado limpio (M5)
     im.replay_pos = -1;          // cursor de replay inválido (R7d)
@@ -5618,41 +5576,23 @@ bool AytherSession::export_channel_wav(const AytherRecording& rec, uint32_t star
 // ---------------------------------------------------------------------------
 void AytherSession::record_start() {
     Impl& im = *impl_;
-    im.rec_inputs.clear();
-    im.rec_stats.clear();
-    im.rec_hashes.clear();
-    im.rec_hash_off.assign(1, 0);   // CSR starts with a single 0 boundary
-    im.rec_audio_hashes.clear();
-    im.rec_audio_off.assign(1, 0);  // CSR de audio: idem (.arp v7)
-    im.rec_keyframes.clear();       // R7e: keyframes horneados de esta toma
-    im.rec_active = im.runner.serialize(im.rec_initial);   // capture the initial state
-    if (!im.rec_active)
+    std::vector<uint8_t> initial_state;
+    if (im.runner.serialize(initial_state)) {
+        im.recording.start(std::move(initial_state));
+    } else {
+        im.recording.stop();
         std::fprintf(stderr, "[AytherSession] record_start: serialize failed\n");
+    }
 }
 
-void AytherSession::record_stop() { impl_->rec_active = false; }
+void AytherSession::record_stop() { impl_->recording.stop(); }
 
-bool   AytherSession::recording()        const noexcept { return impl_->rec_active; }
-size_t AytherSession::recorded_frames()  const noexcept { return impl_->rec_inputs.size(); }
+bool AytherSession::recording() const noexcept { return impl_->recording.active(); }
+size_t AytherSession::recorded_frames() const noexcept { return impl_->recording.frame_count(); }
 
 AytherRecording AytherSession::take_recording() {
     Impl& im = *impl_;
-    AytherRecording rec;
-    rec.game_id       = game_id();
-    rec.initial_state = im.rec_initial;       // copy (the take outlives the buffer)
-    rec.inputs        = im.rec_inputs;
-    rec.stats         = im.rec_stats;
-    rec.sprite_hashes = im.rec_hashes;
-    rec.hash_offsets  = im.rec_hash_off;   // already CSR with frame_count()+1 entries
-    rec.audio_hashes  = im.rec_audio_hashes;
-    rec.audio_offsets = im.rec_audio_off;  // CSR de audio (.arp v7)
-    rec.trim_in       = 0;
-    rec.trim_out      = rec.frame_count();
-    // R7e: hornear los keyframes captados (comprimidos) en el .arp.
-    for (auto& [frame, st] : im.rec_keyframes) rec.add_keyframe(frame, st);
-    im.rec_keyframes.clear();
-    im.rec_active = false;
-    return rec;
+    return im.recording.take(game_id());
 }
 
 // Captura un keyframe RAW del estado vivo en replay_keys[key] si cae en frontera
@@ -5808,14 +5748,12 @@ const FrameView* AytherSession::replay_seek(const AytherRecording& rec, uint32_t
                 // lleguen enteras, sin arrastrar las del anterior.
                 ayther_frame_snapshot_v1 bs{};
                 if (im.runner.capture_frame_snapshot(bs).ok()) {
-                    im.abi_audio.resize(bs.audio_write_count);
-                    const auto rb = im.runner.read_audio_writes_v1(
-                        im.abi_audio.data(),
-                        static_cast<uint32_t>(im.abi_audio.size()), bs);
-                    if (rb.ok())
+                    const auto writes = im.observer.audio_writes(
+                        im.runner, bs, /*legacy_fallback=*/false);
+                    if (writes.data)
                         im.voice_capture(
-                            reinterpret_cast<const AytherAudioWrite*>(
-                                im.abi_audio.data()), rb.count, i);
+                            reinterpret_cast<const AytherAudioWrite*>(writes.data),
+                            writes.count, i);
                 } else {
                     // Sin ABI: el log acumula (ya no hay reset que lo corte),
                     // así que el router ve de más. El router exige el fork de
@@ -6141,22 +6079,23 @@ const char* AytherSession::ayther_build_id() const noexcept {
 AytherSession::SystemInfo AytherSession::system_info() const noexcept {
     const Impl& im = *impl_;
     SystemInfo o;
-    if (!im.sys_ok) return o;
+    if (!im.observer.system_available()) return o;
+    const ayther_system_v1& sys = im.observer.system();
     o.ok = true;
-    o.system_hw = im.sys.system_hw;   o.region_pal = im.sys.region_pal;
-    o.vdp_mode  = im.sys.vdp_mode;    o.interlace  = im.sys.interlace;
-    o.h40       = im.sys.h40;         o.shadow_highlight = im.sys.shadow_highlight;
-    o.lines_per_frame = im.sys.lines_per_frame;
-    o.viewport_x = im.sys.viewport_x; o.viewport_y = im.sys.viewport_y;
-    o.viewport_w = im.sys.viewport_w; o.viewport_h = im.sys.viewport_h;
-    o.geometry_pending = (im.sys.flags & AYTHER_SYSTEM_GEOMETRY_PENDING) != 0;
+    o.system_hw = sys.system_hw;   o.region_pal = sys.region_pal;
+    o.vdp_mode  = sys.vdp_mode;    o.interlace  = sys.interlace;
+    o.h40       = sys.h40;         o.shadow_highlight = sys.shadow_highlight;
+    o.lines_per_frame = sys.lines_per_frame;
+    o.viewport_x = sys.viewport_x; o.viewport_y = sys.viewport_y;
+    o.viewport_w = sys.viewport_w; o.viewport_h = sys.viewport_h;
+    o.geometry_pending = (sys.flags & AYTHER_SYSTEM_GEOMETRY_PENDING) != 0;
     return o;
 }
 
 void AytherSession::ayther_subscriptions(uint32_t* requested, uint32_t* active,
                                          uint32_t* supported) const noexcept {
     const Impl& im = *impl_;
-    if (requested) *requested = im.ayther_subs_requested;
+    if (requested) *requested = im.observer.requested_subscriptions();
     if (active)    *active    = 0;
     if (supported) *supported = 0;
     if (!im.runner.has_ayther_v1()) return;
@@ -7073,11 +7012,7 @@ const uint8_t* AytherSession::vdp_regs(size_t* size) const {
 const uint8_t* AytherSession::parsed_sprites_raw(uint8_t* count) const {
     // E-5: con ABI, el espejo que produce_frame ya leyó por read_region; sin
     // ABI, el puntero del core.
-    if (impl_->abi_snap_ok && impl_->abi_sprite_count) {
-        if (count) *count = static_cast<uint8_t>(
-            (std::min<uint32_t>)(impl_->abi_sprite_count, 255u));
-        return reinterpret_cast<const uint8_t*>(impl_->abi_sprites.data());
-    }
+    if (const uint8_t* cached = impl_->observer.cached_parsed_sprites(count)) return cached;
     AYTHER_LEGACY_READ_BEGIN
     if (count) *count = impl_->runner.parsed_sprite_count();
     return impl_->runner.parsed_sprites();
@@ -7159,7 +7094,7 @@ AytherSession::Layers AytherSession::recompose_layers() {
     const ayther_interface_v1* api = im.runner.ayther_api();
     if (!(api->capabilities & AYTHER_CAP_RECOMPOSE_V1))
         return fallar(AYTHER_STATUS_UNSUPPORTED);
-    if (!(im.ayther_subs_requested & AYTHER_SUB_RECOMPOSITION))
+    if (!(im.observer.requested_subscriptions() & AYTHER_SUB_RECOMPOSITION))
         return fallar(AYTHER_STATUS_NOT_SUBSCRIBED);
 
     // El símbolo se resuelve UNA vez: es un lookup en la tabla de exports del

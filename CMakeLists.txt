@@ -169,6 +169,10 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/psg_synth.cpp
     src/retro_runner.cpp
     src/rewind_buffer.cpp
+    src/session/emulation_observer.cpp
+    src/session/emulation_observer.h
+    src/session/recording_controller.cpp
+    src/session/recording_controller.h
     src/voice_router.cpp
     src/vulkan_backend/tile_tex_cache.cpp
     src/vulkan_backend/vk_context.cpp

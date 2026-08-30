@@ -87,15 +87,18 @@ itself solve callbacks that escape the initiating call.
 
 ### 5. Decompose `AytherSession::Impl`
 
-**Severity:** resolved for translation-unit size; controller extraction remains
+**Severity:** partially resolved; controller extraction in progress
 
 The former `src/ayther_session.cpp` exceeded eleven thousand lines. Its private
 state/runtime definition now lives in `src/ayther_session_impl.inl`, while the
 facade operations remain in `src/ayther_session.cpp`; neither file exceeds the
-review threshold. The implementation object still owns emulator observation,
-identity, packs, scripts, audio, video,
-recording, rewind, export, compatibility, and authoring state. This makes
-invariants difficult to review and encourages temporal coupling.
+review threshold. `EmulationObserver` now owns ABI subscriptions, frame mirrors,
+and legacy observation fallback, while `RecordingController` owns the live-take
+state machine, CSR histories, and baked keyframes. Both remain private engine
+components behind the `AytherSession` facade, and recording is independently
+unit tested. The implementation object still owns identity, packs, scripts,
+audio, video, rewind, export, compatibility, and authoring state, so further
+cohesive extraction remains warranted.
 
 **Correction:** retain `AytherSession` as the facade, but delegate to cohesive
 owners such as `EmulationObserver`, `PackRuntime`, `FrameIdentityPipeline`,

@@ -24,7 +24,8 @@ function(ayther_add_native_test _source _category)
         Ayther::engine
         Ayther::core)
     target_include_directories("${_target}" PRIVATE
-        "${PROJECT_SOURCE_DIR}/include/ayther")
+        "${PROJECT_SOURCE_DIR}/include/ayther"
+        "${PROJECT_SOURCE_DIR}/src")
     target_compile_features("${_target}" PRIVATE cxx_std_20)
     ayther_instrument_target("${_target}")
 

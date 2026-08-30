@@ -3,6 +3,8 @@
 // ---------------------------------------------------------------------------
 struct AytherSession::Impl {
     RetroRunner runner;                       // emulator host
+    session::EmulationObserver observer;      // ABI observation + legacy fallback
+    session::RecordingController recording;   // deterministic live capture
     std::string core_path, rom_path;
 
     TileHasherPtr   tile_hasher;              // ayther_core handles (RAII)
@@ -181,17 +183,6 @@ struct AytherSession::Impl {
     RewindBuffer rewind;
     std::vector<uint8_t> rewind_scratch;   // reused serialize buffer (no per-frame alloc)
     float speed = 1.0f;                    // fast-forward multiplier (frontend reads it)
-
-    // Recording (R7) — capture the input stream + an initial state for .arp.
-    bool                  rec_active = false;
-    std::vector<uint16_t> rec_inputs;
-    std::vector<FrameStat> rec_stats;      // per-frame occurrence summary (R7b)
-    std::vector<uint64_t> rec_hashes;      // flat sprite-hash history (R7c, CSR)
-    std::vector<uint32_t> rec_hash_off;    // CSR offsets, starts {0}
-    std::vector<uint64_t> rec_audio_hashes; // flat audio-hash history (.arp v7, CSR)
-    std::vector<uint32_t> rec_audio_off;    // CSR offsets, starts {0}
-    std::vector<uint8_t>  rec_initial;     // savestate at record start
-    uint16_t              last_input0 = 0; // most recent port-0 input (logged each step)
 
     // Aislar capas (Lab Editar): máscara de capas DESEADA (bits A/B/Window/
     // Sprites). Se aplica SOLO en produce_frame (el frame visible); tras él, los
@@ -724,10 +715,6 @@ struct AytherSession::Impl {
     std::map<uint32_t, std::vector<uint8_t>> replay_keys;
     std::vector<uint8_t>                     kf_scratch;   // savestate horneado descomprimido (on-demand)
 
-    // Keyframes horneados captados durante la grabación (crudos; se comprimen al
-    // cerrar la toma en take_recording → AytherRecording::keyframes).
-    std::vector<std::pair<uint32_t, std::vector<uint8_t>>> rec_keyframes;
-
     // Seek en chunks (R7e): reparte un seek frío (decenas de miles de frames)
     // entre frames de UI para no congelar la app. Mantiene la máquina a media
     // cadena bare entre llamadas; el resultado es idéntico a replay_seek.
@@ -873,150 +860,12 @@ struct AytherSession::Impl {
     std::unordered_map<uint64_t, AudioMatchRuleInfo> audio_event_rule;
     AudioMatchIndex audio_match_index;
 
-    // ---- E-2 (): suscripciones de la ABI AYTHER v1 ---------------------
-    // El fork compila con el perfil ESTÁNDAR: ningún subsistema de observación
-    // trabaja hasta que el frontend declare qué necesita. Los accesos legacy
-    // (0x100-0x10E) funcionaban salteándose ese sistema — escribían la memoria
-    // del core directo—, así que con la ABI hay que pedir explícitamente.
-    //
-    // Se pide `AYTHER_SUB_ALL & supported_mask` y no `ALL` a secas: el core
-    // puede estar compilado sin algún subsistema, y pedir lo que no existe
-    // haría fallar la llamada entera en vez de degradar.
-    uint32_t ayther_subs_requested = 0;
-    bool     ayther_subs_verified  = false;
     // : telemetría del juez de framebuffer (última pasada de scene_inventory).
     mutable uint32_t judge_occs = 0, judge_dropped = 0, judge_opaque = 0, judge_hits = 0;
 
-    /// Pide las suscripciones. No-op con un core sin ABI (camino legacy).
-    void activate_ayther_subscriptions() {
-        if (!runner.has_ayther_v1()) return;
-        const ayther_interface_v1* api = runner.ayther_api();
-        if (!(api->capabilities & AYTHER_CAP_SUBSCRIPTIONS_V1)) return;
-        ayther_subscription_state_v1 st{};
-        st.struct_size = sizeof(st);
-        if (api->get_subscriptions(&st, sizeof(st)) != AYTHER_STATUS_OK) {
-            std::fprintf(stderr,
-                "[AytherSession] get_subscriptions fallo — sin suscripciones\n");
-            return;
-        }
-        // Only what the Engine reads (docs/EMULATOR_EXTENSION_ABI.md#subscriptions).
-        // AYTHER_SUB_ALL became
-        // de 0x7F a 0xFFF y los bits nuevos cuestan por frame sin que nadie
-        // los consuma todavía — ver RetroRunner::kEngineSubscriptions.
-        const uint32_t want = RetroRunner::kEngineSubscriptions & st.supported_mask;
-        const int32_t  rc   = api->set_subscriptions(want);
-        if (rc != AYTHER_STATUS_OK) {
-            std::fprintf(stderr,
-                "[AytherSession] set_subscriptions fallo: %d\n", rc);
-            return;
-        }
-        ayther_subs_requested = want;
-        ayther_subs_verified  = false;   // se confirma tras el primer frame
-        std::fprintf(stdout,
-            "[AytherSession] suscripciones AYTHER pedidas: 0x%08X "
-            "(soportadas: 0x%08X)\n",
-            want, st.supported_mask);
-    }
+    void activate_ayther_subscriptions() { observer.activate_subscriptions(runner); }
 
-    // ---- E-3 (): el ESPEJO por frame de la ABI -------------------------
-    // Los callers del camino por frame leían punteros VIVOS del core
-    // (`video_ram()`, `color_ram()`…). Con la ABI la lectura es una copia
-    // validada contra la generación del snapshot, así que el dual-path vive
-    // ACÁ, en un solo lugar, y no repartido en los ~25 sitios que consumen esos
-    // punteros: cada uno de esos sitios es una oportunidad de equivocarse, y el
-    // objetivo de E-3 —que los bytes vengan por la ABI— se cumple igual.
-    //
-    // El espejo se refresca UNA vez por frame, después de `run_frame`, que es
-    // cuando la ABI ya cerró su frame boundary. Sin ABI queda vacío y los
-    // helpers devuelven el puntero legacy de siempre.
-    ayther_frame_snapshot_v1 abi_snap{};
-    bool                     abi_snap_ok = false;
-    // ABI 1.5 `SYSTEM`: modo del VDP y viewport del contenido cargado, leído
-    // once when creating the session (docs/EMULATOR_EXTENSION_ABI.md#observation-regions).
-    // `sys_ok` = the core supplied it;
-    // sin él (stock, fork viejo) se decodifican registros como siempre.
-    ayther_system_v1         sys{};
-    bool                     sys_ok = false;
-    bool                     sys_logged = false;   ///< el primer frame con modo, una vez
-    // ABI fallback semantics: two reasons deserve a dedicated warning, once
-    // vez por sesión — el resto de la máscara sigue siendo «fallback» a secas.
-    bool                     raster_overflow_logged  = false;
-    bool                     raster_unsupported_logged = false;
-    std::vector<uint8_t>     abi_vram, abi_cram, abi_regs, abi_vsram;
-    std::vector<ayther_sprite_v1>      abi_sprites;
-    // Cuántas entradas de `abi_sprites` son VÁLIDAS. El vector se dimensiona
-    // con el count del snapshot, pero la lectura devuelve el suyo y puede ser
-    // menor: usar size() como cantidad publica la cola sin llenar como si
-    // fueran sprites reales (y el viewport los dibuja con patrones basura).
-    // 0 = el espejo no tiene nada que ofrecer; el caller cae al legacy.
-    uint32_t                           abi_sprite_count = 0;
-    std::vector<ayther_audio_write_v1> abi_audio;
-    bool abi_sprites_warned = false, abi_audio_warned = false;
-
-    // Escape hatch de diagnóstico: AYTHER_ABI_MIRROR=0 apaga el espejo y deja
-    // todo el dual-path cayendo al legacy. Sirve para aislar en UNA corrida si
-    // una diferencia visual/de detección viene del espejo o de otro lado, con
-    // el MISMO binario a los dos lados del A/B.
-    static bool mirror_enabled() {
-        static const bool on = [] {
-            const char* v = ayther::env_get("AYTHER_ABI_MIRROR");
-            return !(v && v[0] == '0');
-        }();
-        return on;
-    }
-
-    void refresh_abi_mirror() {
-        abi_snap_ok = false;
-        abi_sprites.clear();
-        abi_sprite_count = 0;
-        abi_audio.clear();
-        if (!mirror_enabled()) return;
-        if (!runner.has_ayther_v1()) return;
-        if (!runner.capture_frame_snapshot(abi_snap).ok()) return;
-        // SYSTEM se refresca POR FRAME, no una vez: al crear la sesión el VDP
-        // todavía no eligió modo (`vdp_mode == 0`, viewport por defecto) y
-        // h40/interlace cambian con el juego. Es una lectura chica y sin
-        // suscripción — se llena al leer.
-        sys_ok = runner.read_system_v1(sys).ok();
-        if (sys_ok && !sys_logged && sys.vdp_mode != 0) {
-            sys_logged = true;
-            std::fprintf(stdout,
-                "[AytherSession] SYSTEM: hw=0x%02X vdp_mode=%u h40=%u interlace=%u "
-                "sh=%u %s lines=%u viewport=%ux%u@(%u,%u) geometry_pending=%u\n",
-                sys.system_hw, sys.vdp_mode, sys.h40, sys.interlace,
-                sys.shadow_highlight, sys.region_pal ? "PAL" : "NTSC",
-                sys.lines_per_frame, sys.viewport_w, sys.viewport_h,
-                sys.viewport_x, sys.viewport_y,
-                (unsigned)(sys.flags & AYTHER_SYSTEM_GEOMETRY_PENDING));
-        }
-        // El buffer se dimensiona por el MAYOR de los dos tamaños declarados:
-        // `read_*_v1` escribe los bytes que dice la ABI (`query_region`), no los
-        // que dice `retro_get_memory_size`. Hoy coinciden, pero dimensionar por
-        // el número legacy era apostar a que sigan coincidiendo — y esa apuesta
-        // se paga con un desbordamiento de heap, no con un dato raro.
-        auto read_region = [&](std::vector<uint8_t>& dst, size_t n_legacy, uint32_t region,
-                        RetroRunner::AytherReadResult (RetroRunner::*fn)(
-                            void*, const ayther_frame_snapshot_v1&) const) {
-            const size_t n_abi = runner.abi_region_bytes(region);
-            const size_t n     = n_abi > n_legacy ? n_abi : n_legacy;
-            if (!n) { dst.clear(); return; }
-            dst.resize(n);
-            const auto r = (runner.*fn)(dst.data(), abi_snap);
-            // Y se publica lo LEÍDO, no lo pedido: una lectura corta dejaría la
-            // cola sin llenar viajando como si fuera memoria del core (es el
-            // defecto que ya mordió en los sprites del viewport, ).
-            // Truncar NO alcanza: los accessors públicos (`vdp_regs(&size)` y
-            // compañía) devuelven el puntero del espejo con el tamaño LEGACY,
-            // así que un espejo más corto se leería de más. Una lectura corta
-            // lo vuelve inservible → se cae al legacy, que sí mide lo que dice.
-            if (!r.ok() || (r.count && r.count < n)) dst.clear();
-        };
-        read_region(abi_vram,  runner.video_ram_size(), AYTHER_REGION_VRAM,     &RetroRunner::read_vram_v1);
-        read_region(abi_cram,  runner.color_ram_size(), AYTHER_REGION_CRAM,     &RetroRunner::read_cram_v1);
-        read_region(abi_regs,  runner.vdp_regs_size(),  AYTHER_REGION_VDP_REGS, &RetroRunner::read_vdp_regs_v1);
-        read_region(abi_vsram, runner.vsram_size(),     AYTHER_REGION_VSRAM,    &RetroRunner::read_vsram_v1);
-        abi_snap_ok = true;
-    }
+    void refresh_abi_mirror() { observer.refresh(runner); }
 
     // Los helpers del dual-path. Si una región del espejo quedó vacía (no
     // suscripta, o el core la rechazó) se cae al puntero legacy en vez de
@@ -1024,40 +873,23 @@ struct AytherSession::Impl {
     // detección de sprites porque una lectura falló.
     AYTHER_LEGACY_READ_BEGIN
     const uint8_t* vram_ptr()  const {
-        return !abi_vram.empty()  ? abi_vram.data()  : runner.video_ram();
+        return observer.vram(runner);
     }
     const uint8_t* cram_ptr()  const {
-        return !abi_cram.empty()  ? abi_cram.data()  : runner.color_ram();
+        return observer.cram(runner);
     }
     const uint8_t* regs_ptr()  const {
-        return !abi_regs.empty()  ? abi_regs.data()  : runner.vdp_regs();
+        return observer.regs(runner);
     }
     const uint8_t* vsram_ptr() const {
-        return !abi_vsram.empty() ? abi_vsram.data() : runner.vsram();
+        return observer.vsram(runner);
     }
     AYTHER_LEGACY_READ_END
 
     /// Confirma —UNA vez, tras el primer frame— que el core las activó. Es
     /// diagnóstico y no bloquea: las suscripciones entran en el frame boundary,
     /// así que preguntarlo antes de correr un frame siempre daría 0.
-    void verify_ayther_subscriptions() {
-        if (ayther_subs_verified || !ayther_subs_requested) return;
-        if (!runner.has_ayther_v1()) return;
-        const ayther_interface_v1* api = runner.ayther_api();
-        if (!(api->capabilities & AYTHER_CAP_SUBSCRIPTIONS_V1)) return;
-        ayther_subscription_state_v1 st{};
-        st.struct_size = sizeof(st);
-        if (api->get_subscriptions(&st, sizeof(st)) != AYTHER_STATUS_OK) return;
-        if (st.active_mask == ayther_subs_requested)
-            std::fprintf(stdout,
-                "[AytherSession] suscripciones AYTHER activas: 0x%08X\n",
-                st.active_mask);
-        else
-            std::fprintf(stderr,
-                "[AytherSession] suscripciones DESALINEADAS — activas=0x%08X "
-                "pedidas=0x%08X\n", st.active_mask, ayther_subs_requested);
-        ayther_subs_verified = true;
-    }
+    void verify_ayther_subscriptions() { observer.verify_subscriptions(runner); }
     // ---- E-7 (): capas del VDP ----------------------------------------
     // Los cinco buffers viven acá y se reusan: a 320x224 son 5 x 143 KB, y
     // realocarlos por frame seria pagar un malloc por capa a 60 Hz. Orden:
@@ -2314,13 +2146,10 @@ struct AytherSession::Impl {
             uint32_t wc = 0;
             ayther_frame_snapshot_v1 bs{};
             if (runner.capture_frame_snapshot(bs).ok()) {
-                abi_audio.resize(bs.audio_write_count);
-                const auto rb = runner.read_audio_writes_v1(
-                    abi_audio.data(), static_cast<uint32_t>(abi_audio.size()), bs);
-                if (rb.ok()) {
-                    w  = reinterpret_cast<const AytherAudioWrite*>(abi_audio.data());
-                    wc = rb.count;
-                }
+                const auto writes = observer.audio_writes(
+                    runner, bs, /*legacy_fallback=*/false);
+                w = reinterpret_cast<const AytherAudioWrite*>(writes.data);
+                wc = writes.count;
             } else {
                 AYTHER_LEGACY_READ_BEGIN
                 w  = reinterpret_cast<const AytherAudioWrite*>(runner.audio_writes());
