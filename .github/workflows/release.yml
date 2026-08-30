@@ -51,26 +51,94 @@ jobs:
           development_signature_is_rejected_in_release
 
   build:
-    name: Build reproducible ${{ matrix.platform }} package
+    # v0.1.x ships three artifact families. Each one is built, TESTED, unpacked,
+    # payload-checked, and consumed from its own packed archive before it is
+    # allowed anywhere near the publish job.
+    name: ${{ matrix.product }} ${{ matrix.platform }}
     needs: validate
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            preset: linux-release
+          - kind: core
+            product: ayther-core
+            os: ubuntu-latest
             platform: linux-x86_64
+            preset: linux-release
+            compiler: clang++
+            consumer_source: tests/package_consumer_core
+            consumer_executable: ayther_core_package_consumer
+            needs_vcpkg: false
+            needs_vpx: false
+            bundled_vpx: false
             native_flags: -ffile-prefix-map=${{ github.workspace }}=/usr/src/ayther
-          - os: windows-latest
-            preset: windows-release
+          - kind: core
+            product: ayther-core
+            os: windows-latest
             platform: windows-x86_64
+            preset: windows-release
+            compiler: clang-cl
+            consumer_source: tests/package_consumer_core
+            consumer_executable: ayther_core_package_consumer.exe
+            needs_vcpkg: false
+            needs_vpx: false
+            bundled_vpx: false
+            native_flags: /Brepro /pathmap:${{ github.workspace }}=/usr/src/ayther
+          - kind: engine
+            product: ayther-engine
+            os: ubuntu-latest
+            platform: linux-x86_64
+            preset: linux-release-engine
+            compiler: clang++
+            consumer_source: tests/package_consumer
+            consumer_executable: ayther_package_consumer
+            needs_vcpkg: true
+            needs_vpx: false
+            bundled_vpx: false
+            native_flags: -ffile-prefix-map=${{ github.workspace }}=/usr/src/ayther
+          - kind: engine
+            product: ayther-engine
+            os: windows-latest
+            platform: windows-x86_64
+            preset: windows-release-engine
+            compiler: clang-cl
+            consumer_source: tests/package_consumer
+            consumer_executable: ayther_package_consumer.exe
+            needs_vcpkg: true
+            needs_vpx: false
+            bundled_vpx: false
+            native_flags: /Brepro /pathmap:${{ github.workspace }}=/usr/src/ayther
+          - kind: engine-vpx
+            product: ayther-engine-vpx
+            os: ubuntu-latest
+            platform: linux-x86_64
+            preset: linux-release-engine-vpx
+            compiler: clang++
+            consumer_source: tests/package_consumer
+            consumer_executable: ayther_package_consumer
+            needs_vcpkg: true
+            needs_vpx: true
+            bundled_vpx: false
+            native_flags: -ffile-prefix-map=${{ github.workspace }}=/usr/src/ayther
+          - kind: engine-vpx
+            product: ayther-engine-vpx
+            os: windows-latest
+            platform: windows-x86_64
+            preset: windows-release-engine-vpx
+            compiler: clang-cl
+            consumer_source: tests/package_consumer
+            consumer_executable: ayther_package_consumer.exe
+            needs_vcpkg: true
+            needs_vpx: true
+            bundled_vpx: true
             native_flags: /Brepro /pathmap:${{ github.workspace }}=/usr/src/ayther
     env:
       CFLAGS: ${{ matrix.native_flags }}
       CXXFLAGS: ${{ matrix.native_flags }}
       RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/usr/src/ayther -C strip=debuginfo
+      ARTIFACT_NAME: ${{ matrix.product }}-${{ github.ref_name }}-${{ matrix.platform }}
     steps:
       - name: Check out the exact tag and history
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -87,14 +155,48 @@ jobs:
           }
           "SOURCE_DATE_EPOCH=$epoch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Select the runner vcpkg installation
+        if: matrix.needs_vcpkg
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Linux VPX development files
+        if: runner.os == 'Linux' && matrix.needs_vpx
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libvpx-dev pkg-config
+
+      - name: Ensure NASM is available for Windows VPX
+        if: runner.os == 'Windows' && matrix.needs_vpx
+        shell: pwsh
+        run: |
+          if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install nasm --yes --no-progress
+            'C:\Program Files\NASM' |
+              Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Build the pinned Windows VPX decoder
+        if: runner.os == 'Windows' && matrix.needs_vpx
+        shell: pwsh
+        run: ./tools/build_libvpx.ps1
+
       - name: Fetch the exact locked Rust dependency graph
         run: cargo fetch --locked
 
-      - name: Configure optimized core package
+      - name: Configure
         run: cmake --preset ${{ matrix.preset }}
 
-      - name: Build optimized core package
+      - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Run the native CTest suite for this artifact
+        run: ctest --preset ${{ matrix.preset }}
 
       - name: Install into an isolated prefix
         run: >-
@@ -106,48 +208,103 @@ jobs:
         run: >-
           ./tools/gen_release_sbom.ps1
           -InstallDirectory '${{ runner.temp }}/ayther-install'
-          -OutputFile 'release-out/ayther-engine-${{ github.ref_name }}-${{ matrix.platform }}.spdx.json'
+          -OutputFile "release-out/$env:ARTIFACT_NAME.spdx.json"
           -Platform '${{ matrix.platform }}'
+          -Product '${{ matrix.product }}'
           -SourceDateEpoch $env:SOURCE_DATE_EPOCH
 
       - name: Package the install tree twice
         shell: pwsh
         run: |
-          $name = 'ayther-engine-${{ github.ref_name }}-${{ matrix.platform }}'
           ./tools/package_release.ps1 `
             -InputDirectory '${{ runner.temp }}/ayther-install' `
-            -OutputFile "release-out/$name.zip" `
-            -ArchiveRoot $name `
+            -OutputFile "release-out/$env:ARTIFACT_NAME.zip" `
+            -ArchiveRoot $env:ARTIFACT_NAME `
             -SourceDateEpoch $env:SOURCE_DATE_EPOCH
           ./tools/package_release.ps1 `
             -InputDirectory '${{ runner.temp }}/ayther-install' `
-            -OutputFile "repro-check/$name.zip" `
-            -ArchiveRoot $name `
+            -OutputFile "repro-check/$env:ARTIFACT_NAME.zip" `
+            -ArchiveRoot $env:ARTIFACT_NAME `
             -SourceDateEpoch $env:SOURCE_DATE_EPOCH
 
       - name: Require byte-identical repeated packaging
         shell: pwsh
         run: |
-          $name = 'ayther-engine-${{ github.ref_name }}-${{ matrix.platform }}.zip'
-          $first = (Get-FileHash -Algorithm SHA256 "release-out/$name").Hash
-          $second = (Get-FileHash -Algorithm SHA256 "repro-check/$name").Hash
+          $first = (Get-FileHash -Algorithm SHA256 "release-out/$env:ARTIFACT_NAME.zip").Hash
+          $second = (Get-FileHash -Algorithm SHA256 "repro-check/$env:ARTIFACT_NAME.zip").Hash
           if ($first -ne $second) {
             throw "Packaging is not reproducible: $first != $second"
           }
 
+      # Everything below validates the PACKED ARCHIVE rather than the install
+      # tree it came from, so a packaging bug cannot slip past the gate.
+      - name: Unpack the artifact into an empty prefix
+        shell: pwsh
+        run: |
+          $target = Join-Path '${{ runner.temp }}' 'artifact'
+          if (Test-Path -LiteralPath $target) {
+            Remove-Item -Recurse -Force -LiteralPath $target
+          }
+          New-Item -ItemType Directory -Path $target | Out-Null
+          Expand-Archive -LiteralPath "release-out/$env:ARTIFACT_NAME.zip" -DestinationPath $target
+          "AYTHER_PREFIX=$target/$env:ARTIFACT_NAME" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify the artifact carries exactly its advertised payload
+        shell: pwsh
+        run: >-
+          ./tools/check_release_payload.ps1
+          -Directory $env:AYTHER_PREFIX
+          -Kind '${{ matrix.kind }}'
+          ${{ matrix.bundled_vpx && '-RequireBundledVpx' || '' }}
+
+      - name: Configure the out-of-tree package consumer
+        shell: pwsh
+        run: |
+          $arguments = @(
+            '-S', '${{ matrix.consumer_source }}',
+            '-B', '${{ runner.temp }}/ayther-consumer',
+            '-G', 'Ninja',
+            '-DCMAKE_BUILD_TYPE=Release',
+            '-DCMAKE_CXX_COMPILER=${{ matrix.compiler }}',
+            "-DCMAKE_PREFIX_PATH=$env:AYTHER_PREFIX"
+          )
+          if ('${{ matrix.needs_vcpkg }}' -eq 'true') {
+            $arguments += "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          }
+          cmake @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Consumer configuration failed.' }
+
+      - name: Build the out-of-tree package consumer
+        run: cmake --build '${{ runner.temp }}/ayther-consumer'
+
+      - name: Run the out-of-tree package consumer
+        shell: pwsh
+        run: >-
+          & '${{ runner.temp }}/ayther-consumer/${{ matrix.consumer_executable }}'
+
       - name: Upload immutable release inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-${{ matrix.platform }}
+          name: release-${{ matrix.product }}-${{ matrix.platform }}
           path: release-out/*
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain CTest diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ctest-${{ matrix.product }}-${{ matrix.platform }}
+          path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
           retention-days: 14
 
   publish:
     name: Sign, attest, and publish
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment: release
     permissions:
       contents: write
@@ -155,6 +312,11 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
+      - name: Check out the exact tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
       - name: Download immutable build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -162,15 +324,36 @@ jobs:
           path: release-out
           merge-multiple: true
 
+      - name: Require exactly the advertised artifact set
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $expected = @()
+          foreach ($product in 'ayther-core', 'ayther-engine', 'ayther-engine-vpx') {
+            foreach ($platform in 'linux-x86_64', 'windows-x86_64') {
+              $expected += "$product-$tag-$platform.zip"
+              $expected += "$product-$tag-$platform.spdx.json"
+            }
+          }
+          $expected = $expected | Sort-Object
+          $actual = @(Get-ChildItem -LiteralPath release-out -File |
+            Where-Object Name -NotLike '*.sigstore.json' |
+            ForEach-Object Name | Sort-Object)
+          $missing = @($expected | Where-Object { $_ -notin $actual })
+          $unexpected = @($actual | Where-Object { $_ -notin $expected })
+          foreach ($name in $missing) { Write-Host "  MISSING     $name" }
+          foreach ($name in $unexpected) { Write-Host "  UNEXPECTED  $name" }
+          if ($missing.Count -gt 0 -or $unexpected.Count -gt 0) {
+            throw 'The release asset set does not match the advertised scope.'
+          }
+          Write-Host "All $($expected.Count) release assets present."
+
       - name: Generate deterministic checksums
         shell: pwsh
         run: |
           $assets = Get-ChildItem -LiteralPath release-out -File |
             Where-Object Name -NotLike '*.sigstore.json' |
             Sort-Object Name
-          if ($assets.Count -ne 4) {
-            throw "Expected two archives and two SBOMs, found $($assets.Count)."
-          }
           $lines = foreach ($asset in $assets) {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $asset.FullName).Hash.ToLowerInvariant()
             "$hash *$($asset.Name)"
@@ -204,17 +387,48 @@ jobs:
         with:
           subject-path: release-out/*.zip
 
-      - name: Attest Linux SBOM
+      - name: Attest ayther-core linux SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/ayther-core-${{ github.ref_name }}-linux-x86_64.zip
+          sbom-path: release-out/ayther-core-${{ github.ref_name }}-linux-x86_64.spdx.json
+
+      - name: Attest ayther-core windows SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/ayther-core-${{ github.ref_name }}-windows-x86_64.zip
+          sbom-path: release-out/ayther-core-${{ github.ref_name }}-windows-x86_64.spdx.json
+
+      - name: Attest ayther-engine linux SBOM
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: release-out/ayther-engine-${{ github.ref_name }}-linux-x86_64.zip
           sbom-path: release-out/ayther-engine-${{ github.ref_name }}-linux-x86_64.spdx.json
 
-      - name: Attest Windows SBOM
+      - name: Attest ayther-engine windows SBOM
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: release-out/ayther-engine-${{ github.ref_name }}-windows-x86_64.zip
           sbom-path: release-out/ayther-engine-${{ github.ref_name }}-windows-x86_64.spdx.json
+
+      - name: Attest ayther-engine-vpx linux SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/ayther-engine-vpx-${{ github.ref_name }}-linux-x86_64.zip
+          sbom-path: release-out/ayther-engine-vpx-${{ github.ref_name }}-linux-x86_64.spdx.json
+
+      - name: Attest ayther-engine-vpx windows SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/ayther-engine-vpx-${{ github.ref_name }}-windows-x86_64.zip
+          sbom-path: release-out/ayther-engine-vpx-${{ github.ref_name }}-windows-x86_64.spdx.json
+
+      - name: Compose release notes that state the artifact scope
+        shell: pwsh
+        run: >-
+          ./tools/gen_release_notes.ps1
+          -Tag '${{ github.ref_name }}'
+          -OutputFile release-notes.md
 
       - name: Publish immutable pre-release
         env:
@@ -224,8 +438,9 @@ jobs:
           $assets = Get-ChildItem -LiteralPath release-out -File | Sort-Object Name
           $arguments = @(
             'release', 'create', '${{ github.ref_name }}',
-            '--verify-tag', '--prerelease', '--generate-notes',
-            '--title', 'AYTHER Engine ${{ github.ref_name }}'
+            '--verify-tag', '--prerelease',
+            '--notes-file', 'release-notes.md',
+            '--title', 'AYTHER ${{ github.ref_name }}'
           ) + @($assets.FullName)
           & gh @arguments
           if ($LASTEXITCODE -ne 0) {

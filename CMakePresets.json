@@ -77,13 +77,32 @@
     {
       "name": "windows-release",
       "displayName": "Windows Core Release",
-      "description": "Optimized pre-release core package",
+      "description": "Optimized core-only package: Ayther::core and the C headers",
       "inherits": "windows-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AYTHER_BUILD_TESTS": "OFF",
+        "AYTHER_BUILD_TESTS": "ON",
         "AYTHER_BUILD_ENGINE": "OFF",
         "AYTHER_BUILD_RENDERER": "OFF"
+      }
+    },
+    {
+      "name": "windows-release-engine",
+      "displayName": "Windows Engine Release",
+      "description": "Optimized complete engine package: core, engine, renderer, shaders",
+      "inherits": ["windows-base", "native-base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AYTHER_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-release-engine-vpx",
+      "displayName": "Windows Engine Release + VPX",
+      "description": "Optimized complete engine package with the VP9 decoder",
+      "inherits": "windows-release-engine",
+      "cacheVariables": {
+        "AYTHER_ENABLE_VPX": "ON"
       }
     },
     {
@@ -127,13 +146,32 @@
     {
       "name": "linux-release",
       "displayName": "Linux Core Release",
-      "description": "Optimized pre-release core package",
+      "description": "Optimized core-only package: Ayther::core and the C headers",
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AYTHER_BUILD_TESTS": "OFF",
+        "AYTHER_BUILD_TESTS": "ON",
         "AYTHER_BUILD_ENGINE": "OFF",
         "AYTHER_BUILD_RENDERER": "OFF"
+      }
+    },
+    {
+      "name": "linux-release-engine",
+      "displayName": "Linux Engine Release",
+      "description": "Optimized complete engine package: core, engine, renderer, shaders",
+      "inherits": ["linux-base", "native-base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AYTHER_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-release-engine-vpx",
+      "displayName": "Linux Engine Release + VPX",
+      "description": "Optimized complete engine package with the VP9 decoder",
+      "inherits": "linux-release-engine",
+      "cacheVariables": {
+        "AYTHER_ENABLE_VPX": "ON"
       }
     },
     {
@@ -204,6 +242,14 @@
       "configurePreset": "windows-release"
     },
     {
+      "name": "windows-release-engine",
+      "configurePreset": "windows-release-engine"
+    },
+    {
+      "name": "windows-release-engine-vpx",
+      "configurePreset": "windows-release-engine-vpx"
+    },
+    {
       "name": "windows-native",
       "configurePreset": "windows-native"
     },
@@ -222,6 +268,14 @@
     {
       "name": "linux-release",
       "configurePreset": "linux-release"
+    },
+    {
+      "name": "linux-release-engine",
+      "configurePreset": "linux-release-engine"
+    },
+    {
+      "name": "linux-release-engine-vpx",
+      "configurePreset": "linux-release-engine-vpx"
     },
     {
       "name": "linux-native",
@@ -249,6 +303,86 @@
     }
   ],
   "testPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-release-engine",
+      "configurePreset": "windows-release-engine",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "windows-release-engine-vpx",
+      "configurePreset": "windows-release-engine-vpx",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-release-engine",
+      "configurePreset": "linux-release-engine",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "linux-release-engine-vpx",
+      "configurePreset": "linux-release-engine-vpx",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
     {
       "name": "windows-headless",
       "configurePreset": "windows-headless",

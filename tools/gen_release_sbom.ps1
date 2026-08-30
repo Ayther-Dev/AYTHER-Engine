@@ -10,6 +10,12 @@ param(
     [ValidatePattern('^[A-Za-z0-9._-]+$')]
     [string]$Platform,
 
+    # The artifact family this SBOM describes. v0.1.x ships more than one, and
+    # an SBOM that called a core-only package 'AYTHER Engine' would misstate the
+    # very thing the document exists to record.
+    [ValidateSet('ayther-core', 'ayther-engine', 'ayther-engine-vpx')]
+    [string]$Product = 'ayther-engine',
+
     [Parameter(Mandatory = $true)]
     [ValidateRange(0, [long]::MaxValue)]
     [long]$SourceDateEpoch,
@@ -82,10 +88,15 @@ foreach ($package in ($metadata.packages | Sort-Object name, version)) {
     })
 }
 
-$distributionId = ConvertTo-SpdxId("ayther-engine-$($workspacePackage.version)-$Platform")
+$productTitle = switch ($Product) {
+    'ayther-core'       { 'AYTHER Core' }
+    'ayther-engine'     { 'AYTHER Engine' }
+    'ayther-engine-vpx' { 'AYTHER Engine (VP9)' }
+}
+$distributionId = ConvertTo-SpdxId("$Product-$($workspacePackage.version)-$Platform")
 $packages.Insert(0, [ordered]@{
     SPDXID = $distributionId
-    name = "AYTHER Engine $Platform distribution"
+    name = "$productTitle $Platform distribution"
     versionInfo = [string]$workspacePackage.version
     downloadLocation = 'NOASSERTION'
     filesAnalyzed = $false
@@ -153,8 +164,8 @@ $document = [ordered]@{
     spdxVersion = 'SPDX-2.3'
     dataLicense = 'CC0-1.0'
     SPDXID = 'SPDXRef-DOCUMENT'
-    name = "ayther-engine-$($workspacePackage.version)-$Platform"
-    documentNamespace = "https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v$($workspacePackage.version)/sbom/$Platform"
+    name = "$Product-$($workspacePackage.version)-$Platform"
+    documentNamespace = "https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v$($workspacePackage.version)/sbom/$Product-$Platform"
     creationInfo = [ordered]@{
         created = $created
         creators = @('Tool: AYTHER gen_release_sbom.ps1')

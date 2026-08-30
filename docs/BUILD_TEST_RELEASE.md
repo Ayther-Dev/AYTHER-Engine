@@ -201,12 +201,73 @@ C++ session facade, and version header, then links and executes outside the
 producer tree. No frontend, renderer implementation, or generated CXX bridge
 headers are promised as public surfaces.
 
+## Release artifact scope
+
+v0.1.x distributes **three artifact families**, on Windows and Linux:
+
+| Archive | Targets | Headers | Shaders | Native dependencies |
+|---|---|---|---|---|
+| `ayther-core-<tag>-<platform>.zip` | `Ayther::core` | `ayther_core_ffi.h`, `ayther_version.h` | none | none |
+| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the above plus the ten-header engine allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, vk-bootstrap, toml++, zstd |
+| `ayther-engine-vpx-<tag>-<platform>.zip` | the above plus `Ayther::vpx` | the above plus `vpx/` when bundled | compiled SPIR-V | the above plus libvpx |
+
+Windows builds and bundles libvpx through `tools/build_libvpx.ps1`, so the
+archive, headers, and notices ship inside the package. Linux links the system
+libvpx through `pkg-config` and ships none of it.
+
+**A core-only package is never presented as the complete engine.** That is not
+a convention, it is enforced in three places:
+
+- `tools/check_release_payload.ps1` runs against the unpacked archive and checks
+  in both directions. The engine kinds must contain their targets, headers,
+  shaders, and dependency notices; the core kind must **demonstrably not**
+  contain the engine archive, the ymfm archive, the engine target export, the
+  shaders, or any of the ten engine headers.
+- `tools/gen_release_sbom.ps1` takes the artifact family, so an SBOM cannot
+  describe a core-only tree as an "AYTHER Engine" distribution.
+- `tools/gen_release_notes.ps1` writes the scope table into the release body,
+  including the plain statement that `ayther-core` is not the engine.
+
+Each family has its own out-of-tree consumer. `tests/package_consumer` asks for
+`COMPONENTS engine` and links `Ayther::engine`; `tests/package_consumer_core`
+asks for no components, links `Ayther::core`, and needs no toolchain file at
+all -- if it ever did, the core package would have stopped being core-only.
+
+## Publishing a release candidate
+
+The version contract accepts a pre-release suffix. `CMakeLists.txt`,
+`include/ayther/ayther_version.h`, `Cargo.toml`, and `vcpkg.json` all carry the
+core `MAJOR.MINOR.PATCH`; `Cargo.toml` and `vcpkg.json` may additionally carry
+the full tag, because only those two understand SemVer pre-release.
+
+```text
+pwsh tools/check_release_version.ps1 -Tag v0.1.0-rc.1
+git tag -a v0.1.0-rc.1 -m 'AYTHER v0.1.0-rc.1'
+git push origin v0.1.0-rc.1
+```
+
+Pushing the tag is the only manual step; everything after it is the workflow.
+The publish job is gated on the `release` environment, so it waits for a
+reviewer before any asset is signed or uploaded.
+
+Before the tag is pushed, a repository administrator must have configured:
+
+- the `release` environment with required reviewers;
+- tag protection for `v*`, so the tag cannot be moved after publication;
+- branch protection and CODEOWNERS over `.github/workflows/`, so the release
+  mechanics cannot be changed without review.
+
+Without those controls the workflow mechanics alone are not a protected release
+boundary, and the resulting artifacts should not be treated as one.
+
 ## Configuration matrix
 
 | Preset family | Intended role | Current confidence |
 |---|---|---|
 | `*-headless` | core, bridge, and CPU/ABI checks | Windows verified; Linux pending |
-| `*-release` | optimized core package | Pre-release core only; not an engine distribution |
+| `*-release` | optimized core-only package (`ayther-core`) | Windows build/test/install/consume verified; Linux pending |
+| `*-release-engine` | optimized complete engine package (`ayther-engine`) | Windows build/test/install/package/consume verified; Linux pending |
+| `*-release-engine-vpx` | optimized complete engine with VP9 (`ayther-engine-vpx`) | Windows verified; Linux pending |
 | `*-native` | complete engine without VP9 | Windows build and 38 CTests verified; Linux pending |
 | `*-native-vpx` | complete engine with VP9 | Windows build/install/consume verified; decoder fixtures and Linux pending |
 | `*-native-gpu` | eight Vulkan GPU oracles | Windows 8/8 verified; Linux and broader GPU matrix pending |
@@ -251,9 +312,19 @@ explicit omission, not a successful GPU oracle.
 
 The tag-only `.github/workflows/release.yml` validates the version contract,
 runs the locked Rust gates plus optimized production-trust acceptance tests,
-and builds the core SDK on Windows and Linux. It derives `SOURCE_DATE_EPOCH`
-from the tagged commit, remaps build paths, packages each install tree twice,
-and requires byte-identical SHA-256 digests before publication.
+and then builds **six** artifacts: three families on each of Windows and Linux.
+It derives `SOURCE_DATE_EPOCH` from the tagged commit, remaps build paths,
+packages each install tree twice, and requires byte-identical SHA-256 digests
+before publication.
+
+Every matrix entry runs, in this order: configure, build, the native CTest
+suite for that preset, install into an isolated prefix, SBOM, package twice,
+reproducibility check, unpack the archive into an empty directory, verify the
+unpacked payload against the family its name advertises, then configure, build,
+and run an out-of-tree consumer against it. Everything after packaging is
+checked on the UNPACKED ARCHIVE rather than the install tree it came from, so a
+packaging bug cannot slip past. A failure at any step drops that artifact, and
+the publish job refuses to run unless all six are present and correctly named.
 
 Each candidate carries an SPDX 2.3 SBOM generated from the locked Cargo graph
 and exact installed files. The protected publish job creates SHA-256 checksums,
@@ -266,21 +337,29 @@ required reviewers, protect `v*` tags, and restrict workflow changes with
 CODEOWNERS/branch protection. Without those repository controls, the workflow
 mechanics alone are not a protected release boundary.
 
+`tools/verify_release_artifact.ps1` runs the whole acceptance sequence from a
+clean checkout of the tag -- download, checksum, Sigstore, provenance, unpack,
+payload check, and an out-of-tree consumer build:
+
+```text
+pwsh tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.1 -Product ayther-engine
+```
+
 A consumer verifies a downloaded archive with all three independent records:
 
 ```text
 sha256sum --check CHECKSUMS.sha256
-gh attestation verify ayther-engine-v0.1.0-linux-x86_64.zip \
+gh attestation verify ayther-engine-v0.1.0-rc.1-linux-x86_64.zip \
   --repo Ayther-Dev/AYTHER-Engine
 cosign verify-blob \
-  --bundle ayther-engine-v0.1.0-linux-x86_64.zip.sigstore.json \
+  --bundle ayther-engine-v0.1.0-rc.1-linux-x86_64.zip.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github.com/Ayther-Dev/AYTHER-Engine/.github/workflows/release.yml@refs/tags/v[0-9].*$' \
-  ayther-engine-v0.1.0-linux-x86_64.zip
+  ayther-engine-v0.1.0-rc.1-linux-x86_64.zip
 ```
 
-The native engine, physical GPU/driver matrix, real-emulator fixtures, and the
-remaining security review are still release blockers; automated publications
+The physical GPU/driver matrix, real-emulator fixtures, and the remaining
+security review are still release blockers; automated publications
 remain marked as pre-releases.
 
 A release-capable pipeline must run on every supported platform and retain:
