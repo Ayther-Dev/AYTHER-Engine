@@ -697,6 +697,14 @@ public:
         std::string core_path;             ///< libretro core DLL (the emulator)
         std::string rom_path;              ///< the ROM — BYOR (Bring Your Own ROM)
         std::string pack_path;             ///< optional .ay HD pack ("" = none)
+        /// Production trust registry (TOML) that vouches for `pack_path`.
+        ///
+        /// Empty keeps the authoring path, which accepts the development
+        /// signature -- and which an optimized build refuses. So a release
+        /// build with no registry can open NO pack at all: unsigned is refused
+        /// and the development key is refused. A frontend shipping production
+        /// content has to name its registry here.
+        std::string trust_registry;
         bool        enable_audio = true;   ///< open the SDL audio device + AudioPlayer
         /// When pack_path is empty, derive "<core stem>.ay" next to the core
         /// (player convention). The Lab disables this: a project session must

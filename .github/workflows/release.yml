@@ -283,6 +283,36 @@ jobs:
         run: >-
           & '${{ runner.temp }}/ayther-consumer/${{ matrix.consumer_executable }}'
 
+      # Linking is not running. For the engine artifacts, drive the installed
+      # package the way a frontend does: create a session, open a TRUSTED pack,
+      # step frames, and report what the renderer and the audio device did. The
+      # inputs are produced by the build so the job depends on no external
+      # content, and the report is checked for repository paths -- one would
+      # mean the package was consumed from the source tree.
+      - name: Produce signed content for the consumer
+        if: matrix.kind != 'core'
+        shell: pwsh
+        run: >-
+          & 'build/${{ matrix.preset }}/bin/make_test_pack'
+          '${{ runner.temp }}/rc/pack.ay'
+          '${{ runner.temp }}/rc/trust.toml'
+          'crc32:rc000001'
+          '${{ runner.temp }}/rc/rom.md'
+
+      - name: Run the installed package as a frontend would
+        if: matrix.kind != 'core'
+        shell: pwsh
+        run: >-
+          ./tools/check_rc_consumer.ps1
+          -Prefix $env:AYTHER_PREFIX
+          -Core 'build/${{ matrix.preset }}/bin/ayther_test_core${{ runner.os == 'Windows' && '.dll' || '.so' }}'
+          -Rom '${{ runner.temp }}/rc/rom.md'
+          -Pack '${{ runner.temp }}/rc/pack.ay'
+          -TrustRegistry '${{ runner.temp }}/rc/trust.toml'
+          -Compiler '${{ matrix.compiler }}'
+          -WorkDirectory '${{ runner.temp }}/rc-consumer'
+          -ReportFile 'release-out/${{ matrix.product }}-${{ matrix.platform }}-consumer.md'
+
       - name: Upload immutable release inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

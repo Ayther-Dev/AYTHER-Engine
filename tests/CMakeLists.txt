@@ -108,7 +108,13 @@ add_subdirectory(renderer)
 # on clean checkouts. The executables report CTest's conventional skip code 77
 # when the external emulator core is unavailable.
 function(ayther_abi_test_env out_var)
-    set(_ayther_env "")
+    # The in-repo test cores are the default, so the ABI oracles measure the
+    # negotiation on every checkout instead of reporting 77. An environment
+    # variable still wins: pointing these at a real fork core is how the same
+    # oracles get run against the thing they ultimately describe.
+    set(_ayther_env
+        "AYTHER_ABI_CORE=$<TARGET_FILE:ayther_test_core>"
+        "AYTHER_STOCK_CORE=$<TARGET_FILE:ayther_test_core_stock>")
     foreach(_ayther_env_name IN ITEMS
             AYTHER_ABI_CORE AYTHER_STOCK_CORE AYTHER_PROBE_ROM)
         if(DEFINED ENV{${_ayther_env_name}} AND
@@ -120,8 +126,22 @@ function(ayther_abi_test_env out_var)
     set("${out_var}" "${_ayther_env}" PARENT_SCOPE)
 endfunction()
 
+# The ABI oracles need an emulator core that speaks the extension. Building one
+# here -- rather than pointing at a binary that /third_party/cores/* gitignores
+# -- is what lets the positive half of the negotiation run on a clean checkout.
+add_subdirectory(
+    "${PROJECT_SOURCE_DIR}/tools/test_core"
+    "${PROJECT_BINARY_DIR}/tools/test_core")
+
+# Signed content for the release-candidate consumer, which cannot open an
+# unsigned pack in an optimized build.
+add_subdirectory(
+    "${PROJECT_SOURCE_DIR}/tools/make_test_pack"
+    "${PROJECT_BINARY_DIR}/tools/make_test_pack")
+
 set(_ayther_native_tool_tests
     abi_frame_delta
+    e2e_determinism
     abi_multilayer
     abi_read_parity
     abi_write_control
@@ -139,6 +159,10 @@ foreach(_ayther_tool_test IN LISTS _ayther_native_tool_tests)
     target_include_directories("${_ayther_tool_test}" PRIVATE
         "${PROJECT_SOURCE_DIR}/include/ayther")
     ayther_instrument_target("${_ayther_tool_test}" NO_STRICT_WARNINGS)
+    # The oracles dlopen the cores rather than linking them, so the dependency
+    # is invisible to the linker and has to be declared.
+    add_dependencies("${_ayther_tool_test}"
+        ayther_test_core ayther_test_core_stock)
 endforeach()
 
 if(AYTHER_ENABLE_VPX)

@@ -65,6 +65,19 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - `session::PackRuntime`: pack activation, the trust registry, profiles,
   declared systems, asset lookup, and validation, unit tested without an
   emulator core, an audio device, or a Vulkan context.
+- `tools/test_core`: a deterministic libretro core, owned here and built from
+  source on both platforms, that speaks the AYTHER ABI. Built twice, with and
+  without the extension entry point, so both halves of the negotiation run.
+- `tools/e2e_determinism`: the whole pipeline -- synthetic ROM, test core,
+  signed pack, scripted inputs -- hashed run-to-run and against pinned
+  cross-platform constants.
+- `tools/check_gpu_matrix.ps1`: records which device and driver answered and
+  fails when the GPU suite was skipped rather than executed.
+- `tools/check_rc_consumer.ps1` and `tools/make_test_pack`: install a release
+  candidate outside the source tree, drive it as a frontend does with a trusted
+  pack, and refuse a report containing repository paths.
+- `AytherSession::Config::trust_registry`, without which a release build could
+  open no pack at all.
 
 ### Changed
 
@@ -83,6 +96,9 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   central fallback used when no sink is installed.
 - A malformed `AYTHER_*` option is reported and ignored instead of being parsed
   by `atoi`, which could not distinguish a typo from a deliberate zero.
+- All five ABI oracles now execute instead of reporting CTest's skip code: the
+  core they needed is built from source rather than fetched as an ignored
+  binary.
 
 ### Deprecated
 
@@ -98,5 +114,12 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   still matched the pre-rebrand spelling `"nombre"` while the C header and every
   caller used `"name"`, so a pack's profile display name never reached a C++
   consumer. Both spellings are accepted now.
+- A trust-registry key could not be scoped to a real game. `valid_game_scope`
+  rejected `:`, but the canonical game id is `crc32:XXXXXXXX`, so any registry
+  naming an actual title was malformed and the only usable scope was `"*"` --
+  per-game delegation that refused every game it was pointed at.
+- A release build could open no pack whatsoever through `AytherSession`: an
+  unsigned pack is refused, the development key is refused in an optimized
+  build, and `Config` had no way to name a production trust registry.
 
 <!-- Comparison links will be added with the first published tag. -->

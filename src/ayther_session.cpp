@@ -171,6 +171,7 @@ Result<std::unique_ptr<AytherSession>> AytherSession::create(const Config& cfg) 
     }
     im.core_path = cfg.core_path;   // : para instanciar el shadow core (lazy)
     im.rom_path  = cfg.rom_path;
+    im.pack_trust_registry = cfg.trust_registry;
     im.activate_ayther_subscriptions();   // E-2 ()
     im.observer.initialize_system(im.runner);
 
@@ -322,9 +323,13 @@ Result<void> AytherSession::set_pack(const std::string& pack_path) {
     im.auto_disabled_on = 0;
     im.pack.close();                 // close old pack (RAII)
 
-    if (Result<void> opened = im.pack.open(pack_path); !opened) {
-        return opened;
-    }
+    // A registry means production trust; without one this is the authoring
+    // path, which an optimized build refuses to open at all.
+    Result<void> opened = im.pack_trust_registry.empty()
+                              ? im.pack.open(pack_path)
+                              : im.pack.open_trusted(pack_path,
+                                                     im.pack_trust_registry);
+    if (!opened) return opened;
     if (!im.pack) return Result<void>::ok();   // no pack - a valid state
 
     im.load_pack_into(im.pack.get());

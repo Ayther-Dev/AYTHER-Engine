@@ -538,13 +538,38 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
 
+      # The wrapper runs ctest, records which device and driver answered, and
+      # fails when the suite was SKIPPED rather than executed. Calling ctest
+      # directly would let a runner with no Vulkan device skip all eight
+      # oracles, exit 0, and report a green GPU job that rendered nothing.
       - name: Test GPU targets on Windows
         if: runner.os == 'Windows'
-        run: ctest --preset ${{ matrix.preset }}
+        shell: pwsh
+        run: >-
+          ./tools/check_gpu_matrix.ps1
+          -Preset ${{ matrix.preset }}
+          -ReportFile gpu-report-${{ matrix.preset }}.md
 
       - name: Test GPU targets on Linux
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum ctest --preset ${{ matrix.preset }}
+        shell: pwsh
+        run: >-
+          ./tools/check_gpu_matrix.ps1
+          -Preset ${{ matrix.preset }}
+          -Launcher 'xvfb-run --auto-servernum'
+          -ReportFile gpu-report-${{ matrix.preset }}.md
+
+      # Uploaded whether the job passed or failed: the device, the driver, and
+      # the list of anything omitted are the record this matrix exists to keep,
+      # and they matter most on the run that went wrong.
+      - name: Publish the GPU matrix record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-report-${{ matrix.preset }}
+          path: gpu-report-${{ matrix.preset }}.md
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Retain CTest diagnostics on failure
         if: failure()

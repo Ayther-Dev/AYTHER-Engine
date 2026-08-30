@@ -201,6 +201,81 @@ C++ session facade, and version header, then links and executes outside the
 producer tree. No frontend, renderer implementation, or generated CXX bridge
 headers are promised as public surfaces.
 
+## The test emulator core
+
+`abi_negociacion` used to return CTest's skip code on every clean checkout. Its
+positive half needed a core exporting `ayther_get_interface`, the only such core
+lived in another repository, and `/third_party/cores/*` is gitignored -- so CI
+measured the negotiation exactly never. A skipped test nobody can un-skip is a
+note, not coverage.
+
+`tools/test_core/` is that core, owned here and built from source on both
+platforms. It emulates nothing: it produces a deterministic function of the ROM
+bytes, the frame number, and the input, which is what an ABI oracle and a
+determinism oracle actually need. It is built twice from one source --
+`ayther_test_core` exports the ABI entry point and `ayther_test_core_stock` does
+not -- so both halves of "the negotiation is additive" run on cores this
+repository can ship.
+
+All five ABI oracles now execute rather than skip: negotiation, read parity,
+control writes, multilayer recomposition, and frame delta.
+
+One fixture choice is worth knowing about. The parsed-sprite table the core
+reports is a function of the ROM and the slot, NOT of the frame. A libretro core
+is process-global, so the E-5 oracle's session and its control runner share the
+one instance and step it alternately; a frame-varying table would compare two
+different frames and disagree for a reason about the harness rather than the
+engine. The cost is that this fixture cannot catch a stale published copy. The
+frame-varying signals live in RAM, video, and audio, which no two observers read
+alternately.
+
+## End-to-end determinism
+
+`tools/e2e_determinism/` runs the product rather than a seam: synthetic ROM,
+test core, signed pack, and a scripted input track go into a real session, and
+frames, audio, events, and work RAM come out hashed.
+
+```text
+ctest --preset windows-native -R e2e_determinismo
+```
+
+It asserts two different things. RUN-TO-RUN, two sessions in one process must
+agree -- that catches nondeterminism from uninitialised memory, pointer values,
+iteration order, or time. RUN-TO-GOLDEN, the hashes must equal constants pinned
+in `tools/e2e_determinism/CMakeLists.txt` -- that is the half that catches a
+difference BETWEEN platforms, because two runs agreeing on one machine prove
+nothing about the other. CI running the same binary on Windows and on Linux is
+what turns those constants into a cross-platform claim.
+
+Only integer data is hashed. A float that rounded differently on two targets
+would fail this test for a reason that has nothing to do with the engine.
+
+A mismatch against the pinned hashes is a finding, not a number to refresh: it
+means the engine changed behaviour, the test core changed, or the platforms
+disagree, and which one it is has to be decided before re-pinning.
+
+## GPU matrix
+
+The GPU jobs are opt-in, on Windows and on Linux with Mesa, and they run through
+`tools/check_gpu_matrix.ps1` rather than calling CTest directly:
+
+```text
+pwsh tools/check_gpu_matrix.ps1 -Preset windows-native-gpu
+pwsh tools/check_gpu_matrix.ps1 -Preset linux-native-gpu -Launcher 'xvfb-run --auto-servernum'
+```
+
+The wrapper exists because the GPU oracles skip themselves when no Vulkan device
+answers, and a run that skipped all eight and exited 0 is indistinguishable, in
+a green tick, from one that rendered eight frames and compared them. So it
+**fails** when the suite was skipped rather than executed, when fewer tests ran
+than expected, or when no device was reported at all.
+
+It records which device and driver answered -- `vk_context` logs the device
+name, type, vendor, driver version, and Vulkan API version on every context
+creation -- and writes a report naming anything omitted. The report is uploaded
+whether the job passed or failed, because it matters most on the run that went
+wrong.
+
 ## Release artifact scope
 
 v0.1.x distributes **three artifact families**, on Windows and Linux:
@@ -259,6 +334,33 @@ Before the tag is pushed, a repository administrator must have configured:
 
 Without those controls the workflow mechanics alone are not a protected release
 boundary, and the resulting artifacts should not be treated as one.
+
+## Consuming a release candidate as a frontend
+
+The release workflow's package-consumer gate proves an artifact LINKS.
+`tools/check_rc_consumer.ps1` proves it RUNS:
+
+```text
+build/<preset>/bin/make_test_pack pack.ay trust.toml crc32:rc000001 rom.md
+pwsh tools/check_rc_consumer.ps1 -Prefix <unpacked-artifact>   -Core build/<preset>/bin/ayther_test_core.dll -Rom rom.md   -Pack pack.ay -TrustRegistry trust.toml
+```
+
+It configures and builds `tests/package_consumer` against an installed prefix,
+then has it create a session, open a **trusted** pack, step frames, and report
+what the renderer and the audio device did. The consumer prints basenames only,
+and the script refuses a report containing any absolute path into this
+repository -- such a path is both unreproducible for the reader and evidence
+that the package was consumed from the source tree rather than from an install.
+The script also refuses a prefix inside the checkout for the same reason.
+
+`tools/make_test_pack` produces the signed pack, its trust registry, and a
+synthetic ROM, so the release job depends on no external content. It has to be
+signed: an optimized build refuses an unsigned pack and refuses the development
+key, so signed content plus its registry is the only combination that opens.
+
+Anything that could not be exercised is reported as unavailable with a reason
+rather than omitted. A report that quietly dropped the audio device because
+there was none would read, later, exactly like one where audio worked.
 
 ## Configuration matrix
 

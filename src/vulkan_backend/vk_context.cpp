@@ -92,6 +92,24 @@ bool VkContext::init(SDL_Window* window) {
     physical_device_ = vkb_phys.physical_device;
     gpu_name_        = std::string(vkb_phys.properties.deviceName);
 
+    // Which device and which driver answered. A GPU result is only meaningful
+    // alongside what produced it: "the renderer tests passed" says nothing
+    // useful without knowing whether that was a discrete card or a software
+    // rasteriser. This line is what the GPU matrix records.
+    {
+        const uint32_t driver = vkb_phys.properties.driverVersion;
+        const uint32_t api = vkb_phys.properties.apiVersion;
+        ayther::log::write(ayther::log::Severity::Info,
+            "vulkan.context", "device_selected",
+            "GPU: %s  type=%u  vendor=0x%04X  driver=%u.%u.%u  api=%u.%u.%u",
+            gpu_name_.c_str(),
+            static_cast<unsigned>(vkb_phys.properties.deviceType),
+            static_cast<unsigned>(vkb_phys.properties.vendorID),
+            VK_VERSION_MAJOR(driver), VK_VERSION_MINOR(driver),
+            VK_VERSION_PATCH(driver),
+            VK_VERSION_MAJOR(api), VK_VERSION_MINOR(api), VK_VERSION_PATCH(api));
+    }
+
     // -----------------------------------------------------------------------
     // 4. Logical device + queues
     // -----------------------------------------------------------------------

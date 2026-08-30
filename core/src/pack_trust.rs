@@ -367,11 +367,16 @@ fn validate_key_id(key_id: &str) -> Result<(), String> {
 }
 
 fn valid_game_scope(game: &str) -> bool {
+    // ':' is admitted because the canonical game id in this project is
+    // `crc32:XXXXXXXX` -- it is what a manifest declares and what a Lab project
+    // carries. Without it a key could not be scoped to a real title at all, and
+    // the only usable scope would have been "*": per-game delegation would have
+    // been a feature that rejected every game it was pointed at.
     game == "*"
         || (!game.is_empty()
-            && game
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')))
+            && game.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':')
+            }))
 }
 
 fn decode_hex_32(value: &str) -> Option<[u8; 32]> {
@@ -718,6 +723,55 @@ mod tests {
                 .expect("both keys verify inside the window");
             assert_eq!(signer.authorize_game("sonic2"), Ok(()));
             assert!(signer.authorize_game("streets_of_rage").is_err());
+        }
+    }
+
+    #[test]
+    fn a_key_can_be_scoped_to_a_canonical_crc32_game_id() {
+        // The id a manifest actually declares is `crc32:XXXXXXXX`. A scope
+        // validator that rejected the colon made the whole registry malformed,
+        // so the only scope that ever worked was "*" -- per-game delegation
+        // that refused every real game.
+        let store = TrustStore::from_toml(&registry_of(&[KeyWindow {
+            id: OUTGOING_ID,
+            seed: OUTGOING_SEED,
+            not_before: 0,
+            not_after: 1000,
+            revoked: false,
+            games: "\"crc32:0000beef\"",
+        }]))
+        .expect("a crc32-style scope is a valid registry");
+
+        let signer = store
+            .verify_at(b"integrity", &old_pack(), 500)
+            .expect("the key verifies");
+        assert_eq!(signer.authorize_game("crc32:0000beef"), Ok(()));
+        assert!(signer.authorize_game("crc32:deadbeef").is_err());
+    }
+
+    #[test]
+    fn a_scope_with_a_path_separator_is_still_refused() {
+        // Widening the character set to admit ':' must not turn the scope into
+        // somewhere a path or a URL can hide.
+        //
+        // ".." is deliberately NOT in this list: it is accepted, and that is
+        // fine. A scope is compared against a manifest's game_id as a string
+        // and is never resolved as a path, so ".." is simply a scope that
+        // matches no game. Rejecting it would be inventing a rule to look
+        // careful.
+        for scope in ["\"a/b\"", "\"a b\"", "\"\"", "\"a\\\\b\""] {
+            assert!(
+                TrustStore::from_toml(&registry_of(&[KeyWindow {
+                    id: OUTGOING_ID,
+                    seed: OUTGOING_SEED,
+                    not_before: 0,
+                    not_after: 1000,
+                    revoked: false,
+                    games: scope,
+                }]))
+                .is_err(),
+                "scope {scope} must not be accepted"
+            );
         }
     }
 
