@@ -6,6 +6,12 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_gpu_tests:
+        description: Run the hardware-dependent Vulkan GPU test matrix
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -70,18 +76,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # Formatting debt predates this workflow. Keep it visible without making
-      # the first CI run permanently red; remove continue-on-error once clean.
-      - name: Check Rust formatting (migration advisory)
-        id: rustfmt
-        continue-on-error: true
+      - name: Check Rust formatting
         run: cargo fmt --all -- --check
-
-      - name: Report formatting debt
-        if: steps.rustfmt.outcome == 'failure'
-        run: >-
-          echo '::warning::cargo fmt --check failed; formatting remains a
-          migration advisory until the baseline is normalized.'
 
       - name: Lint Rust targets
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -140,6 +136,206 @@ jobs:
         run: >-
           cmake --install build/${{ matrix.preset }}
           --prefix '${{ runner.temp }}/ayther-install'
+
+      - name: Retain CTest diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  native:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows native + package consumer
+            os: windows-latest
+            preset: windows-native
+            compiler: clang-cl
+            executable: ayther_package_consumer.exe
+            install_subdir: windows-native
+            needs_vpx: false
+          - name: Linux native + package consumer
+            os: ubuntu-latest
+            preset: linux-native
+            compiler: clang++
+            executable: ayther_package_consumer
+            install_subdir: linux-native
+            needs_vpx: false
+          - name: Linux native + VPX + package consumer
+            os: ubuntu-latest
+            preset: linux-native-vpx
+            compiler: clang++
+            executable: ayther_package_consumer
+            install_subdir: linux-native-vpx
+            needs_vpx: true
+          - name: Windows native + VPX + package consumer
+            os: windows-latest
+            preset: windows-native-vpx
+            compiler: clang-cl
+            executable: ayther_package_consumer.exe
+            install_subdir: windows-native-vpx
+            needs_vpx: true
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Select the runner vcpkg installation
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Linux VPX development files
+        if: runner.os == 'Linux' && matrix.needs_vpx
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libvpx-dev pkg-config
+
+      - name: Ensure NASM is available for Windows VPX
+        if: runner.os == 'Windows' && matrix.needs_vpx
+        shell: pwsh
+        run: |
+          if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install nasm --yes --no-progress
+            'C:\Program Files\NASM' |
+              Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Build the pinned Windows VPX decoder
+        if: runner.os == 'Windows' && matrix.needs_vpx
+        shell: pwsh
+        run: ./tools/build_libvpx.ps1
+
+      - name: Cache Cargo inputs and outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.preset }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.preset }}-
+            ${{ runner.os }}-native-
+            ${{ runner.os }}-cargo-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test native targets
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Install the native package
+        run: >-
+          cmake --install build/${{ matrix.preset }}
+          --prefix '${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
+
+      - name: Configure the out-of-tree package consumer
+        shell: pwsh
+        run: >-
+          cmake
+          -S tests/package_consumer
+          -B '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}'
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_PREFIX_PATH='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
+
+      - name: Build the out-of-tree package consumer
+        run: >-
+          cmake --build
+          '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}'
+
+      - name: Run the out-of-tree package consumer
+        shell: pwsh
+        run: >-
+          & '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}/${{ matrix.executable }}'
+
+      - name: Retain CTest diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  gpu:
+    name: GPU (${{ matrix.platform }}, opt-in)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_gpu_tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            os: windows-latest
+            preset: windows-native-gpu
+          - platform: Linux
+            os: ubuntu-latest
+            preset: linux-native-gpu
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Select the runner vcpkg installation
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Linux Vulkan runtime and virtual display
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers xvfb
+
+      - name: Cache Cargo inputs and outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-native-gpu-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-native-gpu-
+            ${{ runner.os }}-native-
+            ${{ runner.os }}-cargo-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test GPU targets on Windows
+        if: runner.os == 'Windows'
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Test GPU targets on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum ctest --preset ${{ matrix.preset }}
 
       - name: Retain CTest diagnostics on failure
         if: failure()

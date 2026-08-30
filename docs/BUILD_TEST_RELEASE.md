@@ -23,11 +23,8 @@ cargo test --workspace --all-targets --locked
 cargo doc --workspace --no-deps --locked
 ```
 
-On 2026-08-28, linting, documentation, and tests passed; tests reported 360
-passed, zero failed, and one ignored archive benchmark. Formatting currently
-reports pre-existing drift and is a visible CI advisory until the baseline is
-normalized. An ignored benchmark is not a functional test failure, but must
-remain visible.
+Rust formatting, linting, documentation, and tests are required CI gates. An
+ignored benchmark is not a functional test failure, but must remain visible.
 
 ## Repository documentation and policy checks
 
@@ -164,16 +161,24 @@ headers are promised as public surfaces.
 
 The checkout now includes `.github/workflows/ci.yml`. On pushes to `main`, pull
 requests, and manual dispatches it runs repository-boundary checks, locked Rust
-lint/tests/docs, documentation-reference and license consistency checks,
-dependency-notice verification, and the Windows/Linux headless
-configure/build/test/install sequence. Pull requests additionally validate that
-individual commits do not mix the closed Lab boundary with FOSS paths.
+format/lint/tests/docs, documentation-reference and license consistency checks,
+dependency-notice verification, and the Windows/Linux headless sequence. The
+required native matrix additionally configures, builds, tests, and installs
+`windows-native`, `linux-native`, `windows-native-vpx`, and
+`linux-native-vpx`; every matrix entry then configures, links, and executes
+`tests/package_consumer/` from outside the producer tree. Pull requests
+additionally validate that individual commits do not mix the closed Lab
+boundary with FOSS paths.
 
-Rust formatting is intentionally visible as a temporary advisory because the
-current source tree has pre-existing `rustfmt` drift. It must become a required
-gate after that baseline is normalized. Native engine, VPX, Vulkan GPU,
-installed-engine consumer, security scanning, artifact signing, and publication
-are not represented by the baseline workflow and remain release blockers.
+The `GPU (Windows, opt-in)` and `GPU (Linux, opt-in)` jobs are deliberately
+skipped in ordinary push and pull-request runs because GitHub-hosted runners do
+not promise the required Vulkan hardware. A manual dispatch exposes the boolean
+`run_gpu_tests` input; selecting it builds the `*-native-gpu` presets and runs
+only tests labelled `gpu` (Linux uses Mesa plus a virtual display). This is an
+explicit omission, not a successful GPU oracle.
+
+Security scanning, artifact signing, publication, and a representative physical
+GPU/driver matrix remain release blockers.
 
 A release-capable pipeline must run on every supported platform and retain:
 

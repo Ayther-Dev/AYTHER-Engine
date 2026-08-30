@@ -5920,7 +5920,7 @@ mod asset_id_tests {
             ));
             let got = std::ffi::CStr::from_ptr(out.as_ptr()).to_str().unwrap();
             assert_eq!(got, asset_id_of_bytes(&data));
-        let mut short_buffer = [0i8; 32];
+            let mut short_buffer = [0i8; 32];
             assert!(!ayther_asset_id_bytes(
                 data.as_ptr(),
                 data.len(),
@@ -5946,7 +5946,7 @@ mod asset_id_tests {
             assert_eq!(got, want);
             // A 32-digit identifier plus its null terminator needs 33 bytes.
             // Reject smaller buffers instead of returning a collision-prone prefix.
-        let mut short_buffer = [0i8; 32];
+            let mut short_buffer = [0i8; 32];
             assert!(!ayther_asset_id(
                 c.as_ptr(),
                 short_buffer.as_mut_ptr(),
@@ -6641,7 +6641,7 @@ pub unsafe extern "C" fn ayther_rom_patch_error(buf: *mut u8, cap: u32) -> u32 {
         if buf.is_null() || cap == 0 {
             return 0;
         }
-    LAST_PATCH_ERROR.with(|c| {
+        LAST_PATCH_ERROR.with(|c| {
             let m = c.borrow();
             let n = m.len().min(cap as usize - 1);
             std::ptr::copy_nonoverlapping(m.as_ptr(), buf, n);

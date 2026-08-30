@@ -11,15 +11,15 @@ today. It separates observed checkout state from the target architecture.
 
 ## Executive status
 
-The Rust core is substantial and documented at the crate level. Its tests,
-lint, and documentation gates are green; existing formatting drift remains
-visible as migration debt. The root build now provides an installable,
-out-of-tree-consumable `Ayther::core` and a complete 24-source
+The Rust core is substantial and documented at the crate level. Its formatting,
+tests, lint, and documentation gates are green. The root build now provides an
+installable, out-of-tree-consumable `Ayther::core` and a complete 24-source
 `Ayther::engine`, with manifest-mode native dependencies, ymfm, and optional
 libvpx. The repository is nevertheless incomplete as a release distribution. A
-baseline CI workflow now covers repository policy, Rust quality, and headless
-Windows/Linux builds, but native, VPX, GPU, package-consumer, and protected
-release automation remain open, as does production trust configuration.
+baseline CI workflow now covers repository policy, Rust quality, headless and
+native Windows/Linux builds, VPX on both platforms, and out-of-tree package
+consumers. GPU jobs are explicitly opt-in and skipped by default; protected
+release automation and production trust configuration remain open.
 
 The current checkout is appropriate for core development and documentation
 work. It is not appropriate for a public binary release, a production pack
@@ -31,8 +31,8 @@ trust decision, or a compatibility promise to third-party integrators.
 |---|---|---|
 | Rust workspace | Present | Workspace version `0.1.0`, edition 2024, resolver 3 |
 | `ayther_core` | Present | Builds as `rlib` and `staticlib` |
-| Rust unit tests | Passing | 360 passed; one optional archive benchmark ignored on 2026-08-27 |
-| Rust formatting | Migration debt | `cargo fmt --all -- --check` reports existing drift; CI exposes it as a temporary advisory rather than a gate |
+| Rust unit tests | Passing | 375 passed; one optional archive benchmark ignored on 2026-08-29 |
+| Rust formatting | Passing | `cargo fmt --all -- --check` is a required CI gate |
 | Rust linting | Passing | `cargo clippy --workspace --all-targets --locked -- -D warnings` |
 | Rust documentation gates | Enforced in source | Missing docs, broken intra-doc links, and unsafe operations in unsafe functions are denied |
 | CXX bridge declarations | Present | Rust side in `core/src/ffi.rs`; generated C++ consumer tree is absent |
@@ -42,7 +42,7 @@ trust decision, or a compatibility promise to third-party integrators.
 | Root CMake project | Implemented, pre-release | Corrosion owns Cargo integration; CMake exposes core, engine, ymfm, and optional VPX targets |
 | Engine tests and tools | Partial | Headless ABI tests and native CPU/audio/renderer integration probes are present; real-emulator, cross-platform, and broader hardware coverage remain incomplete |
 | Installable package | Pre-release | Core and native packages install namespaced targets, headers, shaders, and notices; external Windows consumers pass with VPX disabled and enabled |
-| CI and release workflows | Baseline present | `.github/workflows/ci.yml` checks repository boundaries, locked Rust gates, dependency notices, and headless configure/build/test/install on Windows and Linux; native and release pipelines remain pending |
+| CI and release workflows | Expanded baseline | `.github/workflows/ci.yml` checks repository boundaries, locked Rust gates, headless and native Windows/Linux builds, VPX on both platforms, installed-package consumers, and explicitly opt-in GPU jobs; protected release automation remains pending |
 | Third-party inventory | Implemented for validated builds | Cargo graph, vcpkg ports, vendored revisions, and shipped license material are recorded; release CI enforcement remains pending |
 | Pack container security | Implemented baseline | Builder, reader, and validator share canonical paths, duplicate rejection, archive/entry/metadata limits, and compression-ratio defenses |
 | Production pack trust | Missing | The code embeds a public RFC test key; no production key registry, expiry, scope, revocation, or rotation path is present |

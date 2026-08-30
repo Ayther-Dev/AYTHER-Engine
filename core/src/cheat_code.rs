@@ -62,9 +62,11 @@ impl CheatError {
     /// Returns a user-facing explanation of the decoding failure.
     pub fn message(&self) -> String {
         match self {
-            CheatError::InvalidFormat => "no parece un codigo: se esperaba ABCD-EFGH (Game Genie) o \
+            CheatError::InvalidFormat => {
+                "no parece un codigo: se esperaba ABCD-EFGH (Game Genie) o \
                  FFFFFF:0000 (PAR)"
-                .to_string(),
+                    .to_string()
+            }
             CheatError::InvalidSymbol(c) => format!(
                 "el simbolo '{c}' no existe en un Game Genie — ojo con \
                          I/O/Q/U, que NO se usan justamente para no confundirlas \
@@ -250,7 +252,10 @@ mod tests {
     #[test]
     fn shape_is_validated_first() {
         assert_eq!(decode_game_genie("ABC"), Err(CheatError::InvalidFormat));
-        assert_eq!(decode_game_genie("ABCD-EFGHI"), Err(CheatError::InvalidFormat));
+        assert_eq!(
+            decode_game_genie("ABCD-EFGHI"),
+            Err(CheatError::InvalidFormat)
+        );
         // Con guión y sin guión son el mismo código.
         assert_eq!(
             decode_game_genie("ABCD-EFGH"),

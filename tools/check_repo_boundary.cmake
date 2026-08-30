@@ -129,22 +129,25 @@ foreach(_i RANGE 1 ${_n_fronteras})
                 continue()
             endif()
             math(EXPR _revisados "${_revisados} + 1")
-            # Partir el archivo en lineas SIN que un `;` del codigo las parta a su
-            # vez: en CMake `;` es el separador de listas, asi que `foreach` sobre
-            # el texto crudo devuelve el fragmento de la derecha sin su `//`
-            # adelante y reporta un comentario como si fuera codigo. Nos paso con
-            # `ayther_renderer.h` y con medio `ayther_session.cpp`. Se protege el
-            # `;` con un byte que no aparece en fuentes y se restaura despues.
+            # Partir el archivo en lineas sin que la sintaxis de listas de CMake
+            # interprete el codigo. Ademas del `;` separador, corchetes no
+            # balanceados impiden que CMake corte una lista: un indice `a[i]`
+            # puede fusionar miles de lineas y convertir un comentario posterior
+            # en un falso hallazgo. Las barras pueden escapar separadores. Se
+            # protegen los cuatro caracteres y se restauran solo al informar.
             file(READ "${_f}" _texto)
-            string(ASCII 7 _prot)
-            string(REPLACE ";" "${_prot}" _texto "${_texto}")
+            string(ASCII 28 _prot_backslash)
+            string(ASCII 29 _prot_lbracket)
+            string(ASCII 30 _prot_rbracket)
+            string(ASCII 31 _prot_semicolon)
+            string(REPLACE "\\" "${_prot_backslash}" _texto "${_texto}")
+            string(REPLACE "[" "${_prot_lbracket}" _texto "${_texto}")
+            string(REPLACE "]" "${_prot_rbracket}" _texto "${_texto}")
+            string(REPLACE ";" "${_prot_semicolon}" _texto "${_texto}")
             string(REGEX REPLACE "\r" "" _texto "${_texto}")
             string(REPLACE "\n" ";" _texto "${_texto}")
             foreach(_l IN LISTS _texto)
-                # Se matchea y se guarda con el `;` todavía protegido: un hallazgo
-                # con `;` adentro se partiría en dos elementos al meterlo en la
-                # lista de hallazgos, y se imprimiría cortado. Se restaura al
-                # imprimir.
+                # Se matchea y se guarda con los caracteres de lista protegidos.
                 string(STRIP "${_l}" _l)
                 # Los comentarios no compilan. Nombrar otro componente en una
                 # explicacion no es depender de el, y un guardian que no distingue
@@ -179,7 +182,10 @@ if(_hallazgos)
     message("")
     message("Referencias que cruzan una frontera de repositorio (${_n}):")
     foreach(_h IN LISTS _hallazgos)
-        string(REPLACE "${_prot}" ";" _h "${_h}")
+        string(REPLACE "${_prot_backslash}" "\\" _h "${_h}")
+        string(REPLACE "${_prot_lbracket}" "[" _h "${_h}")
+        string(REPLACE "${_prot_rbracket}" "]" _h "${_h}")
+        string(REPLACE "${_prot_semicolon}" ";" _h "${_h}")
         message("  ${_h}")
     endforeach()
     message("")

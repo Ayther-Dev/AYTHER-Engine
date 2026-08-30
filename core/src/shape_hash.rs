@@ -99,7 +99,7 @@ pub fn mean_level(tile: &[u8]) -> Option<f32> {
     if n == 0 {
         None
     } else {
-    Some(sum as f32 / n as f32)
+        Some(sum as f32 / n as f32)
     }
 }
 

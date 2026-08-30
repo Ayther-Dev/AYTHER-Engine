@@ -33,8 +33,10 @@ void check(bool ok, const std::string& what) {
     if (!ok) ++g_fail;
 }
 
-// WAV S16 estéreo 44100 con `frames` cuadros de tono, en memoria.
-std::vector<uint8_t> tone_wav_bytes(uint32_t frames) {
+// WAV S16 estéreo 44100 con `frames` cuadros de audio determinista, en memoria.
+// La señal varía para que el fixture no parezca una bomba ZIP ante el límite
+// de relación de compresión del pack.
+std::vector<uint8_t> fixture_wav_bytes(uint32_t frames) {
     const uint32_t data_sz = frames * 4;
     const uint32_t riff_sz = 36u + data_sz;
     uint8_t hdr[44] = {
@@ -46,7 +48,15 @@ std::vector<uint8_t> tone_wav_bytes(uint32_t frames) {
     std::memcpy(hdr + 40, &data_sz, 4);
     std::vector<uint8_t> out(sizeof(hdr) + data_sz);
     std::memcpy(out.data(), hdr, sizeof(hdr));
-    std::vector<int16_t> pcm(frames * 2, 7000);
+    std::vector<int16_t> pcm(frames * 2);
+    uint32_t state = 0x6d2b79f5u;
+    for (uint32_t frame = 0; frame < frames; ++frame) {
+        state = state * 1664525u + 1013904223u;
+        const auto sample = static_cast<int16_t>(
+            static_cast<int32_t>(state >> 17) - 16384);
+        pcm[frame * 2] = sample;
+        pcm[frame * 2 + 1] = sample;
+    }
     std::memcpy(out.data() + sizeof(hdr), pcm.data(), data_sz);
     return out;
 }
@@ -100,7 +110,7 @@ int main() {
         std::printf("[FAIL] SDL_Init(AUDIO) dummy: %s\n", SDL_GetError());
         return 1;
     }
-    const auto wav = tone_wav_bytes(44100);
+    const auto wav = fixture_wav_bytes(44100);
     char err[256] = "";
     AytherPackBuilder* b = ayther_pack_builder_new();
     // El builder exige un manifest — el mínimo que AyArchive acepta.

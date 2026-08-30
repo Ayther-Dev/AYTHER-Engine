@@ -64,7 +64,9 @@ impl PatchError {
     pub fn message(&self) -> String {
         match self {
             PatchError::NotAPatch => "el archivo no es un parche IPS ni BPS".to_string(),
-            PatchError::Corrupt(reason) => format!("el parche está incompleto o mal formado: {reason}"),
+            PatchError::Corrupt(reason) => {
+                format!("el parche está incompleto o mal formado: {reason}")
+            }
             PatchError::OutOfRange => {
                 "el parche escribe fuera de la ROM: casi seguro es para otra versión \
                  (IPS no trae checksum, así que esto es lo único que lo delata)"
@@ -150,9 +152,8 @@ pub fn apply_ips(rom: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
         if &patch[i..i + 3] == b"EOF" {
             break;
         }
-        let off = ((patch[i] as usize) << 16)
-            | ((patch[i + 1] as usize) << 8)
-            | (patch[i + 2] as usize);
+        let off =
+            ((patch[i] as usize) << 16) | ((patch[i + 1] as usize) << 8) | (patch[i + 2] as usize);
         i += 3;
         if i + 2 > patch.len() {
             return Err(PatchError::Corrupt("registro cortado"));
@@ -160,7 +161,7 @@ pub fn apply_ips(rom: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
         let len = ((patch[i] as usize) << 8) | (patch[i + 1] as usize);
         i += 2;
 
-            let (data, end_offset): (Vec<u8>, usize) = if len == 0 {
+        let (data, end_offset): (Vec<u8>, usize) = if len == 0 {
             // RLE
             if i + 3 > patch.len() {
                 return Err(PatchError::Corrupt("RLE cortado"));
@@ -178,13 +179,13 @@ pub fn apply_ips(rom: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
             (d, off + len)
         };
 
-            if end_offset > MAX {
+        if end_offset > MAX {
             return Err(PatchError::OutOfRange);
         }
-            if end_offset > out.len() {
-                out.resize(end_offset, 0);
+        if end_offset > out.len() {
+            out.resize(end_offset, 0);
         }
-            out[off..end_offset].copy_from_slice(&data);
+        out[off..end_offset].copy_from_slice(&data);
     }
     Ok(out)
 }
@@ -296,12 +297,12 @@ pub fn apply_bps(rom: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
                 let delta = (d >> 1) as i64 * if d & 1 != 0 { -1 } else { 1 };
                 if action == 2 {
                     src_rel += delta;
-                if src_rel < 0 || src_rel as usize + length > rom.len() {
+                    if src_rel < 0 || src_rel as usize + length > rom.len() {
                         return Err(PatchError::OutOfRange);
                     }
                     let s = src_rel as usize;
-                out[output..output + length].copy_from_slice(&rom[s..s + length]);
-                src_rel += length as i64;
+                    out[output..output + length].copy_from_slice(&rom[s..s + length]);
+                    src_rel += length as i64;
                 } else {
                     dst_rel += delta;
                     if dst_rel < 0 {
@@ -310,7 +311,7 @@ pub fn apply_bps(rom: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
                     // Byte a byte y no `copy_from_slice`: TargetCopy puede
                     // solaparse consigo mismo, y ese solapamiento ES el
                     // mecanismo de compresión del formato.
-                for _ in 0..length {
+                    for _ in 0..length {
                         let s = dst_rel as usize;
                         if s >= output {
                             return Err(PatchError::OutOfRange);
@@ -424,10 +425,7 @@ mod tests {
     #[test]
     fn truncated_ips_is_not_partially_applied() {
         let p = b"PATCH\x00\x00\x10\x00\x08\x01\x02".to_vec(); // dice 8 bytes, trae 2
-        assert!(matches!(
-            apply_ips(&rom(), &p),
-            Err(PatchError::Corrupt(_))
-        ));
+        assert!(matches!(apply_ips(&rom(), &p), Err(PatchError::Corrupt(_))));
         let without_eof = b"PATCH".to_vec();
         assert!(matches!(
             apply_ips(&rom(), &without_eof),
@@ -442,10 +440,7 @@ mod tests {
         assert!(is_patch(b"PATCH..."));
         assert!(is_patch(b"BPS1..."));
         assert!(!is_patch(b"MZ\x90\x00"));
-        assert_eq!(
-            apply(&rom(), b"cualquier cosa"),
-            Err(PatchError::NotAPatch)
-        );
+        assert_eq!(apply(&rom(), b"cualquier cosa"), Err(PatchError::NotAPatch));
     }
 
     // -- BPS ----------------------------------------------------------------
