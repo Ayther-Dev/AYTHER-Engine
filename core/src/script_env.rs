@@ -67,8 +67,24 @@ unsafe impl Send for PackPtr {}
 
 // ---------------------------------------------------------------------------
 // Per-frame budget: max Lua VM instructions before a forced interrupt.
+//
+// This is the PROCESSING-TIME ceiling for pack scripts. Bytes and time are
+// separate resources: a script that allocates nothing can still spin forever,
+// and one that runs briefly can still ask for every byte in the machine.
 // ---------------------------------------------------------------------------
 const MAX_INSTRUCTIONS_PER_FRAME: u32 = 1_000_000;
+
+// ---------------------------------------------------------------------------
+// Memory ceiling for the script VM.
+//
+// The instruction hook above bounds time, not allocation: `local t = {} while
+// true do t[#t+1] = string.rep("x", 4096) end` yields to the hook regularly and
+// would still exhaust the machine, because each turn round the loop is cheap in
+// instructions and expensive in bytes. 64 MiB is far above what a pack script
+// legitimately needs -- scripts drive substitution decisions, they do not hold
+// asset data -- and far below what hurts a host.
+// ---------------------------------------------------------------------------
+const MAX_SCRIPT_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // ScriptEnv
@@ -106,6 +122,11 @@ impl ScriptEnv {
                 ))
             },
         );
+
+        // Bound allocation as well as instructions. Once the ceiling is hit the
+        // VM raises a Lua memory error, which surfaces as a script failure like
+        // any other rather than as a dead host.
+        lua.set_memory_limit(MAX_SCRIPT_MEMORY_BYTES)?;
 
         let env = ScriptEnv { lua };
         env.register_ayther_table()?;
@@ -825,6 +846,54 @@ mod tests {
         env.update_ram(&[0u8; 64]);
         // Should not hang — the hook interrupts after MAX_INSTRUCTIONS_PER_FRAME.
         let _ = env.call_on_frame(); // returns 0 (error swallowed)
+    }
+
+    #[test]
+    fn memory_budget_is_enforced() {
+        // The instruction hook does not stop this: every turn round the loop is
+        // a handful of instructions and four kilobytes. Without a memory
+        // ceiling the script keeps going until the host is out of memory, and
+        // the source that does it is three lines long.
+        let env = ScriptEnv::new().unwrap();
+        let result = env
+            .lua
+            .load(
+                r#"
+            local t = {}
+            while true do
+                t[#t + 1] = string.rep("x", 4096)
+            end
+        "#,
+            )
+            .exec();
+
+        let error = result.expect_err("an unbounded allocation must be refused");
+        // mlua surfaces the ceiling as a memory error rather than as a panic or
+        // an abort, so a bad pack script fails like any other script failure.
+        let rendered = error.to_string();
+        assert!(
+            rendered.to_lowercase().contains("memory"),
+            "expected a memory-exhaustion error, got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn a_script_within_the_memory_budget_still_runs() {
+        // The ceiling has to leave real scripts alone, or it is just a way to
+        // break packs. A few thousand short strings is ordinary work.
+        let env = ScriptEnv::new().unwrap();
+        env.lua
+            .load(
+                r#"
+            local t = {}
+            for i = 1, 5000 do
+                t[i] = string.rep("y", 64)
+            end
+            assert(#t == 5000)
+        "#,
+            )
+            .exec()
+            .expect("a modest allocation must stay allowed");
     }
 
     #[test]

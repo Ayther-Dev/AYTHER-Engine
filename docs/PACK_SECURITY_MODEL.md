@@ -86,6 +86,22 @@ be shipped through the host's protected update channel before affected packs
 are accepted again under any replacement key. Reusing an identifier with new
 key bytes is forbidden operationally even after expiry.
 
+Each of those transitions is pinned by fixtures rather than left to prose.
+`core/src/pack_trust.rs` drives an explicit clock through a two-key registry:
+before the changeover only the outgoing key verifies, inside the overlap both
+do, one second past the outgoing window only the incoming key does, and the
+bounds are inclusive at both ends. `core/src/pack_builder.rs` runs the same
+transitions end to end with real signed packs, including reissuing the registry
+with `revoked = true` and watching a pack that opened a moment earlier stop
+opening. `tests/ffi/pack_trust_ffi_test.cpp` repeats rotation, revocation, and
+per-game scope through `ayther_pack_open_trusted`, because a policy enforced in
+the library and lost at the FFI boundary is not enforced.
+
+Scope is checked separately from the signature and after it: a key whose
+`games` list does not name the pack's `game_id` is refused even though its
+signature verifies, and neither a rotation window nor a correct scope revives a
+key the other rejects.
+
 ## Reading strategy
 
 With an integrity index, entries can be opened lazily. Stored entries may use
@@ -119,10 +135,45 @@ are string, table, and math; I/O, operating-system, package loading, debug,
 coroutine, and UTF-8 libraries are excluded. A hook limits execution to
 1,000,000 instructions per frame. Script state is single-threaded.
 
-The instruction budget limits CPU work but does not by itself bound all memory,
-allocation, asset-size, or host-callback costs. Host APIs must remain narrow,
-validate all indices and lengths, avoid ambient filesystem/network authority,
-and define deterministic failure behavior.
+The instruction budget bounds TIME. It does not bound allocation, so a second
+ceiling bounds BYTES: the VM is capped at 64 MiB, after which Lua raises a
+memory error that surfaces as an ordinary script failure. The two are separate
+resources -- a script that allocates nothing can still spin, and one that runs
+briefly can still ask for every byte in the machine. Host APIs must still remain
+narrow, validate all indices and lengths, avoid ambient filesystem/network
+authority, and define deterministic failure behavior.
+
+## Decoded resource ceilings
+
+The container limits above bound the FILE. They do not bound what DECODING it
+allocates, and those are different numbers: a 41-byte PNG whose IHDR declares
+12000x12000 compresses to nothing, passes every archive check, and asks a
+decoder for 576 MiB.
+
+So the declared output size is checked against
+[`decode_limits.h`](../include/ayther/decode_limits.h) BEFORE the allocation
+happens, by reading the header only:
+
+| Resource | Ceiling | Enforced at |
+|---|---|---|
+| Image side | 16384 px | `image_header_within_limits`, before `stbi_load_from_memory` |
+| Image pixels | 64 Mpx (256 MiB RGBA) | the same |
+| Decoded audio | 256 MiB per asset | WAV, OGG, and FLAC decode paths |
+| Video side | 8192 px | after the IVF demux, before libvpx is configured |
+| Video pixels | 16 Mpx per frame | the same |
+| Video packet | 64 MiB | stream demux |
+| Script memory | 64 MiB | `Lua::set_memory_limit` |
+| Script time | 1,000,000 instructions/frame | Lua instruction hook |
+
+Processing time is bounded by those byte ceilings together with the instruction
+hook: with output size capped, decode time is capped.
+
+Two residual gaps are recorded rather than implied. OGG and FLAC are decoded by
+libraries that allocate before reporting a size, so their ceiling bounds what
+the cache RETAINS while the transient peak is bounded only by the container's
+per-entry limit. And a decoder's own internal guard is not a substitute for
+these: `stb_image` refuses roughly 1 GiB, which is four times this engine's
+image ceiling, so the ceiling here is what actually decides.
 
 ## ROM patches and emulator cores
 
@@ -135,7 +186,6 @@ and requires a separate allowlist, provenance, and isolation policy.
 ## Remaining operational controls
 
 - protected signing service with no private key in source or developer builds;
-- decoded image, audio, and script-memory/time limits beyond container bytes;
 - fuzzing and adversarial fixtures for ZIP, TOML, patches, media, scripts, and
   all FFI entry points;
 - audit logging that distinguishes integrity, compatibility, and policy failure.

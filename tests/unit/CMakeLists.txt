@@ -9,6 +9,7 @@ foreach(_source IN ITEMS
         audio_match_rule_test.cpp
         audio_seq_anchor_test.cpp
         cram_palette_test.cpp
+        decode_limits_test.cpp
         failure_escalation_test.cpp
         log_test.cpp
         loop_region_test.cpp

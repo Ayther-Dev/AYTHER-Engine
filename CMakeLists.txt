@@ -166,6 +166,7 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/ayther_session.cpp
     src/ayther_session_impl.inl
     src/ayther_video.cpp
+    src/decode_limits.cpp
     src/log.cpp
     src/psg_synth.cpp
     src/retro_runner.cpp

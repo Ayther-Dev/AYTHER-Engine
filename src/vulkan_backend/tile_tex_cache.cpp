@@ -7,6 +7,7 @@
 // and link these symbols).
 // ---------------------------------------------------------------------------
 #include "vulkan_backend/tile_tex_cache.h"
+#include "decode_limits.h"
 #include "log.h"
 #include "vulkan_backend/vk_context.h"
 #include "ayther_core_ffi.h"   // ayther_pack_file_size / ayther_pack_read
@@ -48,7 +49,17 @@ VkTexture* TileTexCache::get_or_load(const std::string& asset_path,
         return nullptr;
 
     // ---- Decode PNG ----
-    int w, h, ch;
+    // The header is inspected first: a tiny file may declare an enormous
+    // image, and stbi_load_from_memory would allocate it before returning.
+    int w = 0, h = 0, ch = 0;
+    if (!ayther::limits::image_header_within_limits(raw.data(), raw.size(),
+                                                    &w, &h)) {
+        ayther::log::write(ayther::log::Severity::Error,
+            "vulkan.tiles", "image_refused",
+            "refusing %s: declared %dx%d",
+            asset_path.c_str(), w, h);
+        return nullptr;
+    }
     uint8_t* pixels = stbi_load_from_memory(
         raw.data(), static_cast<int>(raw.size()), &w, &h, &ch, 4);
     if (!pixels) {

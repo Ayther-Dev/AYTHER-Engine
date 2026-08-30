@@ -635,4 +635,277 @@ mod tests {
         assert!(builder.finish(true, &out).is_err());
         assert!(!out.exists());
     }
+
+    // ---- Rotation, revocation, and scope, end to end --------------------
+    //
+    // The trust-store tests in pack_trust drive verify_at with an explicit
+    // clock, which is where the WINDOW semantics belong. These drive real
+    // packs through AyArchive::open_with_trust_store using the real clock, so
+    // they pin the thing an operator actually does: rewrite the registry and
+    // see which packs still open.
+
+    const OUTGOING_SEED: [u8; 32] = [7; 32];
+    const INCOMING_SEED: [u8; 32] = [9; 32];
+    const OUTGOING_ID: &str = "hub-outgoing";
+    const INCOMING_ID: &str = "hub-incoming";
+    /// Comfortably past any plausible test clock: 2100-01-01.
+    const FAR_FUTURE: u64 = 4_102_444_800;
+    /// Comfortably behind it: 2001-09-09.
+    const LONG_PAST: u64 = 1_000_000_000;
+
+    fn public_hex(seed: &[u8; 32]) -> String {
+        SigningKey::from_bytes(seed)
+            .verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    fn registry_entry(
+        id: &str,
+        seed: &[u8; 32],
+        not_before: u64,
+        not_after: u64,
+        revoked: bool,
+        games: &str,
+    ) -> String {
+        format!(
+            "\n[[keys]]\n\
+             id = \"{id}\"\n\
+             algorithm = \"ed25519\"\n\
+             public_key = \"{}\"\n\
+             not_before_unix = {not_before}\n\
+             not_after_unix = {not_after}\n\
+             revoked = {revoked}\n\
+             games = [{games}]\n",
+            public_hex(seed)
+        )
+    }
+
+    fn store(body: &str) -> crate::pack_trust::TrustStore {
+        crate::pack_trust::TrustStore::from_toml(&format!("version = 1\n{body}"))
+            .expect("valid production registry")
+    }
+
+    /// Bakes a pack signed by `id`/`seed` and returns its path.
+    fn signed_pack(name: &str, id: &str, seed: &[u8; 32]) -> std::path::PathBuf {
+        let mut builder = PackBuilder::new();
+        assert!(builder.add_bytes("manifest.toml", MANIFEST.as_bytes().to_vec()));
+        let out = tmp(name);
+        let _ = std::fs::remove_file(&out);
+        builder
+            .finish_with_signing_key(id, &SigningKey::from_bytes(seed), &out)
+            .expect("production signature");
+        out
+    }
+
+    fn open(
+        path: &std::path::Path,
+        trust: &crate::pack_trust::TrustStore,
+    ) -> Result<crate::archive_vfs::AyArchive, crate::archive_vfs::AyError> {
+        crate::archive_vfs::AyArchive::open_with_trust_store(
+            path.to_str().expect("UTF-8 temp path"),
+            trust,
+        )
+    }
+
+    #[test]
+    fn during_the_rotation_window_old_and_new_packs_both_open() {
+        let old = signed_pack("rotate-old.ay", OUTGOING_ID, &OUTGOING_SEED);
+        let new = signed_pack("rotate-new.ay", INCOMING_ID, &INCOMING_SEED);
+
+        // Both entries are live right now: this is the overlap an operator
+        // publishes so nobody's existing pack stops working mid-changeover.
+        let overlapping = store(&format!(
+            "{}{}",
+            registry_entry(
+                OUTGOING_ID,
+                &OUTGOING_SEED,
+                0,
+                FAR_FUTURE,
+                false,
+                "\"sonic2\""
+            ),
+            registry_entry(
+                INCOMING_ID,
+                &INCOMING_SEED,
+                0,
+                FAR_FUTURE,
+                false,
+                "\"sonic2\""
+            )
+        ));
+
+        assert!(
+            open(&old, &overlapping).is_ok(),
+            "the old pack must still open"
+        );
+        assert!(
+            open(&new, &overlapping).is_ok(),
+            "the new pack must open too"
+        );
+
+        let _ = std::fs::remove_file(&old);
+        let _ = std::fs::remove_file(&new);
+    }
+
+    #[test]
+    fn once_the_outgoing_key_is_retired_only_new_packs_open() {
+        let old = signed_pack("retire-old.ay", OUTGOING_ID, &OUTGOING_SEED);
+        let new = signed_pack("retire-new.ay", INCOMING_ID, &INCOMING_SEED);
+
+        // The outgoing window has closed; the incoming one is open.
+        let rotated = store(&format!(
+            "{}{}",
+            registry_entry(
+                OUTGOING_ID,
+                &OUTGOING_SEED,
+                0,
+                LONG_PAST,
+                false,
+                "\"sonic2\""
+            ),
+            registry_entry(
+                INCOMING_ID,
+                &INCOMING_SEED,
+                0,
+                FAR_FUTURE,
+                false,
+                "\"sonic2\""
+            )
+        ));
+
+        assert!(
+            matches!(
+                open(&old, &rotated),
+                Err(crate::archive_vfs::AyError::Trust(
+                    crate::pack_trust::TrustError::ExpiredKey(_)
+                ))
+            ),
+            "a pack signed by the retired key must be refused, not merely warned about"
+        );
+        assert!(open(&new, &rotated).is_ok());
+
+        // Dropping the entry altogether is a different, equally closed answer.
+        let dropped = store(&registry_entry(
+            INCOMING_ID,
+            &INCOMING_SEED,
+            0,
+            FAR_FUTURE,
+            false,
+            "\"sonic2\"",
+        ));
+        assert!(matches!(
+            open(&old, &dropped),
+            Err(crate::archive_vfs::AyError::Trust(
+                crate::pack_trust::TrustError::UnknownKey(_)
+            ))
+        ));
+
+        let _ = std::fs::remove_file(&old);
+        let _ = std::fs::remove_file(&new);
+    }
+
+    #[test]
+    fn revoking_a_key_closes_a_pack_that_opened_a_moment_earlier() {
+        // The operator flow, exactly: a pack opens, the registry is reissued
+        // with revoked = true, and the same bytes stop opening. Nothing about
+        // the pack changed, which is the point of revocation.
+        let pack = signed_pack("revoke.ay", OUTGOING_ID, &OUTGOING_SEED);
+
+        let before = store(&registry_entry(
+            OUTGOING_ID,
+            &OUTGOING_SEED,
+            0,
+            FAR_FUTURE,
+            false,
+            "\"sonic2\"",
+        ));
+        let archive = open(&pack, &before).expect("pack opens under the live registry");
+        assert_eq!(archive.meta.game_id, "sonic2");
+        drop(archive);
+
+        let after = store(&registry_entry(
+            OUTGOING_ID,
+            &OUTGOING_SEED,
+            0,
+            FAR_FUTURE,
+            true,
+            "\"sonic2\"",
+        ));
+        let refused = open(&pack, &after);
+
+        // Closed rejection: an Err, with the revocation named. A degraded or
+        // read-only open would defeat the purpose.
+        match refused {
+            Err(crate::archive_vfs::AyError::Trust(crate::pack_trust::TrustError::RevokedKey(
+                id,
+            ))) => {
+                // Stable diagnostic: the key id is carried so an operator can
+                // tell WHICH key was revoked, not merely that one was.
+                assert_eq!(id, OUTGOING_ID);
+                let rendered = crate::pack_trust::TrustError::RevokedKey(id).to_string();
+                assert!(
+                    rendered.contains(OUTGOING_ID),
+                    "the rendered diagnostic must name the key: {rendered}"
+                );
+            }
+            Err(other) => panic!("expected a revoked-key refusal, got {other:?}"),
+            Ok(_) => panic!("a revoked key still opened the pack"),
+        }
+
+        // Revocation outranks a still-open validity window: the entry above is
+        // inside its window and is refused anyway.
+        let _ = std::fs::remove_file(&pack);
+    }
+
+    #[test]
+    fn a_key_scoped_to_one_game_does_not_validate_another_game_s_pack() {
+        // MANIFEST declares game_id = "sonic2". A key trusted only for another
+        // title must not be able to vouch for it, however valid its signature.
+        let pack = signed_pack("scope.ay", OUTGOING_ID, &OUTGOING_SEED);
+
+        let wrong_game = store(&registry_entry(
+            OUTGOING_ID,
+            &OUTGOING_SEED,
+            0,
+            FAR_FUTURE,
+            false,
+            "\"streets_of_rage\"",
+        ));
+        assert!(
+            matches!(
+                open(&pack, &wrong_game),
+                Err(crate::archive_vfs::AyError::Trust(
+                    crate::pack_trust::TrustError::GameNotAllowed { .. }
+                ))
+            ),
+            "a signature that verifies is still not authority over another game"
+        );
+
+        // The same key, same pack, correct scope: opens.
+        let right_game = store(&registry_entry(
+            OUTGOING_ID,
+            &OUTGOING_SEED,
+            0,
+            FAR_FUTURE,
+            false,
+            "\"sonic2\"",
+        ));
+        assert!(open(&pack, &right_game).is_ok());
+
+        // A wildcard scope covers it, and is the only thing that should.
+        let wildcard = store(&registry_entry(
+            OUTGOING_ID,
+            &OUTGOING_SEED,
+            0,
+            FAR_FUTURE,
+            false,
+            "\"*\"",
+        ));
+        assert!(open(&pack, &wildcard).is_ok());
+
+        let _ = std::fs::remove_file(&pack);
+    }
 }

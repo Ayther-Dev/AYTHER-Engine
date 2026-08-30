@@ -25,6 +25,7 @@
 // ---------------------------------------------------------------------------
 
 #include "vulkan_backend/vk_sprite.h"
+#include "decode_limits.h"
 #include "log.h"
 #include "vulkan_backend/vk_context.h"
 #include "vulkan_backend/vk_texture.h"
@@ -922,6 +923,10 @@ void VkSprite::decode_loop() {
             // asset: la máscara TIENE que cargar con la cara del asset o tiñe
             // el lado equivocado en las poses espejadas.
             int w = 0, h = 0, ch = 0;
+            if (!ayther::limits::image_header_within_limits(
+                    job.raw.data(), job.raw.size(), nullptr, nullptr)) {
+                continue;
+            }
             uint8_t* px = stbi_load_from_memory(
                 job.raw.data(), static_cast<int>(job.raw.size()), &w, &h, &ch, 1);
             if (px) {
@@ -941,6 +946,13 @@ void VkSprite::decode_loop() {
             }
             std::lock_guard<std::mutex> lk(decode_mx_);
             decode_done_.push_back(std::move(d));
+            continue;
+        }
+
+        // A tiny file may declare an enormous image; the header decides
+        // before stbi_load_from_memory gets to allocate it.
+        if (!ayther::limits::image_header_within_limits(
+                job.raw.data(), job.raw.size(), nullptr, nullptr)) {
             continue;
         }
 

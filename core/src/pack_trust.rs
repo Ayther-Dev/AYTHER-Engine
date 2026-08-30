@@ -522,4 +522,236 @@ mod tests {
             Err(TrustError::BadSignature)
         );
     }
+
+    // ---- Key rotation ---------------------------------------------------
+    //
+    // Rotation is what the registry exists for, and it has a shape no
+    // single-key fixture can express: for a while the OUTGOING key and the
+    // INCOMING key are both trusted, so packs baked on either side of the
+    // changeover keep opening. Then the old window closes and only the new
+    // key is left. Getting that wrong strands either the old content or the
+    // new, and it is discovered by users rather than by a test.
+
+    /// The key being retired, and the one taking over.
+    const OUTGOING_SEED: [u8; 32] = [7; 32];
+    const INCOMING_SEED: [u8; 32] = [9; 32];
+
+    const OUTGOING_ID: &str = "hub-2026-01";
+    const INCOMING_ID: &str = "hub-2026-02";
+
+    struct KeyWindow {
+        id: &'static str,
+        seed: [u8; 32],
+        not_before: u64,
+        not_after: u64,
+        revoked: bool,
+        games: &'static str,
+    }
+
+    fn public_hex(seed: &[u8; 32]) -> String {
+        SigningKey::from_bytes(seed)
+            .verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    fn registry_of(keys: &[KeyWindow]) -> String {
+        let mut out = String::from("version = 1\n");
+        for key in keys {
+            out.push_str(&format!(
+                "\n[[keys]]\n\
+                 id = \"{}\"\n\
+                 algorithm = \"ed25519\"\n\
+                 public_key = \"{}\"\n\
+                 not_before_unix = {}\n\
+                 not_after_unix = {}\n\
+                 revoked = {}\n\
+                 games = [{}]\n",
+                key.id,
+                public_hex(&key.seed),
+                key.not_before,
+                key.not_after,
+                key.revoked,
+                key.games
+            ));
+        }
+        out
+    }
+
+    fn signed_by(id: &str, seed: &[u8; 32], message: &[u8]) -> Vec<u8> {
+        let signature = SigningKey::from_bytes(seed).sign(message).to_bytes();
+        SignatureEnvelope::encode(id, signature).expect("valid test envelope")
+    }
+
+    /// The outgoing key runs [100, 200]; the incoming one starts at 150. So
+    /// [150, 200] is the transition window in which both are trusted.
+    fn rotating_registry() -> String {
+        registry_of(&[
+            KeyWindow {
+                id: OUTGOING_ID,
+                seed: OUTGOING_SEED,
+                not_before: 100,
+                not_after: 200,
+                revoked: false,
+                games: "\"sonic2\"",
+            },
+            KeyWindow {
+                id: INCOMING_ID,
+                seed: INCOMING_SEED,
+                not_before: 150,
+                not_after: 300,
+                revoked: false,
+                games: "\"sonic2\"",
+            },
+        ])
+    }
+
+    /// A pack baked before the changeover, and one baked after it.
+    fn old_pack() -> Vec<u8> {
+        signed_by(OUTGOING_ID, &OUTGOING_SEED, b"integrity")
+    }
+
+    fn new_pack() -> Vec<u8> {
+        signed_by(INCOMING_ID, &INCOMING_SEED, b"integrity")
+    }
+
+    #[test]
+    fn before_the_changeover_only_the_outgoing_key_verifies() {
+        let store = TrustStore::from_toml(&rotating_registry()).expect("valid registry");
+
+        assert!(store.verify_at(b"integrity", &old_pack(), 120).is_ok());
+        assert_eq!(
+            store.verify_at(b"integrity", &new_pack(), 120),
+            Err(TrustError::KeyNotYetValid(INCOMING_ID.into())),
+            "a pack signed by a key that has not activated yet must not open"
+        );
+    }
+
+    #[test]
+    fn during_the_transition_window_both_keys_verify() {
+        let store = TrustStore::from_toml(&rotating_registry()).expect("valid registry");
+
+        // The whole point of the overlap: a pack already in the wild and one
+        // baked this morning both open, so the changeover strands nobody.
+        for now in [150, 175, 200] {
+            assert!(
+                store.verify_at(b"integrity", &old_pack(), now).is_ok(),
+                "the outgoing key must still verify at {now}"
+            );
+            assert!(
+                store.verify_at(b"integrity", &new_pack(), now).is_ok(),
+                "the incoming key must already verify at {now}"
+            );
+        }
+    }
+
+    #[test]
+    fn after_the_outgoing_window_closes_only_the_incoming_key_verifies() {
+        let store = TrustStore::from_toml(&rotating_registry()).expect("valid registry");
+
+        assert_eq!(
+            store.verify_at(b"integrity", &old_pack(), 201),
+            Err(TrustError::ExpiredKey(OUTGOING_ID.into())),
+            "one second past its window the retired key stops verifying"
+        );
+        assert!(store.verify_at(b"integrity", &new_pack(), 201).is_ok());
+        assert!(store.verify_at(b"integrity", &new_pack(), 300).is_ok());
+        assert_eq!(
+            store.verify_at(b"integrity", &new_pack(), 301),
+            Err(TrustError::ExpiredKey(INCOMING_ID.into())),
+            "the incoming key is not open-ended either"
+        );
+    }
+
+    #[test]
+    fn the_declared_window_is_inclusive_at_both_ends() {
+        // An off-by-one here decides whether a pack opens on the day a key
+        // activates or retires, so the boundary is pinned, not implied.
+        let store = TrustStore::from_toml(&rotating_registry()).expect("valid registry");
+
+        assert_eq!(
+            store.verify_at(b"integrity", &old_pack(), 99),
+            Err(TrustError::KeyNotYetValid(OUTGOING_ID.into()))
+        );
+        assert!(store.verify_at(b"integrity", &old_pack(), 100).is_ok());
+        assert!(store.verify_at(b"integrity", &old_pack(), 200).is_ok());
+        assert_eq!(
+            store.verify_at(b"integrity", &old_pack(), 201),
+            Err(TrustError::ExpiredKey(OUTGOING_ID.into()))
+        );
+    }
+
+    #[test]
+    fn retiring_the_outgoing_key_leaves_the_incoming_one_working() {
+        // The registry once the rotation completes: the old entry is removed
+        // rather than left to expire.
+        let retired = registry_of(&[KeyWindow {
+            id: INCOMING_ID,
+            seed: INCOMING_SEED,
+            not_before: 150,
+            not_after: 300,
+            revoked: false,
+            games: "\"sonic2\"",
+        }]);
+        let store = TrustStore::from_toml(&retired).expect("valid registry");
+
+        // Deleting an entry and letting one expire are different diagnostics,
+        // and an operator has to be able to tell which happened.
+        assert_eq!(
+            store.verify_at(b"integrity", &old_pack(), 175),
+            Err(TrustError::UnknownKey(OUTGOING_ID.into()))
+        );
+        assert!(store.verify_at(b"integrity", &new_pack(), 175).is_ok());
+    }
+
+    #[test]
+    fn a_rotation_window_does_not_widen_the_game_scope() {
+        // Both keys are scoped to sonic2. Rotating must not become a way to
+        // quietly gain authority over another game.
+        let store = TrustStore::from_toml(&rotating_registry()).expect("valid registry");
+
+        for envelope in [old_pack(), new_pack()] {
+            let signer = store
+                .verify_at(b"integrity", &envelope, 175)
+                .expect("both keys verify inside the window");
+            assert_eq!(signer.authorize_game("sonic2"), Ok(()));
+            assert!(signer.authorize_game("streets_of_rage").is_err());
+        }
+    }
+
+    #[test]
+    fn revoking_one_key_of_a_pair_does_not_disturb_the_other() {
+        // Revocation during a rotation is the messy case: the outgoing key is
+        // compromised mid-window and must stop working AT ONCE, while the
+        // incoming key carries on.
+        let compromised = registry_of(&[
+            KeyWindow {
+                id: OUTGOING_ID,
+                seed: OUTGOING_SEED,
+                not_before: 100,
+                not_after: 200,
+                revoked: true,
+                games: "\"sonic2\"",
+            },
+            KeyWindow {
+                id: INCOMING_ID,
+                seed: INCOMING_SEED,
+                not_before: 150,
+                not_after: 300,
+                revoked: false,
+                games: "\"sonic2\"",
+            },
+        ]);
+        let store = TrustStore::from_toml(&compromised).expect("valid registry");
+
+        // Revocation beats the window: the key is inside [100, 200] and is
+        // still refused.
+        assert_eq!(
+            store.verify_at(b"integrity", &old_pack(), 175),
+            Err(TrustError::RevokedKey(OUTGOING_ID.into()))
+        );
+        assert!(store.verify_at(b"integrity", &new_pack(), 175).is_ok());
+    }
 }

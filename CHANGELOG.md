@@ -22,6 +22,16 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   UndefinedBehaviorSanitizer over the CPU test suite, a pinned `cargo-audit`
   against the locked dependency graph, and a short fuzz smoke over the pack,
   decoder, and FFI targets, keeping any crash as an artifact.
+- Decoded-resource ceilings: an image's declared size is checked from its header
+  before any pixel buffer is allocated, video dimensions are checked before
+  libvpx is configured, decoded audio is capped per asset, and the Lua VM now
+  has a 64 MiB memory ceiling alongside its existing instruction budget. A
+  41-byte PNG declaring 12000x12000 passes every container check and is refused
+  here.
+- Key rotation, revocation, and per-game scope are pinned by fixtures: a two-key
+  registry driven through an explicit clock, the same transitions end to end
+  with real signed packs, and the whole set repeated through
+  `ayther_pack_open_trusted` so the policy is proved at the FFI boundary too.
 
 ### Added
 

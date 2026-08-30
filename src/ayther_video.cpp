@@ -2,6 +2,7 @@
 // ayther_video.cpp — ver ayther_video.h
 // ---------------------------------------------------------------------------
 #include "ayther_video.h"
+#include "decode_limits.h"
 #include "log.h"
 
 #include "ayther_core_ffi.h"   // : la fuente del pack lee por rango
@@ -350,6 +351,20 @@ bool VideoClip::open(std::unique_ptr<VideoSource> src, const uint8_t* idx,
     }
     if (!indexed && !demux_ivf(*src, &im->w, &im->h, &im->fps, &im->packets, err))
         return false;
+
+    // The IVF header carries 16-bit dimensions, so a handful of bytes can ask
+    // for a 65535x65535 surface. The decoder allocates several frames of it, so
+    // the declared size is checked before libvpx is handed the configuration.
+    if (!ayther::limits::video_dimensions_ok(im->w, im->h)) {
+        if (err) *err = "video dimensions exceed the decode ceiling";
+        ayther::log::write(ayther::log::Severity::Error,
+            "video", "dimensions_refused",
+            "refusing a %ux%u stream: the ceiling is %lld pixels and %lld per side",
+            im->w, im->h,
+            static_cast<long long>(ayther::limits::kMaxVideoPixels),
+            static_cast<long long>(ayther::limits::kMaxVideoDimension));
+        return false;
+    }
     im->src = std::move(src);
 
     vpx_codec_iface_t* iface = vpx_codec_vp9_dx();

@@ -26,6 +26,7 @@
 #include "log.h"
 #include "audio_player.h"
 #include "ayther_file.h"
+#include "decode_limits.h"
 #include "audio_live_resume.h"
 #include "ayther_core_ffi.h"
 
@@ -1141,6 +1142,17 @@ bool AudioPlayer::decode_audio_bytes(WavEntry& entry,
                 SDL_GetError());
             return false;
         }
+        if (!ayther::limits::decoded_audio_bytes_ok(buf_len)) {
+            // A short RIFF can declare a very long stream. The decoded size is
+            // known here, before it is copied into the cache.
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "decoded_audio_too_large",
+                "refusing %u decoded bytes; the ceiling is %lld",
+                buf_len,
+                static_cast<long long>(ayther::limits::kMaxDecodedAudioBytes));
+            SDL_free(buf);
+            return false;
+        }
         entry.spec = spec;
         entry.pcm.assign(buf, buf + buf_len);
         SDL_free(buf);
@@ -1159,6 +1171,18 @@ bool AudioPlayer::decode_audio_bytes(WavEntry& entry,
         }
         entry.spec.format = SDL_AUDIO_S16; entry.spec.channels = channels; entry.spec.freq = sample_rate;
         const size_t total_bytes = static_cast<size_t>(n_samples) * channels * sizeof(short);
+        // stb_vorbis has already allocated: the ceiling bounds what the cache
+        // RETAINS, and the container's per-entry limit bounds the transient.
+        if (!ayther::limits::decoded_audio_bytes_ok(
+                static_cast<int64_t>(total_bytes))) {
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "decoded_audio_too_large_ogg",
+                "refusing %zu decoded bytes; the ceiling is %lld",
+                total_bytes,
+                static_cast<long long>(ayther::limits::kMaxDecodedAudioBytes));
+            free(decoded);
+            return false;
+        }
         entry.pcm.assign(reinterpret_cast<uint8_t*>(decoded),
                          reinterpret_cast<uint8_t*>(decoded) + total_bytes);
         free(decoded);   // stb_vorbis allocates with malloc
@@ -1179,6 +1203,16 @@ bool AudioPlayer::decode_audio_bytes(WavEntry& entry,
         entry.spec.channels = static_cast<int>(channels);
         entry.spec.freq     = static_cast<int>(sample_rate);
         const size_t total_bytes = static_cast<size_t>(total_frames) * channels * sizeof(drflac_int16);
+        if (!ayther::limits::decoded_audio_bytes_ok(
+                static_cast<int64_t>(total_bytes))) {
+            ayther::log::write(ayther::log::Severity::Error,
+                "audio.player", "decoded_audio_too_large_flac",
+                "refusing %zu decoded bytes; the ceiling is %lld",
+                total_bytes,
+                static_cast<long long>(ayther::limits::kMaxDecodedAudioBytes));
+            drflac_free(decoded, nullptr);
+            return false;
+        }
         entry.pcm.assign(reinterpret_cast<uint8_t*>(decoded),
                          reinterpret_cast<uint8_t*>(decoded) + total_bytes);
         drflac_free(decoded, nullptr);

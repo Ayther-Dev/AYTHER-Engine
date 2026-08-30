@@ -4834,6 +4834,107 @@ pub unsafe extern "C" fn ayther_test_pack_builder_finish_trusted(
     }
 }
 
+/// Test-support boundary: the lowercase hex public key of the deterministic
+/// Ed25519 key derived from `seed_byte`.
+///
+/// `ayther_test_pack_builder_finish_trusted` above bakes ONE registry shape:
+/// one key, wide open, scoped to every game. Rotation, revocation, and per-game
+/// scope each need a different registry, and composing that TOML is the
+/// caller's job -- it is the thing under test. This hands over the only part a
+/// caller cannot compute for itself.
+///
+/// Writes at most `cap` bytes including the NUL. 65 bytes are required.
+///
+/// This symbol is intentionally absent from the public C header.
+#[unsafe(no_mangle)]
+/// # Safety
+///
+/// `out_buf` must be writable for `cap` bytes when non-null.
+pub unsafe extern "C" fn ayther_test_public_key_hex(
+    seed_byte: u8,
+    out_buf: *mut std::os::raw::c_char,
+    cap: usize,
+) -> bool {
+    unsafe {
+        if out_buf.is_null() || cap < 65 {
+            return false;
+        }
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[seed_byte; 32]);
+        let hex: String = signing_key
+            .verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let bytes = hex.as_bytes();
+        std::ptr::copy_nonoverlapping(
+            bytes.as_ptr().cast::<std::os::raw::c_char>(),
+            out_buf,
+            bytes.len(),
+        );
+        *out_buf.add(bytes.len()) = 0;
+        true
+    }
+}
+
+/// Test-support boundary: signs the staged pack with the deterministic key
+/// derived from `seed_byte`, under the caller's chosen `key_id`.
+///
+/// Pairs with `ayther_test_public_key_hex` so a native test can bake a pack for
+/// one key and then decide, in its own registry, whether that key is active,
+/// retired, revoked, or scoped to a different game.
+///
+/// This symbol is intentionally absent from the public C header.
+#[unsafe(no_mangle)]
+/// # Safety
+///
+/// All pointers must be valid for the duration of the call. Paths and `key_id`
+/// must be readable NUL-terminated UTF-8, and `err_buf` must be writable for
+/// `err_cap` bytes when non-null.
+pub unsafe extern "C" fn ayther_test_pack_builder_finish_signed_as(
+    ptr: *mut PackBuilder,
+    out_path: *const std::os::raw::c_char,
+    key_id: *const std::os::raw::c_char,
+    seed_byte: u8,
+    err_buf: *mut std::os::raw::c_char,
+    err_cap: usize,
+) -> bool {
+    unsafe {
+        let write_err = |message: &str| {
+            if !err_buf.is_null() && err_cap > 0 {
+                let bytes = message.as_bytes();
+                let length = bytes.len().min(err_cap - 1);
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr().cast::<std::os::raw::c_char>(),
+                    err_buf,
+                    length,
+                );
+                *err_buf.add(length) = 0;
+            }
+        };
+        if ptr.is_null() || out_path.is_null() || key_id.is_null() {
+            write_err("null argument");
+            return false;
+        }
+        let Ok(out) = std::ffi::CStr::from_ptr(out_path).to_str() else {
+            write_err("output path not UTF-8");
+            return false;
+        };
+        let Ok(id) = std::ffi::CStr::from_ptr(key_id).to_str() else {
+            write_err("key id not UTF-8");
+            return false;
+        };
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[seed_byte; 32]);
+        match (*ptr).finish_with_signing_key(id, &signing_key, std::path::Path::new(out)) {
+            Ok(()) => true,
+            Err(error) => {
+                write_err(&error);
+                false
+            }
+        }
+    }
+}
+
 // ===========================================================================
 // `AudioHasher` opaque-handle C API.
 // ===========================================================================
