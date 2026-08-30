@@ -32,16 +32,17 @@ trust decision, or a compatibility promise to third-party integrators.
 |---|---|---|
 | Rust workspace | Present | Workspace version `0.1.0`, edition 2024, resolver 3 |
 | `ayther_core` | Present | Builds as `rlib` and `staticlib` |
-| Rust unit tests | Passing | 375 passed; one optional archive benchmark ignored on 2026-08-29 |
-| Rust formatting | Passing | `cargo fmt --all -- --check` is a required CI gate |
-| Rust linting | Passing | `cargo clippy --workspace --all-targets --locked -- -D warnings` |
+| Rust unit tests | Passing | 385 passed; one optional archive benchmark ignored on 2026-08-30 |
+| Rust formatting | Passing | `cargo fmt --all -- --check` passed on 2026-08-30 |
+| Rust linting | Passing | `cargo clippy --workspace --all-targets --locked -- -D warnings` passed on 2026-08-30 |
 | Rust documentation gates | Enforced in source | Missing docs, broken intra-doc links, and unsafe operations in unsafe functions are denied |
 | CXX bridge declarations | Present | Rust side in `core/src/ffi.rs`; generated C++ consumer tree is absent |
 | Legacy C ABI | Present | Raw `ayther_*` exports in `core/src/lib.rs` |
 | Public C header | Present | `include/ayther/ayther_core_ffi.h` declares the current flat C ABI; the C++ test checks representative layout and lifecycle contracts |
 | C++ engine | Buildable, pre-release | `Ayther::engine` owns all 24 sources; Windows native and native-VPX builds pass |
 | Root CMake project | Implemented, pre-release | Corrosion owns Cargo integration; CMake exposes core, engine, ymfm, and optional VPX targets |
-| Engine tests and tools | Partial | Headless ABI tests and native CPU/audio/renderer integration probes are present; real-emulator, cross-platform, and broader hardware coverage remain incomplete |
+| Engine tests and tools | Partial | `windows-native-vpx` passed 42 of 43 CTests on 2026-08-30; `abi_negociacion` was explicitly skipped because `AYTHER_ABI_CORE` was not supplied |
+| Flat C FFI verification | Passing | `ayther.core.ffi` reports 132/132 checks under the optimized `windows-native-vpx` build |
 | Installable package | Pre-release | Core and native packages install namespaced targets, headers, shaders, and notices; external Windows consumers pass with VPX disabled and enabled |
 | CI and release workflows | Reproducible pre-release path | CI covers the build/test matrix; tag releases compare rebuilt core packages, emit SPDX SBOMs, checksums, Sigstore bundles, SLSA provenance, and signed SBOM attestations before protected publication |
 | Third-party inventory | Implemented for validated builds | Cargo graph, vcpkg ports, vendored revisions, and shipped license material are recorded; release CI enforcement remains pending |
@@ -113,10 +114,14 @@ documents for the [component model](COMPONENT_MODEL.md),
 ## Platform status
 
 The shared CMake presets cover Windows and Linux core and native builds, with
-separate VPX variants. Windows configure/build/test/install and external
-consumption passed for native builds with VPX disabled and enabled on
-2026-08-27. The eight opt-in Vulkan CTests also passed on Windows; Linux has not
-been exercised and the broader GPU/driver matrix remains unverified. macOS, mobile,
+separate VPX variants. On 2026-08-30, `windows-native-vpx` configured and built,
+then CTest reported 42 passed and zero failed out of 43 tests. The sole omission,
+`abi_negociacion`, returned the conventional skip code because no
+`AYTHER_ABI_CORE` fork DLL was supplied; its legacy-core path still completed
+eight checks with zero failures. The Rust baseline on the same date passed
+formatting, linting, and 385 tests, with one optional archive benchmark ignored.
+The eight opt-in Vulkan CTests previously passed on Windows; Linux has not been
+exercised and the broader GPU/driver matrix remains unverified. macOS, mobile,
 WebAssembly, and console targets are not supported commitments.
 
 The engine's current observation model is specialized around Mega Drive / Genesis

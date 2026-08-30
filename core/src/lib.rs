@@ -4751,6 +4751,84 @@ pub unsafe extern "C" fn ayther_pack_builder_finish(
     }
 }
 
+/// Test-support boundary used by the native fixtures to exercise production
+/// trust policy without accepting the embedded RFC 8032 development key.
+///
+/// This symbol is intentionally absent from the public C header. It derives a
+/// deterministic, non-development Ed25519 key, writes its public trust registry,
+/// and signs the staged pack with the matching private key.
+#[unsafe(no_mangle)]
+/// # Safety
+///
+/// All pointers must be valid for the duration of the call. Paths must point to
+/// readable NUL-terminated UTF-8 strings, and `err_buf` must be writable for
+/// `err_cap` bytes when it is non-null.
+pub unsafe extern "C" fn ayther_test_pack_builder_finish_trusted(
+    ptr: *mut PackBuilder,
+    out_path: *const std::os::raw::c_char,
+    registry_path: *const std::os::raw::c_char,
+    err_buf: *mut std::os::raw::c_char,
+    err_cap: usize,
+) -> bool {
+    unsafe {
+        let write_err = |message: &str| {
+            if !err_buf.is_null() && err_cap > 0 {
+                let bytes = message.as_bytes();
+                let length = bytes.len().min(err_cap - 1);
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr().cast::<std::os::raw::c_char>(),
+                    err_buf,
+                    length,
+                );
+                *err_buf.add(length) = 0;
+            }
+        };
+        if ptr.is_null() || out_path.is_null() || registry_path.is_null() {
+            write_err("null argument");
+            return false;
+        }
+        let Ok(out) = std::ffi::CStr::from_ptr(out_path).to_str() else {
+            write_err("output path not UTF-8");
+            return false;
+        };
+        let Ok(registry) = std::ffi::CStr::from_ptr(registry_path).to_str() else {
+            write_err("registry path not UTF-8");
+            return false;
+        };
+
+        const TEST_KEY_ID: &str = "ayther-native-test-2026";
+        const TEST_SIGNING_SEED: [u8; 32] = [7; 32];
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&TEST_SIGNING_SEED);
+        let public_key = signing_key
+            .verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let trust_registry = format!(
+            "version = 1\n\n[[keys]]\n\
+             id = \"{TEST_KEY_ID}\"\n\
+             algorithm = \"ed25519\"\n\
+             public_key = \"{public_key}\"\n\
+             not_before_unix = 0\n\
+             not_after_unix = 4102444800\n\
+             revoked = false\n\
+             games = [\"*\"]\n"
+        );
+        if let Err(error) = std::fs::write(registry, trust_registry) {
+            write_err(&format!("writing trust registry: {error}"));
+            return false;
+        }
+        match (*ptr).finish_with_signing_key(TEST_KEY_ID, &signing_key, std::path::Path::new(out)) {
+            Ok(()) => true,
+            Err(error) => {
+                write_err(&error);
+                false
+            }
+        }
+    }
+}
+
 // ===========================================================================
 // `AudioHasher` opaque-handle C API.
 // ===========================================================================

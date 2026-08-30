@@ -14,6 +14,10 @@
 # Native unit/contract tests are standalone executables with a tiny local test
 # harness. Give each one an isolated working directory because several create
 # temporary WAV, pack, or recording files using fixed names.
+add_library(ayther_test_support INTERFACE)
+target_include_directories(ayther_test_support INTERFACE
+    "${PROJECT_SOURCE_DIR}/tests/support")
+
 function(ayther_add_native_test _source _category)
     get_filename_component(_name "${_source}" NAME_WE)
     set(_target "ayther_${_name}")
@@ -22,7 +26,8 @@ function(ayther_add_native_test _source _category)
     add_executable("${_target}" "${_source}")
     target_link_libraries("${_target}" PRIVATE
         Ayther::engine
-        Ayther::core)
+        Ayther::core
+        ayther_test_support)
     target_include_directories("${_target}" PRIVATE
         "${PROJECT_SOURCE_DIR}/include/ayther"
         "${PROJECT_SOURCE_DIR}/src")
@@ -144,6 +149,7 @@ if(AYTHER_ENABLE_VPX)
             "${PROJECT_BINARY_DIR}/tools/${_ayther_vpx_test}")
         target_include_directories("${_ayther_vpx_test}" PRIVATE
             "${PROJECT_SOURCE_DIR}/include/ayther")
+        target_link_libraries("${_ayther_vpx_test}" PRIVATE ayther_test_support)
         ayther_instrument_target("${_ayther_vpx_test}")
     endforeach()
 endif()

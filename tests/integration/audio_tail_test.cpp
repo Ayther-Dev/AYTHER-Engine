@@ -15,6 +15,7 @@
 #include "audio_player.h"
 #include "ayther_components_toml.h"
 #include "ayther_core_ffi.h"
+#include "trusted_pack_fixture.h"
 
 #include <SDL3/SDL.h>
 
@@ -112,24 +113,23 @@ int main() {
     }
     const auto wav = fixture_wav_bytes(44100);
     char err[256] = "";
-    AytherPackBuilder* b = ayther_pack_builder_new();
+    ayther::test::TrustedPackFixture fixture{"audio_tail"};
     // El builder exige un manifest — el mínimo que AyArchive acepta.
     const std::string manifest =
         "[pack]\nname = \"tail_test\"\nversion = \"0.0.1\"\n"
         "game_id = \"crc32:00000000\"\nayther_min = \"0.8.0\"\n"
         "\n[regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n";
-    ayther_pack_builder_add_bytes(b, "manifest.toml",
-        reinterpret_cast<const uint8_t*>(manifest.data()), manifest.size());
-    ayther_pack_builder_add_bytes(b, "tone.wav", wav.data(), wav.size());
-    const bool baked = ayther_pack_builder_finish(b, /*sign=*/true,
-                                                  "tail_test.ay",
-                                                  err, sizeof(err));
-    ayther_pack_builder_free(b);
+    const bool staged = fixture.add_bytes(
+                            "manifest.toml",
+                            reinterpret_cast<const uint8_t*>(manifest.data()),
+                            manifest.size()) &&
+                        fixture.add_bytes("tone.wav", wav.data(), wav.size());
+    const bool baked = staged && fixture.finish(err, sizeof(err));
     if (!baked) {
         std::printf("[FAIL] pack builder: %s\n", err);
         return 1;
     }
-    AyArchive* pack = ayther_pack_open("tail_test.ay");
+    AyArchive* pack = fixture.open();
     if (!pack) {
         std::printf("[FAIL] no abre el pack de prueba\n");
         return 1;
@@ -183,9 +183,7 @@ int main() {
           "sin streams/handles tras expirar todas las ventanas");
 
     p.shutdown();
-    ayther_pack_close(pack);
     SDL_Quit();
-    std::remove("tail_test.ay");
 
     if (g_fail) { std::printf("--- %d FALLAS ---\n", g_fail); return 1; }
     std::printf("--- todo ok ---\n");

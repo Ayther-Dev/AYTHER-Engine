@@ -12,6 +12,7 @@
 // No SDL3 or Vulkan dependency — links only against ayther_core.lib.
 // ---------------------------------------------------------------------------
 #include <ayther/ayther_core_ffi.h>
+#include "trusted_pack_fixture.h"
 
 #include <cstdio>
 #include <cstring>
@@ -388,12 +389,10 @@ static void test_pack_watcher() {
 // pack builder (R8) — build + sign a .ay, then open + read it back
 // ---------------------------------------------------------------------------
 static void test_pack_builder() {
-    namespace fs = std::filesystem;
-    const std::string out = (fs::temp_directory_path() /
-                             "ae_ffi_packbuild.ay").string();
+    ayther::test::TrustedPackFixture fixture{"ffi"};
 
     BEGIN_TEST("pack_builder/new");
-    AytherPackBuilder* b = ayther_pack_builder_new();
+    AytherPackBuilder* b = fixture.builder();
     EXPECT_NNULL(b);
 
     BEGIN_TEST("pack_builder/reject_signature_entry");
@@ -430,13 +429,12 @@ static void test_pack_builder() {
 
     BEGIN_TEST("pack_builder/finish_signed");
     char err[256] = {};
-    const bool ok = ayther_pack_builder_finish(b, true, out.c_str(), err, sizeof(err));
+    const bool ok = fixture.finish(err, sizeof(err));
     if (!ok) std::fprintf(stderr, "    finish error: %s\n", err);
     EXPECT(ok);
-    ayther_pack_builder_free(b);
 
     BEGIN_TEST("pack_builder/opens_and_verifies");
-    AyArchive* pack = ayther_pack_open(out.c_str());   // verifies the dev signature
+    AyArchive* pack = fixture.open();
     EXPECT_NNULL(pack);
 
     if (pack) {
@@ -485,11 +483,7 @@ static void test_pack_builder() {
         EXPECT_EQ(ayther_pack_read_range(nullptr, "video/clip.ivf", 0,
                                          &one_byte, 1), (int64_t)-1);
 
-        ayther_pack_close(pack);
     }
-
-    std::error_code ec;
-    fs::remove(out, ec);
 
     BEGIN_TEST("pack_builder/free_null_safe");
     ayther_pack_builder_free(nullptr);

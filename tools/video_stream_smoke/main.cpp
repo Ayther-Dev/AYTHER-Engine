@@ -37,6 +37,7 @@
 // ---------------------------------------------------------------------------
 #include "ayther_video.h"
 #include "ayther_core_ffi.h"
+#include "trusted_pack_fixture.h"
 
 #include <chrono>
 #include <cstdio>
@@ -113,23 +114,19 @@ std::vector<uint8_t> read_file(const std::string& p) {
 }
 
 /// Hornea un `.ay` firmado con un solo asset de video.
-bool bake_pack(const std::filesystem::path& out, const std::string& entry,
-               const std::vector<uint8_t>& ivf) {
-    AytherPackBuilder* b = ayther_pack_builder_new();
-    if (!b) return false;
+bool bake_pack(ayther::test::TrustedPackFixture& fixture,
+               const std::string& entry, const std::vector<uint8_t>& ivf) {
     static const char* kManifest =
         "[pack]\nname = \"stream smoke\"\nversion = \"1.0.0\"\n"
         "game_id = \"golden_axe\"\nayther_min = \"0.8.0\"\n"
         "[regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n";
-    bool ok = ayther_pack_builder_add_bytes(
-                  b, "manifest.toml",
+    bool ok = fixture.add_bytes(
+                  "manifest.toml",
                   reinterpret_cast<const uint8_t*>(kManifest), std::strlen(kManifest))
-           && ayther_pack_builder_add_bytes(b, entry.c_str(), ivf.data(), ivf.size());
+           && fixture.add_bytes(entry.c_str(), ivf.data(), ivf.size());
     char err[256] = {};
-    if (ok) ok = ayther_pack_builder_finish(b, true, out.string().c_str(),
-                                           err, sizeof(err));
+    if (ok) ok = fixture.finish(err, sizeof(err));
     if (!ok && err[0]) std::printf("       bake: %s\n", err);
-    ayther_pack_builder_free(b);
     return ok;
 }
 
@@ -165,11 +162,11 @@ int main(int argc, char** argv) {
     const uint32_t kFrames = 40, kPayload = 200 * 1024;
     const std::vector<uint8_t> ivf = synth_ivf(kFrames, kPayload, 320, 224, 30, 1);
     const fs::path ivf_path = dir / "clip.ivf";
-    const fs::path pack_path = dir / "smoke.ay";
+    ayther::test::TrustedPackFixture pack_fixture{"video_stream"};
     check(write_file(ivf_path, ivf), "se escribio el IVF sintetico");
-    check(bake_pack(pack_path, "video/clip.ivf", ivf), "se horneo el pack firmado");
+    check(bake_pack(pack_fixture, "video/clip.ivf", ivf), "se horneo el pack firmado");
 
-    AyArchive* pack = ayther_pack_open(pack_path.string().c_str());
+    AyArchive* pack = pack_fixture.open();
     check(pack != nullptr, "el pack abre y verifica su firma");
     if (!pack) return 1;
 
@@ -304,17 +301,15 @@ int main(int argc, char** argv) {
         if (!why.empty()) std::printf("       motivo: %s\n", why.c_str());
     }
 
-    ayther_pack_close(pack);
-
     // ---- Con material real: los PIXELES coinciden -------------------------
     if (argc >= 2) {
         const std::vector<uint8_t> real = read_file(argv[1]);
         check(!real.empty(), std::string("se pudo leer ") + argv[1]);
         if (!real.empty()) {
-            const fs::path rp = dir / "real.ay";
-            check(bake_pack(rp, "video/real.ivf", real),
+            ayther::test::TrustedPackFixture real_fixture{"video_stream_real"};
+            check(bake_pack(real_fixture, "video/real.ivf", real),
                   "se horneo un pack con el clip real");
-            AyArchive* rpack = ayther_pack_open(rp.string().c_str());
+            AyArchive* rpack = real_fixture.open();
             check(rpack != nullptr, "el pack del clip real abre");
             if (rpack) {
                 ayther::VideoClip s, w;
@@ -478,16 +473,13 @@ int main(int argc, char** argv) {
                       cold.ms_per_frame() >= sustained * 0.5 &&
                       cold.ms_per_frame() <= sustained * 2.0,
                       "el probe coincide con el costo sostenido en orden de magnitud");
-                ayther_pack_close(rpack);
             }
-            fs::remove(rp, ec);
         }
     } else {
         std::printf("[skip] sin .ivf real — pasar uno all-intra para comparar PIXELES\n");
     }
 
     fs::remove(ivf_path, ec);
-    fs::remove(pack_path, ec);
     fs::remove(dir, ec);
 
     if (g_fail) {
