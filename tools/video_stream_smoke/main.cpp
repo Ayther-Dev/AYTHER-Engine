@@ -35,6 +35,7 @@
 //
 // Uso:  video_stream_smoke [all_intra.ivf]
 // ---------------------------------------------------------------------------
+#include "ayther_file.h"
 #include "ayther_video.h"
 #include "ayther_core_ffi.h"
 #include "trusted_pack_fixture.h"
@@ -91,7 +92,7 @@ std::vector<uint8_t> synth_ivf(uint32_t frames, uint32_t payload,
 }
 
 bool write_file(const std::filesystem::path& p, const std::vector<uint8_t>& b) {
-    std::FILE* f = std::fopen(p.string().c_str(), "wb");
+    std::FILE* f = ayther::file_open(p.string().c_str(), "wb");
     if (!f) return false;
     const bool ok = std::fwrite(b.data(), 1, b.size(), f) == b.size();
     std::fclose(f);
@@ -100,7 +101,7 @@ bool write_file(const std::filesystem::path& p, const std::vector<uint8_t>& b) {
 
 std::vector<uint8_t> read_file(const std::string& p) {
     std::vector<uint8_t> out;
-    std::FILE* f = std::fopen(p.c_str(), "rb");
+    std::FILE* f = ayther::file_open(p.c_str(), "rb");
     if (!f) return out;
     std::fseek(f, 0, SEEK_END);
     const long n = std::ftell(f);

@@ -134,8 +134,11 @@ int main() {
 
     // -- Sólo la capa Video visible: sin emulador, sin pack, sin escena.
     AytherLayerStack stack;
+    bool stack_configured = true;
     for (const AytherLayer& l : stack.layers())
-        stack.set_visible(l.id, l.kind == AytherLayerKind::Video);
+        stack_configured &= stack.set_visible(l.id, l.kind == AytherLayerKind::Video);
+    check(stack_configured,
+          "el stack de capas quedo configurado (si no, se compone vacio)");
 
     FrameView fv{};
     fv.video_y = plane_y.data(); fv.video_y_stride = y_pitch;

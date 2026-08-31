@@ -31,6 +31,7 @@
 // Sin argumentos verifica sólo lo que no necesita material y sale verde: el
 // ctest tiene que poder correr en una máquina sin ffmpeg.
 // ---------------------------------------------------------------------------
+#include "ayther_file.h"
 #include "ayther_video.h"
 
 #include <chrono>
@@ -50,7 +51,7 @@ void check(bool ok, const std::string& what) {
 
 std::vector<uint8_t> slurp(const char* path) {
     std::vector<uint8_t> out;
-    std::FILE* f = std::fopen(path, "rb");
+    std::FILE* f = ayther::file_open(path, "rb");
     if (!f) return out;
     std::fseek(f, 0, SEEK_END);
     const long n = std::ftell(f);

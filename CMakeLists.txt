@@ -59,6 +59,20 @@ if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         "${CMAKE_CXX_COMPILER_ID}")
 endif()
 
+# The release CRT, pinned for every configuration rather than per-config.
+#
+# Cargo builds ayther_core as a staticlib against the release CRT whatever
+# CMAKE_BUILD_TYPE says, and the cxx bridge objects come with it. Letting CMake
+# pick /MDd for a Debug build would put _ITERATOR_DEBUG_LEVEL=2 objects next to
+# _ITERATOR_DEBUG_LEVEL=0 ones and the link fails.
+#
+# The consequence is worth knowing before someone tries it: a true
+# -DCMAKE_BUILD_TYPE=Debug build COMPILES cleanly but does not LINK, because
+# vcpkg then offers its debug-CRT libraries and those mismatch this pin. That is
+# why no preset configures Debug, and why the coverage preset gets its
+# unoptimised code from /Od on top of RelWithDebInfo instead of switching the
+# build type. Making Debug link needs the dependencies provisioned
+# release-only; it is a dependency question, not a compiler-flag one.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
 get_property(AYTHER_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -91,6 +105,12 @@ corrosion_import_crate(
     ${_ayther_corrosion_options})
 unset(_ayther_corrosion_options)
 
+# GENERATED. cxxbridge emits this translation unit from core/src/ffi.rs, so it
+# is not under the warnings-as-errors policy: there is no source here to fix,
+# and a warning in it is a report about the generator's output, not about code
+# anyone in this repository wrote. It and the vendored ymfm below are the ONLY
+# two first-party-built targets outside the policy; every other target compiles
+# with warnings as errors. See docs/BUILD_TEST_RELEASE.md.
 corrosion_add_cxxbridge(ayther_cxx
     CRATE ayther_core
     FILES ffi.rs)
@@ -118,6 +138,8 @@ target_include_directories(ayther_ymfm SYSTEM PUBLIC
 
 add_library(ayther::ymfm ALIAS ayther_ymfm)
 add_library(Ayther::ymfm ALIAS ayther_ymfm)
+# VENDORED. Yamaha FM cores maintained outside this project; its warnings are
+# not ours to fix and mixing them with ours would bury the ones that are.
 ayther_instrument_target(ayther_ymfm NO_STRICT_WARNINGS)
 
 # tools/build_libvpx.ps1 installs the optional VP9 decoder here. Keep the

@@ -108,14 +108,19 @@ int main() {
 
     AytherLayerStack stack;
     const uint32_t lid = stack.insert_custom("acetato_vs", stack.layers().size());
+    // The stack has to actually end up configured; see the note in
+    // overlay_blend_smoke about compositing nothing and passing.
+    bool stack_configured = true;
     for (const AytherLayer& l : stack.layers())
-        stack.set_visible(l.id, l.id == lid);
+        stack_configured &= stack.set_visible(l.id, l.id == lid);
     AytherLayerContent cc{};
     std::snprintf(cc.asset, sizeof(cc.asset), "%s", png.c_str());
     cc.img_w = kImgW; cc.img_h = kImgH;
     cc.y = 0; cc.anchor = 0; cc.factor = 1.0f;   // ancla Plano B, 1:1
     cc.tile_mode = 1;
-    stack.set_content(lid, cc);
+    stack_configured &= stack.set_content(lid, cc);
+    check(stack_configured,
+          "el stack de capas quedo configurado (si no, se compone vacio)");
 
     // Fases por columna: variadas y con wrap (v_s = 7·s·8 mod 512 — algunas
     // superan img_h para ejercitar el mod).

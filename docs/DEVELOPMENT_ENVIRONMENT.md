@@ -429,3 +429,30 @@ current vendor driver. GPU tests require physical or virtual Vulkan support.
 Each preset owns exactly one directory under `build/`. Remove only the affected
 `build/<preset>` directory, then configure that preset again. Do not place build
 artifacts in the source tree.
+
+### Configuring a native preset reports that Ninja cannot be found
+
+The real cause is usually an unset `VCPKG_ROOT`, not a missing Ninja. When the
+toolchain file cannot be resolved, CMake fails while probing the compiler and
+reports the generator it never got to use, which sends people to reinstall a
+tool that was present all along. Confirm `VCPKG_ROOT` first:
+
+```powershell
+$env:VCPKG_ROOT
+```
+
+If it is empty, set it as described above and configure again. Core presets are
+unaffected, so `windows-headless` succeeding is not evidence that `VCPKG_ROOT`
+is set.
+
+### Linking fails with `LNK1104` naming a Cargo build script
+
+The checkout path is too long. Windows limits a path to 260 characters unless
+long paths are enabled, and Cargo's intermediate directories are deep enough
+that a checkout roughly 250 characters down will push them past the limit. The
+error names a file the linker cannot open, so it reads like a missing artifact
+rather than a path-length problem.
+
+Clone closer to the drive root, or enable long paths. This is a Windows limit
+rather than a defect in the repository; a build that fails this way at a deep
+path succeeds unchanged at a shallow one.

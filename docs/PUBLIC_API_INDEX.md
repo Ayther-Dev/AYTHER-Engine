@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 46 headers
+## The 52 headers
 
 | header | what it provides |
 |---|---|
@@ -27,9 +27,12 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_components_toml.h`](#ayther_components_tomlh) | Installed public header. |
 | [`ayther_config.h`](#ayther_configh) | Installed public header. |
 | [`ayther_core_ffi.h`](#ayther_core_ffih) | Installed public header. |
+| [`ayther_diagnostic.h`](#ayther_diagnostich) | Installed public header. |
 | [`ayther_env.h`](#ayther_envh) | Installed public header. |
+| [`ayther_file.h`](#ayther_fileh) | Installed public header. |
 | [`ayther_layers.h`](#ayther_layersh) | Installed public header. |
 | [`ayther_mode3.h`](#ayther_mode3h) | Installed public header. |
+| [`ayther_parse.h`](#ayther_parseh) | Installed public header. |
 | [`ayther_rank.h`](#ayther_rankh) | Installed public header. |
 | [`ayther_recording.h`](#ayther_recordingh) | Installed public header. |
 | [`ayther_renderer.h`](#ayther_rendererh) | Installed public header. |
@@ -41,17 +44,20 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_version.h`](#ayther_versionh) | Installed public header. |
 | [`ayther_video.h`](#ayther_videoh) | Installed public header. |
 | [`cram_palette.h`](#cram_paletteh) | Installed public header. |
+| [`decode_limits.h`](#decode_limitsh) | Installed public header. |
 | [`failure_escalation.h`](#failure_escalationh) | Installed public header. |
 | [`libretro_host/ayther_api.h`](#libretro_hostayther_apih) | Installed public header. |
 | [`libretro_host/core_loader.h`](#libretro_hostcore_loaderh) | Installed public header. |
 | [`libretro_host/libretro.h`](#libretro_hostlibretroh) | Installed public header. |
 | [`libretro_host/retro_runner.h`](#libretro_hostretro_runnerh) | Installed public header. |
+| [`log.h`](#logh) | Installed public header. |
 | [`output_profile.h`](#output_profileh) | Installed public header. |
 | [`pano_bands.h`](#pano_bandsh) | Installed public header. |
 | [`panorama_cover.h`](#panorama_coverh) | Installed public header. |
 | [`parallax_bands.h`](#parallax_bandsh) | Installed public header. |
 | [`psg_synth.h`](#psg_synthh) | Installed public header. |
 | [`rewind_buffer.h`](#rewind_bufferh) | Installed public header. |
+| [`runtime_options.h`](#runtime_optionsh) | Installed public header. |
 | [`voice_router.h`](#voice_routerh) | Installed public header. |
 | [`vulkan_backend/tile_tex_cache.h`](#vulkan_backendtile_tex_cacheh) | Installed public header. |
 | [`vulkan_backend/vk_context.h`](#vulkan_backendvk_contexth) | Installed public header. |
@@ -573,6 +579,36 @@ _The installed header (`include/ayther/ayther_core_ffi.h`) carries the full docu
 
 ---
 
+<a id="ayther_diagnostich"></a>
+
+## ayther_diagnostic.h
+
+ayther_diagnostic.h — the ONLY sanctioned way to silence a warning in
+first-party code, and it is deliberately narrow.
+
+The project compiles its own C++ with warnings as errors. That policy is
+worth nothing if the escape hatch is a compiler flag on a whole target,
+because a target-wide exemption also hides the next warning, the one nobody
+meant to accept. Every suppression here is a push/pop around the exact lines
+that need it.
+
+There is one legitimate reason to use these: a test that calls a DEPRECATED
+API ON PURPOSE. The ABI parity oracles exist to compare the legacy accessors
+against the versioned ones, so they must call the legacy accessors; the
+deprecation is aimed at production callers, not at the oracle that proves the
+replacement still agrees with what it replaced. Suppressing the warning there
+is the point, and doing it in three lines around the call keeps it visible.
+
+Anything else -- an unused parameter, a narrowing conversion, a shadowed
+variable -- gets fixed rather than wrapped. If you are reaching for this to
+make a warning go away, it is the wrong tool.
+
+Engine-internal header: not installed.
+
+_The installed header (`include/ayther/ayther_diagnostic.h`) carries the full documentation of every symbol._
+
+---
+
 <a id="ayther_envh"></a>
 
 ## ayther_env.h
@@ -581,9 +617,27 @@ ayther_env.h — getenv with a fallback to the legacy AETHER_ prefix (code
 rebrand 2026-07-25): older scripts and harnesses that export AETHER_* keep
 working unchanged. ALWAYS use this for AYTHER_* variables.
 
-**Declares:** `ayther`, `env_get`
+**Declares:** `ayther`, `detail`, `env_get`, `env_get_exact`
 
 _The installed header (`include/ayther/ayther_env.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="ayther_fileh"></a>
+
+## ayther_file.h
+
+ayther_file.h — fopen sin la deprecación de la CRT de Windows.
+
+NO se usa `fopen_s`: abre SIN COMPARTIR, y eso no es lo mismo que `fopen`.
+Con el tee de audio puesto, el WAV lo escribe una sesión mientras el oráculo
+lo mide, y con la apertura exclusiva la segunda mano se queda sin archivo —
+que fue exactamente cómo se cayó audio_output al migrar. `_fsopen` con
+`_SH_DENYNO` es la que conserva el reparto de `fopen`, y no está deprecada.
+
+**Declares:** `ayther`
+
+_The installed header (`include/ayther/ayther_file.h`) carries the full documentation of every symbol._
 
 ---
 
@@ -650,6 +704,16 @@ SpriteSubstitutor/metasprite flow and publishes results through FrameView.
 **Declares:** `ayther`, `EntityInstance`, `Impl`, `Mode3Resolver`
 
 _The installed header (`include/ayther/ayther_mode3.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="ayther_parseh"></a>
+
+## ayther_parse.h
+
+**Declares:** `ayther`
+
+_The installed header (`include/ayther/ayther_parse.h`) carries the full documentation of every symbol._
 
 ---
 
@@ -733,7 +797,7 @@ Single-owner; driven from the same thread as the session.
 R3.0: scaffold — owns the offscreen target; render() clears it. The emu-frame,
 HD-tile, sprite and post-process passes land in R3.1 / R3.2.
 
-**Declares:** `AyArchive`, `ayther`, `AytherLayerStack`, `AytherRenderer`, `FrameScratch`, `FrameView`, `SceneElement`, `VkContext`
+**Declares:** `AyArchive`, `ayther`, `AytherLayerStack`, `AytherRenderer`, `FrameView`, `SceneElement`, `VkContext`
 
 _The installed header (`include/ayther/ayther_renderer.h`) carries the full documentation of every symbol._
 
@@ -952,6 +1016,36 @@ _The installed header (`include/ayther/cram_palette.h`) carries the full documen
 
 ---
 
+<a id="decode_limitsh"></a>
+
+## decode_limits.h
+
+decode_limits.h — ceilings on what DECODING a pack entry may allocate.
+
+pack_security.rs bounds the CONTAINER: archive size, entry count, per-entry
+bytes, and the 200:1 expansion ratio. Those stop a zip bomb. They do not stop
+the next thing, because a decoder's output is not the entry's size:
+
+A 70-byte PNG whose IHDR declares 60000 x 60000 asks for 14 GB of RGBA
+    the moment stbi_load_from_memory touches it. It compresses to nothing and
+    passes every container check, because the FILE is 70 bytes.
+An IVF header declaring 65535 x 65535 does the same to the video path.
+A WAV can declare far more audio than anyone will listen to.
+
+So the ceilings here are applied to the DECLARED output, read from the header,
+BEFORE the allocation happens. A refusal costs nothing; discovering the size
+after allocating is not a check.
+
+Processing time is bounded by the same numbers plus the Lua instruction
+budget in core/src/script_env.rs: with output bytes capped, decode time is
+capped, and a script cannot spin past MAX_INSTRUCTIONS_PER_FRAME.
+
+Engine-internal header: not installed.
+
+_The installed header (`include/ayther/decode_limits.h`) carries the full documentation of every symbol._
+
+---
+
 <a id="failure_escalationh"></a>
 
 ## failure_escalation.h
@@ -1091,6 +1185,33 @@ _The installed header (`include/ayther/libretro_host/libretro.h`) carries the fu
 **Declares:** `RetroRunner`
 
 _The installed header (`include/ayther/libretro_host/retro_runner.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="logh"></a>
+
+## log.h
+
+log.h — the engine's only way to say something.
+
+The engine used to call fprintf(stderr, "[Component] ...") from ~200 places.
+That is invisible to a frontend: a GUI cannot show it, a test cannot assert
+on it, and a host embedding the engine cannot route it anywhere. Worse, the
+hot paths measured 5 ms per line against a Windows console, which is why
+several call sites grew ad-hoc "log once" flags.
+
+Every record now carries four things a consumer can act on -- severity, the
+component that spoke, a STABLE event id, and typed fields -- plus the human
+message. A frontend installs a sink and decides what happens. When nobody
+installs one, the built-in fallback writes to stderr; that fallback is the
+single place in the engine allowed to touch a console stream.
+
+Engine-internal header: not installed, so it must not appear in any public
+header.
+
+**Declares:** `emit`, `Field`, `Record`, `set_min_severity`, `set_sink`, `uint8_t`, `Value`, `write`
+
+_The installed header (`include/ayther/log.h`) carries the full documentation of every symbol._
 
 ---
 
@@ -1299,6 +1420,30 @@ Single-threaded; driven from the emulation thread alongside AytherSession.
 **Declares:** `ayther`, `RewindBuffer`, `ring_`
 
 _The installed header (`include/ayther/rewind_buffer.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="runtime_optionsh"></a>
+
+## runtime_options.h
+
+runtime_options.h — every AYTHER_* environment option, read once and frozen.
+
+The engine used to call getenv wherever a decision needed one, parse it with
+atoi —which cannot fail, only return 0— and do it again on the next frame.
+That spread the option contract across a dozen files and made a typo
+indistinguishable from a deliberate zero.
+
+This reads each option ONCE, validates it, and hands subsystems a value they
+cannot modify. A malformed option is reported through diagnostics() and falls
+back to its documented default; it is never silently read as zero.
+
+This header is engine-internal and is NOT installed: it must not appear in
+any public header.
+
+**Declares:** `ayther`, `read_bool`, `RuntimeOptions`
+
+_The installed header (`include/ayther/runtime_options.h`) carries the full documentation of every symbol._
 
 ---
 

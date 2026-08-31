@@ -39,7 +39,6 @@ namespace {
 // checks exactly that the two never contradict each other.
 constexpr unsigned kWidth  = 256;
 constexpr unsigned kHeight = 192;
-constexpr unsigned kLinesPerFrame = 262;          // NTSC
 constexpr double   kFps = 60.0;
 constexpr double   kSampleRate = 44100.0;
 constexpr unsigned kSamplesPerFrame = 735;        // 44100 / 60, exactly
@@ -66,10 +65,6 @@ constexpr uint8_t  kAudioWritesPerFrame = 16;
 constexpr unsigned kPatternBytes = 32;
 constexpr unsigned kPatternCount = kVramBytes / kPatternBytes;
 
-/// The frame on which the VDP "chooses" a mode. Before it, SYSTEM reports
-/// vdp_mode 0 with GEOMETRY_PENDING set; after it, a settled geometry. The
-/// oracle needs both states to occur.
-constexpr uint64_t kGeometrySettlesAtFrame = 3;
 
 // ---- libretro callbacks ---------------------------------------------------
 
@@ -120,16 +115,6 @@ uint32_t g_rom_crc32 = 0;
 std::vector<uint16_t> g_framebuffer(kWidth * kHeight, 0);
 std::vector<int16_t>  g_audio(kSamplesPerFrame * 2, 0);
 
-// Recomposed layers, cached by (frame, control generation). Not part of the
-// savestate: they are derived, and a savestate that carried them would let a
-// stale composition survive a restore.
-std::vector<uint16_t> g_layer_bg_a(kWidth * kHeight, 0);
-std::vector<uint16_t> g_layer_bg_b(kWidth * kHeight, 0);
-std::vector<uint16_t> g_layer_window(kWidth * kHeight, 0);
-std::vector<uint16_t> g_layer_sprites(kWidth * kHeight, 0);
-uint64_t g_recompose_key = UINT64_MAX;   // no frame composed yet
-uint64_t g_recompose_calls = 0;
-uint64_t g_recompose_hits  = 0;
 
 // Subscriptions. `requested` is taken immediately; `active` only catches up on
 // the next frame boundary, because that is when a real core can safely turn
@@ -139,25 +124,11 @@ uint32_t g_sub_requested = 0;
 uint32_t g_sub_active    = 0;
 uint64_t g_sub_activation_frame = 0;
 
-constexpr uint32_t kSupportedSubscriptions = AYTHER_SUB_ALL;
 
+/// Names the library in retro_get_system_info AND identifies the build in
+/// the ABI descriptor, so it lives outside the ABI guard: the stock core
+/// still has to say what it is.
 const char kBuildId[] = "ayther-test-core-1";
-
-/// Only what this core actually implements. Declaring a capability it does not
-/// honour would make the frontend take a path that then returns nothing, which
-/// is worse than declaring nothing: the engine checks these before calling.
-constexpr uint64_t kCapabilities =
-    AYTHER_CAP_LEGACY_MEMORY |
-    AYTHER_CAP_REGION_QUERY |
-    AYTHER_CAP_REGION_READ |
-    AYTHER_CAP_FRAME_SNAPSHOT |
-    AYTHER_CAP_PARSED_SPRITES_V1 |
-    AYTHER_CAP_AUDIO_WRITES_V1 |
-    AYTHER_CAP_CONTROL_WRITE |
-    AYTHER_CAP_RECOMPOSE_V1 |
-    AYTHER_CAP_FRAME_DELTA_V1 |
-    AYTHER_CAP_SUBSCRIPTIONS_V1 |
-    AYTHER_CAP_SYSTEM_V1;
 
 // ---- Deterministic generation --------------------------------------------
 
@@ -342,6 +313,54 @@ void advance_frame() {
 
     ++g_state.frame;
 }
+
+// Everything from here to the descriptor exists only to be reached through
+// ayther_get_interface. The stock build compiles that entry point out, so this
+// whole block goes with it: leaving it behind would be dead code that the
+// compiler is right to complain about, and silencing that complaint would hide
+// the next piece of dead code too.
+#ifndef AYTHER_TEST_CORE_NO_ABI
+
+// Everything below is reachable only through ayther_get_interface, so it is
+// declared here rather than at the top of the file: the stock build compiles
+// that entry point out and would otherwise carry a descriptor, its capability
+// list, and a recomposition cache that nothing can ever reach.
+constexpr unsigned kLinesPerFrame = 262;          // NTSC
+
+/// The frame on which the VDP "chooses" a mode. Before it, SYSTEM reports
+/// vdp_mode 0 with GEOMETRY_PENDING set; after it, a settled geometry. The
+/// oracle needs both states to occur.
+constexpr uint64_t kGeometrySettlesAtFrame = 3;
+
+constexpr uint32_t kSupportedSubscriptions = AYTHER_SUB_ALL;
+
+/// Only what this core actually implements. Declaring a capability it does not
+/// honour would make the frontend take a path that then returns nothing, which
+/// is worse than declaring nothing: the engine checks these before calling.
+constexpr uint64_t kCapabilities =
+    AYTHER_CAP_LEGACY_MEMORY |
+    AYTHER_CAP_REGION_QUERY |
+    AYTHER_CAP_REGION_READ |
+    AYTHER_CAP_FRAME_SNAPSHOT |
+    AYTHER_CAP_PARSED_SPRITES_V1 |
+    AYTHER_CAP_AUDIO_WRITES_V1 |
+    AYTHER_CAP_CONTROL_WRITE |
+    AYTHER_CAP_RECOMPOSE_V1 |
+    AYTHER_CAP_FRAME_DELTA_V1 |
+    AYTHER_CAP_SUBSCRIPTIONS_V1 |
+    AYTHER_CAP_SYSTEM_V1;
+
+// Recomposed layers, cached by (frame, control generation). Not part of the
+// savestate: they are derived, and a savestate that carried them would let a
+// stale composition survive a restore.
+constexpr size_t kFramePixels = static_cast<size_t>(kWidth) * kHeight;
+std::vector<uint16_t> g_layer_bg_a(kFramePixels, 0);
+std::vector<uint16_t> g_layer_bg_b(kFramePixels, 0);
+std::vector<uint16_t> g_layer_window(kFramePixels, 0);
+std::vector<uint16_t> g_layer_sprites(kFramePixels, 0);
+uint64_t g_recompose_key = UINT64_MAX;   // no frame composed yet
+uint64_t g_recompose_calls = 0;
+uint64_t g_recompose_hits  = 0;
 
 void fill_system(ayther_system_v1& out) {
     std::memset(&out, 0, sizeof(out));
@@ -641,6 +660,25 @@ int32_t AYTHER_CALL api_poll_frame_delta(ayther_frame_delta_v1* out,
     return AYTHER_STATUS_OK;
 }
 
+int32_t AYTHER_CALL api_get_recompose_stats(ayther_recompose_stats_v1* out,
+                                             uint32_t out_size) {
+    if (out == nullptr || out_size < sizeof(ayther_recompose_stats_v1)) {
+        return AYTHER_STATUS_INVALID_ARGUMENT;
+    }
+    std::memset(out, 0, sizeof(*out));
+    out->struct_size = sizeof(ayther_recompose_stats_v1);
+    out->multilayer_calls = g_recompose_calls;
+    out->multilayer_hits = g_recompose_hits;
+    // This core implements three controls. Pack their current values into a
+    // stable fingerprint so a consumer can distinguish a new frame from a
+    // control change when explaining a cache miss.
+    out->controls_fingerprint =
+        static_cast<uint64_t>(g_state.layer_mask) |
+        (static_cast<uint64_t>(g_state.layer_dim) << 8) |
+        (static_cast<uint64_t>(g_state.audio_mute_mask) << 16);
+    return AYTHER_STATUS_OK;
+}
+
 int32_t AYTHER_CALL api_get_subscriptions(ayther_subscription_state_v1* out,
                                           uint32_t out_size) {
     if (out == nullptr || out_size < sizeof(ayther_subscription_state_v1)) {
@@ -694,10 +732,12 @@ const ayther_interface_v1 g_interface = {
     /* poll_frame_delta         */ api_poll_frame_delta,
     /* recompose_stats_size     */ sizeof(ayther_recompose_stats_v1),
     /* reserved2                */ 0,
-    /* get_recompose_stats      */ nullptr,
+    /* get_recompose_stats      */ api_get_recompose_stats,
     /* recompose_multilayer     */ api_recompose_multilayer,
     /* frame_delta_since        */ nullptr,
 };
+
+#endif  // !AYTHER_TEST_CORE_NO_ABI
 
 }  // namespace
 

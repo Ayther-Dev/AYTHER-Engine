@@ -18,6 +18,7 @@
 #include <vk_mem_alloc.h>                 // buffer de readback (export MP4)
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>      // getenv (tope de uploads, )
 #include <unordered_map>

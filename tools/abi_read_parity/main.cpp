@@ -22,6 +22,7 @@
 //   Env:   AYTHER_PROBE_ROM (opcional: sin ella corre con la ROM sintética del
 //          repo) · AYTHER_ABI_CORE (default: el del repo)
 // ---------------------------------------------------------------------------
+#include "ayther_diagnostic.h"
 #include "libretro_host/retro_runner.h"
 #include "ayther_env.h"
 
@@ -153,11 +154,16 @@ int main() {
     struct Reg { const char* name; const uint8_t* legacy; size_t bytes;
                  RetroRunner::AytherReadResult (RetroRunner::*fn)(
                      void*, const ayther_frame_snapshot_v1&) const; };
+    // The legacy accessors are deprecated FOR PRODUCTION callers. This oracle
+    // exists to prove the versioned reads still agree with them byte for byte,
+    // so calling them is the measurement, not an oversight.
+    AYTHER_LEGACY_ABI_BEGIN
     const Reg regs[] = {
         { "VRAM",     r.video_ram(), r.video_ram_size(), &RetroRunner::read_vram_v1 },
         { "CRAM",     r.color_ram(), r.color_ram_size(), &RetroRunner::read_cram_v1 },
         { "VDP regs", r.vdp_regs(),  r.vdp_regs_size(),  &RetroRunner::read_vdp_regs_v1 },
     };
+    AYTHER_LEGACY_ABI_END
     for (const Reg& g : regs) {
         if (!g.legacy || !g.bytes) {
             std::printf("  [aviso] %s no disponible por el camino legacy\n", g.name);
@@ -175,7 +181,9 @@ int main() {
 
     // ---- Sprites parseados -------------------------------------------------
     {
+        AYTHER_LEGACY_ABI_BEGIN
         const uint8_t legacy_n = r.parsed_sprite_count();
+        AYTHER_LEGACY_ABI_END
         std::vector<ayther_sprite_v1> spr(256);
         const auto res = r.read_parsed_sprites_v1(spr.data(), 256, snap);
         check(res.ok(), "sprites: v1 lee OK");
@@ -189,8 +197,11 @@ int main() {
         // los lee asi (ayther_sprite_hasher_process_sprites). El comentario de
         // retro_runner.h que decia «8 bytes/sprite» esta desactualizado y hace
         // leer corrido — con 8 este mismo check daba un FAIL fantasma.
-        if (res.ok() && res.count && r.parsed_sprites()) {
-            const uint8_t* raw = r.parsed_sprites();
+        AYTHER_LEGACY_ABI_BEGIN
+        const uint8_t* const legacy_sprites = r.parsed_sprites();
+        AYTHER_LEGACY_ABI_END
+        if (res.ok() && res.count && legacy_sprites) {
+            const uint8_t* raw = legacy_sprites;
         bool matching = true;
         for (uint32_t i = 0; i < res.count && matching; ++i) {
                 const uint8_t* p = raw + size_t(i) * 10;
@@ -218,7 +229,10 @@ int main() {
         check(res.ok(), "audio: v1 lee OK");
         check(res.count == snap.audio_write_count,
               "audio: v1 devuelve el count del snapshot");
-        std::printf("       v1=%u  legacy=%u\n", res.count, r.audio_write_count());
+        AYTHER_LEGACY_ABI_BEGIN
+        const uint32_t legacy_writes = r.audio_write_count();
+        AYTHER_LEGACY_ABI_END
+        std::printf("       v1=%u  legacy=%u\n", res.count, legacy_writes);
     }
 
     // ---- La generación es lo que hace segura la convivencia ----------------

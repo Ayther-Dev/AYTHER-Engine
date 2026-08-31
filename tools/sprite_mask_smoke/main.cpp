@@ -152,8 +152,11 @@ int main() {
         for (int c2 = 0; c2 < 3; ++c2) tint[i * 3 + c2] = kTintQ[c2];
 
     AytherLayerStack stack;
+    bool stack_configured = true;
     for (const AytherLayer& l : stack.layers())
-        stack.set_visible(l.id, l.kind == AytherLayerKind::SpritesHd);
+        stack_configured &= stack.set_visible(l.id, l.kind == AytherLayerKind::SpritesHd);
+    check(stack_configured,
+          "el stack de capas quedo configurado (si no, se compone vacio)");
 
     FrameView fv{};
     fv.sprite_subs      = subs;
