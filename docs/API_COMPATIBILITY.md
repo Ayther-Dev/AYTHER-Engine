@@ -2,7 +2,7 @@
 
 **Status:** unstable pre-release interfaces
 
-**Last reviewed:** 2026-08-27
+**Last reviewed:** 2026-08-30
 
 AYTHER Engine currently exposes a Rust crate, typed `cxx` declarations, a flat
 C ABI, and an installed C++ engine package. None is stable. Source, binary,
@@ -89,17 +89,56 @@ Flat C ABI revision 7 adds `ayther_pack_open_trusted()` so production hosts can
 provide a public-key registry explicitly. Existing entry points and layouts are
 unchanged; callers of the new symbol must relink against a revision-7 core.
 
+## Compatibility window
+
+The window is the span of other versions a given build interoperates with. It
+is stated per axis, because these axes move independently, and it is stated as
+what the code actually enforces rather than as an intention.
+
+| Axis | This build accepts | This build produces | Enforced by |
+| --- | --- | --- | --- |
+| AYTHER release | itself only | `0.1.0` | nothing; there is no cross-release check |
+| Flat C ABI | the revision it was compiled against | revision `7` | `ayther_core_version()`, checked by the caller |
+| Pack manifest schema | any schema `<= 2` | schema `2` | `archive_vfs.rs`, rejecting a larger declared schema |
+| Pack container format | any format `<= 1` | format `1` | `archive_vfs.rs`, rejecting a larger declared format |
+| Emulator extension ABI | major `1`, minor `<= 10` | negotiates the highest common minor | `ayther_get_interface` negotiation |
+| SDK C API | revision `1` | revision `1` | `AYTHER_SDK_C_API_VERSION` |
+
+Read the pack rows precisely: the bound is one-sided. A pack declaring a
+*higher* schema or format is refused, because it may need semantics this build
+does not implement; a pack declaring a *lower* one is accepted, and no floor is
+enforced. Nothing has ever been dropped, so the absence of a floor has not yet
+cost anything — but "we accept every old pack" is currently a consequence of
+never having removed anything, not a tested guarantee. The first removal is
+what will require a real minimum and the tests to go with it.
+
+The extension ABI is the one axis with genuine negotiation: host and core agree
+on a minor within major `1`, and `abi_negociacion` exercises both halves,
+including a core that does not speak the extension at all and must still load.
+
+### What the window does not cover
+
+There is no binary-compatibility window across AYTHER releases. `0.x` minor
+versions may break source and binary contracts, and no automated symbol or
+layout baseline compares one release against the previous one — item 5 of the
+list below is exactly that missing check. Until it exists, the practical rule
+is unchanged: pin every native participant to one source revision and rebuild
+them together. Two artifacts from different commits are not a supported
+combination merely because `ayther_core_version()` returns the same number,
+since the revision counter moves only on deliberate ABI edits and cannot detect
+an accidental layout change.
+
 ## Compatibility work required before stable release
 
 The first supported release must define:
 
 1. a complete ABI policy covering symbol addition/removal, structure growth, calling
    conventions, compiler/runtime compatibility, and deprecation duration;
-3. a pack-schema policy with readable/writable ranges and deterministic upgrade
+2. a pack-schema policy with readable/writable ranges and deterministic upgrade
    behavior;
-4. script capability negotiation for APIs that evolve independently of the host release;
-5. feature negotiation for optional emulator and renderer capabilities;
-6. an automated symbol and layout baseline checked in CI.
+3. script capability negotiation for APIs that evolve independently of the host release;
+4. feature negotiation for optional emulator and renderer capabilities;
+5. an automated symbol and layout baseline checked in CI.
 
 Until then, pin consumers to a specific source revision and rebuild all native
 participants together. Never load a library merely because

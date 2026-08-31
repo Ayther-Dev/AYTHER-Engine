@@ -84,6 +84,13 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   pack, and refuse a report containing repository paths.
 - `AytherSession::Config::trust_registry`, without which a release build could
   open no pack at all.
+- `docs/SUPPORT_MATRIX.md`: the published support matrix, separating what was
+  verified on a developer machine from what only CI covers and what nothing has
+  measured, with the operating systems, architectures, compilers, GPU backend,
+  and VPX configurations behind each claim.
+- A compatibility window per axis in `docs/API_COMPATIBILITY.md`, stating what
+  each build accepts and produces for the release, flat C ABI, pack manifest
+  schema, pack container format, extension ABI, and SDK C API.
 
 ### Changed
 
