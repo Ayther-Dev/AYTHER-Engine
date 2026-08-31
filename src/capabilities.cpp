@@ -5,12 +5,10 @@
 namespace ayther::engine {
 
 Version version() noexcept {
-    static constexpr std::string_view kPrerelease;
     return Version{
         AYTHER_VERSION_MAJOR,
         AYTHER_VERSION_MINOR,
         AYTHER_VERSION_PATCH,
-        kPrerelease,
     };
 }
 

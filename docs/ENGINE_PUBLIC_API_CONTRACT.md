@@ -3,6 +3,9 @@
 **Status:** implemented for version and core capability probing; the remaining
 Runtime-facing modules are specified destinations and are not public yet.
 
+The ownership decision, authorized consumers, and `0.1.x` guarantees are
+recorded in [ADR 0003](adr/0003-runtime-engine-public-api-ownership.md).
+
 ## Public boundary
 
 The Runtime-facing C++ API lives exclusively under
@@ -50,8 +53,6 @@ explicit contract, installation rule, and compatibility coverage before use.
 - Borrowed references, spans, string views, and native handles name their owner
   and validity interval in the declaring header. A borrowed value never
   extends the owner's lifetime.
-- `Version::prerelease` refers to immutable Engine-owned static storage and is
-  valid until process termination.
 - Vulkan handles remain owned by the party named by `vulkan_interop.hpp`.
   Exporting or borrowing a handle never transfers ownership implicitly.
 
@@ -86,6 +87,12 @@ replacement and the first version in which removal is permitted. During 0.1.x,
 removal or a source-incompatible semantic change is deferred to 0.2.0. Security
 or correctness defects that cannot be preserved safely are documented as an
 explicit compatibility exception.
+
+The maintained consumers during `0.1.x` are AYTHER Runtime, AYTHER Play when it
+uses the same reviewed modules, and this repository's package/conformance
+tests. Lab, SDK tools, and third parties may not expand the boundary without a
+new Engine review. AYTHER Engine maintainers own the declarations,
+implementation, installation rules, documentation, and contract tests.
 
 ## Core probing
 

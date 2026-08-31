@@ -5,9 +5,10 @@
 **Last reviewed:** 2026-08-30
 
 AYTHER Engine currently exposes a Rust crate, typed `cxx` declarations, a flat
-C ABI, and an installed C++ engine package. None is stable. Source, binary,
-behavior, ownership, and file-format compatibility may change before the first
-supported release.
+C ABI, and an installed C++ engine package. These remain pre-release surfaces.
+The installed Runtime-facing C++ declarations have one narrow guarantee:
+published `0.1.x` declarations and behavior remain source-compatible through
+the `0.1` minor line. No C++ binary compatibility is promised.
 
 ## Surfaces
 
@@ -16,7 +17,7 @@ supported release.
 | Rust API | `core/src/lib.rs` and modules | in-repository core development | pre-release |
 | Typed CXX bridge | `core/src/ffi.rs` | type-oriented Rust/C++ integration | pre-release; not installed as a supported package |
 | Flat C ABI | `include/ayther/ayther_core_ffi.h` | C/C++ static-library consumers and hot paths | broad, legacy-compatible, unstable |
-| CMake package | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm`, optional `Ayther::vpx` | installed native consumers | pre-release |
+| CMake package | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm`, optional `Ayther::vpx` | installed native consumers | `0.1.x` source-compatible; no C++ ABI promise |
 | Pack manifest | schema `2` | content metadata | implemented, not frozen |
 
 The Rust definitions are authoritative for exported functions and `#[repr(C)]`
@@ -75,10 +76,12 @@ destructors are non-throwing.
 | Emulator extension ABI | `1.10` | independently negotiated core protocol |
 | SDK C API revision | `1` | independent C facade contract |
 
-The release value follows SemVer. During `0.x`, minor versions may break source
-or binary compatibility and patch versions remain compatible within the same
-minor. Protocol revisions are not SemVer and must not be inferred from the
-release value. See [ADR 0002](adr/0002-release-and-protocol-version-contract.md).
+The release value follows SemVer. During `0.x`, a new minor version may break
+source or binary compatibility; patch versions remain source-compatible within
+the same minor. Concretely, the published `0.1.x` C++ contract remains
+source-compatible until `0.2.0`. Protocol revisions are not SemVer and must not
+be inferred from the release value. See [ADR 0002](adr/0002-release-and-protocol-version-contract.md)
+and [ADR 0003](adr/0003-runtime-engine-public-api-ownership.md).
 
 Flat C ABI revision 6 adds `ayther_pack_format_supported()` without changing
 existing signatures or layouts. Consumers that use only the revision-5 symbol
@@ -118,8 +121,8 @@ including a core that does not speak the extension at all and must still load.
 
 ### What the window does not cover
 
-There is no binary-compatibility window across AYTHER releases. `0.x` minor
-versions may break source and binary contracts, and no automated symbol or
+There is no binary-compatibility window across AYTHER releases. A `0.x` minor
+version may break source and binary contracts, and no automated symbol or
 layout baseline compares one release against the previous one — item 5 of the
 list below is exactly that missing check. Until it exists, the practical rule
 is unchanged: pin every native participant to one source revision and rebuild
@@ -143,6 +146,20 @@ The first supported release must define:
 Until then, pin consumers to a specific source revision and rebuild all native
 participants together. Never load a library merely because
 `ayther_core_version()` is nonzero or numerically close to an expected value.
+
+### Removal, deprecation, and security fixes
+
+For the Runtime-facing C++ API, a public symbol must be documented as
+deprecated with its replacement before removal. A symbol published in `0.1.x`
+remains until `0.2.0`; `find_package(Ayther 0.1)` enforces the same minor-line
+window with `SameMinorVersion`. Security or correctness defects may be repaired
+incompatibly when preserving behavior would be unsafe. Such an exception must
+be recorded in the release notes and compatibility documentation, and should
+produce a comprehensible diagnostic when a safe failure path exists.
+
+Header and library artifacts are versioned as a pair. Source compatibility does
+not make mixed commits or mixed build modes valid, and it does not imply a C++
+ABI guarantee across compilers, standard libraries, flags, or platforms.
 
 ## Error handling
 

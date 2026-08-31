@@ -31,9 +31,7 @@ if(TARGET ayther_core-static)
 endif()
 list(REMOVE_DUPLICATES AYTHER_CORE_SYSTEM_LIBS)
 
-install(FILES
-        "${PROJECT_SOURCE_DIR}/include/ayther/ayther_core_ffi.h"
-        "${PROJECT_SOURCE_DIR}/include/ayther/ayther_version.h"
+install(FILES ${AYTHER_CORE_PUBLIC_HEADERS}
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther")
 install(FILES "${AYTHER_CORE_ARCHIVE}"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}")
@@ -52,9 +50,7 @@ if(AYTHER_BUILD_ENGINE)
         PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther"
         INCLUDES      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-    install(FILES
-        "${PROJECT_SOURCE_DIR}/include/ayther/engine/capabilities.hpp"
-        "${PROJECT_SOURCE_DIR}/include/ayther/engine/engine.hpp"
+    install(FILES ${AYTHER_ENGINE_CONTRACT_HEADERS}
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther/engine")
 
     install(EXPORT AytherEngineTargets

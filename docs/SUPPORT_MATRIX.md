@@ -1,5 +1,10 @@
 # Support matrix
 
+> **Historical measurement (2026-08-30).** The results below describe commit
+> `846081e` and must not be interpreted as current CI evidence or a current
+> support promise. See [Project status](PROJECT_STATUS.md) and the latest
+> required CI run for current status.
+
 **Last measured:** 2026-08-30, at commit `846081e`.
 
 This matrix separates three things that are easy to blur together, because

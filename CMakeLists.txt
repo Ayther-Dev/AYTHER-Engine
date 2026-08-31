@@ -213,29 +213,33 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
 set_source_files_properties(src/ayther_session_impl.inl
     PROPERTIES HEADER_FILE_ONLY TRUE)
 
-# Installed engine headers are an explicit compatibility surface. Keep this
-# allowlist deliberately small: implementation components remain available to
-# in-tree tools through include/ayther, but are not published by the package.
-set(AYTHER_ENGINE_LEGACY_PUBLIC_HEADER_NAMES
-    audio_asset_level.h
-    audio_match_rule.h
-    ayther_animation.h
-    ayther_audio_events.h
-    ayther_layers.h
-    ayther_mode3.h
-    ayther_result.h
-    ayther_sdk.h
-    ayther_sdk_version.h
-    ayther_session.h
-    log.h)
+# Installed headers are an explicit compatibility surface. The same manifest
+# drives installation checks and the generated public index, so a private
+# header cannot become documented merely because it lives under include/.
+file(STRINGS "${PROJECT_SOURCE_DIR}/cmake/AytherPublicHeaders.txt"
+    AYTHER_INSTALLED_PUBLIC_HEADER_NAMES
+    REGEX "^[^#].+[^ \\t]$")
 
-set(AYTHER_ENGINE_CONTRACT_HEADER_NAMES
-    engine/capabilities.hpp
-    engine/engine.hpp)
+set(AYTHER_CORE_PUBLIC_HEADER_NAMES
+    ayther_core_ffi.h
+    ayther_version.h)
 
 set(AYTHER_ENGINE_PUBLIC_HEADER_NAMES
-    ${AYTHER_ENGINE_LEGACY_PUBLIC_HEADER_NAMES}
-    ${AYTHER_ENGINE_CONTRACT_HEADER_NAMES})
+    ${AYTHER_INSTALLED_PUBLIC_HEADER_NAMES})
+list(REMOVE_ITEM AYTHER_ENGINE_PUBLIC_HEADER_NAMES
+    ${AYTHER_CORE_PUBLIC_HEADER_NAMES})
+
+set(AYTHER_ENGINE_LEGACY_PUBLIC_HEADER_NAMES "")
+set(AYTHER_ENGINE_CONTRACT_HEADER_NAMES "")
+foreach(_ayther_public_header IN LISTS AYTHER_ENGINE_PUBLIC_HEADER_NAMES)
+    if(_ayther_public_header MATCHES "^engine/")
+        list(APPEND AYTHER_ENGINE_CONTRACT_HEADER_NAMES
+            "${_ayther_public_header}")
+    else()
+        list(APPEND AYTHER_ENGINE_LEGACY_PUBLIC_HEADER_NAMES
+            "${_ayther_public_header}")
+    endif()
+endforeach()
 
 set(AYTHER_ENGINE_PUBLIC_HEADERS "${AYTHER_ENGINE_PUBLIC_HEADER_NAMES}")
 list(TRANSFORM AYTHER_ENGINE_PUBLIC_HEADERS
@@ -246,10 +250,14 @@ set(AYTHER_ENGINE_LEGACY_PUBLIC_HEADERS
 list(TRANSFORM AYTHER_ENGINE_LEGACY_PUBLIC_HEADERS
     PREPEND "${PROJECT_SOURCE_DIR}/include/ayther/")
 
-set(AYTHER_INSTALLED_PUBLIC_HEADER_NAMES
-    ayther_core_ffi.h
-    ayther_version.h
-    ${AYTHER_ENGINE_PUBLIC_HEADER_NAMES})
+set(AYTHER_ENGINE_CONTRACT_HEADERS
+    "${AYTHER_ENGINE_CONTRACT_HEADER_NAMES}")
+list(TRANSFORM AYTHER_ENGINE_CONTRACT_HEADERS
+    PREPEND "${PROJECT_SOURCE_DIR}/include/ayther/")
+
+set(AYTHER_CORE_PUBLIC_HEADERS "${AYTHER_CORE_PUBLIC_HEADER_NAMES}")
+list(TRANSFORM AYTHER_CORE_PUBLIC_HEADERS
+    PREPEND "${PROJECT_SOURCE_DIR}/include/ayther/")
 
 set_source_files_properties(${AYTHER_ENGINE_PUBLIC_HEADERS}
     PROPERTIES HEADER_FILE_ONLY TRUE)

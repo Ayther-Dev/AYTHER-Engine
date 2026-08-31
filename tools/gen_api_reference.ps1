@@ -1,12 +1,11 @@
 # ---------------------------------------------------------------------------
-# gen_api_reference.ps1 — the public API reference, generated (#553).
+# gen_api_reference.ps1 — generated public API reference.
 #
 # WHY IT IS NOT DOXYGEN (yet). Doxygen produces a better reference, but it
 # demands a tool installed on every machine that wants to regenerate it and in
-# CI. This walks the SAME root that `cmake/AytherInstall.cmake` installs —every
-# `.h` under `include/ayther/`— and depends on nothing: if a header enters or
-# leaves the surface, the reference reflects it without maintaining a parallel
-# list. The day Doxygen is in CI, this still serves as an index.
+# CI. This reads the SAME manifest that drives CMake's installed allowlist. If
+# a header enters or leaves the package, the reference changes with it instead
+# of maintaining a parallel inventory.
 #
 # What it does NOT do, stated plainly: it does not really parse C++. It
 # extracts each header's file banner and its top-level declarations with their
@@ -27,18 +26,27 @@ $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path "$PSScriptRoot/..").Path
 Set-Location $repo
 
-# The installation recursively copies every header under this root. Walking
-# that same tree keeps package and index in sync without parsing CMake.
 $includeRoot = (Resolve-Path "include/ayther").Path
-$headers = Get-ChildItem $includeRoot -Recurse -File -Filter "*.h" |
-           ForEach-Object {
-               [pscustomobject]@{
-                   file = [System.IO.Path]::GetRelativePath(
-                       $includeRoot, $_.FullName).Replace('\', '/')
-                   nota = "Installed public header."
-               }
-           } |
-           Sort-Object file
+$manifest = Join-Path $repo "cmake/AytherPublicHeaders.txt"
+$installed = Get-Content $manifest |
+             ForEach-Object { $_.Trim() } |
+             Where-Object { $_ -and -not $_.StartsWith('#') }
+if (($installed | Select-Object -Unique).Count -ne $installed.Count) {
+    throw "cmake/AytherPublicHeaders.txt contains duplicate paths"
+}
+$headers = $installed | ForEach-Object {
+    if ([System.IO.Path]::GetExtension($_) -notin ".h", ".hpp") {
+        throw "installed public entry is not a header: $_"
+    }
+    $path = Join-Path $includeRoot $_
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "installed public header does not exist: $_"
+    }
+    [pscustomobject]@{
+        file = $_.Replace('\', '/')
+        nota = "Installed public header."
+    }
+} | Sort-Object file
 if ($headers.Count -lt 2) { throw "the public list came out with $($headers.Count) headers" }
 
 function Get-HeaderAnchor([string]$File) {
@@ -52,8 +60,8 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine("# AYTHER Engine — index of installed headers")
 [void]$sb.AppendLine()
 [void]$sb.AppendLine("> **GENERATED — do not edit by hand.** ``pwsh tools/gen_api_reference.ps1``.")
-[void]$sb.AppendLine("> Derived from ``include/ayther/**/*.h``, the same root that")
-[void]$sb.AppendLine("> ``cmake/AytherInstall.cmake`` installs: if a header enters")
+[void]$sb.AppendLine("> Derived from ``cmake/AytherPublicHeaders.txt``, the manifest that")
+[void]$sb.AppendLine("> drives CMake's installed allowlist: if a header enters")
 [void]$sb.AppendLine("> or leaves the surface, this page reflects it without anyone editing a")
 [void]$sb.AppendLine("> parallel list.")
 [void]$sb.AppendLine()

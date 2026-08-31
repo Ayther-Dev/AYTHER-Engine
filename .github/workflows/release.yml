@@ -281,7 +281,10 @@ jobs:
       - name: Run the out-of-tree package consumer
         shell: pwsh
         run: >-
-          & '${{ runner.temp }}/ayther-consumer/${{ matrix.consumer_executable }}'
+          ./tools/run_package_consumer.ps1
+          -Executable '${{ runner.temp }}/ayther-consumer/${{ matrix.consumer_executable }}'
+          -TimeoutSeconds 5
+          -ForbiddenPath '${{ github.workspace }}'
 
       # Linking is not running. For the engine artifacts, drive the installed
       # package the way a frontend does: create a session, open a TRUSTED pack,

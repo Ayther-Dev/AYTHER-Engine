@@ -69,8 +69,12 @@ The policy and bump rules are recorded in
 | SDK C API revision | `1` | `AYTHER_SDK_C_API_VERSION` | Independent facade revision |
 
 During `0.x`, the release minor version may break source or binary contracts;
-patch versions remain compatible within one minor. Protocol revisions move only
-when their own boundary changes and must carry migration and conformance tests.
+patch versions remain source-compatible within one minor. The Runtime-facing
+C++ API therefore preserves source compatibility throughout `0.1.x`, while
+`0.2.0` may revise the contract; no C++ binary compatibility is promised. The
+ownership decision is [ADR 0003](adr/0003-runtime-engine-public-api-ownership.md).
+Protocol revisions move only when their own boundary changes and must carry
+migration and conformance tests.
 
 ## Capability maturity
 
@@ -85,6 +89,8 @@ when their own boundary changes and must carry migration and conformance tests.
 - constrained Lua execution and runtime substitution overrides;
 - in-memory IPS/BPS patching;
 - SoundFont conversion, trimming, synthesis, and mapping;
+- installed Runtime-facing version and compiled-capability probes owned by
+  Engine, with no device or environment probing;
 - Rust-facing APIs, a typed CXX bridge definition, and a broad legacy C ABI.
 
 ### Native integration present, behavior verification incomplete
@@ -167,7 +173,7 @@ Three are closed, three are open, and two are deferred.
 | 4 | Enforce the version contract and protocol baselines in protected CI | Open | The release workflow validates that the tag and every product version agree before anything is built, which covers the release axis. No automated symbol or layout baseline compares a build against its predecessor, so an accidental ABI change is still invisible |
 | 5 | Provision Hub's operational keys and exercise rotation and revocation through a shipping host | Deferred | The trust primitive is implemented and tested: registries enforce identity, validity window, revocation, and per-game scope, optimized builds reject the RFC test key, and rotation and revocation have dedicated fixtures in both Rust and the flat C ABI. Hub's operational keys are external to this repository |
 | 6 | Enforce generation and shipment of complete transitive third-party notices for every release artifact | Closed | CI re-derives the dependency notice with `tools/gen_notice.ps1 -Check` and fails on drift. The release payload contract requires `share/licenses/Ayther/NOTICE.md` in the installed tree, and the release workflow verifies the artifact carries exactly its advertised payload |
-| 7 | Complete security review of media-decoder limits, scripting lifetimes, FFI ownership, dynamic library loading, and adversarial fuzz coverage | Open, with a confirmed defect | Substantial parts are built: decoded-resource ceilings for image, audio, and video, a 64 MiB Lua memory cap, ASan and UBSan jobs, and three fuzz targets. The fuzzer has already found a high-severity defect that remains unfixed: a 43-byte SoundFont input drives a 4 GiB allocation (`malloc(4294967295)`), reproducer `oom-2daa503e168be05745765288223baa675a72bf3d`. See the [go/no-go decision](RELEASE_GO_NO_GO.md) |
+| 7 | Complete security review of media-decoder limits, scripting lifetimes, FFI ownership, dynamic library loading, and adversarial fuzz coverage | Open, confirmed defect repaired | Substantial parts are built: decoded-resource ceilings for image, audio, and video, a 64 MiB Lua memory cap, ASan and UBSan jobs, and three fuzz targets. The 43-byte SoundFont reproducer that previously requested 4 GiB is now rejected by `validated_sf2_extent()` before the third-party parser; the regression covers both `Sf2Synth::new()` and `new_shared()`. The wider security review remains open pending final sanitizer, fuzz, and CI evidence. See the historical [go/no-go decision](RELEASE_GO_NO_GO.md) |
 | 8 | Produce one clean clone to configure, build, test, install, and consume cycle on each supported platform in protected CI | Closed | The `native` CI job performs exactly that sequence — checkout, configure, build, test, install, then configure, build, and run an out-of-tree consumer — across four configurations: Windows and Linux, each with VPX disabled and enabled. The release workflow repeats it against the packaged artifact |
 
 Blockers 2, 4, and 7 are the remaining engineering work. Blockers 1 and 5 are

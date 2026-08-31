@@ -1,6 +1,9 @@
 #include <ayther/engine/capabilities.hpp>
 
+#include <array>
 #include <cstdio>
+#include <thread>
+#include <type_traits>
 
 namespace {
 
@@ -16,14 +19,16 @@ void check(bool condition, const char* message) {
 }  // namespace
 
 int main() {
+    static_assert(std::is_standard_layout_v<ayther::engine::Version>);
+    static_assert(std::is_trivially_copyable_v<ayther::engine::Capabilities>);
+    static_assert(noexcept(ayther::engine::version()));
+    static_assert(noexcept(ayther::engine::probe_capabilities()));
+
     const auto linked_version = ayther::engine::version();
     check(linked_version.major == AYTHER_EXPECTED_VERSION_MAJOR &&
               linked_version.minor == AYTHER_EXPECTED_VERSION_MINOR &&
               linked_version.patch == AYTHER_EXPECTED_VERSION_PATCH,
           "version comes from the linked Engine artifact");
-    check(linked_version.prerelease.empty(),
-          "the 0.1.0 artifact has no prerelease identifier");
-
     const auto first = ayther::engine::probe_capabilities();
     const auto second = ayther::engine::probe_capabilities();
 
@@ -49,6 +54,29 @@ int main() {
               first.libretro_video == second.libretro_video &&
               first.libretro_audio == second.libretro_audio,
           "probing is deterministic and independent of process environment");
+
+    constexpr std::size_t kConcurrentCallers = 8;
+    std::array<ayther::engine::Capabilities, kConcurrentCallers> concurrent{};
+    std::array<std::thread, kConcurrentCallers> callers{};
+    for (std::size_t index = 0; index < callers.size(); ++index) {
+        callers[index] = std::thread([&concurrent, index] {
+            concurrent[index] = ayther::engine::probe_capabilities();
+        });
+    }
+    for (auto& caller : callers) {
+        caller.join();
+    }
+    bool concurrent_results_match = true;
+    for (const auto& result : concurrent) {
+        concurrent_results_match = concurrent_results_match &&
+            result.renderer == first.renderer &&
+            result.hardware_acceleration == first.hardware_acceleration &&
+            result.external_image_import == first.external_image_import &&
+            result.libretro_video == first.libretro_video &&
+            result.libretro_audio == first.libretro_audio;
+    }
+    check(concurrent_results_match,
+          "probing is safe and deterministic across concurrent callers");
 
     std::printf("%s\n", failures == 0 ? "=== PASS ===" : "=== FAIL ===");
     return failures == 0 ? 0 : 1;

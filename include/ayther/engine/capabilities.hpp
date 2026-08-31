@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string_view>
 
 namespace ayther::engine {
 
@@ -13,7 +12,6 @@ struct Version {
     std::uint32_t major;
     std::uint32_t minor;
     std::uint32_t patch;
-    std::string_view prerelease;
 };
 
 enum class RendererBackend : std::uint8_t {

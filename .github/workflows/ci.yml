@@ -543,7 +543,16 @@ jobs:
       - name: Run the out-of-tree package consumer
         shell: pwsh
         run: >-
-          & '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}/${{ matrix.executable }}'
+          ./tools/run_package_consumer.ps1
+          -Executable '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}/${{ matrix.executable }}'
+          -TimeoutSeconds 5
+          -ForbiddenPath '${{ github.workspace }}'
+
+      - name: Reject an incompatible installed package version
+        run: >-
+          cmake
+          -DAYTHER_PACKAGE_PREFIX='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
+          -P tests/package_consumer/check_incompatible.cmake
 
       - name: Retain CTest diagnostics on failure
         if: failure()
