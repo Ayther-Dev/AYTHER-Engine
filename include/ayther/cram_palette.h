@@ -67,6 +67,8 @@ inline CramColor cram_color_at(const uint8_t* cram, std::size_t size,
 /// It serves what a viewer needs and a visual comparison cannot provide: saying
 /// whether two moments of the game have the SAME palette. A day/night cycle
 /// changes this signature even when the on-screen change is a single shade.
+// Stable public API; names distinguish the byte size from the palette line.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 inline uint64_t cram_line_signature(const uint8_t* cram, std::size_t size, uint8_t line) {
     uint64_t h = 0x1465'0FB0'739D'0383ull;   // the AYTHER seed (pack-identities §0)
     for (uint32_t e = 0; e < 16; ++e) {

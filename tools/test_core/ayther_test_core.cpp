@@ -353,10 +353,11 @@ constexpr uint64_t kCapabilities =
 // Recomposed layers, cached by (frame, control generation). Not part of the
 // savestate: they are derived, and a savestate that carried them would let a
 // stale composition survive a restore.
-std::vector<uint16_t> g_layer_bg_a(kWidth * kHeight, 0);
-std::vector<uint16_t> g_layer_bg_b(kWidth * kHeight, 0);
-std::vector<uint16_t> g_layer_window(kWidth * kHeight, 0);
-std::vector<uint16_t> g_layer_sprites(kWidth * kHeight, 0);
+constexpr size_t kFramePixels = static_cast<size_t>(kWidth) * kHeight;
+std::vector<uint16_t> g_layer_bg_a(kFramePixels, 0);
+std::vector<uint16_t> g_layer_bg_b(kFramePixels, 0);
+std::vector<uint16_t> g_layer_window(kFramePixels, 0);
+std::vector<uint16_t> g_layer_sprites(kFramePixels, 0);
 uint64_t g_recompose_key = UINT64_MAX;   // no frame composed yet
 uint64_t g_recompose_calls = 0;
 uint64_t g_recompose_hits  = 0;

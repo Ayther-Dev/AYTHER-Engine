@@ -402,6 +402,7 @@ jobs:
             executable: ayther_package_consumer.exe
             install_subdir: windows-native
             needs_vpx: false
+            parallel: 1
           - name: Linux native + package consumer
             os: ubuntu-latest
             preset: linux-native
@@ -409,6 +410,7 @@ jobs:
             executable: ayther_package_consumer
             install_subdir: linux-native
             needs_vpx: false
+            parallel: 2
           - name: Linux native + VPX + package consumer
             os: ubuntu-latest
             preset: linux-native-vpx
@@ -416,6 +418,7 @@ jobs:
             executable: ayther_package_consumer
             install_subdir: linux-native-vpx
             needs_vpx: true
+            parallel: 2
           - name: Windows native + VPX + package consumer
             os: windows-latest
             preset: windows-native-vpx
@@ -423,6 +426,7 @@ jobs:
             executable: ayther_package_consumer.exe
             install_subdir: windows-native-vpx
             needs_vpx: true
+            parallel: 1
 
     steps:
       - name: Check out the repository
@@ -486,7 +490,9 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        run: >-
+          cmake --build --preset ${{ matrix.preset }}
+          --parallel ${{ matrix.parallel }}
 
       - name: Install the pinned clang-tidy
         if: matrix.preset == 'linux-native'
