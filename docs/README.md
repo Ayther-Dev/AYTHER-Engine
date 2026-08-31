@@ -17,6 +17,7 @@ owned by AYTHER Runtime, SDK, Play, Hub, or Lab.
 | [Project status](PROJECT_STATUS.md) | Everyone | Current capabilities, missing repository areas, validation evidence, and release blockers |
 | [Architecture](ARCHITECTURE.md) | Maintainers and integrators | System context, internal layers, data flow, module ownership, and failure boundaries |
 | [API and compatibility](API_COMPATIBILITY.md) | Rust/C++ integrators | API surfaces, FFI safety, version axes, and compatibility policy |
+| [Engine public API contract](ENGINE_PUBLIC_API_CONTRACT.md) | Runtime and Engine integrators | Runtime-facing headers, ownership, lifetime, threading, errors, compatibility, and probing |
 | [Generated public API index](PUBLIC_API_INDEX.md) | C++ consumers | Installed headers and their top-level declarations |
 | [C++ API and implementation contracts](CPP_API_REFERENCE.md) | C++ maintainers and integrators | Ownership, lifetime, threading, failure, and subsystem contracts |
 | [C++ engineering review](CPP_ENGINE_REVIEW.md) | Maintainers | Critical findings, hardcoding, design patterns, corrections, and performance opportunities |

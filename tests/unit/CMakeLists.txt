@@ -5,6 +5,7 @@
 
 foreach(_source IN ITEMS
         audio_bus_balance_test.cpp
+        capabilities_test.cpp
         audio_fade_test.cpp
         audio_match_rule_test.cpp
         audio_seq_anchor_test.cpp
@@ -23,3 +24,13 @@ foreach(_source IN ITEMS
         widescreen_test.cpp)
     ayther_add_native_test("${_source}" unit)
 endforeach()
+
+target_compile_definitions(ayther_capabilities_test PRIVATE
+    AYTHER_EXPECTED_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    AYTHER_EXPECTED_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    AYTHER_EXPECTED_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+    AYTHER_EXPECTED_VULKAN=$<BOOL:${AYTHER_BUILD_RENDERER}>)
+
+set_tests_properties(ayther.unit.capabilities_test PROPERTIES
+    ENVIRONMENT
+        "DISPLAY=;WAYLAND_DISPLAY=;SDL_VIDEODRIVER=dummy;VK_ICD_FILENAMES=__ayther_missing_icd__")

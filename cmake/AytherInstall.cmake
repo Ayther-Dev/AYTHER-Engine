@@ -52,6 +52,11 @@ if(AYTHER_BUILD_ENGINE)
         PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther"
         INCLUDES      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
+    install(FILES
+        "${PROJECT_SOURCE_DIR}/include/ayther/engine/capabilities.hpp"
+        "${PROJECT_SOURCE_DIR}/include/ayther/engine/engine.hpp"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther/engine")
+
     install(EXPORT AytherEngineTargets
         FILE AytherEngineTargets.cmake
         NAMESPACE Ayther::

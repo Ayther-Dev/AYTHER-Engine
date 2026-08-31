@@ -175,6 +175,7 @@ unset(_ayther_vpx_include_dir)
 # visible in review and CMake regenerates only when the build graph changes.
 add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/audio_player.cpp
+    src/capabilities.cpp
     src/ayther_animation.cpp
     src/ayther_audio_events.cpp
     src/ayther_background_export.cpp
@@ -215,7 +216,7 @@ set_source_files_properties(src/ayther_session_impl.inl
 # Installed engine headers are an explicit compatibility surface. Keep this
 # allowlist deliberately small: implementation components remain available to
 # in-tree tools through include/ayther, but are not published by the package.
-set(AYTHER_ENGINE_PUBLIC_HEADER_NAMES
+set(AYTHER_ENGINE_LEGACY_PUBLIC_HEADER_NAMES
     audio_asset_level.h
     audio_match_rule.h
     ayther_animation.h
@@ -228,8 +229,21 @@ set(AYTHER_ENGINE_PUBLIC_HEADER_NAMES
     ayther_session.h
     log.h)
 
+set(AYTHER_ENGINE_CONTRACT_HEADER_NAMES
+    engine/capabilities.hpp
+    engine/engine.hpp)
+
+set(AYTHER_ENGINE_PUBLIC_HEADER_NAMES
+    ${AYTHER_ENGINE_LEGACY_PUBLIC_HEADER_NAMES}
+    ${AYTHER_ENGINE_CONTRACT_HEADER_NAMES})
+
 set(AYTHER_ENGINE_PUBLIC_HEADERS "${AYTHER_ENGINE_PUBLIC_HEADER_NAMES}")
 list(TRANSFORM AYTHER_ENGINE_PUBLIC_HEADERS
+    PREPEND "${PROJECT_SOURCE_DIR}/include/ayther/")
+
+set(AYTHER_ENGINE_LEGACY_PUBLIC_HEADERS
+    "${AYTHER_ENGINE_LEGACY_PUBLIC_HEADER_NAMES}")
+list(TRANSFORM AYTHER_ENGINE_LEGACY_PUBLIC_HEADERS
     PREPEND "${PROJECT_SOURCE_DIR}/include/ayther/")
 
 set(AYTHER_INSTALLED_PUBLIC_HEADER_NAMES
@@ -285,7 +299,7 @@ target_compile_features(ayther_engine PUBLIC cxx_std_20)
 
 set_target_properties(ayther_engine PROPERTIES
     EXPORT_NAME   engine
-    PUBLIC_HEADER "${AYTHER_ENGINE_PUBLIC_HEADERS}")
+    PUBLIC_HEADER "${AYTHER_ENGINE_LEGACY_PUBLIC_HEADERS}")
 set_target_properties(ayther_ymfm PROPERTIES EXPORT_NAME ymfm)
 
 add_library(Ayther::engine ALIAS ayther_engine)
@@ -361,6 +375,8 @@ if(AYTHER_BUILD_ENGINE)
     endif()
 
     target_compile_definitions(ayther_engine PRIVATE
+        AYTHER_ENGINE_HAS_LIBRETRO=1
+        $<$<BOOL:${AYTHER_BUILD_RENDERER}>:AYTHER_ENGINE_HAS_VULKAN=1>
         VMA_STATIC_VULKAN_FUNCTIONS=1
         VMA_DYNAMIC_VULKAN_FUNCTIONS=0
         $<$<BOOL:${AYTHER_ENABLE_VPX}>:AYTHER_HAVE_VPX=1>)
