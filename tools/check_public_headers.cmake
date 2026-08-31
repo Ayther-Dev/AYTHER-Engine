@@ -36,12 +36,15 @@ while(_pending)
         continue()
     endif()
 
-    file(STRINGS "${_path}" _lines REGEX "^[ \t]*#[ \t]*include[ \t]*\"")
+    file(STRINGS "${_path}" _lines
+        REGEX "^[ \t]*#[ \t]*include[ \t]*(\"|<ayther/)")
     foreach(_line IN LISTS _lines)
-        string(REGEX REPLACE
-            "^[ \t]*#[ \t]*include[ \t]*\"([^\"]+)\".*$" "\\1"
-            _dependency "${_line}")
-        if(_dependency STREQUAL _line)
+        if(_line MATCHES "^[ \t]*#[ \t]*include[ \t]*\"([^\"]+)\"")
+            set(_dependency "${CMAKE_MATCH_1}")
+        elseif(_line MATCHES
+               "^[ \t]*#[ \t]*include[ \t]*<ayther/([^>]+)>")
+            set(_dependency "${CMAKE_MATCH_1}")
+        else()
             continue()
         endif()
         if(NOT _dependency IN_LIST _public_headers)

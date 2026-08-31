@@ -18,6 +18,28 @@ add_library(ayther_test_support INTERFACE)
 target_include_directories(ayther_test_support INTERFACE
     "${PROJECT_SOURCE_DIR}/tests/support")
 
+# Every Runtime-facing public header must compile first in an otherwise empty
+# translation unit. Object targets make this a build gate without requiring the
+# native Engine or any renderer dependency.
+foreach(_header_probe IN ITEMS capabilities_header engine_header)
+    add_library("ayther_${_header_probe}" OBJECT
+        "${PROJECT_SOURCE_DIR}/tests/contracts/${_header_probe}.cpp")
+    target_include_directories("ayther_${_header_probe}" PRIVATE
+        "${PROJECT_SOURCE_DIR}/include")
+    target_compile_features("ayther_${_header_probe}" PRIVATE cxx_std_20)
+    ayther_instrument_target("ayther_${_header_probe}")
+endforeach()
+
+add_test(
+    NAME ayther.package.engine_public_contract
+    COMMAND "${CMAKE_COMMAND}"
+        "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;engine.hpp"
+        -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
+set_tests_properties(ayther.package.engine_public_contract PROPERTIES
+    TIMEOUT 30
+    LABELS  "native;package")
+
 function(ayther_add_native_test _source _category)
     get_filename_component(_name "${_source}" NAME_WE)
     set(_target "ayther_${_name}")

@@ -23,6 +23,7 @@
 #include <ayther/ayther_sdk.h>
 #include <ayther/ayther_sdk_version.h>
 #include <ayther/ayther_session.h>
+#include <ayther/engine/engine.hpp>
 
 #include <cstdlib>
 #include <filesystem>
@@ -53,13 +54,26 @@ int main(int argc, char** argv) {
     static_assert(sizeof(AySessionConfig) > 0);
     static_assert(sizeof(ayther::FrameView) > 0);
 
+    const auto engine_version = ayther::engine::version();
+    const auto engine_capabilities = ayther::engine::probe_capabilities();
+    if (engine_capabilities.renderer !=
+            ayther::engine::RendererBackend::vulkan ||
+        !engine_capabilities.hardware_acceleration ||
+        !engine_capabilities.libretro_video ||
+        !engine_capabilities.libretro_audio) {
+        std::cerr << "installed Engine capability contract is incomplete\n";
+        return 1;
+    }
+
     const auto error = ayther::sdk_version_check();
     if (!error.empty()) {
         std::cerr << error << '\n';
         return 1;
     }
 
-    std::cout << "AYTHER SDK " << ayther::sdk_version().str() << '\n';
+    std::cout << "AYTHER SDK " << ayther::sdk_version().str()
+              << " / Engine " << engine_version.major << '.'
+              << engine_version.minor << '.' << engine_version.patch << '\n';
 
     // argv wins over the environment so a human can drive this by hand without
     // exporting anything.

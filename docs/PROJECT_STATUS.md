@@ -1,6 +1,6 @@
 # Project status
 
-**Assessment date:** 2026-08-30
+**Assessment date:** 2026-08-31
 
 **Repository phase:** early construction and stabilization
 
@@ -29,13 +29,21 @@ The current checkout is appropriate for core development and documentation
 work. It is not appropriate for a public binary release, a production pack
 trust decision, or a compatibility promise to third-party integrators.
 
+The complete protected CI matrix passed on commit `6a419bc` in
+[run 33422300265](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33422300265):
+repository policy, Rust quality on Windows and Linux, headless Windows and
+Linux, ASan, UBSan, all three fuzz targets, Rust and C++ coverage, and native
+package consumers with and without VPX on both operating systems. The GPU job
+remains an explicit opt-in release gate and was skipped rather than represented
+as a passing hardware result.
+
 ## Observed checkout state
 
 | Capability or artifact | State | Notes |
 |---|---|---|
 | Rust workspace | Present | Workspace version `0.1.0`, edition 2024, resolver 3 |
 | `ayther_core` | Present | Builds as `rlib` and `staticlib` |
-| Rust unit tests | Passing | 400 passed, 0 failed; one optional archive benchmark ignored on 2026-08-30 |
+| Rust unit tests | Passing | 401 passed, 0 failed; one optional archive benchmark ignored on 2026-08-31 |
 | Rust formatting | Passing | `cargo fmt --all -- --check` passed on 2026-08-30 |
 | Rust linting | Passing | `cargo clippy --workspace --all-targets --locked -- -D warnings` passed on 2026-08-30 |
 | Rust documentation gates | Enforced in source | Missing docs, broken intra-doc links, and unsafe operations in unsafe functions are denied |
@@ -69,8 +77,12 @@ The policy and bump rules are recorded in
 | SDK C API revision | `1` | `AYTHER_SDK_C_API_VERSION` | Independent facade revision |
 
 During `0.x`, the release minor version may break source or binary contracts;
-patch versions remain compatible within one minor. Protocol revisions move only
-when their own boundary changes and must carry migration and conformance tests.
+patch versions remain source-compatible within one minor. The Runtime-facing
+C++ API therefore preserves source compatibility throughout `0.1.x`, while
+`0.2.0` may revise the contract; no C++ binary compatibility is promised. The
+ownership decision is [ADR 0003](adr/0003-runtime-engine-public-api-ownership.md).
+Protocol revisions move only when their own boundary changes and must carry
+migration and conformance tests.
 
 ## Capability maturity
 
@@ -85,6 +97,8 @@ when their own boundary changes and must carry migration and conformance tests.
 - constrained Lua execution and runtime substitution overrides;
 - in-memory IPS/BPS patching;
 - SoundFont conversion, trimming, synthesis, and mapping;
+- installed Runtime-facing version and compiled-capability probes owned by
+  Engine, with no device or environment probing;
 - Rust-facing APIs, a typed CXX bridge definition, and a broad legacy C ABI.
 
 ### Native integration present, behavior verification incomplete
@@ -130,9 +144,9 @@ In summary, measured on 2026-08-30 at commit `846081e`:
   driver that answered and fails when the suite is skipped instead of run, so a
   green GPU result always names its hardware. One device is not a driver matrix;
   AMD, Intel, and older drivers remain unmeasured.
-- Linux x86_64 is covered by CI on every pull request but was not reproduced by
-  hand for this assessment.
-- The Rust baseline passed formatting, linting, and 400 tests, with one optional
+- Linux x86_64 passed the protected native, native-VPX, headless, sanitizer,
+  coverage, fuzz, and installed-package consumer jobs in run `33422300265`.
+- The Rust baseline passed formatting, linting, and 401 tests, with one optional
   archive benchmark ignored.
 
 A clean clone runs the same `windows-native` suite as 42 passed and 4 skipped.
@@ -162,12 +176,12 @@ Three are closed, three are open, and two are deferred.
 | # | Blocker | Status | Evidence |
 |---|---|---|---|
 | 1 | Exercise the enforced public header allowlist from first-party frontends | Deferred | The allowlist is enforced at install time and exercised by the out-of-tree package consumers in CI and by the release-candidate frontend check, which refuses a report containing repository paths. The first-party frontends themselves — Runtime and Play — live outside this repository, so no work here can close this |
-| 2 | Pass Rust, C++ unit, ABI/layout, headless integration, renderer, audio, VPX, and real-emulator tests in CI on Windows and Linux | Open | Two gaps. No Linux native job has ever passed: the only CI run on record failed them all on a missing `<cmath>` include, since repaired in an unpushed commit but never re-validated. Separately, the four real-emulator oracles skip without a developer-supplied fork core, as described under Platform status. `abi_negociacion`, previously the largest gap, is closed |
+| 2 | Pass Rust, C++ unit, ABI/layout, headless integration, renderer, audio, VPX, and real-emulator tests in CI on Windows and Linux | Open | The required Windows and Linux native, VPX, headless, sanitizer, fuzz, coverage, and package-consumer jobs passed in [run 33422300265](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33422300265). One gap remains: four real-emulator oracles skip without a developer-supplied fork core, as described under Platform status. `abi_negociacion`, previously the largest gap, is closed |
 | 3 | Pass deterministic CPU renderer and explicit GPU-required tests, with skipped hardware reported rather than represented as passing | Closed | `tools/check_gpu_matrix.ps1` fails when the suite is skipped and records the answering device and driver, so an omission can no longer be read as approval. Eight of eight GPU oracles passed on recorded hardware. The `render_output` skip on a clean clone belongs to blocker 2, not here |
 | 4 | Enforce the version contract and protocol baselines in protected CI | Open | The release workflow validates that the tag and every product version agree before anything is built, which covers the release axis. No automated symbol or layout baseline compares a build against its predecessor, so an accidental ABI change is still invisible |
 | 5 | Provision Hub's operational keys and exercise rotation and revocation through a shipping host | Deferred | The trust primitive is implemented and tested: registries enforce identity, validity window, revocation, and per-game scope, optimized builds reject the RFC test key, and rotation and revocation have dedicated fixtures in both Rust and the flat C ABI. Hub's operational keys are external to this repository |
 | 6 | Enforce generation and shipment of complete transitive third-party notices for every release artifact | Closed | CI re-derives the dependency notice with `tools/gen_notice.ps1 -Check` and fails on drift. The release payload contract requires `share/licenses/Ayther/NOTICE.md` in the installed tree, and the release workflow verifies the artifact carries exactly its advertised payload |
-| 7 | Complete security review of media-decoder limits, scripting lifetimes, FFI ownership, dynamic library loading, and adversarial fuzz coverage | Open, with a confirmed defect | Substantial parts are built: decoded-resource ceilings for image, audio, and video, a 64 MiB Lua memory cap, ASan and UBSan jobs, and three fuzz targets. The fuzzer has already found a high-severity defect that remains unfixed: a 43-byte SoundFont input drives a 4 GiB allocation (`malloc(4294967295)`), reproducer `oom-2daa503e168be05745765288223baa675a72bf3d`. See the [go/no-go decision](RELEASE_GO_NO_GO.md) |
+| 7 | Complete security review of media-decoder limits, scripting lifetimes, FFI ownership, dynamic library loading, and adversarial fuzz coverage | Open, confirmed defect repaired | Substantial parts are built: decoded-resource ceilings for image, audio, and video, a 64 MiB Lua memory cap, ASan and UBSan jobs, and three fuzz targets. The 43-byte SoundFont reproducer that previously requested 4 GiB is now rejected by `validated_sf2_extent()` before the third-party parser; the regression covers both `Sf2Synth::new()` and `new_shared()`. ASan, UBSan, and all three seeded fuzz targets passed in [run 33422300265](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33422300265); the wider security review remains open. See the historical [go/no-go decision](RELEASE_GO_NO_GO.md) |
 | 8 | Produce one clean clone to configure, build, test, install, and consume cycle on each supported platform in protected CI | Closed | The `native` CI job performs exactly that sequence — checkout, configure, build, test, install, then configure, build, and run an out-of-tree consumer — across four configurations: Windows and Linux, each with VPX disabled and enabled. The release workflow repeats it against the packaged artifact |
 
 Blockers 2, 4, and 7 are the remaining engineering work. Blockers 1 and 5 are
