@@ -447,9 +447,15 @@ jobs:
             'C:\Program Files\NASM' |
               Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
-          if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
-            choco install make --yes --no-progress
+          choco install make --yes --no-progress
+          $makeRoot = Join-Path $env:ChocolateyInstall 'lib\make\tools'
+          $make = Get-ChildItem $makeRoot -Recurse -Filter make.exe |
+            Select-Object -First 1
+          if (-not $make) {
+            throw "Chocolatey installed Make but make.exe is absent from $makeRoot."
           }
+          "AYTHER_MAKE=$($make.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build the pinned Windows VPX decoder
         if: runner.os == 'Windows' && matrix.needs_vpx
