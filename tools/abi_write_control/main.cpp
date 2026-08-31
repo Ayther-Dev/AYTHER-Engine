@@ -90,7 +90,8 @@ int main() {
             // The row sum walks `pitch` bytes per line, so the frame width is
             // not read here; naming it would be a parameter nobody uses.
             r.set_video_callback([&](const void* px, unsigned /*width*/,
-                                     unsigned h, size_t pitch) {
+                // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): libretro callback ABI.
+                unsigned h, size_t pitch) {
                 if (!px || n++) return;   // sólo el primer frame del tick
                 const uint8_t* p = static_cast<const uint8_t*>(px);
                 for (unsigned y = 0; y < h; ++y)
@@ -132,7 +133,8 @@ int main() {
             // The row sum walks `pitch` bytes per line, so the frame width is
             // not read here; naming it would be a parameter nobody uses.
             r.set_video_callback([&](const void* px, unsigned /*width*/,
-                                     unsigned h, size_t pitch) {
+                // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): libretro callback ABI.
+                unsigned h, size_t pitch) {
                 if (!px || n++) return;
                 const uint8_t* p = static_cast<const uint8_t*>(px);
                 for (unsigned y = 0; y < h; ++y)

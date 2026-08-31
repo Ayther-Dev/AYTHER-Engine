@@ -66,9 +66,17 @@ jobs:
           -Head '${{ github.event.pull_request.head.sha }}'
 
   rust:
-    name: Rust quality gates
-    runs-on: ubuntu-latest
+    name: Rust quality gates (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: Windows
+            os: windows-latest
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
@@ -94,13 +102,17 @@ jobs:
         run: cargo test --workspace --all-targets --locked
 
       - name: Install the pinned Rust dependency auditor
+        if: runner.os == 'Linux'
         run: >-
           cargo install cargo-audit
           --version "${CARGO_AUDIT_VERSION}"
           --locked
 
       - name: Audit Rust dependencies
-        run: cargo audit --deny warnings
+        if: runner.os == 'Linux'
+        run: |
+          cargo audit --deny warnings
+          cargo audit --file fuzz/Cargo.lock --deny warnings
 
       - name: Build Rust documentation
         run: cargo doc --workspace --no-deps --locked
@@ -332,6 +344,11 @@ jobs:
       - name: Build coverage targets
         run: cmake --build --preset linux-native-coverage
 
+      - name: Install matching LLVM coverage tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}"
+
       - name: Run CPU CTests with LLVM profiles
         shell: bash
         run: |
@@ -341,6 +358,8 @@ jobs:
 
       - name: Generate C++ coverage
         shell: bash
+        env:
+          LLVM_TOOLS_VERSION: ${{ env.CLANG_TIDY_VERSION }}
         run: >-
           bash tools/collect_cpp_coverage.sh
           build/linux-native-coverage
@@ -383,6 +402,7 @@ jobs:
             executable: ayther_package_consumer.exe
             install_subdir: windows-native
             needs_vpx: false
+            parallel: 1
           - name: Linux native + package consumer
             os: ubuntu-latest
             preset: linux-native
@@ -390,6 +410,7 @@ jobs:
             executable: ayther_package_consumer
             install_subdir: linux-native
             needs_vpx: false
+            parallel: 2
           - name: Linux native + VPX + package consumer
             os: ubuntu-latest
             preset: linux-native-vpx
@@ -397,6 +418,7 @@ jobs:
             executable: ayther_package_consumer
             install_subdir: linux-native-vpx
             needs_vpx: true
+            parallel: 2
           - name: Windows native + VPX + package consumer
             os: windows-latest
             preset: windows-native-vpx
@@ -404,6 +426,7 @@ jobs:
             executable: ayther_package_consumer.exe
             install_subdir: windows-native-vpx
             needs_vpx: true
+            parallel: 1
 
     steps:
       - name: Check out the repository
@@ -426,7 +449,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes libvpx-dev pkg-config
 
-      - name: Ensure NASM is available for Windows VPX
+      - name: Ensure NASM and Make are available for Windows VPX
         if: runner.os == 'Windows' && matrix.needs_vpx
         shell: pwsh
         run: |
@@ -435,6 +458,15 @@ jobs:
             'C:\Program Files\NASM' |
               Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
+          choco install make --yes --no-progress
+          $makeRoot = Join-Path $env:ChocolateyInstall 'lib\make\tools'
+          $make = Get-ChildItem $makeRoot -Recurse -Filter make.exe |
+            Select-Object -First 1
+          if (-not $make) {
+            throw "Chocolatey installed Make but make.exe is absent from $makeRoot."
+          }
+          "AYTHER_MAKE=$($make.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build the pinned Windows VPX decoder
         if: runner.os == 'Windows' && matrix.needs_vpx
@@ -458,7 +490,9 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        run: >-
+          cmake --build --preset ${{ matrix.preset }}
+          --parallel ${{ matrix.parallel }}
 
       - name: Install the pinned clang-tidy
         if: matrix.preset == 'linux-native'
@@ -519,6 +553,43 @@ jobs:
           path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 7
+
+  required-ci:
+    name: Required CI gate
+    if: always()
+    needs:
+      - repository-policy
+      - rust
+      - headless
+      - sanitizers
+      - fuzz-smoke
+      - rust-coverage
+      - cpp-coverage
+      - native
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every mandatory job
+        shell: bash
+        run: |
+          results=(
+            "repository-policy=${{ needs.repository-policy.result }}"
+            "rust=${{ needs.rust.result }}"
+            "headless=${{ needs.headless.result }}"
+            "sanitizers=${{ needs.sanitizers.result }}"
+            "fuzz-smoke=${{ needs.fuzz-smoke.result }}"
+            "rust-coverage=${{ needs.rust-coverage.result }}"
+            "cpp-coverage=${{ needs.cpp-coverage.result }}"
+            "native=${{ needs.native.result }}"
+          )
+          failed=0
+          for result in "${results[@]}"; do
+            printf '%s\n' "$result"
+            if [[ "$result" != *=success ]]; then
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   gpu:
     name: GPU (${{ matrix.platform }}, opt-in)

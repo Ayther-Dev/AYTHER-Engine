@@ -376,19 +376,47 @@ int main() {
 
     // ---- El cache por frame_generation --------------------------------------
     {
-        r.run_frame();
-        uint32_t w = 0, h = 0;
-        const clk::time_point t1 = clk::now();
-        ml(a.data(), b.data(), win.data(), spr.data(), comp.data(),
-           uint32_t(kMaxPixels), 0, &w, &h);
-        const double first_time = ms_since(t1);
-        const clk::time_point t2 = clk::now();
-        ml(a.data(), b.data(), win.data(), spr.data(), comp.data(),
-           uint32_t(kMaxPixels), 0, &w, &h);
-        const double second_time = ms_since(t2);
-        std::printf("\n  mismo frame dos veces: %.3f ms → %.3f ms\n", first_time, second_time);
-        check(second_time < first_time * 0.5,
-              "el MISMO frame no se vuelve a renderizar (hay cache por generacion)");
+        const bool has_stats = AYTHER_IFACE_HAS(api, get_recompose_stats) &&
+                               api->get_recompose_stats != nullptr &&
+                               api->recompose_stats_size >= sizeof(ayther_recompose_stats_v1);
+        check(has_stats,
+              "el core expone estadisticas para verificar el cache sin medir tiempos");
+        if (has_stats) {
+            ayther_recompose_stats_v1 before{}, after_first{}, after_second{};
+            uint32_t w = 0, h = 0;
+            const int32_t before_rc =
+                api->get_recompose_stats(&before, sizeof(before));
+            r.run_frame();
+            const int32_t first_rc = ml(a.data(), b.data(), win.data(), spr.data(),
+                                        comp.data(), uint32_t(kMaxPixels), 0, &w, &h);
+            const int32_t after_first_rc =
+                api->get_recompose_stats(&after_first, sizeof(after_first));
+            const int32_t second_rc = ml(a.data(), b.data(), win.data(), spr.data(),
+                                         comp.data(), uint32_t(kMaxPixels), 0, &w, &h);
+            const int32_t after_second_rc =
+                api->get_recompose_stats(&after_second, sizeof(after_second));
+
+            const bool calls_ok = before_rc == AYTHER_STATUS_OK &&
+                                  first_rc == AYTHER_STATUS_OK &&
+                                  after_first_rc == AYTHER_STATUS_OK &&
+                                  second_rc == AYTHER_STATUS_OK &&
+                                  after_second_rc == AYTHER_STATUS_OK;
+            check(calls_ok, "las estadisticas y ambas recomposiciones responden OK");
+            std::printf("\n  cache multilayer: calls %llu → %llu → %llu; "
+                        "hits %llu → %llu → %llu\n",
+                        static_cast<unsigned long long>(before.multilayer_calls),
+                        static_cast<unsigned long long>(after_first.multilayer_calls),
+                        static_cast<unsigned long long>(after_second.multilayer_calls),
+                        static_cast<unsigned long long>(before.multilayer_hits),
+                        static_cast<unsigned long long>(after_first.multilayer_hits),
+                        static_cast<unsigned long long>(after_second.multilayer_hits));
+            check(calls_ok &&
+                      after_first.multilayer_calls == before.multilayer_calls + 1 &&
+                      after_second.multilayer_calls == after_first.multilayer_calls + 1 &&
+                      after_first.multilayer_hits == before.multilayer_hits &&
+                      after_second.multilayer_hits == after_first.multilayer_hits + 1,
+                  "el MISMO frame no se vuelve a renderizar (hay cache por generacion)");
+        }
     }
 
     r.shutdown();

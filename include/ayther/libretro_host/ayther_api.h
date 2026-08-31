@@ -885,6 +885,18 @@ typedef struct ayther_audio_voice_v1
  *          A consumer that has to identify sounds needs st/ls. Schema 1 shipped
  *          only env/pan/fd — volume and rate — so two SFX playing different
  *          samples at the same rate and level were indistinguishable. */
+/* The direct `event.reg` / `event.voice` field names are part of the published
+ * source contract. C11 and MSVC support the anonymous aggregate layout used to
+ * preserve those names; Clang and GCC accept it as an extension in C++. Keep
+ * the exception scoped to this one ABI type so project warnings remain errors. */
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#  pragma clang diagnostic ignored "-Wnested-anon-types"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 typedef struct ayther_audio_event_v1
 {
   uint64_t t_global;
@@ -907,6 +919,11 @@ typedef struct ayther_audio_event_v1
     };
   };
 } ayther_audio_event_v1;
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
 
 #define AYTHER_AUDIO_TRANSPORT_CALLBACK_ACTIVE (UINT32_C(1) << 0)
 #define AYTHER_AUDIO_TRANSPORT_OBSERVATION_ACTIVE (UINT32_C(1) << 1)

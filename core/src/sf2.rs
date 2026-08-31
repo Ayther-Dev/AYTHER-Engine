@@ -29,6 +29,52 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
+fn read_u32_le(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("four bytes"))
+}
+
+fn validate_chunk_sequence(bytes: &[u8], mut offset: usize, end: usize) -> Result<(), String> {
+    while offset < end {
+        let header_end = offset
+            .checked_add(8)
+            .filter(|&value| value <= end)
+            .ok_or("chunk RIFF truncado")?;
+        let size = read_u32_le(bytes, offset + 4) as usize;
+        let body_end = header_end
+            .checked_add(size)
+            .filter(|&value| value <= end)
+            .ok_or("cuerpo RIFF fuera del archivo")?;
+        let next = body_end
+            .checked_add(size & 1)
+            .filter(|&value| value <= end)
+            .ok_or("padding RIFF fuera del archivo")?;
+
+        if &bytes[offset..offset + 4] == b"LIST" {
+            if size < 4 {
+                return Err("LIST RIFF sin tipo".into());
+            }
+            validate_chunk_sequence(bytes, header_end + 4, body_end)?;
+        }
+        offset = next;
+    }
+    Ok(())
+}
+
+/// Checks every declared RIFF extent before the third-party parser can use a
+/// hostile chunk length as an allocation size. Bytes after the declared RIFF
+/// form are ignored, as required for callers that append container metadata.
+fn validated_sf2_extent(bytes: &[u8]) -> Result<&[u8], String> {
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"sfbk" {
+        return Err("no es un SF2 (falta RIFF/sfbk)".into());
+    }
+    let end = 8usize
+        .checked_add(read_u32_le(bytes, 4) as usize)
+        .filter(|&value| (12..=bytes.len()).contains(&value))
+        .ok_or("tamaño RIFF fuera del archivo")?;
+    validate_chunk_sequence(bytes, 12, end)?;
+    Ok(&bytes[..end])
+}
+
 /// SoundFonts parseados, compartidos entre instancias (ver `new_shared`).
 fn font_cache() -> &'static Mutex<HashMap<u64, Arc<SoundFont>>> {
     static C: OnceLock<Mutex<HashMap<u64, Arc<SoundFont>>>> = OnceLock::new();
@@ -58,8 +104,10 @@ impl Sf2Synth {
     pub fn new(sf2: &[u8], sample_rate: i32) -> Result<Self, String> {
         // SF3 transparente: si los bytes traen samples Vorbis se convierten
         // acá, en la frontera — RustySynth sólo ve SF2 plano.
+        let sf2 = validated_sf2_extent(sf2)?;
         let sf2 = crate::sf3::ensure_sf2(sf2);
-        let mut cur = std::io::Cursor::new(&sf2[..]);
+        let sf2 = validated_sf2_extent(&sf2)?;
+        let mut cur = std::io::Cursor::new(sf2);
         let font = SoundFont::new(&mut cur).map_err(|e| format!("SoundFont: {e}"))?;
         let mut settings = SynthesizerSettings::new(sample_rate);
 
@@ -100,8 +148,10 @@ impl Sf2Synth {
                 None => {
                     // SF3 transparente, SÓLO en el miss: el convertido queda
                     // parseado en el cache y las N instancias no lo re-pagan.
+                    let sf2 = validated_sf2_extent(sf2)?;
                     let sf2 = crate::sf3::ensure_sf2(sf2);
-                    let mut cur = std::io::Cursor::new(&sf2[..]);
+                    let sf2 = validated_sf2_extent(&sf2)?;
+                    let mut cur = std::io::Cursor::new(sf2);
                     let f =
                         Arc::new(SoundFont::new(&mut cur).map_err(|e| format!("SoundFont: {e}"))?);
                     cache.insert(key, Arc::clone(&f));
@@ -344,6 +394,13 @@ mod tests {
         let p = s.presets();
         assert_eq!(p.len(), 1, "un preset");
         assert_eq!((p[0].0, p[0].1), (0, 0), "banco 0, preset 0");
+    }
+
+    #[test]
+    fn rejects_chunk_extent_beyond_the_declared_riff() {
+        let malformed = b"RIFF\x04\0\0\0sfbkLISTKI\0\0INFOISFT\x14\0\0\xF2\0f";
+        assert!(Sf2Synth::new(malformed, 44_100).is_err());
+        assert!(Sf2Synth::new_shared(0xF022_0004, malformed, 44_100).is_err());
     }
 
     /// EL oráculo: que SUENE. Cargar el font y no fallar no prueba nada — un

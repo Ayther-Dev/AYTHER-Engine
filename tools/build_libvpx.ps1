@@ -51,11 +51,13 @@ $env:AS = $nasm -replace '\\','/'
 # — las barras invertidas comidas. El de scoop `make` funciona. Este orden de
 # búsqueda es deliberado; no ponerlo a resolver por PATH.
 $makeCandidates = @(
+    $env:AYTHER_MAKE,
     ('C:\Users\{0}\scoop\apps\make\current\bin\make.exe' -f $env:USERNAME),
-    'C:\msys64\usr\bin\make.exe'
-)
+    'C:\msys64\usr\bin\make.exe',
+    'C:\ProgramData\chocolatey\bin\make.exe'
+) | Where-Object { $_ }
 $make = $makeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $make) { Need 'Falta un make usable.' 'scoop install make' }
+if (-not $make) { Need 'Falta un make usable.' 'scoop install make / choco install make' }
 
 $bashCandidates = @(
     (Join-Path $env:ProgramW6432 'Git\bin\bash.exe'),

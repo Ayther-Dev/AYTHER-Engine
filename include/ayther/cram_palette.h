@@ -25,6 +25,7 @@
 // expansion repeats the bit pattern, which is what makes 7 → 255 and 0 → 0 with
 // the intermediate values spread evenly.
 // ---------------------------------------------------------------------------
+#include <cstddef>
 #include <cstdint>
 
 namespace ayther {
@@ -43,8 +44,8 @@ struct CramColor { uint8_t r, g, b; };
 /// returns black — a background colour is a legitimate result for "I do not
 /// know", and returning magenta would turn every out-of-range read into a
 /// visual false positive.
-inline CramColor cram_color(const uint8_t* cram, size_t size, uint32_t index) {
-    const size_t e = static_cast<size_t>(index) * 2;
+inline CramColor cram_color(const uint8_t* cram, std::size_t size, uint32_t index) {
+    const std::size_t e = static_cast<std::size_t>(index) * 2;
     if (!cram || index >= 64 || e + 1 >= size) return { 0, 0, 0 };
     const uint16_t v = static_cast<uint16_t>(cram[e] | (cram[e + 1] << 8));
     return { cram_c8(static_cast<uint8_t>(v & 7)),
@@ -55,7 +56,7 @@ inline CramColor cram_color(const uint8_t* cram, size_t size, uint32_t index) {
 /// Colour `entry` (0-15) of line `line` (0-3). It is the way a palette is
 /// thought about —"index 3 of line 1"— and it saves every consumer from doing
 /// the multiplication itself.
-inline CramColor cram_color_at(const uint8_t* cram, size_t size,
+inline CramColor cram_color_at(const uint8_t* cram, std::size_t size,
                                uint8_t line, uint8_t entry) {
     return cram_color(cram, size, (line & 3u) * 16u + (entry & 15u));
 }
@@ -66,10 +67,12 @@ inline CramColor cram_color_at(const uint8_t* cram, size_t size,
 /// It serves what a viewer needs and a visual comparison cannot provide: saying
 /// whether two moments of the game have the SAME palette. A day/night cycle
 /// changes this signature even when the on-screen change is a single shade.
-inline uint64_t cram_line_signature(const uint8_t* cram, size_t size, uint8_t line) {
+// Stable public API; names distinguish the byte size from the palette line.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+inline uint64_t cram_line_signature(const uint8_t* cram, std::size_t size, uint8_t line) {
     uint64_t h = 0x1465'0FB0'739D'0383ull;   // the AYTHER seed (pack-identities §0)
     for (uint32_t e = 0; e < 16; ++e) {
-        const size_t off = (static_cast<size_t>(line & 3u) * 16u + e) * 2u;
+        const std::size_t off = (static_cast<std::size_t>(line & 3u) * 16u + e) * 2u;
         const uint8_t lo = (cram && off     < size) ? cram[off]     : 0;
         const uint8_t hi = (cram && off + 1 < size) ? cram[off + 1] : 0;
         h = (h ^ lo) * 0x1000'0001'B3ull;
