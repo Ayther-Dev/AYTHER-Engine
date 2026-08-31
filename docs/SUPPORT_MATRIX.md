@@ -6,8 +6,8 @@ This matrix separates three things that are easy to blur together, because
 blurring them is how a support promise becomes untrue:
 
 - **Verified** — run on this checkout, with the result recorded below.
-- **CI** — exercised by a job in `.github/workflows/ci.yml`, and therefore
-  covered on every pull request, but not reproduced by hand for this document.
+- **CI-attempted** — a job in `.github/workflows/ci.yml` targets it, but the
+  job has not been observed passing. A configured job is not a passing job.
 - **Unverified** — nothing has measured it. Not a commitment.
 
 Nothing here is a support commitment yet. `0.1.x` is pre-release; see
@@ -18,7 +18,7 @@ Nothing here is a support commitment yet. `0.1.x` is pre-release; see
 | OS | Core | Engine | Status | Evidence |
 | --- | --- | --- | --- | --- |
 | Windows 11 x86_64 | yes | yes | Verified | The per-preset results below, measured on this machine |
-| Linux x86_64 | yes | yes | CI | `headless`, `native`, `native-vpx`, sanitiser, and coverage jobs |
+| Linux x86_64 | yes | yes | CI-attempted, never green | The only CI run in this repository's history (`33339406053`) failed every Linux native job. `Headless (Linux)` passed; `native`, `native-vpx`, ASan, UBSan, and C++ coverage all failed to compile |
 | macOS | — | — | Unverified | No presets, no jobs, no commitment |
 | Mobile, WebAssembly, consoles | — | — | Unverified | Not a target of this repository |
 
@@ -26,7 +26,7 @@ Nothing here is a support commitment yet. `0.1.x` is pre-release; see
 
 | Architecture | Status | Evidence |
 | --- | --- | --- |
-| x86_64 | Verified on Windows, CI on Linux | Every preset and job targets `x86_64` |
+| x86_64 | Verified on Windows; not yet green on Linux | Every preset and job targets `x86_64` |
 | aarch64 / ARM | Unverified | No preset, no job, and no cross-compilation has been attempted |
 
 There is no 32-bit target. The vendored VP9 decoder ships an `x86` import
@@ -37,7 +37,7 @@ library, but nothing in this repository builds or tests a 32-bit configuration.
 | Component | Verified version | Notes |
 | --- | --- | --- |
 | Clang (`clang-cl` driver) | 22.1.6, target `x86_64-pc-windows-msvc` | The Windows compiler for every preset |
-| Clang (`clang++` driver) | CI | The Linux compiler for every preset |
+| Clang (`clang++` driver) | Not yet green | The Linux compiler for every preset; see the Linux row above |
 | rustc / cargo | 1.95.0 | Pinned by `rust-toolchain.toml` |
 | CMake | 4.3.3 | Presets require 3.21 or newer |
 | Ninja | 1.13.2 | The generator for every preset |
@@ -53,7 +53,7 @@ claiming something nobody has run.
 | Backend | Status | Evidence |
 | --- | --- | --- |
 | Vulkan | Verified on one device | 8 of 8 GPU oracles passed on an NVIDIA GeForce RTX 3060 Laptop GPU, driver 616.224.0, Vulkan API 1.4.351 |
-| Vulkan on Linux / Mesa | CI, opt-in | The `GPU (Linux, opt-in)` job runs under `xvfb` with `mesa-vulkan-drivers`; it is not part of an ordinary pull-request run |
+| Vulkan on Linux / Mesa | Never executed | The `GPU (Linux, opt-in)` job is defined to run under `xvfb` with `mesa-vulkan-drivers`, but it is opt-in and has been skipped in every run so far |
 | Direct3D, Metal, OpenGL | Not implemented | The renderer is Vulkan-only |
 
 One device is one device. A single NVIDIA laptop GPU is evidence that the
@@ -68,7 +68,7 @@ always names the hardware behind it.
 | --- | --- | --- |
 | Disabled (default) | Verified | `windows-native`: 46 of 46 CTests |
 | Windows, bundled libvpx | Verified | `windows-native-vpx`: 49 of 49 CTests, decoder built by `tools/build_libvpx.ps1` |
-| Linux, system libvpx | CI | `linux-native-vpx` resolves `libvpx-dev` through `pkg-config`; nothing is bundled into the artifact |
+| Linux, system libvpx | CI-attempted, never green | `linux-native-vpx` resolves `libvpx-dev` through `pkg-config` and nothing is bundled into the artifact, but the job has not yet passed |
 
 The two platforms provision the decoder differently on purpose, and it changes
 what ships: the Windows artifact carries the libvpx archive, headers, and
@@ -117,6 +117,20 @@ Until that is done, a clean-clone `windows-native` run is 42 passed and 4
 skipped. A skip is not an approval. `abi_negociacion`, which used to skip for
 this same reason, is the precedent for closing it: it now builds its core from
 source in `tools/test_core/`.
+
+## The state of Linux
+
+Linux is a target of this repository, not yet a supported one. Every Linux
+native job failed in the only CI run on record, all for the same reason:
+`src/ayther_renderer.cpp` used `std::fmod` and `std::lround` without including
+`<cmath>`. Windows compiles that because its standard library headers pull
+`<cmath>` in transitively; libstdc++ does not, so the same source was portable
+by accident.
+
+That specific defect is fixed — the include was added in `3acfdab` — but the
+fix has never been pushed or re-validated, so no Linux build has yet been
+observed succeeding. Until one is, treat every Linux row above as an intention
+backed by a configured job, not as evidence.
 
 ## Deep paths on Windows
 
