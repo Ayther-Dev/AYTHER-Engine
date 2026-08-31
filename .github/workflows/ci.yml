@@ -54,6 +54,9 @@ jobs:
           ./tools/gen_api_reference.ps1 -Check
           cmake -DAYTHER_REPO=${{ github.workspace }} -P tools/check_license.cmake
 
+      - name: Test the coverage gate
+        run: python3 -m unittest discover -s tests/coverage -p '*_test.py'
+
       - name: Check pull-request commit boundaries
         if: github.event_name == 'pull_request'
         shell: pwsh
@@ -260,12 +263,14 @@ jobs:
           retention-days: 30
 
   rust-coverage:
-    name: Rust coverage (informational baseline)
+    name: Rust coverage gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Install pinned Rust coverage tooling
         run: |
@@ -278,8 +283,23 @@ jobs:
           cargo llvm-cov --workspace --all-targets --locked \
             --lcov --output-path coverage/rust/rust.lcov
           cargo llvm-cov report --summary-only | tee coverage/rust/summary.txt
+          cargo llvm-cov report --html --output-dir coverage/rust/html
 
+      - name: Enforce Rust coverage thresholds
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base_sha="${PR_BASE_SHA:-$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)}"
+          python3 tools/check_coverage.py \
+            --component rust \
+            --lcov coverage/rust/rust.lcov \
+            --base "${base_sha}" \
+            --output coverage/rust/gate.txt
+
+      # Published even when the gate failed: the report naming the uncovered
+      # files and line ranges is most useful on the run that went red.
       - name: Publish Rust coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-rust
@@ -288,12 +308,14 @@ jobs:
           retention-days: 14
 
   cpp-coverage:
-    name: C++ coverage (informational baseline)
+    name: C++ coverage gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Select the runner vcpkg installation
         shell: pwsh
@@ -324,7 +346,21 @@ jobs:
           build/linux-native-coverage
           coverage/cpp
 
+      - name: Enforce C++ coverage thresholds
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base_sha="${PR_BASE_SHA:-$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)}"
+          python3 tools/check_coverage.py \
+            --component cpp \
+            --lcov coverage/cpp/cpp.lcov \
+            --base "${base_sha}" \
+            --output coverage/cpp/gate.txt
+
+      # Published even when the gate failed: the report naming the uncovered
+      # files and line ranges is most useful on the run that went red.
       - name: Publish C++ coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-cpp

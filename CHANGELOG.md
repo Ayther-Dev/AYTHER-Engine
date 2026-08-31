@@ -55,8 +55,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - `tools/gen_release_notes.ps1` and `tools/verify_release_artifact.ps1`, which
   state the artifact scope on the release page and re-verify a published
   archive from a clean checkout.
-- Separate informational Rust and C++ coverage reports on every pull request,
-  and `clang-tidy` over the translation units a change touches.
+- Separate Rust and C++ coverage reports on every pull request, and
+  `clang-tidy` over the translation units a change touches.
+- `tools/check_coverage.py`: a coverage gate enforcing a total floor and a
+  changed-line floor per language, reporting the exact files and line ranges
+  left uncovered. Thresholds live in `.github/coverage-thresholds.json` and the
+  measured baselines are recorded in `docs/COVERAGE.md`.
+- `windows-native-coverage`: LLVM source coverage on Windows, so the C++
+  baseline is reproducible off the CI runner.
 - `ayther::RuntimeOptions`: every `AYTHER_*` environment option is read once,
   validated, and injected into subsystems as an immutable value.
 - `ayther::log`: structured records carrying severity, component, a stable event
@@ -99,6 +105,12 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - All five ABI oracles now execute instead of reporting CTest's skip code: the
   core they needed is built from source rather than fetched as an ignored
   binary.
+- Coverage is a gate rather than an informational artifact: a total below the
+  floor, or new code below the changed-line floor, fails the build.
+- The end-to-end determinism oracle pins only the frames and audio hashes.
+  Events and work RAM are compared run-to-run but not pinned: both were
+  measured to change with the optimisation level, so pinning them left the
+  `-O0` coverage job permanently red.
 
 ### Deprecated
 
@@ -110,6 +122,13 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Native coverage excluded nothing on Windows. The exclusion pattern matched
+  only `/`, so the vendored `third_party/` tree landed in the denominator.
+- Coverage totals double-counted lines. `llvm-cov` emits one `DA` record per
+  region, and summing the `LF`/`LH` summary fields counted a line once per
+  region instead of once.
+- `AYTHER_ENABLE_COVERAGE` emitted `-O0 -g`, which `clang-cl` rejects as unused
+  arguments and, under warnings-as-errors, fails the build.
 - `ayther_pack_profile_field(pack, i, "name")` returned nothing. The Rust side
   still matched the pre-rebrand spelling `"nombre"` while the C header and every
   caller used `"name"`, so a pack's profile display name never reached a C++

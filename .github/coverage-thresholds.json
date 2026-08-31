@@ -1,0 +1,19 @@
+{
+  "rust": {
+    "minimum_total": 74.0,
+    "minimum_changed": 80.0,
+    "source_prefixes": [
+      "core/src/"
+    ]
+  },
+  "cpp": {
+    "minimum_total": 50.0,
+    "minimum_changed": 70.0,
+    "source_prefixes": [
+      "include/",
+      "src/",
+      "tests/",
+      "tools/"
+    ]
+  }
+}

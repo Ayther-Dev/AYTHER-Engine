@@ -30,7 +30,11 @@ for binary in "${binaries[@]:1}"; do
     objects+=(--object "${binary}")
 done
 
-ignore='(third_party|vcpkg_installed|_deps|tests|tools)/'
+# Keep every first-party file in the denominator. Only vendored/generated
+# sources are omitted; see docs/COVERAGE.md for the audited exclusion list.
+# Both separators: llvm-cov reports native paths, so a '/'-only pattern silently
+# excludes nothing on Windows and the vendored tree lands in the denominator.
+ignore='(^|[/\])(third_party|vcpkg_installed|_deps|CMakeFiles)[/\]'
 llvm-cov export "${binaries[0]}" "${objects[@]}" \
     --instr-profile="${output_directory}/cpp.profdata" \
     --format=lcov \
@@ -41,3 +45,10 @@ llvm-cov report "${binaries[0]}" "${objects[@]}" \
     --instr-profile="${output_directory}/cpp.profdata" \
     --ignore-filename-regex="${ignore}" \
     | tee "${output_directory}/summary.txt"
+
+llvm-cov show "${binaries[0]}" "${objects[@]}" \
+    --instr-profile="${output_directory}/cpp.profdata" \
+    --format=html \
+    --output-dir="${output_directory}/html" \
+    --show-directory-coverage \
+    --ignore-filename-regex="${ignore}"

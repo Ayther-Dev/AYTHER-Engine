@@ -124,6 +124,15 @@
       }
     },
     {
+      "name": "windows-native-coverage",
+      "displayName": "Windows Native Engine Coverage",
+      "description": "LLVM source coverage for first-party C++ on Windows",
+      "inherits": "windows-native",
+      "cacheVariables": {
+        "AYTHER_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
       "name": "windows-native-gpu",
       "displayName": "Windows Native Engine + GPU Tests",
       "description": "Complete C++ engine with Vulkan GPU test executables",
@@ -258,6 +267,10 @@
       "configurePreset": "windows-native-vpx"
     },
     {
+      "name": "windows-native-coverage",
+      "configurePreset": "windows-native-coverage"
+    },
+    {
       "name": "windows-native-gpu",
       "configurePreset": "windows-native-gpu"
     },
@@ -303,6 +316,21 @@
     }
   ],
   "testPresets": [
+    {
+      "name": "windows-native-coverage",
+      "configurePreset": "windows-native-coverage",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
     {
       "name": "windows-release",
       "configurePreset": "windows-release",

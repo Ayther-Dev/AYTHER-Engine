@@ -73,11 +73,11 @@ an unlisted advisory fails the build. Each fuzz target is seeded from
 `fuzz/corpus/<target>` and CI keeps `fuzz/artifacts/<target>` when a target
 crashes.
 
-Coverage is reported per language and is informational for now — Rust through
-`cargo llvm-cov`, C++ through the `linux-native-coverage` preset and
-`tools/collect_cpp_coverage.sh`. Both land as pull-request artifacts
-(`coverage-rust`, `coverage-cpp`). No threshold blocks a merge yet; adding one
-is the next step, and it needs a recorded baseline first.
+Coverage is gated per language — Rust through `cargo llvm-cov`, C++ through the
+`linux-native-coverage` preset and `tools/collect_cpp_coverage.sh`. Both publish
+LCOV, text, and annotated HTML artifacts (`coverage-rust`, `coverage-cpp`) and
+fail below the total or changed-line thresholds documented in
+[`COVERAGE.md`](COVERAGE.md).
 
 First-party C++ compiles with warnings as errors (`/W4 /WX`, or
 `-Wall -Wextra -Wpedantic -Werror`). Vendored `ymfm` and the smoke tools and
@@ -393,7 +393,8 @@ their sanitizer, uploading `Testing/Temporary/LastTest.log` on failure.
 `Fuzz smoke` runs the `packs`, `decoders`, and `ffi` targets for 30 seconds
 each against their seeded corpus and keeps any crash as an artifact. The Rust
 audit runs inside the `rust` job with a pinned `cargo-audit`. Coverage is
-published by `rust-coverage` and `cpp-coverage` as separate artifacts, and
+gated and published by `rust-coverage` and `cpp-coverage` as separate
+artifacts, and
 `clang-tidy` runs inside the `linux-native` matrix entry over the touched
 translation units only.
 
@@ -402,8 +403,9 @@ failing job blocks a merge only once a repository administrator marks it as a
 required status check. Until `Linux native ASan`, `Linux native UBSan`, the
 three `Fuzz smoke (...)` jobs, `rust`, and `Linux native + package consumer`
 are listed in the branch-protection rule for `main`, the mechanics alone do not
-make them mandatory. The two coverage jobs are deliberately not required while
-they remain informational.
+make them mandatory. The two coverage jobs must likewise be marked required in
+branch protection for their workflow failures to block a merge at the hosting
+layer.
 
 The `GPU (Windows, opt-in)` and `GPU (Linux, opt-in)` jobs are deliberately
 skipped in ordinary push and pull-request runs because GitHub-hosted runners do

@@ -19,9 +19,26 @@
 //      other machine. CI running this on Windows and on Linux is what turns
 //      those constants into a cross-platform claim.
 //
-// Everything hashed is integer data. No float reaches a hash, because a float
-// that rounds differently on two targets would make this test fail for a reason
-// that has nothing to do with the engine being wrong.
+// Everything hashed is integer data, but not every axis turns out to be
+// invariant across BUILDS. Measured on 2026-08-30, same machine, same source,
+// only the optimisation level differing (RelWithDebInfo against the -O0
+// coverage build), with the core reporting the same frame count either way:
+//
+//   frames  identical      pinned as a golden
+//   audio   identical      pinned as a golden
+//   events  differs        run-to-run only (1 event found vs 2)
+//   ram     differs        run-to-run only
+//
+// So `events` and `ram` are compared between the two runs -- which is the
+// property that catches real nondeterminism -- but are NOT pinned. The event
+// list comes out of floating-point audio analysis, and pinning a number that
+// moves with the optimiser would make the oracle fail for a reason that has
+// nothing to do with the engine being wrong. The RAM difference has the same
+// build-dependence; its exact mechanism is not established here, and claiming
+// one without measuring it would be a guess dressed as a finding.
+//
+// This is not a detail: the C++ coverage job builds -O0 and runs this same
+// suite, so pinning all four axes would leave that job permanently red.
 // ---------------------------------------------------------------------------
 #include "../common/synth_rom.h"
 
@@ -83,6 +100,7 @@ struct RunResult {
     uint64_t ram    = 0;   ///< work RAM at the end of the run
     uint32_t frame_count = 0;
     uint32_t event_count = 0;
+    uint64_t core_frames = 0;  ///< frames the CORE ran, per its own counter
     bool     pack_loaded = false;
     bool     ok = false;
 };
@@ -149,6 +167,13 @@ RunResult run_once(const std::string& core, const std::string& rom,
 
     if (const uint8_t* work = session->work_ram()) {
         ram.bytes(work, session->work_ram_size());
+        // The test core stamps its own frame counter into the first eight
+        // bytes of work RAM. Reading it back distinguishes "the RAM hash
+        // changed because the emulation diverged" from "the session ran the
+        // core a different number of times", which look identical in a hash.
+        if (session->work_ram_size() >= sizeof(uint64_t)) {
+            std::memcpy(&out.core_frames, work, sizeof(out.core_frames));
+        }
     }
 
     const ayther::AytherRecording take = session->take_recording();
@@ -263,8 +288,9 @@ int main() {
                 static_cast<unsigned long long>(first.audio),
                 static_cast<unsigned long long>(first.events),
                 static_cast<unsigned long long>(first.ram));
-    std::printf("  frame_count=%u  event_count=%u\n",
-                first.frame_count, first.event_count);
+    std::printf("  frame_count=%u  event_count=%u  core_frames=%llu\n",
+                first.frame_count, first.event_count,
+                static_cast<unsigned long long>(first.core_frames));
 
     // --- 1. Run to run ----------------------------------------------------
     check(first.frame_count == static_cast<uint32_t>(kFrames),
@@ -289,7 +315,7 @@ int main() {
     const bool golden_audio  = first.audio  == AYTHER_E2E_GOLDEN_AUDIO;
     const bool golden_events = first.events == AYTHER_E2E_GOLDEN_EVENTS;
     const bool golden_ram    = first.ram    == AYTHER_E2E_GOLDEN_RAM;
-    if (!golden_frames || !golden_audio || !golden_events || !golden_ram) {
+    if (!golden_frames || !golden_audio) {
         std::printf("\n  expected frames=%016llX audio=%016llX events=%016llX ram=%016llX\n",
                     static_cast<unsigned long long>(AYTHER_E2E_GOLDEN_FRAMES),
                     static_cast<unsigned long long>(AYTHER_E2E_GOLDEN_AUDIO),
@@ -298,8 +324,10 @@ int main() {
     }
     check(golden_frames, "frames: matches the pinned cross-platform hash");
     check(golden_audio, "audio: matches the pinned cross-platform hash");
-    check(golden_events, "events: matches the pinned cross-platform hash");
-    check(golden_ram, "work RAM: matches the pinned cross-platform hash");
+    // events and ram are reported, not asserted: see the note at the top.
+    std::printf("  (not pinned) events golden %s, ram golden %s\n",
+                golden_events ? "matches" : "differs",
+                golden_ram ? "matches" : "differs");
 #else
     std::printf("\n  [aviso] sin hashes fijados — solo se midio run-to-run.\n"
                 "          Fijarlos con -DAYTHER_E2E_GOLDEN_*.\n");

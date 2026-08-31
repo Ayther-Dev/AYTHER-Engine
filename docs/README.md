@@ -28,6 +28,7 @@ owned by AYTHER Runtime, SDK, Play, Hub, or Lab.
 | [Generated dependency graph](DEPENDENCY_GRAPH.md) | Maintainers | Cargo and CMake dependency edges generated from the current checkout |
 | [Pack and security model](PACK_SECURITY_MODEL.md) | Security reviewers and pack tooling authors | Container format, signature/integrity flow, Lua sandbox, and hardening gaps |
 | [Build, test, and release](BUILD_TEST_RELEASE.md) | Contributors and release engineers | Commands that work now, intended CMake flow, CI expectations, and release gates |
+| [Coverage policy](COVERAGE.md) | Contributors and release engineers | Per-language baselines, thresholds, exclusions, reports, and critical-path tests |
 | [Development environment](DEVELOPMENT_ENVIRONMENT.md) | Contributors | Windows/Linux toolchain installation and local setup |
 | [Legal and distribution boundaries](LEGAL_AND_DISTRIBUTION.md) | Distributors, pack authors, and maintainers | BYOR/BYOC rules, license scope, content rights, trademarks, and third-party notices |
 | [Repository roadmap](ROADMAP.md) | Maintainers | Evidence-based development sequence for this repository |

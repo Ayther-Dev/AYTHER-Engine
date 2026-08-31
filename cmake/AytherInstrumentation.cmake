@@ -46,8 +46,17 @@ function(ayther_configure_instrumentation)
                 "AYTHER native coverage requires Clang or GCC; got ${CMAKE_CXX_COMPILER_ID}.")
         endif()
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # The instrumentation flags are the same either way, but the
+            # optimisation and debug switches are not: clang-cl takes the MSVC
+            # spellings and REJECTS -O0/-g as unused arguments, which under
+            # warnings-as-errors fails the build rather than being ignored.
             target_compile_options(ayther_instrumentation INTERFACE
-                -fprofile-instr-generate -fcoverage-mapping -O0 -g)
+                -fprofile-instr-generate -fcoverage-mapping)
+            if(MSVC)
+                target_compile_options(ayther_instrumentation INTERFACE /Od /Zi)
+            else()
+                target_compile_options(ayther_instrumentation INTERFACE -O0 -g)
+            endif()
             target_link_options(ayther_instrumentation INTERFACE
                 -fprofile-instr-generate -fcoverage-mapping)
         else()
