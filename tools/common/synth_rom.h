@@ -20,6 +20,9 @@
 // ---------------------------------------------------------------------------
 #pragma once
 
+#include "ayther_env.h"
+#include "ayther_file.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -152,7 +155,7 @@ public:
     // -- Salida ---------------------------------------------------------------
 
     bool save(const std::filesystem::path& p) const {
-        std::FILE* f = std::fopen(p.string().c_str(), "wb");
+        std::FILE* f = ayther::file_open(p.string().c_str(), "wb");
         if (!f) return false;
         const size_t n = std::fwrite(data_.data(), 1, data_.size(), f);
         std::fclose(f);
@@ -312,7 +315,7 @@ inline std::string canonical_rom_path() {
 /// sintética si no. Sin esto, los tests que la piden simplemente no existen en
 /// una máquina sin ROMs, que es exactamente lo que pasa en CI.
 inline std::string probe_rom_path() {
-    if (const char* e = std::getenv("AYTHER_PROBE_ROM"))
+    if (const char* e = ayther::env_get("AYTHER_PROBE_ROM"))
         if (*e && std::filesystem::exists(e)) return e;
     return canonical_rom_path();
 }

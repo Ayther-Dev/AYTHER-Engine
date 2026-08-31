@@ -19,6 +19,8 @@
 // SALTA con aviso y el smoke sigue verde: los pasos 1 y 2 son los que
 // verifican la integración, que es lo que esta tarea entrega.
 // ---------------------------------------------------------------------------
+#include "ayther_file.h"
+
 #include <vpx/vpx_decoder.h>
 #include <vpx/vp8dx.h>
 
@@ -56,7 +58,7 @@ uint32_t rd32(const uint8_t* p) {
 
 Ivf parse_ivf(const std::string& path) {
     Ivf out;
-    std::FILE* f = std::fopen(path.c_str(), "rb");
+    std::FILE* f = ayther::file_open(path.c_str(), "rb");
     if (!f) { out.error = "no se pudo abrir " + path; return out; }
 
     uint8_t hdr[32];

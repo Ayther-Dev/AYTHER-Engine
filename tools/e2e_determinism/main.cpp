@@ -245,7 +245,7 @@ int main() {
 
     std::printf("=== e2e_determinism — ROM + core + pack + inputs, twice ===\n");
 
-    const char* core_env = std::getenv("AYTHER_ABI_CORE");
+    const char* core_env = ayther::env_get("AYTHER_ABI_CORE");
     const std::string core = core_env != nullptr ? core_env : "";
     if (core.empty() || !fs::exists(core)) {
         // Unlike the ABI oracles this has no legacy half to fall back to: with

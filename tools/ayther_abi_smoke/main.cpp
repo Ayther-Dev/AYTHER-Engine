@@ -30,13 +30,16 @@
 #include "libretro_host/retro_runner.h"
 #include "ayther_session.h"
 #include "ayther_env.h"
+#include "ayther_diagnostic.h"
 
 #include <cstring>
 
 // El control usa a propósito los accessors legacy: son la VERDAD contra la que
-// se compara el camino nuevo, así que su deprecación no aplica acá.
-#define AYTHER_LEGACY_SPRITES_BEGIN     _Pragma("clang diagnostic push")     _Pragma("clang diagnostic ignored \"-Wdeprecated-declarations\"")
-#define AYTHER_LEGACY_SPRITES_END _Pragma("clang diagnostic pop")
+// se compara el camino nuevo, así que su deprecación no aplica acá. El
+// mecanismo vive en ayther_diagnostic.h para que haya UNA sola forma de
+// declarar esta excepción, y para que funcione también fuera de Clang.
+#define AYTHER_LEGACY_SPRITES_BEGIN AYTHER_LEGACY_ABI_BEGIN
+#define AYTHER_LEGACY_SPRITES_END   AYTHER_LEGACY_ABI_END
 
 #include <cstdio>
 #include <cstring>

@@ -37,6 +37,13 @@ function(ayther_add_test_core _target)
     if(NOT MSVC)
         target_compile_options("${_target}" PRIVATE -fvisibility=default)
     endif()
+
+    # The warnings policy, without the coverage/sanitiser instrumentation that
+    # ayther_instrument_target also brings. Taking only the policy keeps this
+    # target under warnings-as-errors while leaving the coverage denominator in
+    # docs/COVERAGE.md comparable; folding it in is a separate decision.
+    target_link_libraries("${_target}" PRIVATE
+        $<BUILD_INTERFACE:ayther_strict_warnings>)
 endfunction()
 
 ayther_add_test_core(ayther_test_core)

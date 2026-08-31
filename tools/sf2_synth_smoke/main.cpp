@@ -19,6 +19,7 @@
 // correr en una máquina sin SoundFonts.
 // ---------------------------------------------------------------------------
 #include "ayther_core_ffi.h"
+#include "ayther_file.h"
 
 #include <cstdio>
 #include <cstring>
@@ -36,7 +37,7 @@ void check(bool ok, const std::string& what) {
 
 std::vector<uint8_t> slurp(const char* path) {
     std::vector<uint8_t> out;
-    std::FILE* f = std::fopen(path, "rb");
+    std::FILE* f = ayther::file_open(path, "rb");
     if (!f) return out;
     std::fseek(f, 0, SEEK_END);
     const long n = std::ftell(f);

@@ -113,7 +113,7 @@ void program(Rom& r, bool key_on) {
 /// el byte 44: los tamaños del header los parchea el shutdown y acá el archivo
 /// puede quedar sin parchear si algo falla antes. -1 si no hay nada que medir.
 double wav_rms(const std::string& path) {
-    std::FILE* f = std::fopen(path.c_str(), "rb");
+    std::FILE* f = ayther::file_open(path.c_str(), "rb");
     if (!f) return -1.0;
     std::fseek(f, 0, SEEK_END);
     const long sz = std::ftell(f);
@@ -132,7 +132,7 @@ double wav_rms(const std::string& path) {
 /// asset SILENCIOSO, que es un control y no un caso raro: sirve para separar
 /// «el original calló» de «el HD tapó al original»).
 bool write_wav(const std::string& path, int16_t amp, uint32_t frames) {
-    std::FILE* f = std::fopen(path.c_str(), "wb");
+    std::FILE* f = ayther::file_open(path.c_str(), "wb");
     if (!f) return false;
     const uint32_t data = frames * 4, riff = 36 + data;
     auto u32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };

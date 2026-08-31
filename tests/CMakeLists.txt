@@ -58,7 +58,7 @@ add_subdirectory(ffi)
 add_subdirectory(
     "${PROJECT_SOURCE_DIR}/tools/sf2_synth_smoke"
     "${PROJECT_BINARY_DIR}/tools/sf2_synth_smoke")
-ayther_instrument_target(sf2_synth_smoke NO_STRICT_WARNINGS)
+ayther_instrument_target(sf2_synth_smoke)
 
 if(NOT AYTHER_BUILD_ENGINE)
     return()
@@ -158,7 +158,7 @@ foreach(_ayther_tool_test IN LISTS _ayther_native_tool_tests)
         "${PROJECT_BINARY_DIR}/tools/${_ayther_tool_test}")
     target_include_directories("${_ayther_tool_test}" PRIVATE
         "${PROJECT_SOURCE_DIR}/include/ayther")
-    ayther_instrument_target("${_ayther_tool_test}" NO_STRICT_WARNINGS)
+    ayther_instrument_target("${_ayther_tool_test}")
     # The oracles dlopen the cores rather than linking them, so the dependency
     # is invisible to the linker and has to be declared.
     add_dependencies("${_ayther_tool_test}"
@@ -174,7 +174,7 @@ if(AYTHER_ENABLE_VPX)
         target_include_directories("${_ayther_vpx_test}" PRIVATE
             "${PROJECT_SOURCE_DIR}/include/ayther")
         target_link_libraries("${_ayther_vpx_test}" PRIVATE ayther_test_support)
-        ayther_instrument_target("${_ayther_vpx_test}" NO_STRICT_WARNINGS)
+        ayther_instrument_target("${_ayther_vpx_test}")
     endforeach()
 endif()
 
@@ -193,7 +193,7 @@ if(AYTHER_BUILD_GPU_TESTS)
             "${PROJECT_BINARY_DIR}/tools/${_ayther_gpu_test}")
         target_include_directories("${_ayther_gpu_test}" PRIVATE
             "${PROJECT_SOURCE_DIR}/include/ayther")
-        ayther_instrument_target("${_ayther_gpu_test}" NO_STRICT_WARNINGS)
+        ayther_instrument_target("${_ayther_gpu_test}")
     endforeach()
 endif()
 

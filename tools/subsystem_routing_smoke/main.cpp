@@ -270,7 +270,7 @@ int main() {
     {
         const auto tmp = std::filesystem::temp_directory_path();
         const auto basura = tmp / "ayther_pack_basura.ay";
-        { std::FILE* f = std::fopen(basura.string().c_str(), "wb");
+        { std::FILE* f = ayther::file_open(basura.string().c_str(), "wb");
           if (f) { std::fputs("esto no es un pack", f); std::fclose(f); } }
 
         const auto r1 = s->validate_pack(basura.string());

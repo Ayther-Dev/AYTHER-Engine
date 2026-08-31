@@ -138,8 +138,12 @@ int main() {
     AytherLayerStack stack;
     const uint32_t base_id = stack.insert_custom("base",  stack.layers().size());
     const uint32_t test_id = stack.insert_custom("test",  stack.layers().size());
+    // set_visible and set_content report whether the id was theirs to change.
+    // Dropping that answer is how a smoke test ends up compositing an empty
+    // stack and reporting green.
+    bool stack_configured = true;
     for (const AytherLayer& l : stack.layers())
-        stack.set_visible(l.id, l.id == base_id || l.id == test_id);
+        stack_configured &= stack.set_visible(l.id, l.id == base_id || l.id == test_id);
     auto set_layer = [&](uint32_t id, const std::string& png, uint8_t blend,
                          float opacity) {
         AytherLayerContent cc{};
@@ -147,9 +151,11 @@ int main() {
         cc.img_w = (uint16_t)kW; cc.img_h = (uint16_t)kH;
         cc.y = 0; cc.anchor = 0; cc.factor = 0.0f;   // #487: fija a la pantalla
         cc.tile_mode = 0; cc.opacity = opacity; cc.blend = blend;
-        stack.set_content(id, cc);
+        stack_configured &= stack.set_content(id, cc);
     };
     set_layer(base_id, base_png, 0, 1.0f);
+    check(stack_configured,
+          "el stack de capas quedo configurado (si no, se compone vacio)");
 
     FrameView fv{};
     fv.fps_timing = 60.0;
