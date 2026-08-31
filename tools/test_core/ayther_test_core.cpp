@@ -660,6 +660,25 @@ int32_t AYTHER_CALL api_poll_frame_delta(ayther_frame_delta_v1* out,
     return AYTHER_STATUS_OK;
 }
 
+int32_t AYTHER_CALL api_get_recompose_stats(ayther_recompose_stats_v1* out,
+                                             uint32_t out_size) {
+    if (out == nullptr || out_size < sizeof(ayther_recompose_stats_v1)) {
+        return AYTHER_STATUS_INVALID_ARGUMENT;
+    }
+    std::memset(out, 0, sizeof(*out));
+    out->struct_size = sizeof(ayther_recompose_stats_v1);
+    out->multilayer_calls = g_recompose_calls;
+    out->multilayer_hits = g_recompose_hits;
+    // This core implements three controls. Pack their current values into a
+    // stable fingerprint so a consumer can distinguish a new frame from a
+    // control change when explaining a cache miss.
+    out->controls_fingerprint =
+        static_cast<uint64_t>(g_state.layer_mask) |
+        (static_cast<uint64_t>(g_state.layer_dim) << 8) |
+        (static_cast<uint64_t>(g_state.audio_mute_mask) << 16);
+    return AYTHER_STATUS_OK;
+}
+
 int32_t AYTHER_CALL api_get_subscriptions(ayther_subscription_state_v1* out,
                                           uint32_t out_size) {
     if (out == nullptr || out_size < sizeof(ayther_subscription_state_v1)) {
@@ -713,7 +732,7 @@ const ayther_interface_v1 g_interface = {
     /* poll_frame_delta         */ api_poll_frame_delta,
     /* recompose_stats_size     */ sizeof(ayther_recompose_stats_v1),
     /* reserved2                */ 0,
-    /* get_recompose_stats      */ nullptr,
+    /* get_recompose_stats      */ api_get_recompose_stats,
     /* recompose_multilayer     */ api_recompose_multilayer,
     /* frame_delta_since        */ nullptr,
 };
