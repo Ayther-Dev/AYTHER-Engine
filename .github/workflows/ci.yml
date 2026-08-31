@@ -66,9 +66,17 @@ jobs:
           -Head '${{ github.event.pull_request.head.sha }}'
 
   rust:
-    name: Rust quality gates
-    runs-on: ubuntu-latest
+    name: Rust quality gates (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: Windows
+            os: windows-latest
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
@@ -94,13 +102,17 @@ jobs:
         run: cargo test --workspace --all-targets --locked
 
       - name: Install the pinned Rust dependency auditor
+        if: runner.os == 'Linux'
         run: >-
           cargo install cargo-audit
           --version "${CARGO_AUDIT_VERSION}"
           --locked
 
       - name: Audit Rust dependencies
-        run: cargo audit --deny warnings
+        if: runner.os == 'Linux'
+        run: |
+          cargo audit --deny warnings
+          cargo audit --file fuzz/Cargo.lock --deny warnings
 
       - name: Build Rust documentation
         run: cargo doc --workspace --no-deps --locked
@@ -519,6 +531,43 @@ jobs:
           path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 7
+
+  required-ci:
+    name: Required CI gate
+    if: always()
+    needs:
+      - repository-policy
+      - rust
+      - headless
+      - sanitizers
+      - fuzz-smoke
+      - rust-coverage
+      - cpp-coverage
+      - native
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every mandatory job
+        shell: bash
+        run: |
+          results=(
+            "repository-policy=${{ needs.repository-policy.result }}"
+            "rust=${{ needs.rust.result }}"
+            "headless=${{ needs.headless.result }}"
+            "sanitizers=${{ needs.sanitizers.result }}"
+            "fuzz-smoke=${{ needs.fuzz-smoke.result }}"
+            "rust-coverage=${{ needs.rust-coverage.result }}"
+            "cpp-coverage=${{ needs.cpp-coverage.result }}"
+            "native=${{ needs.native.result }}"
+          )
+          failed=0
+          for result in "${results[@]}"; do
+            printf '%s\n' "$result"
+            if [[ "$result" != *=success ]]; then
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   gpu:
     name: GPU (${{ matrix.platform }}, opt-in)

@@ -422,8 +422,9 @@ there was none would read, later, exactly like one where audio worked.
 
 The checkout now includes `.github/workflows/ci.yml`. On pushes to `main`, pull
 requests, and manual dispatches it runs repository-boundary checks, locked Rust
-format/lint/tests/docs, documentation-reference and license consistency checks,
-dependency-notice verification, and the Windows/Linux headless sequence. The
+format/lint/tests/docs on both Windows and Linux, documentation-reference and
+license consistency checks, dependency-notice verification, and the
+Windows/Linux headless sequence. The
 required native matrix additionally configures, builds, tests, and installs
 `windows-native`, `linux-native`, `windows-native-vpx`, and
 `linux-native-vpx`; every matrix entry then configures, links, and executes
@@ -435,21 +436,20 @@ Five further jobs run on every pull request. `Linux native ASan` and
 `Linux native UBSan` build the complete engine and run the CPU CTests under
 their sanitizer, uploading `Testing/Temporary/LastTest.log` on failure.
 `Fuzz smoke` runs the `packs`, `decoders`, and `ffi` targets for 30 seconds
-each against their seeded corpus and keeps any crash as an artifact. The Rust
-audit runs inside the `rust` job with a pinned `cargo-audit`. Coverage is
+each against their seeded corpus and keeps any crash as an artifact. Its
+standalone workspace is pinned by `fuzz/Cargo.lock`. The Rust audit runs inside
+the `rust` job with a pinned `cargo-audit` and checks both lockfiles. Coverage is
 gated and published by `rust-coverage` and `cpp-coverage` as separate
 artifacts, and
 `clang-tidy` runs inside the `linux-native` matrix entry over the touched
 translation units only.
 
-Every one of those jobs is defined to fail the workflow on a finding, but a
-failing job blocks a merge only once a repository administrator marks it as a
-required status check. Until `Linux native ASan`, `Linux native UBSan`, the
-three `Fuzz smoke (...)` jobs, `rust`, and `Linux native + package consumer`
-are listed in the branch-protection rule for `main`, the mechanics alone do not
-make them mandatory. The two coverage jobs must likewise be marked required in
-branch protection for their workflow failures to block a merge at the hosting
-layer.
+Every mandatory job feeds the stable `Required CI gate` job, which fails unless
+all Rust, headless, sanitizer, fuzz, coverage, native, package-consumer, and
+repository-policy entries succeeded. A repository administrator must mark that
+single status check as required in the branch-protection rule for `main`; until
+that hosting-layer rule exists, the workflow mechanics alone do not block a
+merge.
 
 The `GPU (Windows, opt-in)` and `GPU (Linux, opt-in)` jobs are deliberately
 skipped in ordinary push and pull-request runs because GitHub-hosted runners do
