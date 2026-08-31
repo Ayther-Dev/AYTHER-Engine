@@ -376,16 +376,24 @@ int main() {
 
     // ---- El cache por frame_generation --------------------------------------
     {
-        r.run_frame();
-        uint32_t w = 0, h = 0;
-        const clk::time_point t1 = clk::now();
-        ml(a.data(), b.data(), win.data(), spr.data(), comp.data(),
-           uint32_t(kMaxPixels), 0, &w, &h);
-        const double first_time = ms_since(t1);
-        const clk::time_point t2 = clk::now();
-        ml(a.data(), b.data(), win.data(), spr.data(), comp.data(),
-           uint32_t(kMaxPixels), 0, &w, &h);
-        const double second_time = ms_since(t2);
+        // One sub-millisecond timing pair is mostly scheduler noise on a busy
+        // CI runner. Aggregate several cold/hot pairs so this remains a cache
+        // oracle instead of a benchmark of whichever process pre-empted us.
+        constexpr unsigned kCacheSamples = 16;
+        double first_time = 0.0;
+        double second_time = 0.0;
+        for (unsigned sample = 0; sample < kCacheSamples; ++sample) {
+            r.run_frame();
+            uint32_t w = 0, h = 0;
+            const clk::time_point t1 = clk::now();
+            ml(a.data(), b.data(), win.data(), spr.data(), comp.data(),
+               uint32_t(kMaxPixels), 0, &w, &h);
+            first_time += ms_since(t1);
+            const clk::time_point t2 = clk::now();
+            ml(a.data(), b.data(), win.data(), spr.data(), comp.data(),
+               uint32_t(kMaxPixels), 0, &w, &h);
+            second_time += ms_since(t2);
+        }
         std::printf("\n  mismo frame dos veces: %.3f ms → %.3f ms\n", first_time, second_time);
         check(second_time < first_time * 0.5,
               "el MISMO frame no se vuelve a renderizar (hay cache por generacion)");

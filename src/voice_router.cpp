@@ -25,6 +25,13 @@ constexpr uint32_t mcycles_per_frame(bool pal) {
 // y el YM2612 no usa timers ni IRQ para generar audio.
 struct FmIntf : public ymfm::ymfm_interface {};
 
+// A base class is initialized before every base that follows it. ym2612 keeps
+// a reference to its interface, so the interface cannot be a Ym2612Mirror
+// member: members do not exist until after all bases have been constructed.
+struct FmIntfOwner {
+    FmIntf intf;
+};
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -34,9 +41,9 @@ struct FmIntf : public ymfm::ymfm_interface {};
 // vendorizada queda intacta y actualizable, sin un solo parche. Replica el
 // mixing de ym2612::generate (ymfm_opn.cpp:2380) pero sin sumar los canales.
 // ---------------------------------------------------------------------------
-class Ym2612Mirror : public ymfm::ym2612 {
+class Ym2612Mirror : private FmIntfOwner, public ymfm::ym2612 {
 public:
-    Ym2612Mirror() : ymfm::ym2612(intf_) {}
+    Ym2612Mirror() : ymfm::ym2612(intf) {}
 
     void split(output_data out[ChipMirror::kFmChannels]) {
         m_fm.clock(fm_engine::ALL_CHANNELS);
@@ -85,8 +92,6 @@ public:
         }
     }
 
-private:
-    FmIntf intf_;
 };
 
 // ---------------------------------------------------------------------------

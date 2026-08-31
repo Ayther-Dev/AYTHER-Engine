@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace ayther::synth {
@@ -169,9 +170,13 @@ private:
     void w8 (uint32_t at, uint8_t v)  { data_[at] = v; }
     void w16(uint32_t at, uint16_t v) { w8(at, uint8_t(v >> 8)); w8(at + 1, uint8_t(v)); }
     void w32(uint32_t at, uint32_t v) { w16(at, uint16_t(v >> 16)); w16(at + 2, uint16_t(v)); }
-    void str(uint32_t at, const char* s, size_t len) {
-        for (size_t i = 0; i < len; ++i)
-            w8(at + uint32_t(i), s[i] ? uint8_t(s[i]) : ' ');
+    void str(uint32_t at, std::string_view text, size_t len) {
+        for (size_t i = 0; i < len; ++i) {
+            const uint8_t value = i < text.size()
+                ? static_cast<uint8_t>(text[i])
+                : static_cast<uint8_t>(' ');
+            w8(at + static_cast<uint32_t>(i), value);
+        }
     }
 
     void header(const char* title) {

@@ -13,6 +13,8 @@ base_revision=$1
 build_directory=$2
 head_revision=${GITHUB_SHA:-HEAD}
 clang_tidy=${CLANG_TIDY:-clang-tidy}
+line_filter=$(python3 tools/clang_tidy_line_filter.py \
+    "${base_revision}" "${head_revision}")
 
 if [[ ! -f "${build_directory}/compile_commands.json" ]]; then
     echo "No compile_commands.json in ${build_directory}." >&2
@@ -45,7 +47,8 @@ for source in "${changed_sources[@]}"; do
         continue
     fi
     echo "clang-tidy: ${source}"
-    "${clang_tidy}" -p "${build_directory}" "${source}" || status=1
+    "${clang_tidy}" -p "${build_directory}" \
+        --line-filter="${line_filter}" "${source}" || status=1
 done
 
 exit "${status}"

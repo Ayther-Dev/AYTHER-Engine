@@ -344,6 +344,11 @@ jobs:
       - name: Build coverage targets
         run: cmake --build --preset linux-native-coverage
 
+      - name: Install matching LLVM coverage tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}"
+
       - name: Run CPU CTests with LLVM profiles
         shell: bash
         run: |
@@ -353,6 +358,8 @@ jobs:
 
       - name: Generate C++ coverage
         shell: bash
+        env:
+          LLVM_TOOLS_VERSION: ${{ env.CLANG_TIDY_VERSION }}
         run: >-
           bash tools/collect_cpp_coverage.sh
           build/linux-native-coverage
