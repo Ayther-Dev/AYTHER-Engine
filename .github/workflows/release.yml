@@ -145,7 +145,7 @@ jobs:
             throw 'GITHUB_WORKSPACE is required to construct reproducible compiler flags.'
           }
           if ($env:RUNNER_OS -eq 'Windows') {
-            $nativeFlags = "/Brepro /pathmap:$env:GITHUB_WORKSPACE=/usr/src/ayther"
+            $nativeFlags = "/Brepro /clang:-ffile-prefix-map=$env:GITHUB_WORKSPACE=/usr/src/ayther"
           } else {
             $nativeFlags = "-ffile-prefix-map=$env:GITHUB_WORKSPACE=/usr/src/ayther"
           }
