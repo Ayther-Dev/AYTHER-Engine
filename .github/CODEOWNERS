@@ -1,3 +1,4 @@
+/.github/CODEOWNERS @Ayther-Dev/maintainers
 /.github/workflows/ @Ayther-Dev/maintainers
 /tools/build_libvpx.ps1 @Ayther-Dev/maintainers
 /tools/check_rc_consumer.ps1 @Ayther-Dev/maintainers
