@@ -2,7 +2,8 @@
 
 > **Historical snapshot (2026-08-30).** This assessment records the state of
 > commit `c3866fe`; it is not the current release decision. See
-> [Project status](PROJECT_STATUS.md) and the latest required CI run for the
+> [the current go/no-go decision](RELEASE_GO_NO_GO_CURRENT.md),
+> [Project status](PROJECT_STATUS.md), and the latest required CI run for the
 > current defect and gate status.
 
 **Decision: NO-GO.**

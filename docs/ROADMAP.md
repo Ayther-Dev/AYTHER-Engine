@@ -52,7 +52,8 @@ end to end, and native resources have leak and lifetime oracles.
 - separate CPU, GPU, long-running, and fixture-dependent test groups;
 - test installation and consumption outside the source tree;
 - generate checksums, software bills of materials, notices, and provenance;
-- establish signed release candidates, rollback, and support procedures.
+- establish signed release candidates, rehearse the documented
+  [rollback procedure](RELEASE_ROLLBACK.md), and complete support procedures.
 
 Exit criterion: every supported artifact is reproducible, auditable, and
 consumable without local-path assumptions.

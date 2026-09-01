@@ -21,21 +21,30 @@ builds, VPX on both platforms, out-of-tree package consumers, ASan and UBSan,
 fuzz smoke, clang-tidy on changed sources, and coverage gates for both languages.
 GPU jobs are opt-in, and when they do run an omission is reported as a failure
 rather than as approval. Reproducible pre-release automation and production trust
-primitives are present. Of the eight release blockers, three are closed, three
-remain open, and two are deferred on components that live outside this
-repository.
+primitives are present. CodeQL analysis runs on `main`, but one critical and one
+high finding are open. Of the eight release blockers, three are closed, three
+remain open, and two are deferred on components that live outside this repository.
 
 The current checkout is appropriate for core development and documentation
 work. It is not appropriate for a public binary release, a production pack
 trust decision, or a compatibility promise to third-party integrators.
 
-The complete protected CI matrix passed on commit `6a419bc` in
-[run 33422300265](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33422300265):
+The complete protected CI matrix passed on commit `d68cfad` in
+[run 33461455942](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33461455942):
 repository policy, Rust quality on Windows and Linux, headless Windows and
 Linux, ASan, UBSan, all three fuzz targets, Rust and C++ coverage, and native
 package consumers with and without VPX on both operating systems. The GPU job
 remains an explicit opt-in release gate and was skipped rather than represented
-as a passing hardware result.
+as a passing hardware result. The CodeQL workflow completed, but
+[one critical](https://github.com/Ayther-Dev/AYTHER-Engine/security/code-scanning/2)
+and [one high](https://github.com/Ayther-Dev/AYTHER-Engine/security/code-scanning/1)
+finding remain open on that same commit.
+
+The `main` ruleset currently requires a pull request and strict CI but no
+approving or Code Owner review. This is recorded as the temporary
+[single-maintainer exception](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review):
+it permits maintenance while the eligible team has one member, but it is not
+independent review and cannot be presented as two-person release approval.
 
 ## Observed checkout state
 
@@ -181,7 +190,7 @@ Three are closed, three are open, and two are deferred.
 | 4 | Enforce the version contract and protocol baselines in protected CI | Open | The release workflow validates that the tag and every product version agree before anything is built, which covers the release axis. No automated symbol or layout baseline compares a build against its predecessor, so an accidental ABI change is still invisible |
 | 5 | Provision Hub's operational keys and exercise rotation and revocation through a shipping host | Deferred | The trust primitive is implemented and tested: registries enforce identity, validity window, revocation, and per-game scope, optimized builds reject the RFC test key, and rotation and revocation have dedicated fixtures in both Rust and the flat C ABI. Hub's operational keys are external to this repository |
 | 6 | Enforce generation and shipment of complete transitive third-party notices for every release artifact | Closed | CI re-derives the dependency notice with `tools/gen_notice.ps1 -Check` and fails on drift. The release payload contract requires `share/licenses/Ayther/NOTICE.md` in the installed tree, and the release workflow verifies the artifact carries exactly its advertised payload |
-| 7 | Complete security review of media-decoder limits, scripting lifetimes, FFI ownership, dynamic library loading, and adversarial fuzz coverage | Open, confirmed defect repaired | Substantial parts are built: decoded-resource ceilings for image, audio, and video, a 64 MiB Lua memory cap, ASan and UBSan jobs, and three fuzz targets. The 43-byte SoundFont reproducer that previously requested 4 GiB is now rejected by `validated_sf2_extent()` before the third-party parser; the regression covers both `Sf2Synth::new()` and `new_shared()`. ASan, UBSan, and all three seeded fuzz targets passed in [run 33422300265](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33422300265); the wider security review remains open. See the historical [go/no-go decision](RELEASE_GO_NO_GO.md) |
+| 7 | Complete security review of media-decoder limits, scripting lifetimes, FFI ownership, dynamic library loading, and adversarial fuzz coverage | Open, confirmed defect repaired; new findings open | Substantial parts are built: decoded-resource ceilings for image, audio, and video, a 64 MiB Lua memory cap, ASan and UBSan jobs, and three fuzz targets. The 43-byte SoundFont reproducer that previously requested 4 GiB is now rejected by `validated_sf2_extent()` before the third-party parser; the regression covers both `Sf2Synth::new()` and `new_shared()`. ASan, UBSan, and all three seeded fuzz targets passed in [run 33461455942](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33461455942). CodeQL now reports [one critical](https://github.com/Ayther-Dev/AYTHER-Engine/security/code-scanning/2) and [one high](https://github.com/Ayther-Dev/AYTHER-Engine/security/code-scanning/1) finding on `main`, and the wider security review remains open. See the [current go/no-go decision](RELEASE_GO_NO_GO_CURRENT.md) |
 | 8 | Produce one clean clone to configure, build, test, install, and consume cycle on each supported platform in protected CI | Closed | The `native` CI job performs exactly that sequence — checkout, configure, build, test, install, then configure, build, and run an out-of-tree consumer — across four configurations: Windows and Linux, each with VPX disabled and enabled. The release workflow repeats it against the packaged artifact |
 
 Blockers 2, 4, and 7 are the remaining engineering work. Blockers 1 and 5 are
@@ -195,7 +204,7 @@ documented compatibility window, reproducible artifacts, private vulnerability
 reporting, and at least one release candidate consumed from outside the source
 tree. Test success in the Rust core alone is not sufficient.
 
-Of those six requirements, two are met and four are not:
+Of those six requirements, three are met and three are not:
 
 | Requirement | Met | Where |
 |---|---|---|
@@ -203,14 +212,15 @@ Of those six requirements, two are met and four are not:
 | Published support matrix | Yes | [Support matrix](SUPPORT_MATRIX.md) |
 | Documented compatibility window | Yes | [API and compatibility](API_COMPATIBILITY.md) |
 | Reproducible artifacts | Implemented, never executed | The release workflow packages twice and requires the two archives to be byte-identical, then emits SPDX SBOMs, checksums, Sigstore bundles, and SLSA provenance. No tag has been pushed, so the workflow has never run |
-| Private vulnerability reporting | **No** | [SECURITY.md](../SECURITY.md) documents the channel, but GitHub private vulnerability reporting is disabled on the repository, so the option it tells reporters to use does not exist |
+| Private vulnerability reporting | **Yes** | GitHub private vulnerability reporting is enabled and [SECURITY.md](../SECURITY.md) documents the channel |
 | A release candidate consumed from outside the source tree | **No** | `tools/check_rc_consumer.ps1` works and runs the installed package as a frontend would, but no release candidate has ever been published: there are no tags and no releases |
 
-The stability gate was executed against commit `c3866fe` on 2026-08-30 and
-returned **no-go**; the evidence for each criterion is recorded in the
-[go/no-go decision](RELEASE_GO_NO_GO.md). The remaining distance to “stable” is
-therefore both the blocker list and parts of the release machinery that are
-implemented but have never been operated.
+The stability gate was executed against remote `main` commit `d68cfad` on
+2026-08-31 and returned **no-go**; the evidence for each criterion is recorded
+in the [current go/no-go decision](RELEASE_GO_NO_GO_CURRENT.md). The
+[2026-08-30 decision](RELEASE_GO_NO_GO.md) remains a historical snapshot. The
+remaining distance to “stable” is therefore both the blocker list and parts of
+the release machinery that are implemented but have never been operated.
 
 This document stays the authoritative statement: the checkout is suitable for
 core development and documentation work, and not for a public binary release, a

@@ -126,6 +126,10 @@ are:
   hardening gaps;
 - [Build, test, and release](docs/BUILD_TEST_RELEASE.md) — reproducible commands
   and release gates;
+- [Current release go/no-go](docs/RELEASE_GO_NO_GO_CURRENT.md) — dated decision
+  and the evidence required to permit a stable release;
+- [Release rollback](docs/RELEASE_ROLLBACK.md) — immutable-tag withdrawal,
+  consumer notification, and fix-forward procedure;
 - [Repository roadmap](docs/ROADMAP.md) — development work without speculative
   product promises.
 
