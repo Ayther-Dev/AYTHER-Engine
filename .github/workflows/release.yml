@@ -73,7 +73,6 @@ jobs:
             needs_vcpkg: false
             needs_vpx: false
             bundled_vpx: false
-            native_flags: -ffile-prefix-map=${{ github.workspace }}=/usr/src/ayther
           - kind: core
             product: ayther-core
             os: windows-latest
@@ -85,7 +84,6 @@ jobs:
             needs_vcpkg: false
             needs_vpx: false
             bundled_vpx: false
-            native_flags: /Brepro /pathmap:${{ github.workspace }}=/usr/src/ayther
           - kind: engine
             product: ayther-engine
             os: ubuntu-latest
@@ -97,7 +95,6 @@ jobs:
             needs_vcpkg: true
             needs_vpx: false
             bundled_vpx: false
-            native_flags: -ffile-prefix-map=${{ github.workspace }}=/usr/src/ayther
           - kind: engine
             product: ayther-engine
             os: windows-latest
@@ -109,7 +106,6 @@ jobs:
             needs_vcpkg: true
             needs_vpx: false
             bundled_vpx: false
-            native_flags: /Brepro /pathmap:${{ github.workspace }}=/usr/src/ayther
           - kind: engine-vpx
             product: ayther-engine-vpx
             os: ubuntu-latest
@@ -121,7 +117,6 @@ jobs:
             needs_vcpkg: true
             needs_vpx: true
             bundled_vpx: false
-            native_flags: -ffile-prefix-map=${{ github.workspace }}=/usr/src/ayther
           - kind: engine-vpx
             product: ayther-engine-vpx
             os: windows-latest
@@ -133,10 +128,7 @@ jobs:
             needs_vcpkg: true
             needs_vpx: true
             bundled_vpx: true
-            native_flags: /Brepro /pathmap:${{ github.workspace }}=/usr/src/ayther
     env:
-      CFLAGS: ${{ matrix.native_flags }}
-      CXXFLAGS: ${{ matrix.native_flags }}
       RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/usr/src/ayther -C strip=debuginfo
       ARTIFACT_NAME: ${{ matrix.product }}-${{ github.ref_name }}-${{ matrix.platform }}
     steps:
@@ -145,6 +137,22 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Set deterministic native build flags
+        shell: pwsh
+        run: |
+          if (-not $env:GITHUB_WORKSPACE) {
+            throw 'GITHUB_WORKSPACE is required to construct reproducible compiler flags.'
+          }
+          if ($env:RUNNER_OS -eq 'Windows') {
+            $nativeFlags = "/Brepro /pathmap:$env:GITHUB_WORKSPACE=/usr/src/ayther"
+          } else {
+            $nativeFlags = "-ffile-prefix-map=$env:GITHUB_WORKSPACE=/usr/src/ayther"
+          }
+          "CFLAGS=$nativeFlags" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CXXFLAGS=$nativeFlags" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set the canonical build timestamp
         shell: pwsh
@@ -171,7 +179,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes libvpx-dev pkg-config
 
-      - name: Ensure NASM is available for Windows VPX
+      - name: Ensure NASM and Make are available for Windows VPX
         if: runner.os == 'Windows' && matrix.needs_vpx
         shell: pwsh
         run: |
@@ -180,6 +188,15 @@ jobs:
             'C:\Program Files\NASM' |
               Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
+          choco install make --yes --no-progress
+          $makeRoot = Join-Path $env:ChocolateyInstall 'lib\make\tools'
+          $make = Get-ChildItem $makeRoot -Recurse -Filter make.exe |
+            Select-Object -First 1
+          if (-not $make) {
+            throw "Chocolatey installed Make but make.exe is absent from $makeRoot."
+          }
+          "AYTHER_MAKE=$($make.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build the pinned Windows VPX decoder
         if: runner.os == 'Windows' && matrix.needs_vpx
