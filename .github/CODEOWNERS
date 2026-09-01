@@ -1,0 +1,9 @@
+/.github/workflows/ @Ayther-Dev/maintainers
+/tools/build_libvpx.ps1 @Ayther-Dev/maintainers
+/tools/check_rc_consumer.ps1 @Ayther-Dev/maintainers
+/tools/check_release_payload.ps1 @Ayther-Dev/maintainers
+/tools/check_release_version.ps1 @Ayther-Dev/maintainers
+/tools/gen_release_notes.ps1 @Ayther-Dev/maintainers
+/tools/gen_release_sbom.ps1 @Ayther-Dev/maintainers
+/tools/package_release.ps1 @Ayther-Dev/maintainers
+/tools/run_package_consumer.ps1 @Ayther-Dev/maintainers
