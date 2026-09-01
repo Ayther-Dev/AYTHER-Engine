@@ -56,6 +56,13 @@ void check(bool ok, const char* what, const char* detail = "") {
     if (!ok) ++g_fails;
 }
 
+constexpr uint64_t counter_delta(uint64_t current, uint64_t baseline) noexcept {
+    return current >= baseline ? current - baseline : 0;
+}
+
+static_assert(counter_delta(9, 4) == 5);
+static_assert(counter_delta(4, 9) == 0);
+
 uint64_t occ_key(uint8_t chip, uint8_t channel, uint32_t start) {
     return (uint64_t(chip) << 56) | (uint64_t(channel) << 48) | start;
 }
@@ -205,7 +212,7 @@ int main(int argc, char** argv) {
         }
         uint64_t m1 = 0, c1 = 0;
         s->audio_mute_stats(&m1, &c1);
-        return { m1 - m0, c1 - c0, orig };
+        return { counter_delta(m1, m0), counter_delta(c1, c0), orig };
     };
     auto set_inst_mute = [&](const std::vector<uint64_t>& v) {
         s->set_audio_instrument_mute(v.empty() ? nullptr : v.data(), uint32_t(v.size()));
@@ -343,10 +350,13 @@ int main(int argc, char** argv) {
         for (uint32_t f = mid; f < f1; ++f) s->replay_seek(rec, f);
         uint64_t m1 = 0, c1 = 0;
         s->audio_mute_stats(&m1, &c1);
+        const uint64_t muted_delta = counter_delta(m1, m0);
+        const uint64_t cut_delta = counter_delta(c1, c0);
         std::printf("   suprimidos %llu · CORTADOS %llu\n",
-                    (unsigned long long)(m1 - m0), (unsigned long long)(c1 - c0));
-        check(c1 - c0 > 0, "el asset en vuelo se CORTA",
-              c1 - c0 ? "" : "sigue hasta el final: el mute no se oye hasta la próxima repetición");
+                    static_cast<unsigned long long>(muted_delta),
+                    static_cast<unsigned long long>(cut_delta));
+        check(cut_delta != 0, "el asset en vuelo se CORTA",
+              cut_delta != 0 ? "" : "sigue hasta el final: el mute no se oye hasta la próxima repetición");
         set_inst_mute({});
     } else {
         std::printf("7. (omitido: el corte necesita device — pasar asset.wav)\n");

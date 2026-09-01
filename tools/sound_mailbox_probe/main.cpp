@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
             hits.push_back(Hit{static_cast<uint32_t>(a), cur[a]});
         }
         std::printf("arranque #%zu en el frame %d - %zu candidatos\n",
-                    shots.size() + 1, (size_t)f, hits.size());
+                    shots.size() + 1, f, hits.size());
         shots.push_back(std::move(hits));
 
         if (have_prev)
