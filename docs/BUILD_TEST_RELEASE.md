@@ -379,6 +379,19 @@ Before the tag is pushed, a repository administrator must have configured:
 Without those controls the workflow mechanics alone are not a protected release
 boundary, and the resulting artifacts should not be treated as one.
 
+The current absence of required approving and Code Owner review is governed by
+the temporary
+[single-maintainer exception](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review).
+It keeps maintenance possible while only one eligible maintainer exists; it
+does not provide independent review and must not be cited as such in release
+evidence.
+
+If a published candidate must be withdrawn, follow the
+[release rollback runbook](RELEASE_ROLLBACK.md). Rollback never moves or deletes
+the protected tag and never replaces its signed assets: it preserves evidence,
+withdraws the GitHub release distribution, notifies consumers, and fixes
+forward under a new version.
+
 ## Consuming a release candidate as a frontend
 
 The release workflow's package-consumer gate proves an artifact LINKS.
@@ -537,8 +550,8 @@ evidence is archived:
 4. complete transitive notices and source-offer obligations for shipped code;
 5. security review of pack parsing, paths, limits, scripting, FFI, and dynamic
    library loading;
-6. release notes, checksums, provenance, rollback instructions, and a supported
-   version matrix.
+6. release notes, checksums, provenance, the rehearsed
+   [rollback procedure](RELEASE_ROLLBACK.md), and a supported version matrix.
 
 Release artifacts must not contain ROMs, BIOS images, commercial game assets,
 private keys, or emulator cores that the project is not authorized to ship.

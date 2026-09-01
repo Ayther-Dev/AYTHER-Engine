@@ -31,6 +31,9 @@ owned by AYTHER Runtime, SDK, Play, Hub, or Lab.
 | [Generated dependency graph](DEPENDENCY_GRAPH.md) | Maintainers | Cargo and CMake dependency edges generated from the current checkout |
 | [Pack and security model](PACK_SECURITY_MODEL.md) | Security reviewers and pack tooling authors | Container format, signature/integrity flow, Lua sandbox, and hardening gaps |
 | [Build, test, and release](BUILD_TEST_RELEASE.md) | Contributors and release engineers | Commands that work now, intended CMake flow, CI expectations, and release gates |
+| [Current release go/no-go](RELEASE_GO_NO_GO_CURRENT.md) | Maintainers and release approvers | Current stable-release decision, hosting controls, security findings, and evidence required to change the decision |
+| [Governance exceptions](GOVERNANCE_EXCEPTIONS.md) | Maintainers, auditors, and release approvers | Time-bounded control deviations, compensating controls, residual risk, expiry, and closure evidence |
+| [Release rollback](RELEASE_ROLLBACK.md) | Release engineers, security maintainers, and downstream owners | Withdrawal, evidence preservation, consumer notification, immutable-tag handling, and fix-forward procedure |
 | [Coverage policy](COVERAGE.md) | Contributors and release engineers | Per-language baselines, thresholds, exclusions, reports, and critical-path tests |
 | [Development environment](DEVELOPMENT_ENVIRONMENT.md) | Contributors | Windows/Linux toolchain installation and local setup |
 | [Legal and distribution boundaries](LEGAL_AND_DISTRIBUTION.md) | Distributors, pack authors, and maintainers | BYOR/BYOC rules, license scope, content rights, trademarks, and third-party notices |
