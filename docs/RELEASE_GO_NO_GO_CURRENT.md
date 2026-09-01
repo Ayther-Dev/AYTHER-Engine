@@ -1,31 +1,33 @@
 # Current release gate: go / no-go decision
 
-**Pre-release decision: GO for `v0.1.0-rc.2`.**
+**Pre-release decision: GO for `v0.1.0-rc.3`.**
 
 **Stable-release decision: NO-GO for `v0.1.0`.**
 
 **Decision date:** 2026-09-01
 
-**Evidence cutoff:** 2026-09-01T10:07:03-03:00
+**Evidence cutoff:** 2026-09-01T11:03:46-03:00
 
 **Candidate identity:** the commit targeted by the annotated tag
-`v0.1.0-rc.2`. The tag object records the exact candidate SHA and is the
+`v0.1.0-rc.3`. The tag object records the exact candidate SHA and is the
 authoritative binding between this decision and the immutable source revision.
 
 **Evidence baseline before the decision record:**
-`626df31ae36f936c19accda399224dd4a235c0f2` (`main`)
+`549294a21881241f9fbd83a25d44c68151e1f2b9` (`main`)
 
 **Decider:** the sole maintainer, operating under
 [GOV-2026-001](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review)
 
-This record supersedes the previous current assessment of
-`d68cfad0cc9619063d407d930a78140ee2d61b0b`. The
-[2026-08-30 decision](RELEASE_GO_NO_GO.md) remains an immutable historical
-snapshot.
+This record supersedes the operational GO for `v0.1.0-rc.2`. That candidate
+failed during release configuration before publication and its immutable tag
+remains preserved. The earlier assessment of
+`d68cfad0cc9619063d407d930a78140ee2d61b0b` and the
+[2026-08-30 decision](RELEASE_GO_NO_GO.md) remain immutable historical
+snapshots.
 
 ## Decision scope
 
-The GO authorizes publishing `v0.1.0-rc.2` as a **pre-release candidate** so
+The GO authorizes publishing `v0.1.0-rc.3` as a **pre-release candidate** so
 that the release pipeline, artifact verification, external consumption, and
 rollback procedure can be exercised. It does not authorize publishing the
 stable `v0.1.0` release.
@@ -39,12 +41,13 @@ stable-release GO.
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.2` passes for prerelease `rc.2` of `0.1.0` |
-| Required CI on the corrected release baseline | **Pass** | [CI run 33507523620](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33507523620) passed on `626df31ae36f936c19accda399224dd4a235c0f2` |
-| CodeQL workflow on the corrected baseline | **Pass** | [CodeQL run 33507523093](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33507523093) passed on the same SHA |
+| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.3` passes for prerelease `rc.3` of `0.1.0` |
+| Required CI on the corrected release baseline | **Pass** | [CI run 33515965518](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33515965518) passed on `549294a21881241f9fbd83a25d44c68151e1f2b9` |
+| CodeQL workflow on the corrected baseline | **Pass** | [CodeQL run 33515965560](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33515965560) passed on the same SHA |
 | Open code-scanning findings | **Pass** | GitHub returned no open code-scanning alerts at the evidence cutoff |
-| Windows release bootstrap regression | **Pass** | PR [#8](https://github.com/Ayther-Dev/AYTHER-Engine/pull/8) corrected runtime path mapping and the pinned Windows VPX Make bootstrap; its required CI gate passed |
-| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.2` did not exist at the evidence cutoff |
+| `rc.2` release outcome | **Failed before publication; remediated by fix-forward** | [Release run 33514264266](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33514264266) rejected MSVC-style `/pathmap:` under `clang-cl`; no publication job or environment approval was reached, and the immutable `v0.1.0-rc.2` tag was not moved or deleted |
+| Windows deterministic-prefix regression | **Pass** | PR [#10](https://github.com/Ayther-Dev/AYTHER-Engine/pull/10) passes Clang's prefix map through `/clang:-ffile-prefix-map=...`; its required CI gate passed both Windows native matrices, including VPX |
+| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.3` did not exist at the evidence cutoff |
 | Release controls | **Pass with temporary governance exception** | The `release` environment requires approval and accepts `v*`; immutable tag protection blocks update and deletion |
 
 The final candidate commit is the merge result containing this record. Before
@@ -97,12 +100,12 @@ re-evaluating the stable `v0.1.0` gate.
 
 ```text
 git rev-parse main
-pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.2
+pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.3
 gh run list --branch main --limit 12
 gh api 'repos/Ayther-Dev/AYTHER-Engine/code-scanning/alerts?state=open'
 gh api repos/Ayther-Dev/AYTHER-Engine/environments/release
 gh api repos/Ayther-Dev/AYTHER-Engine/rulesets
-gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.2
+gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.3
 ```
 
 Ruleset identifiers are not treated as stable evidence. Enumerate the active
