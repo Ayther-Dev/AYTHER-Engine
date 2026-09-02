@@ -13,7 +13,7 @@
 
     Requires the GitHub CLI (gh) and cosign on PATH. Consuming additionally
     requires a C++ toolchain, CMake, Ninja, and for the engine products a vcpkg
-    environment supplying SDL3, Vulkan, VMA, vk-bootstrap, toml++, and zstd.
+    environment supplying SDL3, Vulkan, VMA, toml++, and zstd.
 
 .EXAMPLE
     ./tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.1 -Product ayther-engine `

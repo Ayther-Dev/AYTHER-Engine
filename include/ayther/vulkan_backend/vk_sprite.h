@@ -28,6 +28,7 @@
 //   as usual — no callers need to be changed.
 // ---------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
+#include <ayther/engine/vulkan_interop.hpp>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -38,7 +39,7 @@
 #include <unordered_map>
 #include <vector>
 
-class VkContext;
+
 class VkTexture;
 struct AyArchive;
 struct AytherSpriteSub;
@@ -59,17 +60,17 @@ public:
     /// Initialise the render pass, alpha-blend pipeline, sampler, descriptor
     /// pool, and a framebuffer over `target_view` (the renderer's offscreen
     /// image, format `fmt`, size w×h). Call once after the target exists.
-    bool init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
+    bool init(const ayther::engine::VulkanContextView& ctx, VkFormat fmt, uint32_t w, uint32_t h,
               VkImageView target_view,
               const char* vert_spv_path, const char* frag_spv_path);
 
     /// Recreate the framebuffer after the offscreen target is resized.
     /// The pipeline and render pass are format-fixed — they survive resizes.
-    void rebuild(VkContext& ctx, uint32_t w, uint32_t h, VkImageView target_view);
+    void rebuild(const ayther::engine::VulkanContextView& ctx, uint32_t w, uint32_t h, VkImageView target_view);
 
 /// Deterministic early release. The destructor performs the same idempotent
 /// cleanup when the sprite owner leaves scope.
-    void shutdown(VkContext& ctx);
+    void shutdown(const ayther::engine::VulkanContextView& ctx);
 
     // ---- Per-frame draw ------------------------------------------------------
 
@@ -91,7 +92,7 @@ public:
     ///           drawn last = on top) to respect sprite-vs-sprite occlusion between
     ///           overlapping HD ones. nullptr = ordered by asset_path (batching; for
     ///           plane tiles, which do not overlap by SAT).
-    void draw(VkContext& ctx, VkCommandBuffer cmd, VkImage target_image,
+    void draw(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, VkImage target_image,
               const AytherSpriteSub* subs, uint32_t count,
               AyArchive* pack,
               uint32_t emu_w, uint32_t emu_h,
@@ -115,7 +116,7 @@ public:
     /// destination is a FLOAT rect (sub-pixel, for the Level 1 geometric
     /// tween). Same pipeline (the sub-rect travels in push constants); same
     /// entry/exit states as draw().
-    void draw_anim(VkContext& ctx, VkCommandBuffer cmd, VkImage target_image,
+    void draw_anim(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, VkImage target_image,
                    const ayther::AnimHdFrame* frames, uint32_t count,
                    AyArchive* pack,
                    uint32_t emu_w, uint32_t emu_h);
@@ -148,7 +149,7 @@ public:
     /// It receives the THREE PLANES from the decoder (I420), not a BGRA. The
     /// conversion is done by video.frag. `y_stride` and friends are NOT `w`:
     /// libvpx aligns the rows.
-    void draw_video(VkContext& ctx, VkCommandBuffer cmd, VkImage target_image,
+    void draw_video(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, VkImage target_image,
                     const uint8_t* y, uint32_t y_stride,
                     const uint8_t* u, uint32_t u_stride,
                     const uint8_t* v, uint32_t v_stride,
@@ -162,7 +163,7 @@ public:
     /// Call this during a pack hotreload (after vkDeviceWaitIdle) to evict
     /// all loaded textures so they are re-fetched from the new pack.
     /// The pipeline stays alive — no need to re-call init().
-    void clear_textures(VkContext& ctx);
+    void clear_textures(const ayther::engine::VulkanContextView& ctx);
 
     /// Evict ONE asset (`path` and its flipped variants `path#N`) from the
     /// cache so the next draw reloads it from the pack/disk. For assets
@@ -170,7 +171,7 @@ public:
     /// the rig in Pose) — without this the sub would keep drawing the old
     /// texture stretched to the new bbox. It waits for GPU idle only if a
     /// texture was loaded.
-    void evict(VkContext& ctx, const std::string& path);
+    void evict(const ayther::engine::VulkanContextView& ctx, const std::string& path);
 
     /// Phase 2: PRE-WARMS an asset — reads the bytes and queues the decode on
     /// the worker, without blocking. Call it when assigning/feeding poses: by
@@ -192,13 +193,13 @@ public:
     /// with no changes it is just one stat per asset; with changes it pays for
     /// the evict (GPU idle once). PACK assets are not watched (the pack is
     /// immutable until its own hot-reload).
-    void poll_disk(VkContext& ctx);
+    void poll_disk(const ayther::engine::VulkanContextView& ctx);
 
     /// Phase 2: uploads the finished decodes to the GPU (at most
     /// `max_uploads` per frame, which bounds the hitch). Call it ONCE per frame
     /// with the cmd recording, OUTSIDE a render pass — even if there are no
     /// subs this frame.
-    void pump_uploads(VkContext& ctx, VkCommandBuffer cmd, int max_uploads = 2);
+    void pump_uploads(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, int max_uploads = 2);
 
     /// R-8: the texture state of an asset WITHOUT triggering its load. The key
     /// mirrors the one draw() uses (path + flip suffix). Read-only — so the
@@ -224,7 +225,7 @@ public:
     void set_dim(float d, float a = 1.0f) noexcept { dim_ = d; dim_a_ = a; }
 
 private:
-    VkContext* context_ = nullptr;
+    const ayther::engine::VulkanContextView* context_ = nullptr;
     // ---- Vulkan objects ----
     VkRenderPass          render_pass_  = VK_NULL_HANDLE;
     VkDescriptorSetLayout desc_layout_  = VK_NULL_HANDLE;
@@ -400,12 +401,12 @@ private:
     /// `r8` = Wardrobe: the texture uploads as R8/Gray8 and does NOT allocate
     /// the 1-sampler descriptor sets (a mask is never drawn on its own — it
     /// lives in the combined sets of `mask_set_cache_`).
-    bool finish_upload(VkContext& ctx, VkCommandBuffer cmd, TexEntry& entry,
+    bool finish_upload(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, TexEntry& entry,
                        const std::string& path, int w, int h, const uint8_t* bgra,
                        bool r8 = false);
 
     // ---- Helpers ----
-    bool create_render_pass  (VkContext& ctx, VkFormat fmt);
+    bool create_render_pass  (const ayther::engine::VulkanContextView& ctx, VkFormat fmt);
     /// Parameterised by SAMPLER count and with an explicit output, because
     /// there are now two pipelines: the sprite one (1 sampler, sprite.frag) and
     /// the video one (3 — luma and the two chromas —, video.frag). Everything
@@ -430,7 +431,7 @@ private:
         VkBlendOp     color_op;
         VkPipeline*   out;
     };
-    bool create_pipeline     (VkContext& ctx,
+    bool create_pipeline     (const ayther::engine::VulkanContextView& ctx,
                               const char* vert_spv_path,
                               const char* frag_spv_path,
                               uint32_t    sampler_count,
@@ -440,21 +441,21 @@ private:
                               VkPipeline*            out_pipeline_add = nullptr,
                               const PipelineBlendVariant* variants = nullptr,
                               uint32_t variant_count = 0);
-    bool create_sampler      (VkContext& ctx);
-    bool create_desc_pool    (VkContext& ctx);
+    bool create_sampler      (const ayther::engine::VulkanContextView& ctx);
+    bool create_desc_pool    (const ayther::engine::VulkanContextView& ctx);
     /// Allocates a set from the LAST pool in the chain; if it is exhausted, it
     /// creates a new pool and retries. VK_NULL_HANDLE only on a real driver
     /// failure.
-    VkDescriptorSet alloc_desc_set(VkContext& ctx);
-    bool create_framebuffer  (VkContext& ctx, VkImageView view, uint32_t w, uint32_t h);
-    void destroy_framebuffers(VkContext& ctx);
+    VkDescriptorSet alloc_desc_set(const ayther::engine::VulkanContextView& ctx);
+    bool create_framebuffer  (const ayther::engine::VulkanContextView& ctx, VkImageView view, uint32_t w, uint32_t h);
+    void destroy_framebuffers(const ayther::engine::VulkanContextView& ctx);
 
     /// Ensure the sprite texture for `path` is loaded into the GPU and its
     /// descriptor set is allocated.  Must be called OUTSIDE a render pass.
     /// `flip` (bit0 hflip, bit1 vflip) → flipped variant cached separately (the
     /// texture is flipped while decoding; the cache key carries the flip
     /// suffix).
-    TexEntry* ensure_loaded(VkContext& ctx, VkCommandBuffer cmd,
+    TexEntry* ensure_loaded(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                             const std::string& path, AyArchive* pack,
                             uint8_t flip = 0, bool mask = false);
 
@@ -474,9 +475,9 @@ private:
     /// (re)written when either of the two entries changed seq. nullptr = one of
     /// the textures is not ready yet (the caller falls back to the classic
     /// pipeline).
-    VkDescriptorSet get_mask_set(VkContext& ctx, const std::string& asset_key,
+    VkDescriptorSet get_mask_set(const ayther::engine::VulkanContextView& ctx, const std::string& asset_key,
                                  const std::string& mask_key, TexEntry& asset,
                                  TexEntry& mask, bool linear);
-    VkDescriptorSet alloc_mask_set(VkContext& ctx);
-    bool            create_mask_pool(VkContext& ctx);
+    VkDescriptorSet alloc_mask_set(const ayther::engine::VulkanContextView& ctx);
+    bool            create_mask_pool(const ayther::engine::VulkanContextView& ctx);
 };

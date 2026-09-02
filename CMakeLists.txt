@@ -204,7 +204,6 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/session/recording_controller.h
     src/voice_router.cpp
     src/vulkan_backend/tile_tex_cache.cpp
-    src/vulkan_backend/vk_context.cpp
     src/vulkan_backend/vk_indexed_plane.cpp
     src/vulkan_backend/vk_render_target.cpp
     src/vulkan_backend/vk_sprite.cpp
@@ -320,14 +319,13 @@ if(AYTHER_BUILD_ENGINE)
     if(NOT AYTHER_BUILD_RENDERER)
         message(FATAL_ERROR
             "AYTHER_BUILD_ENGINE requires AYTHER_BUILD_RENDERER because the "
-            "complete 24-source engine target includes SDL3/Vulkan backends.")
+            "complete engine target includes SDL3/Vulkan backends.")
     endif()
 
     find_package(Threads REQUIRED)
     find_package(SDL3 CONFIG REQUIRED)
     find_package(Vulkan REQUIRED)
     find_package(VulkanMemoryAllocator CONFIG REQUIRED)
-    find_package(vk-bootstrap CONFIG REQUIRED)
     find_package(tomlplusplus CONFIG REQUIRED)
     find_package(Stb REQUIRED)
     find_package(zstd CONFIG REQUIRED)
@@ -353,7 +351,6 @@ if(AYTHER_BUILD_ENGINE)
         SDL3::SDL3
         Vulkan::Vulkan
         GPUOpen::VulkanMemoryAllocator
-        vk-bootstrap::vk-bootstrap
         Stb::Stb
         dr_libs::dr_libs
         tomlplusplus::tomlplusplus
@@ -405,7 +402,6 @@ if(AYTHER_BUILD_ENGINE)
             Threads::Threads
             SDL3::SDL3
             GPUOpen::VulkanMemoryAllocator
-            vk-bootstrap::vk-bootstrap
             $<BUILD_INTERFACE:Stb::Stb>
             $<BUILD_INTERFACE:dr_libs::dr_libs>
             tomlplusplus::tomlplusplus

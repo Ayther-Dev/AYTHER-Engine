@@ -99,7 +99,7 @@ attaching package include paths directly to `ayther_engine`:
 | SDL3 | `SDL3::SDL3` | Private link dependency; no installed header exposes SDL types |
 | Vulkan | `Vulkan::Vulkan` | Public usage requirement for `engine/vulkan_interop.hpp`; implementation also uses it |
 | Vulkan Memory Allocator | `GPUOpen::VulkanMemoryAllocator` | Private |
-| vk-bootstrap | `vk-bootstrap::vk-bootstrap` | Private |
+| vk-bootstrap | `vk-bootstrap::vk-bootstrap` | GPU-test support only; production context creation belongs to Runtime |
 | stb | `Stb::Stb` compatibility target | Private, build-tree only |
 | dr_libs | `dr_libs::dr_libs` compatibility target | Private, build-tree only |
 | toml++ | `tomlplusplus::tomlplusplus` | Private |
@@ -116,7 +116,7 @@ roots. Third-party include directories are not repeated there: they arrive from
 the dependency targets above. Its private compile contract defines
 `VMA_STATIC_VULKAN_FUNCTIONS=1`, `VMA_DYNAMIC_VULKAN_FUNCTIONS=0`, and, only
 when `AYTHER_ENABLE_VPX=ON`, `AYTHER_HAVE_VPX=1`. VPX is linked only in that
-configuration; core, ymfm, Threads, VMA, vk-bootstrap, stb, dr_libs, toml++,
+configuration; core, ymfm, Threads, VMA, stb, dr_libs, toml++,
 zstd, and `${CMAKE_DL_LIBS}` form the remaining private link closure. SDL3 and
 Vulkan are public because installed AYTHER headers expose their types.
 
@@ -383,8 +383,9 @@ CPU/integration test run.
 
 ## Consuming an installed engine
 
-Engine consumers must make SDL3, Vulkan, VulkanMemoryAllocator, vk-bootstrap,
-toml++, and zstd discoverable. The supported source workflow is to declare the
+Engine consumers must make SDL3, Vulkan, VulkanMemoryAllocator, toml++, and
+zstd discoverable. Applications such as Runtime that create the Vulkan context
+also depend directly on vk-bootstrap. The supported source workflow is to declare the
 same packages in the consumer's vcpkg manifest and configure with its toolchain.
 The AYTHER package does not silently copy those libraries into another project.
 `find_package(Ayther)` resolves these packages and verifies their imported

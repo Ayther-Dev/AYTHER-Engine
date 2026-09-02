@@ -47,7 +47,6 @@ if(Ayther_engine_FOUND)
     find_dependency(SDL3 CONFIG)
     find_dependency(Vulkan)
     find_dependency(VulkanMemoryAllocator CONFIG)
-    find_dependency(vk-bootstrap CONFIG)
     find_dependency(tomlplusplus CONFIG)
     find_dependency(zstd CONFIG)
 
@@ -56,7 +55,6 @@ if(Ayther_engine_FOUND)
         SDL3::SDL3
         Vulkan::Vulkan
         GPUOpen::VulkanMemoryAllocator
-        vk-bootstrap::vk-bootstrap
         tomlplusplus::tomlplusplus
         zstd::libzstd)
     foreach(_ayther_dependency_target IN LISTS

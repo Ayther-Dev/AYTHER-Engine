@@ -2,7 +2,7 @@
 # con VkIndexedPlane (VRAM como índices + CRAM como paleta, en GPU) y lo compara
 # BIT A BIT contra la recomposición del mismo plano por el renderer del core
 # (ayther_recompose_frame con la máscara "solo B"). El único tool que crea un
-# contexto Vulkan: ventana SDL oculta (VkContext no tiene camino headless).
+# contexto Vulkan: ventana SDL oculta (VulkanTestContext no tiene camino headless).
 # Built only when -DAYTHER_BUILD_SPIKE=ON. ROM via AYTHER_PROBE_ROM. Requiere GPU.
 add_executable(indexed_plane_smoke main.cpp)
 target_link_libraries(indexed_plane_smoke PRIVATE

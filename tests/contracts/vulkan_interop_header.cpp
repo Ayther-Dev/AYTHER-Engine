@@ -5,6 +5,27 @@
 
 static_assert(std::is_standard_layout_v<ayther::engine::RenderImageView>);
 static_assert(std::is_trivially_copyable_v<ayther::engine::RenderImageView>);
+static_assert(std::is_standard_layout_v<ayther::engine::VulkanContextView>);
+static_assert(std::is_trivially_copyable_v<ayther::engine::VulkanContextView>);
+static_assert(std::is_same_v<
+              decltype(ayther::engine::VulkanContextView::instance_handle),
+              VkInstance>);
+static_assert(std::is_same_v<
+              decltype(ayther::engine::VulkanContextView::physical_device_handle),
+              VkPhysicalDevice>);
+static_assert(std::is_same_v<
+              decltype(ayther::engine::VulkanContextView::device_handle),
+              VkDevice>);
+static_assert(std::is_same_v<
+              decltype(ayther::engine::VulkanContextView::graphics_queue_handle),
+              VkQueue>);
+static_assert(std::is_same_v<
+              decltype(ayther::engine::VulkanContextView::graphics_queue_family_index),
+              std::uint32_t>);
+static_assert(std::is_same_v<
+              decltype(ayther::engine::VulkanContextView::allocator_handle),
+              VmaAllocator_T*>);
+static_assert(noexcept(ayther::engine::VulkanContextView{}.is_valid()));
 static_assert(std::is_same_v<
               decltype(ayther::engine::RenderImageView::image), VkImage>);
 static_assert(std::is_same_v<

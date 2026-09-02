@@ -3,13 +3,13 @@
 // ---------------------------------------------------------------------------
 #include "vulkan_backend/vk_render_target.h"
 #include "log.h"
-#include "vulkan_backend/vk_context.h"
+#include <ayther/engine/vulkan_interop.hpp>
 #include <vk_mem_alloc.h>   // real VMA API (header forward-declares the handle)
 #include <cstdio>
 
 VkRenderTarget::~VkRenderTarget() { release(); }
 
-bool VkRenderTarget::init(VkContext& ctx, uint32_t width, uint32_t height,
+bool VkRenderTarget::init(const ayther::engine::VulkanContextView& ctx, uint32_t width, uint32_t height,
                           VkFormat format) {
     if (width == 0 || height == 0) {
         ayther::log::write(ayther::log::Severity::Warning,
@@ -93,13 +93,13 @@ bool VkRenderTarget::init(VkContext& ctx, uint32_t width, uint32_t height,
     return true;
 }
 
-bool VkRenderTarget::resize(VkContext& ctx, uint32_t width, uint32_t height) {
+bool VkRenderTarget::resize(const ayther::engine::VulkanContextView& ctx, uint32_t width, uint32_t height) {
     shutdown(ctx);
     return init(ctx, width, height, format_ == VK_FORMAT_UNDEFINED
                                         ? VK_FORMAT_B8G8R8A8_UNORM : format_);
 }
 
-void VkRenderTarget::shutdown(VkContext& ctx) {
+void VkRenderTarget::shutdown(const ayther::engine::VulkanContextView& ctx) {
     (void)ctx;
     release();
 }

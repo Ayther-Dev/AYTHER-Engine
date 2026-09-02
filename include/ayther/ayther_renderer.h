@@ -3,7 +3,8 @@
 // AytherRenderer — the motor's visual (HD) layer (R3).
 //
 // Consumes a FrameView (the deterministic CPU output of AytherSession::step())
-// + a borrowed VkContext, and renders the HD frame into an offscreen VkImage
+// + a borrowed ayther::engine::VulkanContextView, and renders the HD frame into
+// an offscreen VkImage
 // (VkRenderTarget). The frontend then presents that image:
 //   - ayther_play blits it to its swapchain;
 //   - ayther_lab samples it in an ImGui viewport.
@@ -34,7 +35,7 @@
 #include <string>
 
 struct AyArchive;   // opaque (ayther_core_ffi.h) — HD asset source
-class  VkContext;
+
 class  AytherLayerStack;   // R-4 — layer model (ayther_layers.h)
 
 namespace ayther {
@@ -44,7 +45,8 @@ struct SceneElement;   // ayther_session.h — R-8: sub_texture_state()
 
 /// @brief Vulkan presentation layer for one session frame stream.
 ///
-/// The renderer borrows `VkContext`; the context and its device must outlive
+/// The renderer borrows the handles in
+/// `ayther::engine::VulkanContextView`; the host context and device must outlive
 /// every renderer resource. All methods are render-thread affine and are not
 /// safe for concurrent use. Destruction releases initialized resources;
 /// shutdown() remains available for deterministic release before the context.
@@ -60,16 +62,18 @@ public:
     // resolution. ayther_play passes its swapchain extent; ayther_lab its
     // viewport size. `shader_dir` locates the SPIR-V (sprite.*.spv); if the
     // shaders are missing the sprite overlay is disabled (emu+tiles still work).
-    bool init(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h,
+    bool init(const ayther::engine::VulkanContextView& ctx,
+              uint32_t canvas_w, uint32_t canvas_h,
               const char* shader_dir,
               const RuntimeOptions& options = RuntimeOptions::process());
 
     // Recreate at a new canvas size (window / viewport resize).
-    bool resize(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h);
+    bool resize(const ayther::engine::VulkanContextView& ctx,
+                uint32_t canvas_w, uint32_t canvas_h);
 
     // Evict cached HD tile textures so the next frame re-fetches from the new
     // pack. Call on pack hot-reload, after vkDeviceWaitIdle().
-    void evict_pack_textures(VkContext& ctx);
+    void evict_pack_textures(const ayther::engine::VulkanContextView& ctx);
 
     // Evict ONE HD sprite texture by asset path (including its flipped
     // variants) so the next frame reloads it from the pack/disk. For assets
@@ -77,7 +81,8 @@ public:
     // in Pose, and the per-path cache used to leave it stale.
     // evict_pack_textures throws EVERYTHING away; this is surgical (it waits
     // for GPU idle only if the texture was loaded).
-    void evict_sprite_texture(VkContext& ctx, const std::string& path);
+    void evict_sprite_texture(const ayther::engine::VulkanContextView& ctx,
+                              const std::string& path);
 
     /// Phase 2: pre-warms the texture of a LOOSE asset from disk (async
     /// decode) — call it when assigning/feeding poses so the first appearance
@@ -95,10 +100,10 @@ public:
     /// DISK and evicts the ones that changed or appeared — the next frame
     /// reloads them (images edited in graphics/ outside the Lab used to look
     /// stale until a restart). Call at a low cadence (~1×/s).
-    void poll_disk_sprite_textures(VkContext& ctx);
+    void poll_disk_sprite_textures(const ayther::engine::VulkanContextView& ctx);
 
     // Destroy all resources. Safe on a partially-initialized renderer.
-    void shutdown(VkContext& ctx);
+    void shutdown(const ayther::engine::VulkanContextView& ctx);
 
     bool is_ready() const { return target_.is_ready(); }
 
@@ -123,18 +128,19 @@ public:
     // (8K ≈ 95 MB host).
     /// Creates the resources for frames of the current extent(). false = no
     /// resources.
-    bool readback_init(VkContext& ctx);
+    bool readback_init(const ayther::engine::VulkanContextView& ctx);
     /// Render + copy + submit + wait. Returns the mapped BGRA (w*h*4 of the
     /// target extent(); valid until the next export_frame) or nullptr.
     /// `vdp_mask` = the same layer eyes as the render (AYTHER_LAYER_* bits:
     /// A=1 B=2 W=4 OBJ=8). The Lab Snapshot lets the user choose which layers
     /// enter the image; 0xFF = all of them, which is what the MP4 export and
     /// the snapshot did before the parameter existed.
-    const uint8_t* export_frame(VkContext& ctx, const FrameView& fv,
-                                AyArchive* pack, bool hd_on,
-                                const AytherLayerStack* layers = nullptr,
-                                uint8_t vdp_mask = 0xFF);
-    void readback_shutdown(VkContext& ctx);
+    const uint8_t* export_frame(
+        const ayther::engine::VulkanContextView& ctx, const FrameView& fv,
+        AyArchive* pack, bool hd_on,
+        const AytherLayerStack* layers = nullptr,
+        uint8_t vdp_mask = 0xFF);
+    void readback_shutdown(const ayther::engine::VulkanContextView& ctx);
 
     // Record the HD render for `fv` into `cmd`, targeting the offscreen image.
     // Uploads the emu frame (always) then, when hd_on=true, overlays the resolved
@@ -152,7 +158,8 @@ public:
     // per-element filter of the compose (ANDed with the stack visibility). On
     // frames that fall back to the blit it does not apply (the blit brings the
     // whole frame).
-    void render(VkContext& ctx, VkCommandBuffer cmd, const FrameView& fv,
+    void render(const ayther::engine::VulkanContextView& ctx,
+                VkCommandBuffer cmd, const FrameView& fv,
                 AyArchive* pack, bool hd_on = true,
                 const AytherLayerStack* layers = nullptr,
                 uint8_t vdp_mask = 0xFF);
@@ -226,9 +233,10 @@ public:
     /// re-rendering the same frame with the other configuration.
     /// false = the image could not be created (out of memory) — the caller
     /// degrades to showing a single version.
-    bool capture_compare(VkContext& ctx, VkCommandBuffer cmd);
+    bool capture_compare(const ayther::engine::VulkanContextView& ctx,
+                         VkCommandBuffer cmd);
     /// Releases the comparison image (leaving the A/B returns the memory).
-    void compare_release(VkContext& ctx);
+    void compare_release(const ayther::engine::VulkanContextView& ctx);
 
     /// Reads the comparison image back to the CPU — BGRA of the target extent,
     /// using the same readback resources as `export_frame` (requires
@@ -236,12 +244,12 @@ public:
     /// honest is that the copy contains exactly what the offscreen held at
     /// capture time, and that can only be asserted by reading it. nullptr if
     /// there is no copy or the submit fails.
-    const uint8_t* readback_compare(VkContext& ctx);
+    const uint8_t* readback_compare(const ayther::engine::VulkanContextView& ctx);
 
     /// Capture + its own submit, so capture_compare can be used outside a
     /// frame (oracles). In the Lab the capture travels in the cmd of the frame
     /// in progress.
-    bool capture_compare_now(VkContext& ctx);
+    bool capture_compare_now(const ayther::engine::VulkanContextView& ctx);
 
 private:
     /// Injected at init(); held by value so the renderer never outlives a
@@ -279,7 +287,9 @@ private:
     // Keeping it behind an implementation object avoids exposing render-only
     // element types in the public header while preserving allocation reuse.
     std::unique_ptr<FrameScratch> scratch_;
-    VkContext* context_ = nullptr;
+    // Copying the non-owning view avoids retaining the caller's value object;
+    // the host-owned Vulkan handles still obey VulkanContextView's lifetime.
+    ayther::engine::VulkanContextView context_{};
 };
 
 }  // namespace ayther

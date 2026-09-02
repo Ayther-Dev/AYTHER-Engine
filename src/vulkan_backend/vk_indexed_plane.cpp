@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 #include "vulkan_backend/vk_indexed_plane.h"
 #include "log.h"
-#include "vulkan_backend/vk_context.h"
+#include <ayther/engine/vulkan_interop.hpp>
 #include "vulkan_backend/vk_render_target.h"
 #include "ayther_file.h"
 #include <vk_mem_alloc.h>   // real VMA API (header forward-declares the handle only)
@@ -51,7 +51,7 @@ std::vector<uint32_t> load_spv(const char* path) {
     return code;
 }
 
-VkShaderModule make_shader_module(VkContext& ctx, const std::vector<uint32_t>& code) {
+VkShaderModule make_shader_module(const ayther::engine::VulkanContextView& ctx, const std::vector<uint32_t>& code) {
     VkShaderModuleCreateInfo info{};
     info.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     info.codeSize = code.size() * sizeof(uint32_t);
@@ -64,7 +64,7 @@ VkShaderModule make_shader_module(VkContext& ctx, const std::vector<uint32_t>& c
 // Imagen 2D device-local + staging host-visible persistentemente mapeado
 // (molde de VkTexture::init, con formato parametrizado — VkTexture es BGRA8
 // fijo y esta textura es R8_UINT).
-bool make_image(VkContext& ctx, uint32_t w, uint32_t h, VkFormat fmt,
+bool make_image(const ayther::engine::VulkanContextView& ctx, uint32_t w, uint32_t h, VkFormat fmt,
                 VkImage& image, VmaAllocation& alloc, VkImageView& view) {
     VkImageCreateInfo ii{};
     ii.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -102,7 +102,7 @@ bool make_image(VkContext& ctx, uint32_t w, uint32_t h, VkFormat fmt,
     return true;
 }
 
-bool make_staging(VkContext& ctx, VkDeviceSize size,
+bool make_staging(const ayther::engine::VulkanContextView& ctx, VkDeviceSize size,
                   VkBuffer& buf, VmaAllocation& alloc, void*& map) {
     VkBufferCreateInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -172,7 +172,7 @@ VkIndexedPlane::~VkIndexedPlane() {
     if (context_) shutdown(*context_);
 }
 
-bool VkIndexedPlane::init(VkContext& ctx, const VkRenderTarget& target,
+bool VkIndexedPlane::init(const ayther::engine::VulkanContextView& ctx, const VkRenderTarget& target,
                           const char* vert_spv_path, const char* frag_spv_path) {
     context_ = &ctx;
     extent_ = target.extent();
@@ -202,7 +202,7 @@ bool VkIndexedPlane::init(VkContext& ctx, const VkRenderTarget& target,
     return true;
 }
 
-bool VkIndexedPlane::rebuild(VkContext& ctx, const VkRenderTarget& target) {
+bool VkIndexedPlane::rebuild(const ayther::engine::VulkanContextView& ctx, const VkRenderTarget& target) {
     if (!is_ready()) return false;
     if (framebuffer_) {
         vkDestroyFramebuffer(ctx.device(), framebuffer_, nullptr);
@@ -227,7 +227,7 @@ bool VkIndexedPlane::rebuild(VkContext& ctx, const VkRenderTarget& target) {
     return true;
 }
 
-bool VkIndexedPlane::create_images(VkContext& ctx) {
+bool VkIndexedPlane::create_images(const ayther::engine::VulkanContextView& ctx) {
     if (!make_image(ctx, kIdxW, kIdxH, VK_FORMAT_R8_UINT,
                     idx_image_, idx_alloc_, idx_view_)) return false;
     if (!make_staging(ctx, kIdxW * kIdxH, idx_staging_, idx_staging_alloc_,
@@ -254,7 +254,7 @@ bool VkIndexedPlane::create_images(VkContext& ctx) {
     return true;
 }
 
-bool VkIndexedPlane::create_pipeline(VkContext& ctx, VkFormat fmt,
+bool VkIndexedPlane::create_pipeline(const ayther::engine::VulkanContextView& ctx, VkFormat fmt,
                                      const char* vert_spv_path,
                                      const char* frag_spv_path) {
     // ---- Render pass: contrato idéntico a VkSprite (LOAD; entra en
@@ -487,7 +487,7 @@ bool VkIndexedPlane::create_pipeline(VkContext& ctx, VkFormat fmt,
     return true;
 }
 
-void VkIndexedPlane::shutdown(VkContext& ctx) {
+void VkIndexedPlane::shutdown(const ayther::engine::VulkanContextView& ctx) {
     VkDevice dev = ctx.device();
     if (framebuffer_) { vkDestroyFramebuffer(dev, framebuffer_, nullptr); framebuffer_ = VK_NULL_HANDLE; }
     if (desc_pool_)   { vkDestroyDescriptorPool(dev, desc_pool_, nullptr); desc_pool_ = VK_NULL_HANDLE; desc_set_ = VK_NULL_HANDLE; }
@@ -509,7 +509,7 @@ void VkIndexedPlane::shutdown(VkContext& ctx) {
 // ---------------------------------------------------------------------------
 // Subidas incrementales
 // ---------------------------------------------------------------------------
-void VkIndexedPlane::upload_vram(VkContext& ctx, VkCommandBuffer cmd,
+void VkIndexedPlane::upload_vram(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                                  const uint8_t* vram, size_t size) {
     if (!vram || size < sizeof(vram_shadow_) || !idx_staging_map_) return;
 
@@ -565,7 +565,7 @@ void VkIndexedPlane::upload_vram(VkContext& ctx, VkCommandBuffer cmd,
     idx_uploaded_ = true;
 }
 
-void VkIndexedPlane::upload_cram(VkContext& ctx, VkCommandBuffer cmd,
+void VkIndexedPlane::upload_cram(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                                  const uint8_t* cram, size_t size) {
     if (!cram || size < sizeof(cram_shadow_) || !pal_staging_map_) return;
     if (cram_seen_ && std::memcmp(cram, cram_shadow_, sizeof(cram_shadow_)) == 0) return;
@@ -600,7 +600,7 @@ void VkIndexedPlane::upload_cram(VkContext& ctx, VkCommandBuffer cmd,
 // ---------------------------------------------------------------------------
 // draw_cells
 // ---------------------------------------------------------------------------
-void VkIndexedPlane::draw_cells(VkContext& ctx, VkCommandBuffer cmd,
+void VkIndexedPlane::draw_cells(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                                 const CellQuad* cells, size_t count,
                                 uint32_t canvas_w, uint32_t canvas_h,
                                 int32_t scissor_x) {

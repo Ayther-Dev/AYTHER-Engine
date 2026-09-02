@@ -25,7 +25,7 @@
 #include "ayther_env.h"
 #include "ayther_session.h"
 #include "ayther_recording.h"
-#include "vulkan_backend/vk_context.h"
+#include "../../tests/support/vulkan_test_context.h"
 #include "vulkan_backend/vk_render_target.h"
 #include "vulkan_backend/vk_indexed_plane.h"
 #include <SDL3/SDL.h>
@@ -66,7 +66,7 @@ struct SmokeReadback {
     VkDeviceMemory mem = VK_NULL_HANDLE;
     void*          map = nullptr;
 
-    bool init(VkContext& ctx, VkDeviceSize size) {
+    bool init(VulkanTestContext& ctx, VkDeviceSize size) {
         VkBufferCreateInfo bi{};
         bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bi.size  = size;
@@ -91,7 +91,7 @@ struct SmokeReadback {
         if (vkBindBufferMemory(ctx.device(), buf, mem, 0) != VK_SUCCESS) return false;
         return vkMapMemory(ctx.device(), mem, 0, VK_WHOLE_SIZE, 0, &map) == VK_SUCCESS;
     }
-    void shutdown(VkContext& ctx) {
+    void shutdown(VulkanTestContext& ctx) {
         if (buf) vkDestroyBuffer(ctx.device(), buf, nullptr);
         if (mem) { vkUnmapMemory(ctx.device(), mem); vkFreeMemory(ctx.device(), mem, nullptr); }
         buf = VK_NULL_HANDLE; mem = VK_NULL_HANDLE; map = nullptr;
@@ -118,7 +118,7 @@ static void barrier(VkCommandBuffer cmd, VkImage img,
 // Un frame completo: uploads incrementales + clear a backdrop + draw + copia
 // al buffer host. Devuelve el BGRA mapeado (válido hasta el próximo frame).
 static const uint8_t* render_and_read(
-        VkContext& ctx, VkRenderTarget& target, VkCommandBuffer cmd, VkFence fence,
+        VulkanTestContext& ctx, VkRenderTarget& target, VkCommandBuffer cmd, VkFence fence,
         SmokeReadback& rb, VkIndexedPlane& plane,
         const VkIndexedPlane::CellQuad* cells, size_t count,
         const uint8_t* vram, size_t vsz, const uint8_t* cram, size_t csz,
@@ -224,7 +224,7 @@ int main(int argc, char** argv) {
     auto rec = ayther::AytherRecording::load(rec_path);
     if (!rec) { std::fprintf(stderr, "[FAIL] no se pudo cargar %s\n", rec_path.c_str()); return 1; }
 
-    // ---- Vulkan: ventana oculta (VkContext no tiene camino headless) -------
+    // ---- Vulkan: ventana oculta (VulkanTestContext no tiene camino headless) -------
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::fprintf(stderr, "[FAIL] SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -232,8 +232,8 @@ int main(int argc, char** argv) {
     SDL_Window* win = SDL_CreateWindow("indexed_plane_smoke", 64, 64,
                                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (!win) { std::fprintf(stderr, "[FAIL] SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
-    VkContext ctx;
-    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VkContext::init\n"); return 1; }
+    VulkanTestContext ctx;
+    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VulkanTestContext::init\n"); return 1; }
     std::printf("GPU: %s\n", ctx.gpu_name().c_str());
 
     // Primer frame para conocer las dimensiones del canvas. Si un frame

@@ -55,7 +55,7 @@ Concurrency, Source files, and Performance sections.
 | `FrameView` returned by `step()` | Borrowed | Valid until the next operation that advances, resets, rewinds, reloads, or destroys the session. Copy data that must outlive that boundary. |
 | Memory returned by `RetroRunner` | Borrowed from the loaded core | Invalid after core reset, unload, or any operation documented by the core as reallocating memory. |
 | `AyArchive*` passed to renderer, audio, or video helpers | Borrowed | The caller must keep the archive alive for the complete call or cached operation that documents retention. |
-| SDL and Vulkan handles | Owned by their wrapper or owning subsystem | Destruction order matters. Device-dependent resources must be released before their `VkContext`. |
+| `VulkanContextView` handles | Borrowed by Engine from the host application | Device-dependent Engine resources and submitted work must finish before the host destroys its device or allocator. Surface and swapchain handles are not exposed to Engine. |
 | Callback `user` pointers in the C facade | Borrowed | Must remain valid until the callback is removed or the session is destroyed. Callbacks must not retain transient frame pointers. |
 
 ## Primary session contract
@@ -137,10 +137,12 @@ resources. It is intentionally separate from the session so headless execution
 does not require Vulkan.
 
 The renderer and its Vulkan helpers are thread-affine to the caller's render
-thread. The caller must ensure that `VkContext` outlives every dependent object
-and that GPU work is synchronized before resources referenced by submitted
-commands are destroyed or replaced. Explicit `shutdown(context)` requirements
-are provisional and must be treated as mandatory.
+thread. The caller passes a borrowed `engine::VulkanContextView` and must keep
+its instance, physical device, logical device, graphics queue, queue family,
+and VMA allocator valid until every dependent object is released. GPU work must
+be synchronized before resources referenced by submitted commands are
+destroyed or replaced. Explicit `shutdown(context_view)` requirements remain
+mandatory for deterministic release.
 
 Asynchronous sprite decoding owns CPU buffers until the render thread pumps the
 completed uploads. Worker shutdown must wake the condition variable and join the
@@ -153,14 +155,15 @@ without treating the game as the whole window.
 
 The normal lifecycle is:
 
-1. the frontend creates `VkContext`;
-2. `AytherRenderer::init` creates device-dependent resources for one extent;
+1. the application creates and owns its Vulkan context and presentation state;
+2. it passes a borrowed `VulkanContextView` to `AytherRenderer::init`, which
+   creates device-dependent resources for one extent;
 3. each frame, the session produces `FrameView` and the renderer records into a
    caller-provided command buffer;
 4. the frontend presents, samples, or reads back the offscreen target;
 5. resize waits for conflicting GPU work, then recreates the target and every
    dependent framebuffer or descriptor;
-6. `shutdown(context)` releases renderer resources before the context dies.
+6. `shutdown(context_view)` releases renderer resources before the host context dies.
 
 A shared command-buffer model currently keeps render and presentation in one
 submission. Independent renderer submission and a dedicated render thread are

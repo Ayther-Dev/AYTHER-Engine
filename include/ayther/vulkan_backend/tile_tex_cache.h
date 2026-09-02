@@ -13,7 +13,7 @@
 #include <vector>
 
 struct AyArchive;   // opaque (ayther_core_ffi.h)
-class  VkContext;
+
 
 struct TileTexCache {
     ~TileTexCache() = default;
@@ -25,7 +25,7 @@ struct TileTexCache {
     /// `cmd` must be active (inside begin_frame/end_frame).
     VkTexture* get_or_load(const std::string& asset_path,
                            AyArchive*         pack,
-                           VkContext&         ctx,
+                           const ayther::engine::VulkanContextView&         ctx,
                            VkCommandBuffer    cmd);
 
     /// Call 1×/frame — releases the staging memory of uploads whose fence is
@@ -33,9 +33,9 @@ struct TileTexCache {
     /// per HD tile × hundreds of tiles). Entry* is stable (unordered_map is
     /// node-based and there is no individual eviction here — only full
     /// shutdown).
-    void pump(VkContext& ctx);
+    void pump(const ayther::engine::VulkanContextView& ctx);
 
-    void shutdown(VkContext& ctx);
+    void shutdown(const ayther::engine::VulkanContextView& ctx);
 
 private:
     struct StagingRelease { Entry* e; uint64_t due; };

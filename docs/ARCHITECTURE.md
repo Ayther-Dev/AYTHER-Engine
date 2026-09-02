@@ -73,11 +73,14 @@ headless tests.
 an offscreen image. A frontend may present that image, sample it in another UI,
 or read it back. Presentation policy remains outside the session.
 
-The frontend creates `VkContext` and must keep it alive longer than every
-renderer resource that depends on it. Renderer operations are thread-affine.
-Before resize, replacement, or destruction, the caller must ensure submitted
-GPU work no longer references the affected resources. The detailed lifecycle
-is documented in [C++ API and implementation contracts](CPP_API_REFERENCE.md#rendering-and-vulkan).
+The application owns its Vulkan instance, device, allocator, and presentation
+objects. It lends Engine a public `VulkanContextView` containing only the
+graphics handles needed to render; surfaces and swapchains never cross that
+boundary. The borrowed handles must outlive every renderer resource. Renderer
+operations are thread-affine, and before resize, replacement, or destruction
+the caller must ensure submitted GPU work no longer references affected
+resources. The detailed lifecycle is documented in
+[C++ API and implementation contracts](CPP_API_REFERENCE.md#rendering-and-vulkan).
 
 ## Determinism contract
 

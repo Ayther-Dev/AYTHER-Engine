@@ -244,6 +244,7 @@ if(AYTHER_ENABLE_VPX)
 endif()
 
 if(AYTHER_BUILD_GPU_TESTS)
+    find_package(vk-bootstrap CONFIG REQUIRED)
     foreach(_ayther_gpu_test IN ITEMS
             ab_compare_smoke
             overlay_blend_smoke
@@ -257,7 +258,11 @@ if(AYTHER_BUILD_GPU_TESTS)
             "${PROJECT_SOURCE_DIR}/tools/${_ayther_gpu_test}"
             "${PROJECT_BINARY_DIR}/tools/${_ayther_gpu_test}")
         target_include_directories("${_ayther_gpu_test}" PRIVATE
-            "${PROJECT_SOURCE_DIR}/include/ayther")
+            "${PROJECT_SOURCE_DIR}/include/ayther"
+            "${PROJECT_SOURCE_DIR}/tests/support")
+        target_link_libraries("${_ayther_gpu_test}" PRIVATE
+            GPUOpen::VulkanMemoryAllocator
+            vk-bootstrap::vk-bootstrap)
         ayther_instrument_target("${_ayther_gpu_test}")
     endforeach()
 endif()

@@ -12,7 +12,7 @@
 
 #include "ayther_session.h"               // FrameView
 #include "ayther_layers.h"                // R-4 (): stack de capas
-#include "vulkan_backend/vk_context.h"
+#include <ayther/engine/vulkan_interop.hpp>
 #include "ayther_core_ffi.h"              // AytherTileSub, AyArchive
 
 #include <vk_mem_alloc.h>                 // buffer de readback (export MP4)
@@ -103,14 +103,15 @@ struct AytherRenderer::FrameScratch {
 
 AytherRenderer::AytherRenderer() : scratch_(std::make_unique<FrameScratch>()) {}
 AytherRenderer::~AytherRenderer() {
-    if (context_) shutdown(*context_);
+    if (context_.is_valid()) shutdown(context_);
 }
 
 namespace {
 
 ayther::engine::RenderImageView render_image_view(
-    const VkRenderTarget& target, const VkContext* context) noexcept {
-    if (!target.is_ready() || context == nullptr) {
+    const VkRenderTarget& target,
+    const ayther::engine::VulkanContextView& context) noexcept {
+    if (!target.is_ready() || !context.is_valid()) {
         return {};
     }
 
@@ -123,7 +124,7 @@ ayther::engine::RenderImageView render_image_view(
         .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         .ready_stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         .ready_access_mask = VK_ACCESS_SHADER_READ_BIT,
-        .queue_family_index = context->graphics_family(),
+        .queue_family_index = context.graphics_family(),
     };
 }
 
@@ -138,18 +139,21 @@ AytherRenderer::compare_render_image() const noexcept {
     return render_image_view(compare_, context_);
 }
 
-bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w,
+bool AytherRenderer::init(const ayther::engine::VulkanContextView& ctx, uint32_t canvas_w,
                           uint32_t canvas_h, const char* shader_dir,
                           const RuntimeOptions& options) {
     options_ = options;
-    context_ = &ctx;
-    if (!emu_tex_.init(ctx, kEmuW, kEmuH)) {
+    context_ = ctx;
+    if (!context_.is_valid()) {
+        return false;
+    }
+    if (!emu_tex_.init(context_, kEmuW, kEmuH)) {
         ayther::log::write(ayther::log::Severity::Error,
             "renderer", "emu_texture_init_failed",
             "emu texture init failed");
         return false;
     }
-    if (!target_.init(ctx, canvas_w, canvas_h)) {
+    if (!target_.init(context_, canvas_w, canvas_h)) {
         ayther::log::write(ayther::log::Severity::Error,
             "renderer", "offscreen_target_init_failed",
             "offscreen target init failed");
@@ -159,7 +163,7 @@ bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w,
     // HD sprite overlay — renders into the offscreen target. Optional: if the
     // SPIR-V shaders are missing, sprites are skipped (emu+tiles still render).
     const std::string dir = shader_dir ? shader_dir : "";
-    sprite_ok_ = sprite_.init(ctx, target_.format(), canvas_w, canvas_h, target_.view(),
+    sprite_ok_ = sprite_.init(context_, target_.format(), canvas_w, canvas_h, target_.view(),
                               (dir + "sprite.vert.spv").c_str(),
                               (dir + "sprite.frag.spv").c_str());
     if (!sprite_ok_)
@@ -169,7 +173,7 @@ bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w,
 
     // R-5 (): pipeline indexado del compose sin blit. Opcional como el de
     // sprites: sin shaders, el camino de escena cae al blit del emulador.
-    indexed_ok_ = indexed_.init(ctx, target_,
+    indexed_ok_ = indexed_.init(context_, target_,
                                 (dir + "indexed_plane.vert.spv").c_str(),
                                 (dir + "indexed_plane.frag.spv").c_str());
     if (!indexed_ok_)
@@ -179,7 +183,7 @@ bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w,
     return true;
 }
 
-bool AytherRenderer::resize(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h) {
+bool AytherRenderer::resize(const ayther::engine::VulkanContextView& ctx, uint32_t canvas_w, uint32_t canvas_h) {
     if (!target_.resize(ctx, canvas_w, canvas_h)) return false;
     if (sprite_ok_)   // the offscreen view changed — rebuild the sprite framebuffer
         sprite_.rebuild(ctx, canvas_w, canvas_h, target_.view());
@@ -188,16 +192,16 @@ bool AytherRenderer::resize(VkContext& ctx, uint32_t canvas_w, uint32_t canvas_h
     return true;
 }
 
-void AytherRenderer::evict_pack_textures(VkContext& ctx) {
+void AytherRenderer::evict_pack_textures(const ayther::engine::VulkanContextView& ctx) {
     tile_cache_.shutdown(ctx);
     if (sprite_ok_) sprite_.clear_textures(ctx);
 }
 
-void AytherRenderer::evict_sprite_texture(VkContext& ctx, const std::string& path) {
+void AytherRenderer::evict_sprite_texture(const ayther::engine::VulkanContextView& ctx, const std::string& path) {
     if (sprite_ok_) sprite_.evict(ctx, path);
 }
 
-void AytherRenderer::poll_disk_sprite_textures(VkContext& ctx) {
+void AytherRenderer::poll_disk_sprite_textures(const ayther::engine::VulkanContextView& ctx) {
     // Hot-reload de autoría: assets de DISCO reescritos/aparecidos → evict
     // (la recarga la dispara el próximo draw). Ver VkSprite::poll_disk.
     if (sprite_ok_) sprite_.poll_disk(ctx);
@@ -215,15 +219,16 @@ void AytherRenderer::prewarm_sprite_mask(const std::string& path, uint8_t flip) 
     if (sprite_ok_) sprite_.prewarm(path, nullptr, flip, /*mask=*/true);
 }
 
-void AytherRenderer::shutdown(VkContext& ctx) {
-    readback_shutdown(ctx);
-    indexed_.shutdown(ctx);
-    sprite_.shutdown(ctx);
-    tile_cache_.shutdown(ctx);
-    emu_tex_.shutdown(ctx);
-    compare_.shutdown(ctx);   //  (no-op si el A/B nunca se abrió)
-    target_.shutdown(ctx);
-    context_ = nullptr;
+void AytherRenderer::shutdown(const ayther::engine::VulkanContextView& ctx) {
+    const auto& active_context = context_.is_valid() ? context_ : ctx;
+    readback_shutdown(active_context);
+    indexed_.shutdown(active_context);
+    sprite_.shutdown(active_context);
+    tile_cache_.shutdown(active_context);
+    emu_tex_.shutdown(active_context);
+    compare_.shutdown(active_context);   //  (no-op si el A/B nunca se abrió)
+    target_.shutdown(active_context);
+    context_ = {};
 }
 
 // R-8 (): estado de carga del asset del SUB de un elemento — la clave
@@ -246,7 +251,7 @@ VkSprite::TexState AytherRenderer::sub_texture_state(const FrameView& fv,
     return sprite_.texture_state(path, flip);
 }
 
-void AytherRenderer::render(VkContext& ctx, VkCommandBuffer cmd,
+void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                             const FrameView& fv, AyArchive* pack, bool hd_on,
                             const AytherLayerStack* layers, uint8_t vdp_mask) {
     if (!target_.is_ready()) return;
@@ -1463,7 +1468,7 @@ void AytherRenderer::copy_target_to_buffer(VkCommandBuffer cmd, VkBuffer dst) {
 // conversión ni escalado) y las dos vuelven a SHADER_READ_ONLY: el viewport
 // puede samplear las dos en el mismo frame de UI, que es todo el punto.
 // ---------------------------------------------------------------------------
-bool AytherRenderer::capture_compare(VkContext& ctx, VkCommandBuffer cmd) {
+bool AytherRenderer::capture_compare(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd) {
     if (!target_.is_ready()) return false;
     const VkExtent2D e = target_.extent();
     // Lazy + resize: el canvas cambia con el zoom y con el tier de export.
@@ -1500,14 +1505,14 @@ bool AytherRenderer::capture_compare(VkContext& ctx, VkCommandBuffer cmd) {
     return true;
 }
 
-void AytherRenderer::compare_release(VkContext& ctx) {
+void AytherRenderer::compare_release(const ayther::engine::VulkanContextView& ctx) {
     if (compare_.is_ready()) compare_.shutdown(ctx);
 }
 
 // ---------------------------------------------------------------------------
 // Readback del export MP4 — recursos propios (no se ata al present).
 // ---------------------------------------------------------------------------
-bool AytherRenderer::readback_init(VkContext& ctx) {
+bool AytherRenderer::readback_init(const ayther::engine::VulkanContextView& ctx) {
     readback_shutdown(ctx);
     const VkExtent2D e = target_.extent();
 
@@ -1564,7 +1569,7 @@ bool AytherRenderer::readback_init(VkContext& ctx) {
     return rb_map_ != nullptr;
 }
 
-const uint8_t* AytherRenderer::export_frame(VkContext& ctx, const FrameView& fv,
+const uint8_t* AytherRenderer::export_frame(const ayther::engine::VulkanContextView& ctx, const FrameView& fv,
                                             AyArchive* pack, bool hd_on,
                                             const AytherLayerStack* layers,
                                             uint8_t vdp_mask) {
@@ -1591,7 +1596,7 @@ const uint8_t* AytherRenderer::export_frame(VkContext& ctx, const FrameView& fv,
     return static_cast<const uint8_t*>(rb_map_);
 }
 
-const uint8_t* AytherRenderer::readback_compare(VkContext& ctx) {
+const uint8_t* AytherRenderer::readback_compare(const ayther::engine::VulkanContextView& ctx) {
     if (!rb_map_ || !compare_.is_ready()) return nullptr;
     vkResetCommandBuffer(rb_cmd_, 0);
     VkCommandBufferBeginInfo bi{};
@@ -1631,7 +1636,7 @@ const uint8_t* AytherRenderer::readback_compare(VkContext& ctx) {
 /// : captura para el oráculo — graba capture_compare en el cmd de readback
 /// y lo submitea. En el Lab la captura viaja en el cmd del frame; acá no hay
 /// frame, así que necesita su propio submit.
-bool AytherRenderer::capture_compare_now(VkContext& ctx) {
+bool AytherRenderer::capture_compare_now(const ayther::engine::VulkanContextView& ctx) {
     if (!rb_cmd_) return false;
     vkResetCommandBuffer(rb_cmd_, 0);
     VkCommandBufferBeginInfo bi{};
@@ -1652,7 +1657,7 @@ bool AytherRenderer::capture_compare_now(VkContext& ctx) {
     return true;
 }
 
-void AytherRenderer::readback_shutdown(VkContext& ctx) {
+void AytherRenderer::readback_shutdown(const ayther::engine::VulkanContextView& ctx) {
     if (rb_buf_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(ctx.allocator(), rb_buf_, rb_alloc_);
         rb_buf_ = VK_NULL_HANDLE; rb_alloc_ = VK_NULL_HANDLE; rb_map_ = nullptr;

@@ -90,7 +90,7 @@ $lines = @(
     '```',
     '',
     'An engine consumer resolves SDL3, Vulkan, VulkanMemoryAllocator,',
-    'vk-bootstrap, toml++, and zstd from its own package-manager environment.',
+    'toml++, and zstd from its own package-manager environment.',
     'A core consumer needs none of them.',
     '',
     '## Changelog',

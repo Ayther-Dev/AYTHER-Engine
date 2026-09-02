@@ -327,7 +327,7 @@ v0.1.x distributes **three artifact families**, on Windows and Linux:
 | Archive | Targets | Headers | Shaders | Native dependencies |
 |---|---|---|---|---|
 | `ayther-core-<tag>-<platform>.zip` | `Ayther::core` | `ayther_core_ffi.h`, `ayther_version.h` | none | none |
-| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the above plus the eleven-header engine allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, vk-bootstrap, toml++, zstd |
+| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the above plus the eleven-header engine allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, toml++, zstd |
 | `ayther-engine-vpx-<tag>-<platform>.zip` | the above plus `Ayther::vpx` | the above plus `vpx/` when bundled | compiled SPIR-V | the above plus libvpx |
 
 Windows builds and bundles libvpx through `tools/build_libvpx.ps1`, so the

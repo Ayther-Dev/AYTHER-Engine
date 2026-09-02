@@ -15,7 +15,7 @@
 //   Build: -DAYTHER_BUILD_SPIKE=ON → target enhance_shader_smoke (ctest label gpu)
 // ---------------------------------------------------------------------------
 #include "xbr_ref.h"
-#include "vulkan_backend/vk_context.h"
+#include "../../tests/support/vulkan_test_context.h"
 #include "vulkan_backend/vk_render_target.h"
 #include "vulkan_backend/vk_indexed_plane.h"
 #include <SDL3/SDL.h>
@@ -42,7 +42,7 @@ static void check(bool ok, const char* what) {
 // ---- readback mínimo (molde de indexed_plane_smoke) -------------------------
 struct SmokeReadback {
     VkBuffer buf = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE; void* map = nullptr;
-    bool init(VkContext& ctx, VkDeviceSize size) {
+    bool init(VulkanTestContext& ctx, VkDeviceSize size) {
         VkBufferCreateInfo bi{}; bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bi.size = size; bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         if (vkCreateBuffer(ctx.device(), &bi, nullptr, &buf) != VK_SUCCESS) return false;
@@ -62,7 +62,7 @@ struct SmokeReadback {
         if (vkBindBufferMemory(ctx.device(), buf, mem, 0) != VK_SUCCESS) return false;
         return vkMapMemory(ctx.device(), mem, 0, VK_WHOLE_SIZE, 0, &map) == VK_SUCCESS;
     }
-    void shutdown(VkContext& ctx) {
+    void shutdown(VulkanTestContext& ctx) {
         if (buf) vkDestroyBuffer(ctx.device(), buf, nullptr);
         if (mem) { vkUnmapMemory(ctx.device(), mem); vkFreeMemory(ctx.device(), mem, nullptr); }
         buf = VK_NULL_HANDLE; mem = VK_NULL_HANDLE; map = nullptr;
@@ -81,7 +81,7 @@ static void barrier(VkCommandBuffer cmd, VkImage img, VkImageLayout from, VkImag
 }
 
 static const uint8_t* render_and_read(
-        VkContext& ctx, VkRenderTarget& target, VkCommandBuffer cmd, VkFence fence,
+        VulkanTestContext& ctx, VkRenderTarget& target, VkCommandBuffer cmd, VkFence fence,
         SmokeReadback& rb, VkIndexedPlane& plane,
         const VkIndexedPlane::CellQuad* cells, size_t count,
         const uint8_t* vram, size_t vsz, const uint8_t* cram, size_t csz,
@@ -153,8 +153,8 @@ int main() {
     if (!SDL_Init(SDL_INIT_VIDEO)) { std::fprintf(stderr, "[FAIL] SDL_Init: %s\n", SDL_GetError()); return 1; }
     SDL_Window* win = SDL_CreateWindow("enhance_shader_smoke", 64, 64, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (!win) { std::fprintf(stderr, "[FAIL] SDL_CreateWindow\n"); return 1; }
-    VkContext ctx;
-    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VkContext::init\n"); return 1; }
+    VulkanTestContext ctx;
+    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VulkanTestContext::init\n"); return 1; }
     std::printf("GPU: %s\n", ctx.gpu_name().c_str());
 
     VkRenderTarget target;

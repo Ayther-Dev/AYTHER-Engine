@@ -4,7 +4,58 @@
 
 #include <cstdint>
 
+struct VmaAllocator_T;
+
 namespace ayther::engine {
+
+/// Borrowed Vulkan state supplied by the application that hosts Engine.
+///
+/// The application owns every handle in this value, including the VMA
+/// allocator. Engine may allocate renderer resources and submit work to the
+/// graphics queue, but it must never destroy the instance, device, queue, or
+/// allocator. Surface, presentation queue, and swapchain are deliberately not
+/// part of this contract: presentation remains an application responsibility.
+///
+/// Copies do not extend any lifetime. All handles must remain valid until every
+/// Engine renderer resource has been released and all submitted Engine work has
+/// completed. Calls that use the allocator or graphics queue are externally
+/// synchronized by the host according to the Vulkan and VMA specifications.
+struct VulkanContextView {
+    VkInstance instance_handle{VK_NULL_HANDLE};
+    VkPhysicalDevice physical_device_handle{VK_NULL_HANDLE};
+    VkDevice device_handle{VK_NULL_HANDLE};
+    VkQueue graphics_queue_handle{VK_NULL_HANDLE};
+    std::uint32_t graphics_queue_family_index{VK_QUEUE_FAMILY_IGNORED};
+    VmaAllocator_T* allocator_handle{nullptr};
+
+    [[nodiscard]] constexpr VkInstance instance() const noexcept {
+        return instance_handle;
+    }
+    [[nodiscard]] constexpr VkPhysicalDevice physical_device() const noexcept {
+        return physical_device_handle;
+    }
+    [[nodiscard]] constexpr VkDevice device() const noexcept {
+        return device_handle;
+    }
+    [[nodiscard]] constexpr VkQueue graphics_queue() const noexcept {
+        return graphics_queue_handle;
+    }
+    [[nodiscard]] constexpr std::uint32_t graphics_family() const noexcept {
+        return graphics_queue_family_index;
+    }
+    [[nodiscard]] constexpr VmaAllocator_T* allocator() const noexcept {
+        return allocator_handle;
+    }
+
+    [[nodiscard]] constexpr bool is_valid() const noexcept {
+        return instance_handle != VK_NULL_HANDLE &&
+               physical_device_handle != VK_NULL_HANDLE &&
+               device_handle != VK_NULL_HANDLE &&
+               graphics_queue_handle != VK_NULL_HANDLE &&
+               graphics_queue_family_index != VK_QUEUE_FAMILY_IGNORED &&
+               allocator_handle != nullptr;
+    }
+};
 
 /// Non-owning description of an Engine-rendered Vulkan image.
 ///

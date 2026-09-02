@@ -18,6 +18,7 @@
 // remains available for deterministic early release.
 // ---------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
+#include <ayther/engine/vulkan_interop.hpp>
 #include <cstdint>
 
 // VMA handle is a pointer typedef — forward-declare so this PUBLIC header keeps
@@ -27,7 +28,7 @@ using  VmaAllocation = VmaAllocation_T*;
 struct VmaAllocator_T;
 using  VmaAllocator = VmaAllocator_T*;
 
-class VkContext;
+
 
 class VkRenderTarget {
 public:
@@ -40,14 +41,14 @@ public:
     // Create the offscreen color image + view + sampler at width × height.
     // The default format is the UNORM color target the sprite/postprocess passes
     // already assume, and is blit-compatible with the swapchain.
-    bool init(VkContext& ctx, uint32_t width, uint32_t height,
+    bool init(const ayther::engine::VulkanContextView& ctx, uint32_t width, uint32_t height,
               VkFormat format = VK_FORMAT_B8G8R8A8_UNORM);
 
     // Recreate at a new size (window / viewport resize): shutdown() + init().
-    bool resize(VkContext& ctx, uint32_t width, uint32_t height);
+    bool resize(const ayther::engine::VulkanContextView& ctx, uint32_t width, uint32_t height);
 
     // Destroy all resources. Safe on a partially-initialized / empty target.
-    void shutdown(VkContext& ctx);
+    void shutdown(const ayther::engine::VulkanContextView& ctx);
 
     bool is_ready() const { return image_ != VK_NULL_HANDLE; }
 
