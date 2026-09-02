@@ -137,6 +137,9 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Installed packages with the `engine` component now export a relocatable
+  `Ayther_SHADER_DIR`, backed by the complete installed SPIR-V set; the
+  out-of-tree package consumer verifies the asset contract.
 - Six ignored `[[nodiscard]]` results in the GPU smoke tools. `set_visible` and
   `set_content` report whether the id was theirs to change, and dropping that
   answer is how a smoke test ends up compositing an empty layer stack and

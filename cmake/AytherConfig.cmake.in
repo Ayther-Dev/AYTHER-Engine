@@ -39,6 +39,10 @@ if(NOT TARGET Ayther::core)
 endif()
 
 if(Ayther_engine_FOUND)
+    # Public, relocatable asset contract for installed Engine consumers.
+    set_and_check(Ayther_SHADER_DIR
+        "@PACKAGE_AYTHER_INSTALL_SHADERDIR@")
+
     find_dependency(Threads)
     find_dependency(SDL3 CONFIG)
     find_dependency(Vulkan)

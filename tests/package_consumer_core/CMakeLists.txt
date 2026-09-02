@@ -9,6 +9,11 @@ project(AytherCorePackageConsumer LANGUAGES CXX)
 
 find_package(Ayther 0.1 CONFIG REQUIRED)
 
+if(DEFINED Ayther_SHADER_DIR)
+    message(FATAL_ERROR
+        "The core-only package must not export Engine shader assets")
+endif()
+
 add_executable(ayther_core_package_consumer main.cpp)
 target_compile_features(ayther_core_package_consumer PRIVATE cxx_std_20)
 target_link_libraries(ayther_core_package_consumer PRIVATE Ayther::core)

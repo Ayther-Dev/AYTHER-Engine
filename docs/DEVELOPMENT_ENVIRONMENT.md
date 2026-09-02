@@ -124,7 +124,10 @@ The eight GLSL sources and their eight precompiled SPIR-V counterparts are
 registered as private `ayther_engine` resources. CMake marks them
 `HEADER_FILE_ONLY`, groups them under `Shaders` in IDE generators, and installs
 the SPIR-V list under `share/Ayther/shaders` without relying on a directory
-glob.
+glob. Installed packages with the `engine` component export the absolute,
+relocatable `Ayther_SHADER_DIR` from `AytherConfig.cmake`; core-only packages do
+not define it. Consumers must use that variable instead of assuming the data
+layout or reaching into an Engine checkout.
 
 ### 3. Clone and activate the Rust toolchain
 

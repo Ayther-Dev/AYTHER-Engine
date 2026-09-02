@@ -4,6 +4,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 set(AYTHER_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/Ayther")
+set(AYTHER_INSTALL_SHADERDIR "${CMAKE_INSTALL_DATADIR}/Ayther/shaders")
 set(AYTHER_CORE_ARCHIVE_NAME
     "${CMAKE_STATIC_LIBRARY_PREFIX}ayther_core${CMAKE_STATIC_LIBRARY_SUFFIX}")
 set(AYTHER_CORE_ARCHIVE
@@ -66,7 +67,7 @@ if(AYTHER_BUILD_ENGINE)
             PATTERN "*.ipp")
 
     install(FILES ${AYTHER_SHADER_BINARIES}
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/Ayther/shaders")
+        DESTINATION "${AYTHER_INSTALL_SHADERDIR}")
 
     install(FILES
         "${PROJECT_SOURCE_DIR}/third_party/ymfm/LICENSE"
@@ -122,7 +123,10 @@ configure_package_config_file(
     "${PROJECT_SOURCE_DIR}/cmake/AytherConfig.cmake.in"
     "${PROJECT_BINARY_DIR}/AytherConfig.cmake"
     INSTALL_DESTINATION "${AYTHER_INSTALL_CMAKEDIR}"
-    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
+    PATH_VARS
+        CMAKE_INSTALL_INCLUDEDIR
+        CMAKE_INSTALL_LIBDIR
+        AYTHER_INSTALL_SHADERDIR)
 
 write_basic_package_version_file(
     "${PROJECT_BINARY_DIR}/AytherConfigVersion.cmake"
