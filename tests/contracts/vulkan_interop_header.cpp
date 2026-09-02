@@ -24,7 +24,7 @@ static_assert(std::is_same_v<
               std::uint32_t>);
 static_assert(std::is_same_v<
               decltype(ayther::engine::VulkanContextView::allocator_handle),
-              VmaAllocator_T*>);
+              VmaAllocator>);
 static_assert(noexcept(ayther::engine::VulkanContextView{}.is_valid()));
 static_assert(std::is_same_v<
               decltype(ayther::engine::RenderImageView::image), VkImage>);

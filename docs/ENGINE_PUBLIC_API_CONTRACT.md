@@ -78,6 +78,22 @@ display, audio device, filesystem, configuration source, or emulator core are
 fallible and must return either an unavailable capability or a typed error.
 Diagnostics and logging are not substitutes for a returned error.
 
+## Version and capability identity
+
+`ayther::engine::version()` reports the numeric release embedded in the linked
+Engine artifact: `0.1.0` for this line. The release-candidate distribution keeps
+the identifier `v0.1.0-rc.5` in its immutable tag, archive names, provenance,
+and release metadata. The `rc.5` suffix is distribution identity rather than a
+fourth field of `Version`, so logs and UI format the linked numeric value through
+the API instead of embedding another version literal.
+
+`ayther::engine::core_abi_revision()` forwards the linked Core's non-zero ABI
+revision. It is independent from SemVer and must be incremented whenever an
+incompatible Engine/Core function signature or shared data layout changes.
+Tests compare the public query with `AYTHER_CORE_C_ABI_REVISION` and compare the
+linked numeric version with the canonical release macros and CMake project
+version.
+
 ## Compatibility and deprecation
 
 The release candidate guarantees source compatibility within the 0.1.x line.
@@ -146,28 +162,47 @@ Loading a native library executes code under platform-loader rules and is not
 a sandbox or trust decision. `CoreProbe` is single-owner; destruction or moves
 must not race with access to its information.
 
+## Renderer ownership boundary
+
+`<ayther/ayther_renderer.h>` is the canonical public renderer surface and every
+declared method is implemented by `Ayther::engine`. `AytherRenderer` records
+offscreen work into a caller-provided command buffer; it does not create or
+destroy the Vulkan instance, physical device, logical device, surface, graphics
+queue, or swapchain, and it never presents. Those objects remain owned by the
+host application through the complete renderer lifetime.
+
+`init()` accepts the borrowed `VulkanContextView`, canvas dimensions, and the
+installed shader directory. The renderer owns its offscreen targets, texture
+caches, pipelines, comparison image, and readback resources. `shutdown()`
+provides deterministic release before the host destroys the Vulkan context. If
+it is omitted, the destructor performs the same cleanup using the retained
+borrowed context; consequently that context must still be alive during renderer
+destruction.
+
 ## Vulkan render-image handoff
 
 `RenderImageView` is a trivially copyable, non-owning snapshot returned by
 `AytherRenderer::render_image()` and `compare_render_image()`. It publishes the
-borrowed `VkImage`, `VkImageView`, and optional `VkSampler`, together with the
+borrowed `VkImage`, `VkImageView`, and `VkSampler`, together with the
 image format, two-dimensional extent, handoff layout, barrier source stage and
 access masks, and the exclusive owning queue-family index. The image, its
 memory, its view, and its sampler remain owned by Engine. Runtime never calls a
 Vulkan destruction or memory-release function for those handles.
 
 The main render target's handles remain valid until renderer resize, shutdown,
-or destruction. Comparison handles additionally end on comparison release or a
-recapture that changes their size. A copied `RenderImageView` does not extend
-that interval. Before an invalidating operation, Runtime must complete all GPU
-access and discard or rebind descriptors that reference the old view.
+or destruction. Comparison views additionally end on comparison release or any
+recapture; callers must query a new view even when the implementation reuses the
+same handles and size. A copied `RenderImageView` does not extend that interval.
+Before an invalidating operation, Runtime must complete all GPU access and
+discard or rebind descriptors that reference the old view.
 
 The producer hands both render targets over in the `layout` recorded in the
 view; currently this is `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL` with fragment
 shader/read access as the ready scope. Runtime may transition to transfer source
 or another compatible use, but before the next Engine access it must restore
 the published layout and keep exclusive ownership in `queue_family_index`.
-Queue-family transfer is outside this contract.
+Queue-family transfer is outside this contract and requires an additional API
+that coordinates the release and acquire operations in both directions.
 
 No semaphore, fence, event, command buffer, or queue handle is transferred by
 `RenderImageView`. When Engine production and Runtime consumption are recorded
@@ -177,9 +212,9 @@ signal/wait chain in both directions. It must wait for Engine production before
 reading the image and make its own completion visible before Engine reuses,
 resizes, releases, or destroys it.
 
-The view's image and view are required for a valid handoff; the sampler is
-optional for image-only consumers. `is_valid()` checks handle and metadata
-presence, not GPU completion. Destroying the C++ value performs no Vulkan work.
+The view's image, image view, and sampler are required for a valid handoff.
+`is_valid()` checks handle and metadata presence, not GPU completion. Destroying
+the C++ value performs no Vulkan work.
 
 ## Dependency containment
 

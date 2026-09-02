@@ -248,6 +248,13 @@ add_executable(ayther_package_consumer main.cpp)
 target_compile_features(ayther_package_consumer PRIVATE cxx_std_20)
 target_link_libraries(ayther_package_consumer PRIVATE Ayther::engine)
 
+# Force the installed static archive to resolve every public renderer method.
+# This target deliberately receives no source-tree or backend include path.
+add_executable(ayther_renderer_link_smoke
+    "${CMAKE_CURRENT_LIST_DIR}/../contracts/renderer_link_smoke.cpp")
+target_compile_features(ayther_renderer_link_smoke PRIVATE cxx_std_20)
+target_link_libraries(ayther_renderer_link_smoke PRIVATE Ayther::engine)
+
 # Recompile every required installed header as the first and only include in a
 # translation unit. These probes inherit include paths solely from the imported
 # target, so a source-tree fallback cannot hide a missing package dependency.

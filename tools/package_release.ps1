@@ -45,7 +45,23 @@ if ($files.Count -eq 0) {
     throw "Release input '$inputPath' contains no files."
 }
 
-$timestamp = [DateTimeOffset]::FromUnixTimeSeconds($SourceDateEpoch)
+# ZIP stores a timezone-free DOS wall clock. Writing the exact UTC commit time
+# makes a freshly extracted package appear several hours in the future for
+# consumers west of UTC; Ninja then reruns CMake forever because installed
+# AytherConfig.cmake is newer than build.ninja. Use midnight on the previous
+# UTC day, still deterministically derived from SOURCE_DATE_EPOCH and safely in
+# the past in every real-world timezone.
+$sourceTimestamp = [DateTimeOffset]::FromUnixTimeSeconds($SourceDateEpoch)
+$safeDate = [DateTime]::SpecifyKind(
+    $sourceTimestamp.UtcDateTime.Date.AddDays(-1),
+    [DateTimeKind]::Unspecified)
+$timestamp = [DateTimeOffset]::new($safeDate, [TimeSpan]::Zero)
+$zipEpoch = [DateTimeOffset]::new(
+    [DateTime]::new(1980, 1, 1),
+    [TimeSpan]::Zero)
+if ($timestamp -lt $zipEpoch) {
+    $timestamp = $zipEpoch
+}
 $stream = [System.IO.File]::Open($outputPath, [System.IO.FileMode]::CreateNew)
 try {
     $archive = [System.IO.Compression.ZipArchive]::new(

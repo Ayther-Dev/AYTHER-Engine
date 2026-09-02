@@ -73,8 +73,10 @@ int main(int argc, char** argv) {
     }
 
     const ayther::engine::PackView empty_pack{};
+    const auto linked_core_abi = ayther::engine::core_abi_revision();
     if (empty_pack.is_valid() || !empty_pack.render_tiers().is_legacy() ||
-        ayther::engine::core_abi_revision() == 0U) {
+        linked_core_abi == 0U ||
+        linked_core_abi != AYTHER_CORE_C_ABI_REVISION) {
         std::cerr << "installed typed pack/core contract is invalid\n";
         return 1;
     }
@@ -86,6 +88,13 @@ int main(int argc, char** argv) {
     }
 
     const auto engine_version = ayther::engine::version();
+    const auto headers_version = ayther::sdk_headers_version();
+    if (engine_version.major != headers_version.major ||
+        engine_version.minor != headers_version.minor ||
+        engine_version.patch != headers_version.patch) {
+        std::cerr << "installed Engine version differs from its headers\n";
+        return 1;
+    }
     const auto engine_capabilities = ayther::engine::probe_capabilities();
     if (engine_capabilities.renderer !=
             ayther::engine::RendererBackend::vulkan ||

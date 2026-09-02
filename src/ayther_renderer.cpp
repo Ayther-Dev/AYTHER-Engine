@@ -6,7 +6,7 @@
 // main loop). Leaves the offscreen in its public shader-read handoff layout for
 // the frontend to sample or transition temporarily for presentation.
 // ---------------------------------------------------------------------------
-#include "ayther_renderer.h"
+#include <ayther/ayther_renderer.h>
 #include "log.h"
 #include "ayther_env.h"
 
@@ -27,6 +27,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>      // getenv (tope de uploads, )
+#include <filesystem>
 #include <unordered_map>
 #include <vector>
 
@@ -259,10 +260,14 @@ bool AytherRenderer::init(const ayther::engine::VulkanContextView& ctx, uint32_t
 
     // HD sprite overlay — renders into the offscreen target. Optional: if the
     // SPIR-V shaders are missing, sprites are skipped (emu+tiles still render).
-    const std::string dir = shader_dir ? shader_dir : "";
-    impl_->sprite_ok_ = impl_->sprite_.init(impl_->context_, impl_->target_.format(), canvas_w, canvas_h, impl_->target_.view(),
-                              (dir + "sprite.vert.spv").c_str(),
-                              (dir + "sprite.frag.spv").c_str());
+    const std::filesystem::path dir =
+        shader_dir != nullptr ? std::filesystem::path{shader_dir}
+                              : std::filesystem::path{};
+    const std::string sprite_vert = (dir / "sprite.vert.spv").string();
+    const std::string sprite_frag = (dir / "sprite.frag.spv").string();
+    impl_->sprite_ok_ = impl_->sprite_.init(
+        impl_->context_, impl_->target_.format(), canvas_w, canvas_h,
+        impl_->target_.view(), sprite_vert.c_str(), sprite_frag.c_str());
     if (!impl_->sprite_ok_)
         ayther::log::write(ayther::log::Severity::Warning,
             "renderer", "sprite_overlay_disabled_shaders",
@@ -270,9 +275,13 @@ bool AytherRenderer::init(const ayther::engine::VulkanContextView& ctx, uint32_t
 
     // R-5 (): pipeline indexado del compose sin blit. Opcional como el de
     // sprites: sin shaders, el camino de escena cae al blit del emulador.
-    impl_->indexed_ok_ = impl_->indexed_.init(impl_->context_, impl_->target_,
-                                (dir + "indexed_plane.vert.spv").c_str(),
-                                (dir + "indexed_plane.frag.spv").c_str());
+    const std::string indexed_vert =
+        (dir / "indexed_plane.vert.spv").string();
+    const std::string indexed_frag =
+        (dir / "indexed_plane.frag.spv").string();
+    impl_->indexed_ok_ = impl_->indexed_.init(
+        impl_->context_, impl_->target_, indexed_vert.c_str(),
+        indexed_frag.c_str());
     if (!impl_->indexed_ok_)
         ayther::log::write(ayther::log::Severity::Warning,
             "renderer", "scene_compose_disabled_shaders",

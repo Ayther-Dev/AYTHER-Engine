@@ -4,19 +4,19 @@
     installable, and consumable.
 
 .DESCRIPTION
-    This is the acceptance check for a published release, meant to be run from a
-    CLEAN CHECKOUT of the tag on a machine that did not build it. It refuses to
+    This is the release-engineering acceptance check for a published Engine
+    release, meant to run on a machine that did not build it. It refuses to
     take any single record on trust: the checksum, the Sigstore bundle, and the
     GitHub attestation are all checked, then the archive is unpacked, its payload
     is verified against what its name advertises, and -- unless told otherwise --
     an out-of-tree CMake project links and runs against it.
 
     Requires the GitHub CLI (gh) and cosign on PATH. Consuming additionally
-    requires a C++ toolchain, CMake, Ninja, and for the engine products a vcpkg
+    requires a C++ toolchain, CMake, Ninja, and a vcpkg
     environment supplying SDL3, Vulkan, VMA, toml++, and zstd.
 
 .EXAMPLE
-    ./tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.1 -Product ayther-engine `
+    ./tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.5 -Product ayther-engine `
         -Platform linux-x86_64
 #>
 [CmdletBinding()]
@@ -25,7 +25,7 @@ param(
     [ValidatePattern('^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')]
     [string]$Tag,
 
-    [ValidateSet('ayther-core', 'ayther-engine', 'ayther-engine-vpx')]
+    [ValidateSet('ayther-engine', 'ayther-engine-vpx')]
     [string]$Product = 'ayther-engine',
 
     [ValidateSet('linux-x86_64', 'windows-x86_64')]
@@ -138,17 +138,9 @@ if ($SkipConsumer) {
     return
 }
 
-$consumerSource = if ($kind -eq 'core') {
-    Join-Path $repositoryRoot 'tests/package_consumer_core'
-} else {
-    Join-Path $repositoryRoot 'tests/package_consumer'
-}
+$consumerSource = Join-Path $repositoryRoot 'tests/package_consumer'
 $consumerBuild = Join-Path $WorkDirectory 'consumer'
-$executable = if ($kind -eq 'core') {
-    'ayther_core_package_consumer'
-} else {
-    'ayther_package_consumer'
-}
+$executable = 'ayther_package_consumer'
 if ($Platform -eq 'windows-x86_64') { $executable += '.exe' }
 
 $configure = @(
@@ -159,9 +151,7 @@ $configure = @(
     '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF',
     "-DCMAKE_PREFIX_PATH=$prefix"
 )
-# Only the engine products pull native dependencies; a core consumer that needed
-# a toolchain file would mean the core package stopped being self-contained.
-if ($kind -ne 'core' -and $ToolchainFile) {
+if ($ToolchainFile) {
     $configure += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
 }
 

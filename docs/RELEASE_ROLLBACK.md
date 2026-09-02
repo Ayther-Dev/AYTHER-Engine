@@ -6,8 +6,8 @@ release candidate
 **Last reviewed:** 2026-08-31
 
 This runbook withdraws an AYTHER Engine release candidate or stable release
-after a defect is found. It applies to the GitHub release and the six artifacts
-published by `.github/workflows/release.yml`. AYTHER Engine has no updater or
+after a defect is found. It applies to the GitHub release and the four Engine
+archives published by `.github/workflows/release.yml`. AYTHER Engine has no updater or
 package registry in this repository, so rollback means stopping new downloads,
 directing consumers to a known-good version, and publishing a corrected version.
 It cannot remove copies that consumers already downloaded.

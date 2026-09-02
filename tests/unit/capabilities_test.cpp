@@ -1,4 +1,5 @@
 #include <ayther/engine/capabilities.hpp>
+#include <ayther/ayther_version.h>
 
 #include <array>
 #include <cstdio>
@@ -26,8 +27,10 @@ int main() {
     static_assert(noexcept(ayther::engine::probe_capabilities()));
 
     const auto linked_version = ayther::engine::version();
-    check(ayther::engine::core_abi_revision() != 0U,
-          "the linked core ABI revision is available without raw FFI");
+    const auto linked_core_abi = ayther::engine::core_abi_revision();
+    check(linked_core_abi != 0U &&
+              linked_core_abi == AYTHER_CORE_C_ABI_REVISION,
+          "the public Engine/Core ABI revision matches the linked core");
     check(linked_version.major == AYTHER_EXPECTED_VERSION_MAJOR &&
               linked_version.minor == AYTHER_EXPECTED_VERSION_MINOR &&
               linked_version.patch == AYTHER_EXPECTED_VERSION_PATCH,

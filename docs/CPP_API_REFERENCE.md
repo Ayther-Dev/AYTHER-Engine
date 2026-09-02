@@ -45,7 +45,8 @@ Concurrency, Source files, and Performance sections.
 | `Ayther::engine` and `ayther_sdk.h` | Buildable, installable, provisional | Higher-level C facade over a native session. |
 | `engine/capabilities.hpp`, `engine/core_probe.hpp`, `engine/input.hpp`, and `engine/pack.hpp` | Installed, provisional | Typed C++ queries for versions, core metadata, input, packs, validation, tiers, and watching. Raw core and Libretro declarations do not cross this surface. |
 | `AytherSession` | Installed, provisional | Primary C++ orchestration facade. Single-owner and single-thread driven. |
-| Audio, renderer, Vulkan, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
+| `AytherRenderer` and `engine/vulkan_interop.hpp` | Installed, provisional | Public offscreen Vulkan renderer and borrowed-handle handoff contract. |
+| Audio, renderer implementation, Vulkan presentation, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
 
 ## Ownership and lifetime map
 
@@ -169,8 +170,9 @@ thread. The caller passes a borrowed `engine::VulkanContextView` and must keep
 its instance, physical device, logical device, graphics queue, queue family,
 and VMA allocator valid until every dependent object is released. GPU work must
 be synchronized before resources referenced by submitted commands are
-destroyed or replaced. Explicit `shutdown(context_view)` requirements remain
-mandatory for deterministic release.
+destroyed or replaced. `shutdown(context_view)` provides deterministic release
+before the host context is torn down. If it is omitted, the destructor releases
+initialized renderer resources, so the borrowed context must still be alive.
 
 Asynchronous sprite decoding owns CPU buffers until the render thread pumps the
 completed uploads. Worker shutdown must wake the condition variable and join the
@@ -245,7 +247,7 @@ invent a newer public contract.
 | Facades and contracts | `ayther_session.h`, `ayther_sdk.h`, `ayther_result.h`, `ayther_sdk_version.h` | Session orchestration, C facade, errors, compatibility |
 | Identity and composition | `ayther_layers.h`, `ayther_animation.h`, `ayther_audio_events.h`, `ayther_mode3.h`, `widescreen.h`, `parallax_bands.h`, `pano_bands.h`, `panorama_cover.h` | Frame interpretation and replacement composition |
 | Audio | `audio_player.h`, `audio_hd_mixer.h`, `audio_live_resume.h`, `audio_match_rule.h`, `audio_seq_anchor.h`, `audio_bus_balance.h`, `audio_asset_level.h`, `voice_router.h`, `psg_synth.h` | Capture, matching, synthesis, routing, mixing, analysis |
-| Video and rendering | `ayther_video.h`, `ayther_renderer.h`, `vulkan_backend/*.h` | Decode, GPU upload, composition, readback |
+| Video and rendering | `ayther_video.h`, `ayther_renderer.h` | Decode, GPU upload, composition, readback |
 | Runtime state | `ayther_recording.h`, `rewind_buffer.h`, `failure_escalation.h`, `output_profile.h`, `ayther_config.h` | Persistence, recovery, policy, output geometry, configuration |
 | Emulator integration | `engine/core_probe.hpp`, `libretro_host/retro_runner.h`, `libretro_host/ayther_api.h` | Public metadata probing, internal libretro lifecycle, versioned extensions |
 | Rust boundary | `ayther_core_ffi.h`, `ayther_unique_handle.h` | Flat ABI and RAII ownership adapters |

@@ -1,6 +1,6 @@
 # Build, test, and release
 
-**Status:** CI, reproducible core packaging, signing, and attestations implemented
+**Status:** CI, reproducible Engine packaging, signing, and attestations implemented
 
 **Last verified:** 2026-08-30
 
@@ -322,35 +322,37 @@ wrong.
 
 ## Release artifact scope
 
-v0.1.x distributes **three artifact families**, on Windows and Linux:
+v0.1.x distributes **two Engine variants**, on Windows and Linux. The official
+set therefore contains exactly four ZIP archives:
 
 | Archive | Targets | Headers | Shaders | Native dependencies |
 |---|---|---|---|---|
-| `ayther-core-<tag>-<platform>.zip` | `Ayther::core` | `ayther_core_ffi.h`, `ayther_version.h` | none | none |
-| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the above plus the CMake-owned engine header allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, toml++, zstd |
+| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the CMake-owned public header allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, toml++, zstd |
 | `ayther-engine-vpx-<tag>-<platform>.zip` | the above plus `Ayther::vpx` | the above plus `vpx/` when bundled | compiled SPIR-V | the above plus libvpx |
 
 Windows builds and bundles libvpx through `tools/build_libvpx.ps1`, so the
 archive, headers, and notices ship inside the package. Linux links the system
 libvpx through `pkg-config` and ships none of it.
 
-**A core-only package is never presented as the complete engine.** That is not
-a convention, it is enforced in three places:
+Every official archive is a complete Engine package. That is not a convention;
+it is enforced in four places:
 
-- `tools/check_release_payload.ps1` runs against the unpacked archive and checks
-  in both directions. The engine kinds must contain their targets, headers,
-  shaders, and dependency notices; the core kind must **demonstrably not**
-  contain the engine archive, the ymfm archive, the engine target export, the
-  shaders, or any header in the engine allowlist.
+- `tools/check_release_payload.ps1` runs against the unpacked archive and
+  requires the Engine, Core, and ymfm archives, target export, public headers,
+  compiled shaders, and dependency notices.
 - `tools/gen_release_sbom.ps1` takes the artifact family, so an SBOM cannot
-  describe a core-only tree as an "AYTHER Engine" distribution.
+  describe the standard and VPX variants interchangeably.
 - `tools/gen_release_notes.ps1` writes the scope table into the release body,
-  including the plain statement that `ayther-core` is not the engine.
+  directly from the same two variant names.
+- `tools/finalize_release_assets.ps1` rejects a missing or extra release input
+  and writes `CHECKSUMS.sha256` over the four final ZIP files only.
 
-Each family has its own out-of-tree consumer. `tests/package_consumer` asks for
-`COMPONENTS engine` and links `Ayther::engine`; `tests/package_consumer_core`
-asks for no components, links `Ayther::core`, and needs no toolchain file at
-all -- if it ever did, the core package would have stopped being core-only.
+Both variants pass through the same fresh-runner gate.
+`tests/external_package_consumer` asks for `COMPONENTS engine`, links only
+`Ayther::engine`, and records every path-bearing property of every imported
+target visible after package discovery. The same job then configures, builds,
+and tests the independently versioned AYTHER Runtime against that extracted
+prefix.
 
 ## Publishing a release candidate
 
@@ -360,14 +362,16 @@ core `MAJOR.MINOR.PATCH`; `Cargo.toml` and `vcpkg.json` may additionally carry
 the full tag, because only those two understand SemVer pre-release.
 
 ```text
-pwsh tools/check_release_version.ps1 -Tag v0.1.0-rc.1
-git tag -a v0.1.0-rc.1 -m 'AYTHER v0.1.0-rc.1'
-git push origin v0.1.0-rc.1
+pwsh tools/check_release_version.ps1 -Tag v0.1.0-rc.5
+git tag -a v0.1.0-rc.5 -m 'AYTHER v0.1.0-rc.5'
+git push origin v0.1.0-rc.5
 ```
 
 Pushing the tag is the only manual step; everything after it is the workflow.
 The publish job is gated on the `release` environment, so it waits for a
-reviewer before any asset is signed or uploaded.
+reviewer before any candidate asset is uploaded to the public GitHub release.
+Signing and attestation happen earlier so the isolated consumer jobs can verify
+the exact bytes they test.
 
 Before the tag is pushed, a repository administrator must have configured:
 
@@ -394,8 +398,9 @@ forward under a new version.
 
 ## Consuming a release candidate as a frontend
 
-The release workflow's package-consumer gate proves an artifact LINKS.
-`tools/check_rc_consumer.ps1` proves it RUNS:
+The release workflow's minimal external consumer proves an artifact links and
+runs before publication. `tools/check_rc_consumer.ps1` remains the deeper,
+manually runnable session smoke:
 
 ```text
 build/<preset>/bin/make_test_pack pack.ay trust.toml crc32:rc000001 rom.md
@@ -472,52 +477,86 @@ only tests labelled `gpu` (Linux uses Mesa plus a virtual display). This is an
 explicit omission, not a successful GPU oracle.
 
 The tag-only `.github/workflows/release.yml` validates the version contract,
-runs the locked Rust gates plus optimized production-trust acceptance tests,
-and then builds **six** artifacts: three families on each of Windows and Linux.
+refuses a workflow rerun or a tag that already owns a GitHub release, runs the
+locked Rust gates plus optimized production-trust acceptance tests, and then
+builds **four** artifacts: standard and VPX Engine variants on Windows and
+Linux.
 It derives `SOURCE_DATE_EPOCH` from the tagged commit, remaps build paths,
 packages each install tree twice, and requires byte-identical SHA-256 digests
-before publication.
+before publication. ZIP entry times use midnight on the preceding UTC date;
+this deterministic margin prevents timezone conversion from making installed
+CMake files newer than a consumer build on the day of publication.
 
-Every matrix entry runs, in this order: configure, build, the native CTest
-suite for that preset, install into an isolated prefix, SBOM, package twice,
-reproducibility check, unpack the archive into an empty directory, verify the
-unpacked payload against the family its name advertises, then configure, build,
-and run an out-of-tree consumer against it. Everything after packaging is
-checked on the UNPACKED ARCHIVE rather than the install tree it came from, so a
-packaging bug cannot slip past. A failure at any step drops that artifact, and
-the publish job refuses to run unless all six are present and correctly named.
+The release DAG has four explicit stages:
+
+1. `build` configures, builds, runs the Engine CTest suite, installs, emits the
+   SBOM, packages twice, compares both ZIPs byte-for-byte, unpacks the selected
+   ZIP, and checks its payload.
+2. `attest` runs only after all four builds. It downloads those job artifacts,
+   rejects any missing or extra input, creates `CHECKSUMS.sha256`, signs every
+   file, records SLSA provenance and SBOM attestations, and uploads one immutable
+   candidate artifact for the consumer jobs.
+3. `external-consumer` is a fresh four-entry Windows/Linux × standard/VPX
+   matrix. Each runner downloads the candidate, verifies SHA-256, Sigstore, and
+   GitHub provenance before extraction, configures and runs the minimal CMake
+   consumer, then configures, builds, and runs all CTests from the pinned AYTHER
+   Runtime checkout.
+4. `publish` depends on the aggregate result of that four-entry matrix and is
+   the only job with `contents: write`. The protected `release` environment is
+   therefore reached only after every external consumer succeeds.
+
+The clean jobs copy both consumer source trees below `RUNNER_TEMP`; neither
+CMake configure references the Engine checkout. After CTest,
+`tools/check_external_consumer_paths.ps1` scans the minimal-consumer and Runtime
+`CMakeCache.txt` files plus a generated report of imported-target properties.
+Any spelling of the producer `GITHUB_WORKSPACE` path, including Windows
+backslashes or case differences, fails the release.
+
+AYTHER Runtime is pinned by full commit SHA in the workflow rather than read
+from a moving branch. That commit must exist in
+`Ayther-Dev/AYTHER-Runtime`. If that repository is private or internal,
+configure the least-privilege `AYTHER_RUNTIME_READ_TOKEN` Actions secret;
+otherwise the workflow falls back to its ordinary repository token.
 
 Each candidate carries an SPDX 2.3 SBOM generated from the locked Cargo graph
-and exact installed files. The protected publish job creates SHA-256 checksums,
-keyless Sigstore bundles for every asset, SLSA build provenance, and signed SBOM
-attestations, then creates a GitHub pre-release. Private signing keys and
-long-lived CI credentials are not used; OIDC credentials are short-lived.
+and exact installed files. The attestation job computes SHA-256 only over the
+four final ZIPs, creates keyless Sigstore bundles for every asset, and attaches
+SLSA build provenance and signed SBOM attestations. The protected publish job
+uploads those already verified bytes without rebuilding or resigning them.
+Private signing keys and long-lived signing credentials are not used; OIDC
+credentials are short-lived.
 
 Repository administrators must configure the `release` environment with
 required reviewers, protect `v*` tags, and restrict workflow changes with
 CODEOWNERS/branch protection. Without those repository controls, the workflow
 mechanics alone are not a protected release boundary.
 
-`tools/verify_release_artifact.ps1` runs the whole acceptance sequence from a
-clean checkout of the tag -- download, checksum, Sigstore, provenance, unpack,
-payload check, and an out-of-tree consumer build:
+`tools/verify_release_artifact.ps1` runs the release-engineering acceptance
+sequence -- download, checksum, Sigstore, provenance, unpack, payload check,
+and an out-of-tree consumer build:
 
 ```text
-pwsh tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.1 -Product ayther-engine
+pwsh tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.5 -Product ayther-engine
 ```
 
 A consumer verifies a downloaded archive with all three independent records:
 
 ```text
 sha256sum --check CHECKSUMS.sha256
-gh attestation verify ayther-engine-v0.1.0-rc.1-linux-x86_64.zip \
+gh attestation verify ayther-engine-v0.1.0-rc.5-linux-x86_64.zip \
   --repo Ayther-Dev/AYTHER-Engine
 cosign verify-blob \
-  --bundle ayther-engine-v0.1.0-rc.1-linux-x86_64.zip.sigstore.json \
+  --bundle ayther-engine-v0.1.0-rc.5-linux-x86_64.zip.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github.com/Ayther-Dev/AYTHER-Engine/.github/workflows/release.yml@refs/tags/v[0-9].*$' \
-  ayther-engine-v0.1.0-rc.1-linux-x86_64.zip
+  ayther-engine-v0.1.0-rc.5-linux-x86_64.zip
 ```
+
+AYTHER Runtime's pinned `bootstrap_ayther_engine.ps1` is the consumer path: it
+downloads one of these four archives and `CHECKSUMS.sha256`, validates the
+locked and published SHA-256 values, verifies the GitHub SLSA attestation, and
+extracts the CMake prefix. It invokes neither Git nor submodules and requires no
+Engine checkout.
 
 The physical GPU/driver matrix, real-emulator fixtures, and the remaining
 security review are still release blockers; automated publications

@@ -6,8 +6,8 @@ namespace ayther::engine {
 
 /// Version embedded in the linked Engine artifact.
 ///
-/// `prerelease` refers to immutable storage owned by Engine and remains valid
-/// for the lifetime of the process. Callers must not attempt to free it.
+/// This is the numeric SemVer release. A release-candidate suffix belongs to
+/// the distribution tag and is deliberately not duplicated in this value.
 struct Version {
     std::uint32_t major;
     std::uint32_t minor;
@@ -42,6 +42,8 @@ struct Capabilities {
 ///
 /// This is a diagnostic compatibility number, not the semantic Engine version.
 /// It is queried through Engine so C++ consumers never call the raw core FFI.
+/// Maintainers must increment it whenever a breaking Engine/Core function or
+/// data-layout contract changes.
 [[nodiscard]] std::uint32_t core_abi_revision() noexcept;
 
 /// Returns the immutable feature set compiled into the linked artifact.

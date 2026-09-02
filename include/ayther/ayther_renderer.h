@@ -42,6 +42,8 @@ struct SceneElement;   // ayther_session.h — R-8: sub_texture_state()
 /// every renderer resource. All methods are render-thread affine and are not
 /// safe for concurrent use. Destruction releases initialized resources;
 /// shutdown() remains available for deterministic release before the context.
+/// The renderer never creates or destroys the host instance, physical device,
+/// logical device, surface, graphics queue, or swapchain, and never presents.
 class AytherRenderer {
 public:
     AytherRenderer();
@@ -52,8 +54,9 @@ public:
 
     // Create the offscreen target + the render pipelines at the canvas
     // resolution. ayther_play passes its swapchain extent; ayther_lab its
-    // viewport size. `shader_dir` locates the SPIR-V (sprite.*.spv); if the
-    // shaders are missing the sprite overlay is disabled (emu+tiles still work).
+    // viewport size. `shader_dir` names the directory containing the installed
+    // Engine SPIR-V files; a trailing path separator is optional. If shaders
+    // are missing, the affected overlays are disabled (emu+tiles still work).
     bool init(const ayther::engine::VulkanContextView& ctx,
               uint32_t canvas_w, uint32_t canvas_h,
               const char* shader_dir);

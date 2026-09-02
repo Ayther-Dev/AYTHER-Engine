@@ -71,6 +71,44 @@ set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
     LABELS  "native;package")
 
+find_program(AYTHER_PWSH_EXECUTABLE NAMES pwsh)
+if(AYTHER_PWSH_EXECUTABLE)
+    add_test(
+        NAME ayther.package.release_assets
+        COMMAND "${AYTHER_PWSH_EXECUTABLE}" -NoProfile -File
+            "${PROJECT_SOURCE_DIR}/tests/release_assets_test.ps1"
+            -WorkDirectory
+            "${PROJECT_BINARY_DIR}/tests/release_assets_contract"
+            -Finalizer
+            "${PROJECT_SOURCE_DIR}/tools/finalize_release_assets.ps1"
+            -Packager
+            "${PROJECT_SOURCE_DIR}/tools/package_release.ps1")
+    set_tests_properties(ayther.package.release_assets PROPERTIES
+        TIMEOUT 30
+        LABELS  "package;quality")
+
+    add_test(
+        NAME ayther.package.external_consumer_gate
+        COMMAND "${AYTHER_PWSH_EXECUTABLE}" -NoProfile -File
+            "${PROJECT_SOURCE_DIR}/tests/external_consumer_gate_test.ps1"
+            -WorkDirectory
+            "${PROJECT_BINARY_DIR}/tests/external_consumer_gate_contract"
+            -Scanner
+            "${PROJECT_SOURCE_DIR}/tools/check_external_consumer_paths.ps1"
+            -Workflow
+            "${PROJECT_SOURCE_DIR}/.github/workflows/release.yml"
+            -Verifier
+            "${PROJECT_SOURCE_DIR}/tools/verify_staged_release_artifact.ps1"
+            -Packager
+            "${PROJECT_SOURCE_DIR}/tools/package_release.ps1")
+    set_tests_properties(ayther.package.external_consumer_gate PROPERTIES
+        TIMEOUT 30
+        LABELS  "package;quality")
+else()
+    message(WARNING
+        "pwsh was not found; PowerShell release contract tests are unavailable.")
+endif()
+
 function(ayther_add_native_test _source _category)
     get_filename_component(_name "${_source}" NAME_WE)
     set(_target "ayther_${_name}")
@@ -116,6 +154,21 @@ ayther_instrument_target(sf2_synth_smoke)
 if(NOT AYTHER_BUILD_ENGINE)
     return()
 endif()
+
+# Link every public AytherRenderer method through the same target consumers use.
+# No source/private include directory is added: this must remain a pure public
+# header and Ayther::engine symbol-closure check.
+add_executable(ayther_renderer_link_smoke
+    "${PROJECT_SOURCE_DIR}/tests/contracts/renderer_link_smoke.cpp")
+target_link_libraries(ayther_renderer_link_smoke PRIVATE Ayther::engine)
+target_compile_features(ayther_renderer_link_smoke PRIVATE cxx_std_20)
+ayther_instrument_target(ayther_renderer_link_smoke)
+add_test(
+    NAME ayther.package.renderer_link_smoke
+    COMMAND ayther_renderer_link_smoke)
+set_tests_properties(ayther.package.renderer_link_smoke PROPERTIES
+    TIMEOUT 30
+    LABELS  "engine;native;package")
 
 # The installation allowlist must be transitively closed: every project header
 # included by a public header must itself be public and installed.
