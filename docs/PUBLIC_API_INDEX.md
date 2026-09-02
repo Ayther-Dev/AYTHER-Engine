@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 15 headers
+## The 16 headers
 
 | header | what it provides |
 |---|---|
@@ -27,6 +27,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_session.h`](#ayther_sessionh) | Installed public header. |
 | [`ayther_version.h`](#ayther_versionh) | Installed public header. |
 | [`engine/capabilities.hpp`](#enginecapabilitieshpp) | Installed public header. |
+| [`engine/core_probe.hpp`](#enginecore_probehpp) | Installed public header. |
 | [`engine/engine.hpp`](#engineenginehpp) | Installed public header. |
 | [`log.h`](#logh) | Installed public header. |
 
@@ -66,7 +67,7 @@ persisted primary key is still `signature`.
 This header has no SDL dependency. Its deterministic table lookup is covered
 by tests/audio_match_rule_test.cpp.
 
-**Declares:** `AudioMatchIndex`, `AudioMatchRuleInfo`, `ayther`, `clear`, `Entry`, `uint8_t`
+**Declares:** `AudioMatchIndex`, `AudioMatchRuleInfo`, `ayther`, `uint8_t`
 
 _The installed header (`include/ayther/audio_match_rule.h`) carries the full documentation of every symbol._
 
@@ -115,7 +116,7 @@ game supplies the cursor. Level-1 phase state must be reset after detection
 loss or non-sequential seeks; callers must not assume backward-seek safety
 until that reset contract is enforced.
 
-**Declares:** `AnimationDef`, `AnimationPlayer`, `AnimHdFrame`, `ayther`, `HdPose`, `Impl`
+**Declares:** `AnimationDef`, `AnimationPlayer`, `AnimHdFrame`, `ayther`, `HdPose`
 
 _The installed header (`include/ayther/ayther_animation.h`) carries the full documentation of every symbol._
 
@@ -173,7 +174,7 @@ The detector, substitution FFI, engine coordinator, `AudioPlayer` event
 playback, and root target are integrated. Session replay and live paths share
 the persisted assignments but retain distinct scheduling policies.
 
-**Declares:** `AudioEventAssignment`, `AudioEventSubstitution`, `AudioEventTrigger`, `ayther`, `Impl`
+**Declares:** `AudioEventAssignment`, `AudioEventSubstitution`, `AudioEventTrigger`, `ayther`
 
 _The installed header (`include/ayther/ayther_audio_events.h`) carries the full documentation of every symbol._
 
@@ -266,7 +267,7 @@ The Rust profile implementation, FFI, engine resolver, session wiring, and
 root CMake target are integrated. The design mirrors the existing
 SpriteSubstitutor/metasprite flow and publishes results through FrameView.
 
-**Declares:** `ayther`, `EntityInstance`, `Impl`, `Mode3Resolver`
+**Declares:** `ayther`, `EntityInstance`, `Mode3Resolver`
 
 _The installed header (`include/ayther/ayther_mode3.h`) carries the full documentation of every symbol._
 
@@ -391,6 +392,16 @@ _The installed header (`include/ayther/ayther_version.h`) carries the full docum
 **Declares:** `Capabilities`, `Version`
 
 _The installed header (`include/ayther/engine/capabilities.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginecore_probehpp"></a>
+
+## engine/core_probe.hpp
+
+**Declares:** `CoreInfo`, `CoreProbe`
+
+_The installed header (`include/ayther/engine/core_probe.hpp`) carries the full documentation of every symbol._
 
 ---
 

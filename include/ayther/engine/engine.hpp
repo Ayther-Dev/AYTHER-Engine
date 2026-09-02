@@ -4,3 +4,4 @@
 // added here only after their ownership, lifetime, threading, and error rules
 // have been specified and tested.
 #include <ayther/engine/capabilities.hpp>
+#include <ayther/engine/core_probe.hpp>

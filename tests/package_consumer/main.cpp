@@ -65,6 +65,16 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const ayther::engine::CoreInfo serialization_contract{
+        .api_version = 1U,
+        .library_name = "installed-package",
+    };
+    if (serialization_contract.serialize().find(
+            "\"library_name\":\"installed-package\"") == std::string::npos) {
+        std::cerr << "installed Engine CoreInfo serialization is unavailable\n";
+        return 1;
+    }
+
     const auto error = ayther::sdk_version_check();
     if (!error.empty()) {
         std::cerr << error << '\n';
@@ -94,6 +104,17 @@ int main(int argc, char** argv) {
     line("rom", basename_of(rom));
     line("pack", basename_of(pack));
     line("trust registry", basename_of(registry));
+
+    {
+        auto probed = ayther::engine::probe_core(core);
+        if (!probed) {
+            line("core probe", "FAILED: " + probed.error.message);
+            std::cout << "=== consumer FAILED ===\n";
+            return 1;
+        }
+        line("core probe", probed->info().library_name + " " +
+                               probed->info().library_version);
+    }
 
     ayther::AytherSession::Config config;
     config.core_path = core;

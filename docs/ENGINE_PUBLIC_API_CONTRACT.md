@@ -1,7 +1,8 @@
 # Engine public API contract
 
-**Status:** implemented for version and core capability probing; the remaining
-Runtime-facing modules are specified destinations and are not public yet.
+**Status:** implemented for version, build capabilities, and Libretro core
+probing; the remaining Runtime-facing modules are specified destinations and
+are not public yet.
 
 The ownership decision, authorized consumers, and `0.1.x` guarantees are
 recorded in [ADR 0003](adr/0003-runtime-engine-public-api-ownership.md).
@@ -14,6 +15,7 @@ The Runtime-facing C++ API lives exclusively under
 ```cpp
 #include <ayther/engine/engine.hpp>
 #include <ayther/engine/capabilities.hpp>
+#include <ayther/engine/core_probe.hpp>
 ```
 
 `configuration.hpp`, `output_profile.hpp`, and `vulkan_interop.hpp` are the
@@ -94,7 +96,7 @@ tests. Lab, SDK tools, and third parties may not expand the boundary without a
 new Engine review. AYTHER Engine maintainers own the declarations,
 implementation, installation rules, documentation, and contract tests.
 
-## Core probing
+## Artifact version and capabilities
 
 `version()` returns the version compiled into the linked Engine library. It is
 implemented out of line, so Runtime compile definitions cannot change it.
@@ -116,13 +118,39 @@ For the current native artifact:
 | `libretro_audio` | The Engine artifact implements the libretro audio callback paths |
 
 Vulkan loader/device suitability belongs to Engine creation or a future typed
-environment probe. Keeping it separate is what makes core probing deterministic
-and safe in headless processes.
+environment probe. Keeping it separate is what makes capability probing
+deterministic and safe in headless processes.
+
+## Libretro core probing
+
+`probe_core(path)` loads one user-selected native library without initializing
+SDL, loading a ROM, or calling `retro_init`. Success returns a move-only
+`CoreProbe`; its destructor unloads the library. `CoreProbe::info()` returns a
+`CoreInfo` whose name, version, extension list, API version, and path/extraction
+flags were copied while the library was loaded. No `retro_system_info` pointer
+or platform handle is public.
+
+The factory returns `Result<CoreProbe>`. `ErrorCode::Io` means the platform
+loader rejected the file, while `ErrorCode::BadFormat` means the library loaded
+but omitted `retro_api_version` or `retro_get_system_info`. The owned diagnostic
+contains the platform error or missing symbol names. A failed factory call
+releases any handle acquired before the failure.
+
+`CoreInfo::serialize()` and `CoreProbe::serialize()` return the same compact
+JSON object. Strings supplied by the core escape quotes, reverse solidi, and
+all JSON control characters. Protocol framing such as `AYTHER_STATUS`, event
+names, and process exit codes remains a Runtime responsibility.
+
+Loading a native library executes code under platform-loader rules and is not
+a sandbox or trust decision. `CoreProbe` is single-owner; destruction or moves
+must not race with access to its information.
 
 ## Dependency containment
 
-The probing headers expose only `<cstdint>` and `<string_view>`. Vulkan, SDL,
-threads, logging, and filesystem facilities remain implementation dependencies
-and do not propagate through this module. Future public modules must document
-any third-party type they expose and keep CMake dependencies `PRIVATE` unless a
+The capabilities header exposes only fixed-width standard types. The core-probe
+header exposes standard filesystem, ownership, and string types plus the
+installed `ayther::Result` contract. Libretro, Vulkan, SDL, platform loader
+headers, threads, and logging remain implementation dependencies and do not
+propagate through these modules. Future public modules must document any
+third-party type they expose and keep CMake dependencies `PRIVATE` unless a
 public declaration truly requires the consumer to see them.

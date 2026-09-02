@@ -102,11 +102,14 @@ identity generation.
 
 ### Emulator host
 
-`CoreLoader` owns one dynamic library handle. `RetroRunner` binds the libretro
-C callback model to an object instance, owns ROM bytes and core lifecycle, and
-exposes borrowed memory views. Dynamic libraries and ROMs are untrusted inputs.
-Symbol resolution, capability negotiation, buffer bounds, and versioned AYTHER
-extensions must be checked before use.
+Public consumers use the move-only `ayther::engine::CoreProbe` to inspect a
+core. It owns one dynamic library handle and copies `CoreInfo` before exposing
+metadata; platform handles, symbol lookup, and Libretro structures remain
+private. `RetroRunner` binds the libretro C callback model to an object
+instance, owns ROM bytes and core lifecycle, and exposes borrowed memory views.
+Dynamic libraries and ROMs are untrusted inputs. Symbol resolution, capability
+negotiation, buffer bounds, and versioned AYTHER extensions must be checked
+before use.
 
 The callback bridge currently relies on process-visible dispatch state. Until
 that design is replaced or formally constrained, callers must not drive two
@@ -213,7 +216,7 @@ invent a newer public contract.
 | Audio | `audio_player.h`, `audio_hd_mixer.h`, `audio_live_resume.h`, `audio_match_rule.h`, `audio_seq_anchor.h`, `audio_bus_balance.h`, `audio_asset_level.h`, `voice_router.h`, `psg_synth.h` | Capture, matching, synthesis, routing, mixing, analysis |
 | Video and rendering | `ayther_video.h`, `ayther_renderer.h`, `vulkan_backend/*.h` | Decode, GPU upload, composition, readback |
 | Runtime state | `ayther_recording.h`, `rewind_buffer.h`, `failure_escalation.h`, `output_profile.h`, `ayther_config.h` | Persistence, recovery, policy, output geometry, configuration |
-| Emulator integration | `libretro_host/core_loader.h`, `libretro_host/retro_runner.h`, `libretro_host/ayther_api.h` | Dynamic loading, libretro lifecycle, versioned extensions |
+| Emulator integration | `engine/core_probe.hpp`, `libretro_host/retro_runner.h`, `libretro_host/ayther_api.h` | Public metadata probing, internal libretro lifecycle, versioned extensions |
 | Rust boundary | `ayther_core_ffi.h`, `ayther_unique_handle.h` | Flat ABI and RAII ownership adapters |
 
 `libretro_host/libretro.h` is a third-party protocol header. Preserve its

@@ -35,6 +35,9 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A public move-only `ayther::engine::CoreProbe` facade that owns temporary
+  Libretro library loading, copies core metadata, returns platform diagnostics,
+  and serializes the result without exposing loader or Libretro headers.
 - Initial repository documentation structure.
 - Contribution and security policies, attributes, and ignore rules.
 - Reproducible Windows and Linux development environment setup guide.

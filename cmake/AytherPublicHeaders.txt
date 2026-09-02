@@ -16,4 +16,5 @@ ayther_sdk_version.h
 ayther_session.h
 log.h
 engine/capabilities.hpp
+engine/core_probe.hpp
 engine/engine.hpp

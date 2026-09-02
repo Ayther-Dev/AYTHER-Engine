@@ -176,6 +176,7 @@ unset(_ayther_vpx_include_dir)
 add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/audio_player.cpp
     src/capabilities.cpp
+    src/core_probe.cpp
     src/ayther_animation.cpp
     src/ayther_audio_events.cpp
     src/ayther_background_export.cpp

@@ -21,7 +21,10 @@ target_include_directories(ayther_test_support INTERFACE
 # Every Runtime-facing public header must compile first in an otherwise empty
 # translation unit. Object targets make this a build gate without requiring the
 # native Engine or any renderer dependency.
-foreach(_header_probe IN ITEMS capabilities_header engine_header)
+foreach(_header_probe IN ITEMS
+        capabilities_header
+        core_probe_header
+        engine_header)
     add_library("ayther_${_header_probe}" OBJECT
         "${PROJECT_SOURCE_DIR}/tests/contracts/${_header_probe}.cpp")
     target_include_directories("ayther_${_header_probe}" PRIVATE
@@ -34,7 +37,7 @@ add_test(
     NAME ayther.package.engine_public_contract
     COMMAND "${CMAKE_COMMAND}"
         "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
-        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;engine.hpp"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;core_probe.hpp;engine.hpp"
         -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
 set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
@@ -111,7 +114,8 @@ set(_ayther_english_documented_headers
     ayther_result.h
     ayther_sdk.h
     ayther_sdk_version.h
-    ayther_version.h)
+    ayther_version.h
+    engine/core_probe.hpp)
 add_test(
     NAME ayther.quality.documentation_language
     COMMAND "${CMAKE_COMMAND}"
@@ -154,6 +158,29 @@ endfunction()
 add_subdirectory(
     "${PROJECT_SOURCE_DIR}/tools/test_core"
     "${PROJECT_BINARY_DIR}/tools/test_core")
+
+# A loadable library without Libretro entry points makes the negative probe
+# case deterministic on every platform and independent of system DLL layout.
+add_library(ayther_not_a_core MODULE
+    "${PROJECT_SOURCE_DIR}/tests/support/not_a_core.cpp")
+set_target_properties(ayther_not_a_core PROPERTIES
+    PREFIX ""
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+target_compile_features(ayther_not_a_core PRIVATE cxx_std_20)
+target_link_libraries(ayther_not_a_core PRIVATE
+    $<BUILD_INTERFACE:ayther_strict_warnings>)
+
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/core_probe_test.cpp"
+    integration)
+target_compile_definitions(ayther_core_probe_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+    AYTHER_NOT_A_CORE_PATH="$<TARGET_FILE:ayther_not_a_core>"
+    AYTHER_MISSING_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}/missing-core")
+add_dependencies(ayther_core_probe_test
+    ayther_test_core
+    ayther_not_a_core)
 
 # Signed content for the release-candidate consumer, which cannot open an
 # unsigned pack in an optimized build.
