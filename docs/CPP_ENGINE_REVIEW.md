@@ -198,6 +198,13 @@ units, and safety warnings; remove obsolete chronology and task references.
 Standardize user-visible diagnostics through the structured logging work rather
 than translating isolated string literals in place.
 
+Runtime-facing pack operations now use the English, typed
+`engine/pack.hpp` contract. It owns copied metadata and validation findings,
+provides a move-only watcher, and limits archive borrowing to an opaque
+`PackView`. The core ABI revision is likewise available through
+`engine/capabilities.hpp`, so C++ frontends no longer include the raw FFI for
+these operations.
+
 The installed `ayther_session.h` and `ayther_core_ffi.h` still contain hundreds
 of Spanish comment lines. They are explicitly excluded from the new English-
 documentation CTest until their contracts can be translated and reviewed in

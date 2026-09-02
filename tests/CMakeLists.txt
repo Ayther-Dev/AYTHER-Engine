@@ -23,7 +23,8 @@ target_include_directories(ayther_test_support INTERFACE
 # native Engine or any renderer dependency.
 foreach(_header_probe IN ITEMS
         capabilities_header
-        core_probe_header)
+        core_probe_header
+        pack_header)
     add_library("ayther_${_header_probe}" OBJECT
         "${PROJECT_SOURCE_DIR}/tests/contracts/${_header_probe}.cpp")
     target_include_directories("ayther_${_header_probe}" PRIVATE
@@ -53,7 +54,7 @@ add_test(
     NAME ayther.package.engine_public_contract
     COMMAND "${CMAKE_COMMAND}"
         "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
-        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;core_probe.hpp;engine.hpp;vulkan_interop.hpp"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;core_probe.hpp;engine.hpp;pack.hpp;vulkan_interop.hpp"
         -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
 set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
@@ -132,6 +133,7 @@ set(_ayther_english_documented_headers
     ayther_sdk_version.h
     ayther_version.h
     engine/core_probe.hpp)
+list(APPEND _ayther_english_documented_headers engine/pack.hpp)
 add_test(
     NAME ayther.quality.documentation_language
     COMMAND "${CMAKE_COMMAND}"

@@ -15,6 +15,7 @@ foreach(_source IN ITEMS
         log_test.cpp
         loop_region_test.cpp
         output_profile_test.cpp
+        pack_api_test.cpp
         pack_runtime_test.cpp
         pano_bands_test.cpp
         panorama_cover_test.cpp

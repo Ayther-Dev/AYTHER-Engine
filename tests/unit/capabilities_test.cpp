@@ -22,9 +22,12 @@ int main() {
     static_assert(std::is_standard_layout_v<ayther::engine::Version>);
     static_assert(std::is_trivially_copyable_v<ayther::engine::Capabilities>);
     static_assert(noexcept(ayther::engine::version()));
+    static_assert(noexcept(ayther::engine::core_abi_revision()));
     static_assert(noexcept(ayther::engine::probe_capabilities()));
 
     const auto linked_version = ayther::engine::version();
+    check(ayther::engine::core_abi_revision() != 0U,
+          "the linked core ABI revision is available without raw FFI");
     check(linked_version.major == AYTHER_EXPECTED_VERSION_MAJOR &&
               linked_version.minor == AYTHER_EXPECTED_VERSION_MINOR &&
               linked_version.patch == AYTHER_EXPECTED_VERSION_PATCH,

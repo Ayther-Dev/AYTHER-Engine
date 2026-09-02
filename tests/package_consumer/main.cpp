@@ -63,6 +63,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const ayther::engine::PackView empty_pack{};
+    if (empty_pack.is_valid() || !empty_pack.render_tiers().is_legacy() ||
+        ayther::engine::core_abi_revision() == 0U) {
+        std::cerr << "installed typed pack/core contract is invalid\n";
+        return 1;
+    }
+
     const ayther::engine::RenderImageView empty_render_image{};
     if (empty_render_image.is_valid()) {
         std::cerr << "empty RenderImageView unexpectedly reports valid\n";

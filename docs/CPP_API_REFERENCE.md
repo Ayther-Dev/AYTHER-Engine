@@ -43,6 +43,7 @@ Concurrency, Source files, and Performance sections.
 |---|---|---|
 | `Ayther::core` and `ayther_core_ffi.h` | Buildable, installable, unstable | Flat C ABI backed by Rust. Opaque handles use paired allocation and release functions. |
 | `Ayther::engine` and `ayther_sdk.h` | Buildable, installable, provisional | Higher-level C facade over a native session. |
+| `engine/capabilities.hpp`, `engine/core_probe.hpp`, and `engine/pack.hpp` | Installed, provisional | Typed C++ queries for versions, core metadata, packs, validation, tiers, and watching. Raw core handles do not cross this surface. |
 | `AytherSession` | Installed, provisional | Primary C++ orchestration facade. Single-owner and single-thread driven. |
 | Audio, renderer, Vulkan, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
 
@@ -54,7 +55,9 @@ Concurrency, Source files, and Performance sections.
 | Rust opaque handles | Exclusive through `unique_handle` or paired C functions | Never dereference. Release with the matching API function only. |
 | `FrameView` returned by `step()` | Borrowed | Valid until the next operation that advances, resets, rewinds, reloads, or destroys the session. Copy data that must outlive that boundary. |
 | Memory returned by `RetroRunner` | Borrowed from the loaded core | Invalid after core reset, unload, or any operation documented by the core as reallocating memory. |
-| `AyArchive*` passed to renderer, audio, or video helpers | Borrowed | The caller must keep the archive alive for the complete call or cached operation that documents retention. |
+| `engine::PackView` returned by `AytherSession::pack()` | Borrowed | Trivially copyable and non-owning. Invalid after the session reloads, replaces, or destroys its pack; callers cannot unwrap its hidden handle. |
+| `engine::PackInfo` and `engine::PackValidationResult` | Owned values | Strings and findings remain valid independently of temporary archive and report handles. |
+| `engine::PackWatcher` | Exclusive, move-only RAII | `create()` starts the platform watcher; destruction stops it and releases the hidden core handle. `poll()` is non-blocking. |
 | `VulkanContextView` handles | Borrowed by Engine from the host application | Device-dependent Engine resources and submitted work must finish before the host destroys its device or allocator. Surface and swapchain handles are not exposed to Engine. |
 | Callback `user` pointers in the C facade | Borrowed | Must remain valid until the callback is removed or the session is destroyed. Callbacks must not retain transient frame pointers. |
 
@@ -114,6 +117,25 @@ before use.
 The callback bridge currently relies on process-visible dispatch state. Until
 that design is replaced or formally constrained, callers must not drive two
 runner instances concurrently.
+
+### Packs and core ABI
+
+Public C++ consumers include `engine/pack.hpp`. `inspect_pack()` opens a pack
+temporarily and copies its manifest-backed metadata into `PackInfo`;
+`validate_pack()` copies every diagnostic into `PackValidationResult`, so no
+paired report-free function is exposed. An optional trust-registry path can be
+supplied when inspection must authenticate signed fixtures.
+
+`AytherSession::pack()` returns `PackView`, never `AyArchive*`. The view may be
+passed to `AytherRenderer`, used to choose a render tier before assets are
+loaded, or queried for owned metadata. It must not outlive a pack reload or its
+session. `PackWatcher` encapsulates the platform thread and raw watcher handle;
+destroy it before the session and resources affected by reload.
+
+`engine::core_abi_revision()` reports the linked core ABI revision without
+requiring the C header. Game-specific work-RAM interpretation is deliberately
+outside Engine. The flat `ayther_core_ffi.h` surface remains available only for
+callers intentionally selecting the public C ABI and for Engine internals.
 
 ### Audio
 

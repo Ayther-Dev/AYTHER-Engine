@@ -38,6 +38,12 @@ struct Capabilities {
 /// Engine object exists. This function never throws.
 [[nodiscard]] Version version() noexcept;
 
+/// Returns the revision of the linked Rust core C ABI.
+///
+/// This is a diagnostic compatibility number, not the semantic Engine version.
+/// It is queried through Engine so C++ consumers never call the raw core FFI.
+[[nodiscard]] std::uint32_t core_abi_revision() noexcept;
+
 /// Returns the immutable feature set compiled into the linked artifact.
 ///
 /// This function performs no environment probing. In particular, it does not

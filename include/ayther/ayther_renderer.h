@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <memory>
 
+#include <ayther/engine/pack.hpp>
 #include <ayther/engine/vulkan_interop.hpp>
 
 #include "vulkan_backend/vk_render_target.h"
@@ -33,8 +34,6 @@
 #include "vulkan_backend/vk_indexed_plane.h"  // R-5: indexed compose
 
 #include <string>
-
-struct AyArchive;   // opaque (ayther_core_ffi.h) — HD asset source
 
 class  AytherLayerStack;   // R-4 — layer model (ayther_layers.h)
 
@@ -137,7 +136,7 @@ public:
     /// the snapshot did before the parameter existed.
     const uint8_t* export_frame(
         const ayther::engine::VulkanContextView& ctx, const FrameView& fv,
-        AyArchive* pack, bool hd_on,
+        ayther::engine::PackView pack, bool hd_on,
         const AytherLayerStack* layers = nullptr,
         uint8_t vdp_mask = 0xFF);
     void readback_shutdown(const ayther::engine::VulkanContextView& ctx);
@@ -160,7 +159,7 @@ public:
     // whole frame).
     void render(const ayther::engine::VulkanContextView& ctx,
                 VkCommandBuffer cmd, const FrameView& fv,
-                AyArchive* pack, bool hd_on = true,
+                ayther::engine::PackView pack, bool hd_on = true,
                 const AytherLayerStack* layers = nullptr,
                 uint8_t vdp_mask = 0xFF);
 

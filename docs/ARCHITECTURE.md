@@ -68,10 +68,18 @@ recording, and the CPU-visible result of a frame. It exposes that result as a
 plain-data `FrameView`. It does not own Vulkan and must remain usable in
 headless tests.
 
+Pack inspection, validation, render-tier selection, and file watching cross the
+Runtime boundary through `engine/pack.hpp`. `PackInfo` and validation findings
+own their strings, `PackWatcher` owns and releases the platform watcher, and
+`PackView` is a non-owning token whose lifetime is bounded by its session. The
+flat core ABI and archive handles remain implementation details of Engine for
+C++ consumers; `ayther_core_ffi.h` remains installed only as an explicit C ABI.
+
 `AytherRenderer` is a separate, device-dependent object. It consumes a
-`FrameView`, records work into a caller-provided command buffer, and renders to
-an offscreen image. A frontend may present that image, sample it in another UI,
-or read it back. Presentation policy remains outside the session.
+`FrameView` and typed `PackView`, records work into a caller-provided command
+buffer, and renders to an offscreen image. A frontend may present that image,
+sample it in another UI, or read it back. Presentation policy remains outside
+the session.
 
 The application owns its Vulkan instance, device, allocator, and presentation
 objects. It lends Engine a public `VulkanContextView` containing only the

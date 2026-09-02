@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 17 headers
+## The 18 headers
 
 | header | what it provides |
 |---|---|
@@ -29,6 +29,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`engine/capabilities.hpp`](#enginecapabilitieshpp) | Installed public header. |
 | [`engine/core_probe.hpp`](#enginecore_probehpp) | Installed public header. |
 | [`engine/engine.hpp`](#engineenginehpp) | Installed public header. |
+| [`engine/pack.hpp`](#enginepackhpp) | Installed public header. |
 | [`engine/vulkan_interop.hpp`](#enginevulkan_interophpp) | Installed public header. |
 | [`log.h`](#logh) | Installed public header. |
 
@@ -414,11 +415,21 @@ _The installed header (`include/ayther/engine/engine.hpp`) carries the full docu
 
 ---
 
+<a id="enginepackhpp"></a>
+
+## engine/pack.hpp
+
+**Declares:** `ayther`, `AytherRenderer`, `AytherSession`, `final`, `PackFinding`, `PackInfo`, `PackValidationContext`, `PackValidationResult`
+
+_The installed header (`include/ayther/engine/pack.hpp`) carries the full documentation of every symbol._
+
+---
+
 <a id="enginevulkan_interophpp"></a>
 
 ## engine/vulkan_interop.hpp
 
-**Declares:** `RenderImageView`
+**Declares:** `RenderImageView`, `VmaAllocator_T`, `VulkanContextView`
 
 _The installed header (`include/ayther/engine/vulkan_interop.hpp`) carries the full documentation of every symbol._
 

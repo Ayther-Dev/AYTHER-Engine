@@ -5,4 +5,5 @@
 // have been specified and tested.
 #include <ayther/engine/capabilities.hpp>
 #include <ayther/engine/core_probe.hpp>
+#include <ayther/engine/pack.hpp>
 #include <ayther/engine/vulkan_interop.hpp>

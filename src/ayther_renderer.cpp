@@ -252,9 +252,11 @@ VkSprite::TexState AytherRenderer::sub_texture_state(const FrameView& fv,
 }
 
 void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
-                            const FrameView& fv, AyArchive* pack, bool hd_on,
+                            const FrameView& fv,
+                            ayther::engine::PackView pack_view, bool hd_on,
                             const AytherLayerStack* layers, uint8_t vdp_mask) {
     if (!target_.is_ready()) return;
+    auto* pack = static_cast<AyArchive*>(pack_view.handle_);
 
     // R-4 (): sin stack del caller, el por defecto — misma lista y mismo
     // orden que las lanes cableadas históricas (los smokes no cambian).
@@ -1570,7 +1572,8 @@ bool AytherRenderer::readback_init(const ayther::engine::VulkanContextView& ctx)
 }
 
 const uint8_t* AytherRenderer::export_frame(const ayther::engine::VulkanContextView& ctx, const FrameView& fv,
-                                            AyArchive* pack, bool hd_on,
+                                            ayther::engine::PackView pack,
+                                            bool hd_on,
                                             const AytherLayerStack* layers,
                                             uint8_t vdp_mask) {
     if (!rb_map_) return nullptr;
