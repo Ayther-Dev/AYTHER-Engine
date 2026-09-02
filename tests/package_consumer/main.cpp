@@ -29,6 +29,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <type_traits>
 
 namespace {
 
@@ -53,6 +54,13 @@ void line(const char* key, const std::string& value) {
 int main(int argc, char** argv) {
     static_assert(sizeof(AySessionConfig) > 0);
     static_assert(sizeof(ayther::FrameView) > 0);
+    static_assert(std::is_standard_layout_v<ayther::engine::RenderImageView>);
+
+    const ayther::engine::RenderImageView empty_render_image{};
+    if (empty_render_image.is_valid()) {
+        std::cerr << "empty RenderImageView unexpectedly reports valid\n";
+        return 1;
+    }
 
     const auto engine_version = ayther::engine::version();
     const auto engine_capabilities = ayther::engine::probe_capabilities();

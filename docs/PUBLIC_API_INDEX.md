@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 16 headers
+## The 17 headers
 
 | header | what it provides |
 |---|---|
@@ -29,6 +29,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`engine/capabilities.hpp`](#enginecapabilitieshpp) | Installed public header. |
 | [`engine/core_probe.hpp`](#enginecore_probehpp) | Installed public header. |
 | [`engine/engine.hpp`](#engineenginehpp) | Installed public header. |
+| [`engine/vulkan_interop.hpp`](#enginevulkan_interophpp) | Installed public header. |
 | [`log.h`](#logh) | Installed public header. |
 
 ---
@@ -410,6 +411,16 @@ _The installed header (`include/ayther/engine/core_probe.hpp`) carries the full 
 ## engine/engine.hpp
 
 _The installed header (`include/ayther/engine/engine.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginevulkan_interophpp"></a>
+
+## engine/vulkan_interop.hpp
+
+**Declares:** `RenderImageView`
+
+_The installed header (`include/ayther/engine/vulkan_interop.hpp`) carries the full documentation of every symbol._
 
 ---
 

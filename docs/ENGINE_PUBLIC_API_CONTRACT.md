@@ -1,8 +1,8 @@
 # Engine public API contract
 
-**Status:** implemented for version, build capabilities, and Libretro core
-probing; the remaining Runtime-facing modules are specified destinations and
-are not public yet.
+**Status:** implemented for version, build capabilities, Libretro core probing,
+and the Vulkan render-image handoff; the remaining Runtime-facing modules are
+specified destinations and are not public yet.
 
 The ownership decision, authorized consumers, and `0.1.x` guarantees are
 recorded in [ADR 0003](adr/0003-runtime-engine-public-api-ownership.md).
@@ -16,13 +16,13 @@ The Runtime-facing C++ API lives exclusively under
 #include <ayther/engine/engine.hpp>
 #include <ayther/engine/capabilities.hpp>
 #include <ayther/engine/core_probe.hpp>
+#include <ayther/engine/vulkan_interop.hpp>
 ```
 
-`configuration.hpp`, `output_profile.hpp`, and `vulkan_interop.hpp` are the
-required destination modules for the corresponding audited dependencies. They
-must not be published as empty placeholders or private-header forwarding
-wrappers. Each becomes public only with its complete behavioral contract and
-tests.
+`configuration.hpp` and `output_profile.hpp` are the remaining destination
+modules for corresponding audited dependencies. They must not be published as
+empty placeholders or private-header forwarding wrappers. Each becomes public
+only with its complete behavioral contract and tests.
 
 The existing flat `include/ayther/` SDK headers remain installable during the
 0.1.x line so current consumers retain source compatibility. They are not the
@@ -145,12 +145,51 @@ Loading a native library executes code under platform-loader rules and is not
 a sandbox or trust decision. `CoreProbe` is single-owner; destruction or moves
 must not race with access to its information.
 
+## Vulkan render-image handoff
+
+`RenderImageView` is a trivially copyable, non-owning snapshot returned by
+`AytherRenderer::render_image()` and `compare_render_image()`. It publishes the
+borrowed `VkImage`, `VkImageView`, and optional `VkSampler`, together with the
+image format, two-dimensional extent, handoff layout, barrier source stage and
+access masks, and the exclusive owning queue-family index. The image, its
+memory, its view, and its sampler remain owned by Engine. Runtime never calls a
+Vulkan destruction or memory-release function for those handles.
+
+The main render target's handles remain valid until renderer resize, shutdown,
+or destruction. Comparison handles additionally end on comparison release or a
+recapture that changes their size. A copied `RenderImageView` does not extend
+that interval. Before an invalidating operation, Runtime must complete all GPU
+access and discard or rebind descriptors that reference the old view.
+
+The producer hands both render targets over in the `layout` recorded in the
+view; currently this is `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL` with fragment
+shader/read access as the ready scope. Runtime may transition to transfer source
+or another compatible use, but before the next Engine access it must restore
+the published layout and keep exclusive ownership in `queue_family_index`.
+Queue-family transfer is outside this contract.
+
+No semaphore, fence, event, command buffer, or queue handle is transferred by
+`RenderImageView`. When Engine production and Runtime consumption are recorded
+in the same command buffer, command order and the documented image barriers are
+the synchronization contract. Across submissions, Runtime supplies and owns the
+signal/wait chain in both directions. It must wait for Engine production before
+reading the image and make its own completion visible before Engine reuses,
+resizes, releases, or destroys it.
+
+The view's image and view are required for a valid handoff; the sampler is
+optional for image-only consumers. `is_valid()` checks handle and metadata
+presence, not GPU completion. Destroying the C++ value performs no Vulkan work.
+
 ## Dependency containment
 
 The capabilities header exposes only fixed-width standard types. The core-probe
 header exposes standard filesystem, ownership, and string types plus the
-installed `ayther::Result` contract. Libretro, Vulkan, SDL, platform loader
-headers, threads, and logging remain implementation dependencies and do not
-propagate through these modules. Future public modules must document any
-third-party type they expose and keep CMake dependencies `PRIVATE` unless a
-public declaration truly requires the consumer to see them.
+installed `ayther::Result` contract. Libretro, SDL, platform loader headers,
+threads, and logging remain implementation dependencies and do not propagate
+through those modules.
+
+`vulkan_interop.hpp` deliberately exposes Vulkan native types. Therefore the
+installed `Ayther::engine` target carries `Vulkan::Vulkan` as a public usage
+requirement and `AytherConfig.cmake` resolves Vulkan before importing the Engine
+target. Other third-party dependencies remain private unless a future public
+declaration truly requires the consumer to see them.

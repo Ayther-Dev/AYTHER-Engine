@@ -393,17 +393,17 @@ if(AYTHER_BUILD_ENGINE)
     target_link_libraries(ayther_engine
         PUBLIC
             # In-tree tools compile implementation headers directly. Preserve
-            # their dependency includes only in the build tree; the installed
-            # allowlist exposes neither SDL nor Vulkan types.
+            # SDL only in the build tree. The installed RenderImageView contract
+            # deliberately exposes Vulkan types, so consumers inherit its
+            # include directory and loader target through Vulkan::Vulkan.
             $<BUILD_INTERFACE:SDL3::SDL3>
-            $<BUILD_INTERFACE:Vulkan::Vulkan>
+            Vulkan::Vulkan
         PRIVATE
             $<BUILD_INTERFACE:Ayther::core>
             $<BUILD_INTERFACE:ayther::ymfm>
             $<INSTALL_INTERFACE:Ayther::ymfm>
             Threads::Threads
             SDL3::SDL3
-            Vulkan::Vulkan
             GPUOpen::VulkanMemoryAllocator
             vk-bootstrap::vk-bootstrap
             $<BUILD_INTERFACE:Stb::Stb>

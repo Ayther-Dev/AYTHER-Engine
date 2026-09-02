@@ -3,8 +3,8 @@
 //
 // R3.1: renders the emulator frame + resolved HD tiles into the offscreen image
 // (blit-based, the same pipeline that used to target the swapchain in the player
-// main loop). Leaves the offscreen in TRANSFER_SRC for the frontend to blit to
-// its swapchain. Sprite + post-process passes land in R3.2.
+// main loop). Leaves the offscreen in its public shader-read handoff layout for
+// the frontend to sample or transition temporarily for presentation.
 // ---------------------------------------------------------------------------
 #include "ayther_renderer.h"
 #include "log.h"
@@ -104,6 +104,38 @@ struct AytherRenderer::FrameScratch {
 AytherRenderer::AytherRenderer() : scratch_(std::make_unique<FrameScratch>()) {}
 AytherRenderer::~AytherRenderer() {
     if (context_) shutdown(*context_);
+}
+
+namespace {
+
+ayther::engine::RenderImageView render_image_view(
+    const VkRenderTarget& target, const VkContext* context) noexcept {
+    if (!target.is_ready() || context == nullptr) {
+        return {};
+    }
+
+    return {
+        .image = target.image(),
+        .image_view = target.view(),
+        .sampler = target.sampler(),
+        .format = target.format(),
+        .extent = target.extent(),
+        .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .ready_stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        .ready_access_mask = VK_ACCESS_SHADER_READ_BIT,
+        .queue_family_index = context->graphics_family(),
+    };
+}
+
+}  // namespace
+
+ayther::engine::RenderImageView AytherRenderer::render_image() const noexcept {
+    return render_image_view(target_, context_);
+}
+
+ayther::engine::RenderImageView
+AytherRenderer::compare_render_image() const noexcept {
+    return render_image_view(compare_, context_);
 }
 
 bool AytherRenderer::init(VkContext& ctx, uint32_t canvas_w,

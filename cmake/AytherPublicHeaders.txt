@@ -18,3 +18,4 @@ log.h
 engine/capabilities.hpp
 engine/core_probe.hpp
 engine/engine.hpp
+engine/vulkan_interop.hpp

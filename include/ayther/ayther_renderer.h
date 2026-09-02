@@ -22,6 +22,8 @@
 #include <cstdint>
 #include <memory>
 
+#include <ayther/engine/vulkan_interop.hpp>
+
 #include "vulkan_backend/vk_render_target.h"
 #include "runtime_options.h"
 #include "vulkan_backend/vk_texture.h"        // emu-frame texture
@@ -183,6 +185,12 @@ public:
                                          const SceneElement& e) const;
 
     // ---- The offscreen result — the frontend presents or samples it --------
+    /// Returns the public, borrowed Vulkan handoff for the current target.
+    /// The handles and synchronization rules are defined by RenderImageView.
+    /// GPU access is valid only after render() has produced the current frame.
+    [[nodiscard]] engine::RenderImageView render_image() const noexcept;
+
+    // Legacy accessors retained for source compatibility during the 0.1.x line.
     VkImage     framebuffer_image()   const { return target_.image();   }
     VkImageView framebuffer_view()    const { return target_.view();    }
     VkSampler   framebuffer_sampler() const { return target_.sampler(); }
@@ -203,6 +211,9 @@ public:
     // that never opens the A/B does not pay the memory of a second canvas,
     // which at 8K is not small.
     bool        compare_ready() const { return compare_.is_ready(); }
+    /// Returns the public, borrowed Vulkan handoff for the captured image.
+    /// The value is invalid until capture_compare() succeeds.
+    [[nodiscard]] engine::RenderImageView compare_render_image() const noexcept;
     /// The IMAGE, for the runtime split — which composes with per-region blits
     /// rather than sampling, so it needs the handle and not the view.
     VkImage     compare_image()   const { return compare_.image();   }

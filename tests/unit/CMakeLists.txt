@@ -20,6 +20,7 @@ foreach(_source IN ITEMS
         panorama_cover_test.cpp
         parallax_bands_test.cpp
         recording_controller_test.cpp
+        render_image_view_test.cpp
         runtime_options_test.cpp
         widescreen_test.cpp)
     ayther_add_native_test("${_source}" unit)

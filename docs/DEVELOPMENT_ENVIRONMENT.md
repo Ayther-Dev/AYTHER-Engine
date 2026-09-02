@@ -97,7 +97,7 @@ attaching package include paths directly to `ayther_engine`:
 | Dependency | Target used by AYTHER | Visibility |
 |---|---|---|
 | SDL3 | `SDL3::SDL3` | Private link dependency; no installed header exposes SDL types |
-| Vulkan | `Vulkan::Vulkan` | Private link dependency; no installed header exposes Vulkan types |
+| Vulkan | `Vulkan::Vulkan` | Public usage requirement for `engine/vulkan_interop.hpp`; implementation also uses it |
 | Vulkan Memory Allocator | `GPUOpen::VulkanMemoryAllocator` | Private |
 | vk-bootstrap | `vk-bootstrap::vk-bootstrap` | Private |
 | stb | `Stb::Stb` compatibility target | Private, build-tree only |
