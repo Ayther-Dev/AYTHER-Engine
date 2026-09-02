@@ -256,7 +256,8 @@ int main(int argc, char** argv) {
             s->scene_inventory(iv);
             for (const SceneElement& e : iv)
                 if (e.layer == 3 && e.sub >= 0 &&
-                    renderer.sub_texture_state(*fvd, e) == VkSprite::TexState::Ready)
+                    renderer.sub_texture_state(*fvd, e) ==
+                        ayther::AytherRenderer::TextureState::ready)
                     ready = true;
         }
         std::printf("  textura del asset lista: %s\n\n", ready ? "sí" : "NO (test vacuo)");

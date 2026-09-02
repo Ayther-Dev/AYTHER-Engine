@@ -156,6 +156,7 @@ $configure = @(
     '-B', $consumerBuild,
     '-G', 'Ninja',
     '-DCMAKE_BUILD_TYPE=Release',
+    '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF',
     "-DCMAKE_PREFIX_PATH=$prefix"
 )
 # Only the engine products pull native dependencies; a core consumer that needed

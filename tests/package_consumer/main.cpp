@@ -56,6 +56,15 @@ int main(int argc, char** argv) {
     static_assert(sizeof(ayther::FrameView) > 0);
     static_assert(std::is_standard_layout_v<ayther::engine::RenderImageView>);
     static_assert(std::is_standard_layout_v<ayther::engine::VulkanContextView>);
+    static_assert(std::is_same_v<
+                  std::underlying_type_t<ayther::engine::RetroPadButton>,
+                  std::uint8_t>);
+    static_assert(ayther::engine::input_mask(
+                      ayther::engine::RetroPadButton::b) == 0x0001U);
+    static_assert(ayther::engine::input_mask(
+                      ayther::engine::RetroPadButton::r3) == 0x8000U);
+    static_assert(std::is_trivially_copyable_v<ayther::engine::PackView>);
+    static_assert(!std::is_copy_constructible_v<ayther::engine::PackWatcher>);
 
     const ayther::engine::VulkanContextView empty_context{};
     if (empty_context.is_valid()) {

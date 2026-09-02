@@ -1,40 +1,41 @@
 # Engine public API contract
 
-**Status:** implemented for version, build capabilities, Libretro core probing,
-and the Vulkan render-image handoff; the remaining Runtime-facing modules are
-specified destinations and are not public yet.
+**Status:** implemented for the installed C++ Engine surface, including typed
+input, session, renderer, layers, pack inspection, Libretro core probing, build
+capabilities, and the Vulkan render-image handoff.
 
 The ownership decision, authorized consumers, and `0.1.x` guarantees are
 recorded in [ADR 0003](adr/0003-runtime-engine-public-api-ownership.md).
 
 ## Public boundary
 
-The Runtime-facing C++ API lives exclusively under
+The primary Runtime-facing C++ entry point lives under
 `include/ayther/engine/` and is included with installed paths such as:
 
 ```cpp
 #include <ayther/engine/engine.hpp>
 #include <ayther/engine/capabilities.hpp>
 #include <ayther/engine/core_probe.hpp>
+#include <ayther/engine/input.hpp>
 #include <ayther/engine/vulkan_interop.hpp>
 ```
 
-`configuration.hpp` and `output_profile.hpp` are the remaining destination
-modules for corresponding audited dependencies. They must not be published as
-empty placeholders or private-header forwarding wrappers. Each becomes public
-only with its complete behavioral contract and tests.
+`engine.hpp` is the umbrella include. It directly publishes the typed Engine
+modules and the installed C++ session, renderer, and layer facades; consumers
+that want the complete C++ API need no additional AYTHER header.
 
-The existing flat `include/ayther/` SDK headers remain installable during the
-0.1.x line so current consumers retain source compatibility. They are not the
-Runtime-to-Engine boundary and Runtime must not add new uses of them. A flat
-header can move into the new boundary only through a reviewed public module.
+The existing flat `include/ayther/` C++ facades remain installable and are
+reachable through the umbrella during the 0.1.x line so current consumers
+retain source compatibility. New focused APIs belong under `ayther/engine/`;
+the flat C ABI remains available separately through `ayther_core_ffi.h`.
 
 Public headers must be self-contained and compile as the first include in an
 otherwise empty C++20 translation unit. They may include the C++ standard
 library, documented third-party API headers, or other installed
 `ayther/engine/` headers. They must not include paths containing `src/`,
-`private/`, `internal/`, or `detail/`. A future `detail/` directory requires an
-explicit contract, installation rule, and compatibility coverage before use.
+`libretro_host/`, `vulkan_backend/`, `private/`, `internal/`, or `detail/`. A
+future `detail/` directory requires an explicit contract, installation rule,
+and compatibility coverage before use.
 
 ## Language, exceptions, and RTTI
 

@@ -46,6 +46,7 @@
 #include "ayther_layers.h"     // AytherLayerContent (the pack's Acetates)
 #include "ayther_mode3.h"      // Mode3Resolver / EntityInstance (Mode 3, RAM anchoring)
 #include "ayther_result.h"     // ayther::Result / Error
+#include "engine/input.hpp"    // typed public joypad input contract
 #include "engine/pack.hpp"     // typed, non-owning pack boundary for frontends
 
 namespace ayther {
@@ -753,6 +754,9 @@ public:
 
     // -- Input: per port, libretro JOYPAD button bitmask -----------------------
     void set_input(int port, uint16_t buttons) noexcept;
+    void set_input(int port, engine::InputState input) noexcept {
+        set_input(port, input.bits());
+    }
 
     // -- Frame stepping --------------------------------------------------------
     // Advance exactly one emulation frame and run the full deterministic

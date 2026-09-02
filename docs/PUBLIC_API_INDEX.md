@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 18 headers
+## The 20 headers
 
 | header | what it provides |
 |---|---|
@@ -21,6 +21,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_core_ffi.h`](#ayther_core_ffih) | Installed public header. |
 | [`ayther_layers.h`](#ayther_layersh) | Installed public header. |
 | [`ayther_mode3.h`](#ayther_mode3h) | Installed public header. |
+| [`ayther_renderer.h`](#ayther_rendererh) | Installed public header. |
 | [`ayther_result.h`](#ayther_resulth) | Installed public header. |
 | [`ayther_sdk_version.h`](#ayther_sdk_versionh) | Installed public header. |
 | [`ayther_sdk.h`](#ayther_sdkh) | Installed public header. |
@@ -29,6 +30,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`engine/capabilities.hpp`](#enginecapabilitieshpp) | Installed public header. |
 | [`engine/core_probe.hpp`](#enginecore_probehpp) | Installed public header. |
 | [`engine/engine.hpp`](#engineenginehpp) | Installed public header. |
+| [`engine/input.hpp`](#engineinputhpp) | Installed public header. |
 | [`engine/pack.hpp`](#enginepackhpp) | Installed public header. |
 | [`engine/vulkan_interop.hpp`](#enginevulkan_interophpp) | Installed public header. |
 | [`log.h`](#logh) | Installed public header. |
@@ -275,6 +277,35 @@ _The installed header (`include/ayther/ayther_mode3.h`) carries the full documen
 
 ---
 
+<a id="ayther_rendererh"></a>
+
+## ayther_renderer.h
+
+AytherRenderer — the motor's visual (HD) layer (R3).
+
+Consumes a FrameView (the deterministic CPU output of AytherSession::step())
++ a borrowed ayther::engine::VulkanContextView, and renders the HD frame into
+an offscreen VkImage
+(VkRenderTarget). The frontend then presents that image:
+  - ayther_play blits it to its swapchain;
+  - ayther_lab samples it in an ImGui viewport.
+
+Kept SEPARATE from AytherSession on purpose: the session stays Vulkan-free /
+headless (CI, determinism, future mobile); the renderer is the swappable GPU
+layer. See docs/CPP_API_REFERENCE.md#rendering-and-vulkan.
+
+Lifecycle: init(ctx, w, h) → render(ctx, cmd, fv) per frame → shutdown(ctx).
+Single-owner; driven from the same thread as the session.
+
+R3.0: scaffold — owns the offscreen target; render() clears it. The emu-frame,
+HD-tile, sprite and post-process passes land in R3.1 / R3.2.
+
+**Declares:** `ayther`, `AytherLayerStack`, `AytherRenderer`, `FrameView`, `SceneElement`
+
+_The installed header (`include/ayther/ayther_renderer.h`) carries the full documentation of every symbol._
+
+---
+
 <a id="ayther_resulth"></a>
 
 ## ayther_result.h
@@ -412,6 +443,16 @@ _The installed header (`include/ayther/engine/core_probe.hpp`) carries the full 
 ## engine/engine.hpp
 
 _The installed header (`include/ayther/engine/engine.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="engineinputhpp"></a>
+
+## engine/input.hpp
+
+**Declares:** `final`
+
+_The installed header (`include/ayther/engine/input.hpp`) carries the full documentation of every symbol._
 
 ---
 

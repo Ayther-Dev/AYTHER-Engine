@@ -24,6 +24,9 @@ target_include_directories(ayther_test_support INTERFACE
 foreach(_header_probe IN ITEMS
         capabilities_header
         core_probe_header
+        input_header
+        layers_header
+        session_header
         pack_header)
     add_library("ayther_${_header_probe}" OBJECT
         "${PROJECT_SOURCE_DIR}/tests/contracts/${_header_probe}.cpp")
@@ -33,12 +36,20 @@ foreach(_header_probe IN ITEMS
     ayther_instrument_target("ayther_${_header_probe}")
 endforeach()
 
+add_library(ayther_core_ffi_header OBJECT
+    "${PROJECT_SOURCE_DIR}/tests/contracts/core_ffi_header.cpp")
+target_include_directories(ayther_core_ffi_header PRIVATE
+    "${PROJECT_SOURCE_DIR}/include")
+target_compile_features(ayther_core_ffi_header PRIVATE cxx_std_20)
+ayther_instrument_target(ayther_core_ffi_header)
+
 # The installed Engine umbrella and Vulkan interop surface intentionally expose
 # Vulkan native types. They exist only for native Engine artifacts, and linking
 # the imported target supplies the same include contract package consumers get.
 if(AYTHER_BUILD_ENGINE)
     foreach(_header_probe IN ITEMS
             engine_header
+            renderer_header
             vulkan_interop_header)
         add_library("ayther_${_header_probe}" OBJECT
             "${PROJECT_SOURCE_DIR}/tests/contracts/${_header_probe}.cpp")
@@ -54,7 +65,7 @@ add_test(
     NAME ayther.package.engine_public_contract
     COMMAND "${CMAKE_COMMAND}"
         "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
-        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;core_probe.hpp;engine.hpp;pack.hpp;vulkan_interop.hpp"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;pack.hpp;vulkan_interop.hpp"
         -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
 set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30

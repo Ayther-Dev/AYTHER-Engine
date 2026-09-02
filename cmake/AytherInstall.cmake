@@ -4,7 +4,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 set(AYTHER_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/Ayther")
-set(AYTHER_INSTALL_SHADERDIR "${CMAKE_INSTALL_DATADIR}/Ayther/shaders")
+set(AYTHER_INSTALL_SHADERDIR "share/Ayther/shaders")
 set(AYTHER_CORE_ARCHIVE_NAME
     "${CMAKE_STATIC_LIBRARY_PREFIX}ayther_core${CMAKE_STATIC_LIBRARY_SUFFIX}")
 set(AYTHER_CORE_ARCHIVE
@@ -48,8 +48,7 @@ if(AYTHER_BUILD_ENGINE)
     install(TARGETS ayther_engine ayther_ymfm
         EXPORT AytherEngineTargets
         ARCHIVE       DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-        PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther"
-        INCLUDES      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+        PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther")
 
     install(FILES ${AYTHER_ENGINE_CONTRACT_HEADERS}
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ayther/engine")
@@ -125,8 +124,7 @@ configure_package_config_file(
     INSTALL_DESTINATION "${AYTHER_INSTALL_CMAKEDIR}"
     PATH_VARS
         CMAKE_INSTALL_INCLUDEDIR
-        CMAKE_INSTALL_LIBDIR
-        AYTHER_INSTALL_SHADERDIR)
+        CMAKE_INSTALL_LIBDIR)
 
 write_basic_package_version_file(
     "${PROJECT_BINARY_DIR}/AytherConfigVersion.cmake"

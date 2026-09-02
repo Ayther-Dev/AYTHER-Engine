@@ -12,6 +12,12 @@
 
 #include "ayther_session.h"               // FrameView
 #include "ayther_layers.h"                // R-4 (): stack de capas
+#include "runtime_options.h"
+#include "vulkan_backend/tile_tex_cache.h"
+#include "vulkan_backend/vk_indexed_plane.h"
+#include "vulkan_backend/vk_render_target.h"
+#include "vulkan_backend/vk_sprite.h"
+#include "vulkan_backend/vk_texture.h"
 #include <ayther/engine/vulkan_interop.hpp>
 #include "ayther_core_ffi.h"              // AytherTileSub, AyArchive
 
@@ -101,9 +107,101 @@ struct AytherRenderer::FrameScratch {
     std::vector<uint8_t> overlay_tint;
 };
 
-AytherRenderer::AytherRenderer() : scratch_(std::make_unique<FrameScratch>()) {}
+class AytherRenderer::Impl {
+public:
+    static constexpr std::uint32_t kEmuW = 320;
+    static constexpr std::uint32_t kEmuH = 240;
+
+    RuntimeOptions options_;
+    VkRenderTarget target_;
+    VkRenderTarget compare_;
+    VkCommandPool rb_pool_ = VK_NULL_HANDLE;
+    VkCommandBuffer rb_cmd_ = VK_NULL_HANDLE;
+    VkFence rb_fence_ = VK_NULL_HANDLE;
+    VkBuffer rb_buf_ = VK_NULL_HANDLE;
+    VmaAllocation rb_alloc_ = VK_NULL_HANDLE;
+    void* rb_map_ = nullptr;
+    VkTexture emu_tex_;
+    std::uint32_t emu_w_ = 0;
+    std::uint32_t emu_h_ = 0;
+    TileTexCache tile_cache_;
+    VkSprite sprite_;
+    bool sprite_ok_ = false;
+    VkIndexedPlane indexed_;
+    bool indexed_ok_ = false;
+    bool checker_ = false;
+    int focus_layer_ = -1;
+    std::unique_ptr<FrameScratch> scratch_ = std::make_unique<FrameScratch>();
+    ayther::engine::VulkanContextView context_{};
+};
+
+AytherRenderer::AytherRenderer() : impl_(std::make_unique<Impl>()) {}
 AytherRenderer::~AytherRenderer() {
-    if (context_.is_valid()) shutdown(context_);
+    if (impl_->context_.is_valid()) shutdown(impl_->context_);
+}
+
+bool AytherRenderer::is_ready() const {
+    return impl_->target_.is_ready();
+}
+
+std::uint32_t AytherRenderer::emu_frame_w() const {
+    return impl_->emu_w_;
+}
+
+std::uint32_t AytherRenderer::emu_frame_h() const {
+    return impl_->emu_h_;
+}
+
+void AytherRenderer::set_checker(bool on) noexcept {
+    impl_->checker_ = on;
+}
+
+bool AytherRenderer::checker() const noexcept {
+    return impl_->checker_;
+}
+
+void AytherRenderer::set_focus_layer(int layer) noexcept {
+    impl_->focus_layer_ = layer;
+}
+
+int AytherRenderer::focus_layer() const noexcept {
+    return impl_->focus_layer_;
+}
+
+VkImage AytherRenderer::framebuffer_image() const {
+    return impl_->target_.image();
+}
+
+VkImageView AytherRenderer::framebuffer_view() const {
+    return impl_->target_.view();
+}
+
+VkSampler AytherRenderer::framebuffer_sampler() const {
+    return impl_->target_.sampler();
+}
+
+VkExtent2D AytherRenderer::framebuffer_extent() const {
+    return impl_->target_.extent();
+}
+
+bool AytherRenderer::compare_ready() const {
+    return impl_->compare_.is_ready();
+}
+
+VkImage AytherRenderer::compare_image() const {
+    return impl_->compare_.image();
+}
+
+VkImageView AytherRenderer::compare_view() const {
+    return impl_->compare_.view();
+}
+
+VkSampler AytherRenderer::compare_sampler() const {
+    return impl_->compare_.sampler();
+}
+
+VkExtent2D AytherRenderer::compare_extent() const {
+    return impl_->compare_.extent();
 }
 
 namespace {
@@ -131,29 +229,28 @@ ayther::engine::RenderImageView render_image_view(
 }  // namespace
 
 ayther::engine::RenderImageView AytherRenderer::render_image() const noexcept {
-    return render_image_view(target_, context_);
+    return render_image_view(impl_->target_, impl_->context_);
 }
 
 ayther::engine::RenderImageView
 AytherRenderer::compare_render_image() const noexcept {
-    return render_image_view(compare_, context_);
+    return render_image_view(impl_->compare_, impl_->context_);
 }
 
 bool AytherRenderer::init(const ayther::engine::VulkanContextView& ctx, uint32_t canvas_w,
-                          uint32_t canvas_h, const char* shader_dir,
-                          const RuntimeOptions& options) {
-    options_ = options;
-    context_ = ctx;
-    if (!context_.is_valid()) {
+                          uint32_t canvas_h, const char* shader_dir) {
+    impl_->options_ = RuntimeOptions::process();
+    impl_->context_ = ctx;
+    if (!impl_->context_.is_valid()) {
         return false;
     }
-    if (!emu_tex_.init(context_, kEmuW, kEmuH)) {
+    if (!impl_->emu_tex_.init(impl_->context_, Impl::kEmuW, Impl::kEmuH)) {
         ayther::log::write(ayther::log::Severity::Error,
             "renderer", "emu_texture_init_failed",
             "emu texture init failed");
         return false;
     }
-    if (!target_.init(context_, canvas_w, canvas_h)) {
+    if (!impl_->target_.init(impl_->context_, canvas_w, canvas_h)) {
         ayther::log::write(ayther::log::Severity::Error,
             "renderer", "offscreen_target_init_failed",
             "offscreen target init failed");
@@ -163,20 +260,20 @@ bool AytherRenderer::init(const ayther::engine::VulkanContextView& ctx, uint32_t
     // HD sprite overlay — renders into the offscreen target. Optional: if the
     // SPIR-V shaders are missing, sprites are skipped (emu+tiles still render).
     const std::string dir = shader_dir ? shader_dir : "";
-    sprite_ok_ = sprite_.init(context_, target_.format(), canvas_w, canvas_h, target_.view(),
+    impl_->sprite_ok_ = impl_->sprite_.init(impl_->context_, impl_->target_.format(), canvas_w, canvas_h, impl_->target_.view(),
                               (dir + "sprite.vert.spv").c_str(),
                               (dir + "sprite.frag.spv").c_str());
-    if (!sprite_ok_)
+    if (!impl_->sprite_ok_)
         ayther::log::write(ayther::log::Severity::Warning,
             "renderer", "sprite_overlay_disabled_shaders",
             "sprite overlay disabled (no shaders)");
 
     // R-5 (): pipeline indexado del compose sin blit. Opcional como el de
     // sprites: sin shaders, el camino de escena cae al blit del emulador.
-    indexed_ok_ = indexed_.init(context_, target_,
+    impl_->indexed_ok_ = impl_->indexed_.init(impl_->context_, impl_->target_,
                                 (dir + "indexed_plane.vert.spv").c_str(),
                                 (dir + "indexed_plane.frag.spv").c_str());
-    if (!indexed_ok_)
+    if (!impl_->indexed_ok_)
         ayther::log::write(ayther::log::Severity::Warning,
             "renderer", "scene_compose_disabled_shaders",
             "scene compose disabled (no shaders)");
@@ -184,58 +281,58 @@ bool AytherRenderer::init(const ayther::engine::VulkanContextView& ctx, uint32_t
 }
 
 bool AytherRenderer::resize(const ayther::engine::VulkanContextView& ctx, uint32_t canvas_w, uint32_t canvas_h) {
-    if (!target_.resize(ctx, canvas_w, canvas_h)) return false;
-    if (sprite_ok_)   // the offscreen view changed — rebuild the sprite framebuffer
-        sprite_.rebuild(ctx, canvas_w, canvas_h, target_.view());
-    if (indexed_ok_)  // ídem para el framebuffer del compose indexado (R-5)
-        indexed_ok_ = indexed_.rebuild(ctx, target_);
+    if (!impl_->target_.resize(ctx, canvas_w, canvas_h)) return false;
+    if (impl_->sprite_ok_)   // the offscreen view changed — rebuild the sprite framebuffer
+        impl_->sprite_.rebuild(ctx, canvas_w, canvas_h, impl_->target_.view());
+    if (impl_->indexed_ok_)  // ídem para el framebuffer del compose indexado (R-5)
+        impl_->indexed_ok_ = impl_->indexed_.rebuild(ctx, impl_->target_);
     return true;
 }
 
 void AytherRenderer::evict_pack_textures(const ayther::engine::VulkanContextView& ctx) {
-    tile_cache_.shutdown(ctx);
-    if (sprite_ok_) sprite_.clear_textures(ctx);
+    impl_->tile_cache_.shutdown(ctx);
+    if (impl_->sprite_ok_) impl_->sprite_.clear_textures(ctx);
 }
 
 void AytherRenderer::evict_sprite_texture(const ayther::engine::VulkanContextView& ctx, const std::string& path) {
-    if (sprite_ok_) sprite_.evict(ctx, path);
+    if (impl_->sprite_ok_) impl_->sprite_.evict(ctx, path);
 }
 
 void AytherRenderer::poll_disk_sprite_textures(const ayther::engine::VulkanContextView& ctx) {
     // Hot-reload de autoría: assets de DISCO reescritos/aparecidos → evict
     // (la recarga la dispara el próximo draw). Ver VkSprite::poll_disk.
-    if (sprite_ok_) sprite_.poll_disk(ctx);
+    if (impl_->sprite_ok_) impl_->sprite_.poll_disk(ctx);
 }
 
 void AytherRenderer::prewarm_sprite(const std::string& path, uint8_t flip) {
     //  fase 2: decode asincrono anticipado de un asset SUELTO de disco —
     // al alimentar poses, no en su primera aparicion (pico > frame budget →
     // crackle de audio). El upload lo hace pump_uploads en el proximo draw.
-    if (sprite_ok_) sprite_.prewarm(path, nullptr, flip);
+    if (impl_->sprite_ok_) impl_->sprite_.prewarm(path, nullptr, flip);
 }
 
 void AytherRenderer::prewarm_sprite_mask(const std::string& path, uint8_t flip) {
     // Vestuario: la máscara paga el mismo pico de decode que el asset.
-    if (sprite_ok_) sprite_.prewarm(path, nullptr, flip, /*mask=*/true);
+    if (impl_->sprite_ok_) impl_->sprite_.prewarm(path, nullptr, flip, /*mask=*/true);
 }
 
 void AytherRenderer::shutdown(const ayther::engine::VulkanContextView& ctx) {
-    const auto& active_context = context_.is_valid() ? context_ : ctx;
+    const auto& active_context = impl_->context_.is_valid() ? impl_->context_ : ctx;
     readback_shutdown(active_context);
-    indexed_.shutdown(active_context);
-    sprite_.shutdown(active_context);
-    tile_cache_.shutdown(active_context);
-    emu_tex_.shutdown(active_context);
-    compare_.shutdown(active_context);   //  (no-op si el A/B nunca se abrió)
-    target_.shutdown(active_context);
-    context_ = {};
+    impl_->indexed_.shutdown(active_context);
+    impl_->sprite_.shutdown(active_context);
+    impl_->tile_cache_.shutdown(active_context);
+    impl_->emu_tex_.shutdown(active_context);
+    impl_->compare_.shutdown(active_context);   //  (no-op si el A/B nunca se abrió)
+    impl_->target_.shutdown(active_context);
+    impl_->context_ = {};
 }
 
 // R-8 (): estado de carga del asset del SUB de un elemento — la clave
 // (path + flip) replica EXACTAMENTE la que usan las lanes al dibujar, así el
 // checker y el reporte de cobertura miran la misma entrada del cache.
-VkSprite::TexState AytherRenderer::sub_texture_state(const FrameView& fv,
-                                                     const SceneElement& e) const {
+AytherRenderer::TextureState AytherRenderer::sub_texture_state(
+    const FrameView& fv, const SceneElement& e) const {
     const char* path = nullptr;
     uint8_t     flip = 0;
     if (e.sub >= 0) {
@@ -247,15 +344,25 @@ VkSprite::TexState AytherRenderer::sub_texture_state(const FrameView& fv,
             flip = fv.plane_tile_flips ? (uint8_t)(fv.plane_tile_flips[e.sub] & 3) : 0;
         }
     }
-    if (!path || !path[0]) return VkSprite::TexState::NotRequested;
-    return sprite_.texture_state(path, flip);
+    if (!path || !path[0]) return TextureState::not_requested;
+    switch (impl_->sprite_.texture_state(path, flip)) {
+    case VkSprite::TexState::NotRequested:
+        return TextureState::not_requested;
+    case VkSprite::TexState::Pending:
+        return TextureState::pending;
+    case VkSprite::TexState::Ready:
+        return TextureState::ready;
+    case VkSprite::TexState::Failed:
+        return TextureState::failed;
+    }
+    return TextureState::failed;
 }
 
 void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                             const FrameView& fv,
                             ayther::engine::PackView pack_view, bool hd_on,
                             const AytherLayerStack* layers, uint8_t vdp_mask) {
-    if (!target_.is_ready()) return;
+    if (!impl_->target_.is_ready()) return;
     auto* pack = static_cast<AyArchive*>(pack_view.handle_);
 
     // R-4 (): sin stack del caller, el por defecto — misma lista y mismo
@@ -264,21 +371,21 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     const AytherLayerStack& stack = layers ? *layers : kDefaultLayers;
 
     // 1. Upload the emulator software framebuffer (skip on a duplicate frame —
-    //    emu_tex_ keeps the previous content, still in SHADER_READ_ONLY).
+    //    impl_->emu_tex_ keeps the previous content, still in SHADER_READ_ONLY).
     if (fv.fb_pixels) {
-        emu_tex_.upload(ctx, cmd, fv.fb_pixels, fv.fb_width, fv.fb_height,
+        impl_->emu_tex_.upload(ctx, cmd, fv.fb_pixels, fv.fb_width, fv.fb_height,
                         fv.fb_pitch, static_cast<TexPixelFormat::Value>(fv.fb_format));
-        // El fb del core cambia de modo (256/320 x 192/224/240) y emu_tex_ se
+        // El fb del core cambia de modo (256/320 x 192/224/240) y impl_->emu_tex_ se
         // crea al maximo: blitear las dims del FRAME, no las de la textura,
         // o el canvas arrastra una franja muerta abajo/derecha.
-        emu_w_ = fv.fb_width  ? fv.fb_width  : emu_w_;
-        emu_h_ = fv.fb_height ? fv.fb_height : emu_h_;
+        impl_->emu_w_ = fv.fb_width  ? fv.fb_width  : impl_->emu_w_;
+        impl_->emu_h_ = fv.fb_height ? fv.fb_height : impl_->emu_h_;
     }
 
-    const VkExtent2D canvas = target_.extent();
+    const VkExtent2D canvas = impl_->target_.extent();
 
     // 2. Offscreen UNDEFINED -> TRANSFER_DST (every blit writes here).
-    image_barrier(cmd, target_.image(),
+    image_barrier(cmd, impl_->target_.image(),
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         0, VK_ACCESS_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -312,9 +419,9 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     //
     // Y NO se le aplica al VIDEO (): una textura persistente que se re-sube
     // cada frame no crea imagen, ni mips, ni descriptores — no pasa por acá.
-    if (sprite_ok_) sprite_.pump_uploads(ctx, cmd, options_.upload_budget());
+    if (impl_->sprite_ok_) impl_->sprite_.pump_uploads(ctx, cmd, impl_->options_.upload_budget());
     // : liberar el staging de tiles ya garantizados por fence (1×/frame).
-    tile_cache_.pump(ctx);
+    impl_->tile_cache_.pump(ctx);
 
     // R-4 (): las lanes se despachan desde el STACK DE CAPAS, en su orden.
     // Cada cuerpo es la lane histórica intacta (comentarios incluidos); lo que
@@ -328,7 +435,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     // prefijo VDP; primer plano pri-1 en VdpFrente, sobre las lanes HD).
     const bool scene_ready = fv.scene && fv.scene_count && fv.scene_vram &&
                              fv.scene_cram && !fv.scene_dirty &&
-                             indexed_ok_ && emu_w_ && emu_h_;
+                             impl_->indexed_ok_ && impl_->emu_w_ && impl_->emu_h_;
     bool scene_composed = false;   // el pase base corrió → VdpFrente dibuja
     bool scene_vis[4] = { true, true, true, true };   // B, A, W, Sprites
     bool pano_lane_vis = true;     // ojo de la lane Panorámica (gate del inline)
@@ -351,20 +458,20 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     scene_vis[3] = scene_vis[3] && (vdp_mask & 0x08);   // Sprites
     //  fase 0: el ancho LÓGICO manda sobre el nativo. Con `wide_w` el
     // frame del emulador se centra y a los lados queda el área extendida; sin
-    // él, `logical_w == emu_w_` y todo sale exactamente como siempre.
-    const uint32_t logical_w = fv.wide_w > emu_w_ ? fv.wide_w : emu_w_;
+    // él, `logical_w == impl_->emu_w_` y todo sale exactamente como siempre.
+    const uint32_t logical_w = fv.wide_w > impl_->emu_w_ ? fv.wide_w : impl_->emu_w_;
     const float scene_sx = logical_w ? (float)canvas.width / (float)logical_w : 1.f;
     // Desplazamiento de CENTRADO, en píxeles del canvas. Es lo único que hay
     // que sumar a cada x: el resto del pipeline ya trabaja en espacio emu.
-    const float wide_dx = 0.5f * (float)(logical_w - emu_w_) * scene_sx;
+    const float wide_dx = 0.5f * (float)(logical_w - impl_->emu_w_) * scene_sx;
     // El mismo corrimiento en espacio EMU, para los quads de sprite: sus subs
     // vienen en coordenadas nativas y el pase los escala por su cuenta.
-    const float wide_dx_emu = 0.5f * (float)(logical_w - emu_w_);
-    sprite_.set_wide_offset(wide_dx_emu);
-    const float scene_sy = emu_h_ ? (float)canvas.height / (float)emu_h_ : 1.f;
+    const float wide_dx_emu = 0.5f * (float)(logical_w - impl_->emu_w_);
+    impl_->sprite_.set_wide_offset(wide_dx_emu);
+    const float scene_sy = impl_->emu_h_ ? (float)canvas.height / (float)impl_->emu_h_ : 1.f;
     const int32_t scene_scissor =
         fv.scene_left_blank ? (int32_t)(8.f * scene_sx + 0.5f) : 0;
-    auto& scene_quads = scratch_->scene_quads;
+    auto& scene_quads = impl_->scratch_->scene_quads;
     // Subs de sprite ANCLADOS a un elemento de la escena: los despacha el pase
     // de escena, en el z de la cadena. Se marca por la sola EXISTENCIA del ancla
     // en el inventario — no por haber dibujado. Esa distinción es la que hace que
@@ -387,16 +494,16 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     // tiene detrás (el caso normal al autorar el Plano B con un Cuadro delante).
     const float dim_lo   = 0.25f;
     const float dim_op   = 0.75f;
-    const bool  focusing = focus_layer_ >= 0;
-    const float dim_spr  = focusing && focus_layer_ != 3 ? dim_lo : 1.0f;
-    const float dim_bg   = focusing && focus_layer_ >  1 ? dim_lo : 1.0f;
+    const bool  focusing = impl_->focus_layer_ >= 0;
+    const float dim_spr  = focusing && impl_->focus_layer_ != 3 ? dim_lo : 1.0f;
+    const float dim_bg   = focusing && impl_->focus_layer_ >  1 ? dim_lo : 1.0f;
     const float op_spr   = dim_spr < 1.0f ? dim_op : 1.0f;
     const float op_bg    = dim_bg  < 1.0f ? dim_op : 1.0f;
     // Tiles de plano: el sub SÍ sabe su capa (por el elemento que lo reclama),
     // así que A y B se distinguen. Una sola llamada mezcla capas, así que el
     // atenuado va POR SUB — tinte Q2.6 (64 = 1.0, 16 = 0.25) y opacidad 0-255.
-    auto& plane_tile_tint = scratch_->plane_tile_tint;
-    auto& plane_tile_alpha = scratch_->plane_tile_alpha;
+    auto& plane_tile_tint = impl_->scratch_->plane_tile_tint;
+    auto& plane_tile_alpha = impl_->scratch_->plane_tile_alpha;
     plane_tile_tint.clear();
     plane_tile_alpha.clear();
     // Tinte E1 de la sesión (quads de SET con referencia autorada — el Objeto
@@ -411,14 +518,14 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             plane_tile_tint.assign((size_t)fv.plane_tile_sub_count * 3, 64);
         plane_tile_alpha.assign((size_t)fv.plane_tile_sub_hi,
                                 (uint8_t)(255 * dim_op));
-        auto& plane_focused = scratch_->plane_focused;
+        auto& plane_focused = impl_->scratch_->plane_focused;
         plane_focused.assign(fv.plane_tile_sub_hi, 0);
         if (scene_ready)
             for (uint32_t i = 0; i < fv.scene_count; ++i) {
                 const SceneElement& e = fv.scene[i];
                 if (e.sub_kind == 2 && e.sub >= 0 &&
                     (uint32_t)e.sub < fv.plane_tile_sub_hi &&
-                    (int)e.layer == focus_layer_)
+                    (int)e.layer == impl_->focus_layer_)
                     plane_focused[e.sub] = 1;
             }
         // El atenuado COMPONE sobre el tinte E1 (0.25× de lo que el sub ya
@@ -434,18 +541,18 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
         }
     }
 
-    auto& sub_has_anchor = scratch_->sub_has_anchor;
+    auto& sub_has_anchor = impl_->scratch_->sub_has_anchor;
     sub_has_anchor.assign(fv.sprite_sub_count, 0);
     // Los subs de plano de ALTA prioridad con elemento en la escena se dibujan
     // INLINE en el pase pri-1 (z real de la cadena: un sprite pri-1 HD queda
     // DELANTE — las letras del título de GA sobre el isologotipo); la lane
     // PlaneTilesHi los saltea para no re-dibujarlos encima (mismo patrón que
     // la Panorámica: la lane queda como fallback del híbrido).
-    auto& plane_hi_anchor = scratch_->plane_hi_anchor;
+    auto& plane_hi_anchor = impl_->scratch_->plane_hi_anchor;
     plane_hi_anchor.assign(fv.plane_tile_sub_count, 0);
     // Un quad de SET (Objeto) es el sub de CIENTOS de elementos (el
     // isologotipo: 277 celdas) — se dibuja UNA vez, en el z del primero.
-    auto& plane_hi_drawn = scratch_->plane_hi_drawn;
+    auto& plane_hi_drawn = impl_->scratch_->plane_hi_drawn;
     plane_hi_drawn.assign(fv.plane_tile_sub_count, 0);
     if (scene_ready)
         for (uint32_t i = 0; i < fv.scene_count; ++i) {
@@ -529,14 +636,14 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
         scene_quads.clear();
         auto flush_quads = [&]() {
             if (scene_quads.empty()) return;
-            image_barrier(cmd, target_.image(),
+            image_barrier(cmd, impl_->target_.image(),
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-            indexed_.draw_cells(ctx, cmd, scene_quads.data(), scene_quads.size(),
+            impl_->indexed_.draw_cells(ctx, cmd, scene_quads.data(), scene_quads.size(),
                                 canvas.width, canvas.height, scene_scissor);
             scene_quads.clear();
         };
@@ -565,9 +672,9 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // y permanente, mientras que un sprite que aparece unos píxeles
             // tarde no se nota. Sin ensanchar la condición es vacía: el sprite
             // fuera de pantalla tampoco se veía antes.
-            if (e.layer == 3 && logical_w > emu_w_ && emu_w_) {
+            if (e.layer == 3 && logical_w > impl_->emu_w_ && impl_->emu_w_) {
                 const int32_t x0 = e.x, x1 = e.x + (int32_t)e.w;
-                if (x1 <= 0 || x0 >= (int32_t)emu_w_) continue;
+                if (x1 <= 0 || x0 >= (int32_t)impl_->emu_w_) continue;
             }
             // R-8 (): modo UV checker — la vista responde «¿qué falta?».
             //   cat 1: nunca autorado (sin asset) → el par de SU CAPA
@@ -578,23 +685,23 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // Los efectos R-6 del elemento se ignoran acá: es una vista de
             // diagnóstico, no una composición.
             int checker_cat = 0;
-            if (checker_) {
+            if (impl_->checker_) {
                 if (!e.claimed) checker_cat = 1;
                 else if (e.sub >= 0 &&
-                         sub_texture_state(fv, e) == VkSprite::TexState::Failed)
+                         sub_texture_state(fv, e) == TextureState::failed)
                     checker_cat = 2;
             }
             const bool hd_replaces = hd_on && e.claimed && checker_cat == 0;
-            if (hd_replaces && !checker_) {
+            if (hd_replaces && !impl_->checker_) {
                 // El HD reemplaza al elemento. Si este es el ANCLA de un sub de
                 // sprite, el sub se dibuja ACÁ (z de la escena, no lane plana).
                 if (e.layer == 3 && e.sub >= 0 && e.sub_kind == 1 &&
-                    (uint32_t)e.sub < fv.sprite_sub_count && sprite_ok_) {
+                    (uint32_t)e.sub < fv.sprite_sub_count && impl_->sprite_ok_) {
                     flush_quads();
-                    sprite_.set_dim(dim_spr, op_spr);
-                    sprite_.draw(ctx, cmd, target_.image(),
+                    impl_->sprite_.set_dim(dim_spr, op_spr);
+                    impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                  fv.sprite_subs + e.sub, 1, pack,
-                                 logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                 logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                  fv.sprite_sub_flips ? fv.sprite_sub_flips + e.sub : nullptr,
                                  fv.sprite_sub_tint  ? fv.sprite_sub_tint + e.sub * 3 : nullptr,
                                  fv.sprite_sub_slot  ? fv.sprite_sub_slot + e.sub : nullptr);
@@ -606,14 +713,14 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                 // isologotipo). La lane los saltea vía plane_hi_anchor.
                 if (e.layer < 3 && e.sub_kind == 2 &&
                     e.sub >= (int32_t)fv.plane_tile_sub_hi &&
-                    (uint32_t)e.sub < fv.plane_tile_sub_count && sprite_ok_ &&
+                    (uint32_t)e.sub < fv.plane_tile_sub_count && impl_->sprite_ok_ &&
                     !plane_hi_drawn[e.sub]) {
                     plane_hi_drawn[e.sub] = 1;   // un set = cientos de elementos
                     flush_quads();
-                    sprite_.set_dim(1.0f);   // como la lane: atenuado por sub
-                    sprite_.draw(ctx, cmd, target_.image(),
+                    impl_->sprite_.set_dim(1.0f);   // como la lane: atenuado por sub
+                    impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                  fv.plane_tile_subs + e.sub, 1, pack,
-                                 logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                 logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                  fv.plane_tile_flips ? fv.plane_tile_flips + e.sub
                                                      : nullptr,
                                  plane_tile_tint.empty()
@@ -631,8 +738,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // (0x10 en Q2.6) y al 75% de la opacidad que tuviera. Pisa el tinte
             // de R-6, igual que el checker: las tres son vistas de autoría y la
             // última que se pide manda.
-            const bool dimmed = focus_layer_ >= 0 && (int)e.layer != focus_layer_;
-            const uint32_t fx = checker_
+            const bool dimmed = impl_->focus_layer_ >= 0 && (int)e.layer != impl_->focus_layer_;
+            const uint32_t fx = impl_->checker_
                 ? 0xFF202020u
                 : dimmed
                 ? (0x101010u |
@@ -672,7 +779,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                     // : «Mejorar por software» — el gate hd_on cubre
                     // gratis el A/B «Original» () y el export sin HD; en
                     // modo checker las vistas de autoría mandan.
-                    q.enhance = (hd_on && !checker_ && e.fx_enhance) ? 1 : 0;
+                    q.enhance = (hd_on && !impl_->checker_ && e.fx_enhance) ? 1 : 0;
                     if (q.enhance) {   // v2/v3: los 8 tiles vecinos
                         q.nb0 = nb0; q.nb1 = nb1; q.nb2 = nb2; q.nb3 = nb3;
                         q.enhance_k = e.fx_enhance_k;   // 
@@ -690,7 +797,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //  v2: sólo el quad mejorado resuelve vecinos (el resto no
             // paga nada). Se resuelven en espacio de PANTALLA: el shader
             // deshace los flips de cada tile al hacer el fetch.
-            const bool want_nb = hd_on && !checker_ && e.fx_enhance;
+            const bool want_nb = hd_on && !impl_->checker_ && e.fx_enhance;
             auto emit_element = [&](bool outline) {
                 if (e.layer != 3) {
                     uint32_t nb0 = 0, nb1 = 0, nb2 = 0, nb3 = 0;
@@ -736,17 +843,17 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                                   outline, dc * 8, dr * 8, nb0, nb1, nb2, nb3);
                     }
             };
-            if (e.fx_outline && !checker_) emit_element(true);
+            if (e.fx_outline && !impl_->checker_) emit_element(true);
             emit_element(false);
             // R-8 con asset (cat 0): el sub inline del ancla dibuja NORMAL
             // sobre su original atenuado — «tiene asset» se ve, no se cuenta.
-            if (hd_replaces && checker_ &&
+            if (hd_replaces && impl_->checker_ &&
                 e.layer == 3 && e.sub >= 0 && e.sub_kind == 1 &&
-                (uint32_t)e.sub < fv.sprite_sub_count && sprite_ok_) {
+                (uint32_t)e.sub < fv.sprite_sub_count && impl_->sprite_ok_) {
                 flush_quads();
-                sprite_.draw(ctx, cmd, target_.image(),
+                impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                              fv.sprite_subs + e.sub, 1, pack,
-                             logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                             logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                              fv.sprite_sub_flips ? fv.sprite_sub_flips + e.sub : nullptr,
                              fv.sprite_sub_tint  ? fv.sprite_sub_tint + e.sub * 3 : nullptr,
                              fv.sprite_sub_slot  ? fv.sprite_sub_slot + e.sub : nullptr);
@@ -760,8 +867,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     // dibujar antes de un clear diferido la borraría. El blit del fallback
     // sigue disparándose en la primera capa VDP.
     if (scene_ready) {
-        indexed_.upload_vram(ctx, cmd, fv.scene_vram, fv.scene_vram_size);
-        indexed_.upload_cram(ctx, cmd, fv.scene_cram, fv.scene_cram_size);
+        impl_->indexed_.upload_vram(ctx, cmd, fv.scene_vram, fv.scene_vram_size);
+        impl_->indexed_.upload_cram(ctx, cmd, fv.scene_cram, fv.scene_cram_size);
         const uint32_t bd = VkIndexedPlane::genesis_color_rgba(fv.scene_backdrop);
         VkClearColorValue cc{};
         cc.float32[0] = (float)((bd >>  0) & 0xFF) / 255.f;
@@ -769,7 +876,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
         cc.float32[2] = (float)((bd >> 16) & 0xFF) / 255.f;
         cc.float32[3] = 1.f;
         VkImageSubresourceRange range{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        vkCmdClearColorImage(cmd, target_.image(),
+        vkCmdClearColorImage(cmd, impl_->target_.image(),
                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &cc, 1, &range);
         scene_composed = true;
     }
@@ -811,35 +918,35 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                                  : (fv.video_plane_mask & 0x04) ? 2
                                  : (fv.video_plane_mask & 0x01) ? 1
                                  : (fv.video_plane_mask & 0x02) ? 0 : -1;
-                if (li == vid_li && hd_on && sprite_ok_ && scene_vis[li] &&
+                if (li == vid_li && hd_on && impl_->sprite_ok_ && scene_vis[li] &&
                     fv.video_y && fv.video_u && fv.video_v &&
                     fv.video_w && fv.video_h) {
-                    const bool vdim = focusing && focus_layer_ != li;
-                    sprite_.set_dim(vdim ? dim_lo : 1.0f, vdim ? dim_op : 1.0f);
-                    sprite_.draw_video(ctx, cmd, target_.image(),
+                    const bool vdim = focusing && impl_->focus_layer_ != li;
+                    impl_->sprite_.set_dim(vdim ? dim_lo : 1.0f, vdim ? dim_op : 1.0f);
+                    impl_->sprite_.draw_video(ctx, cmd, impl_->target_.image(),
                                        static_cast<const uint8_t*>(fv.video_y), fv.video_y_stride,
                                        static_cast<const uint8_t*>(fv.video_u), fv.video_u_stride,
                                        static_cast<const uint8_t*>(fv.video_v), fv.video_v_stride,
                                        fv.video_w, fv.video_h, fv.video_seq);
                 }
                 const int pano_li = fv.panorama_plane == 0 ? 1 : 0;
-                if (li == pano_li && li <= 1 && hd_on && sprite_ok_ &&
+                if (li == pano_li && li <= 1 && hd_on && impl_->sprite_ok_ &&
                     pano_lane_vis && scene_vis[li] && fv.panorama_sub_count > 0) {
                     // Acá la capa es EXACTA: la tira reemplaza celdas de ESTA.
-                    const bool pano_dim = focusing && focus_layer_ != li;
-                    sprite_.set_dim(pano_dim ? dim_lo : 1.0f,
+                    const bool pano_dim = focusing && impl_->focus_layer_ != li;
+                    impl_->sprite_.set_dim(pano_dim ? dim_lo : 1.0f,
                                     pano_dim ? dim_op : 1.0f);
                     //  fase 0: la tira se mapea con el ancho LÓGICO — sus
                     // coordenadas ya vienen en ese espacio desde la sesión. Sin
-                    // ensanchar, logical_w == emu_w_ y no cambia nada.
+                    // ensanchar, logical_w == impl_->emu_w_ y no cambia nada.
                     // La tira ya viene en espacio LÓGICO desde la sesión, así
                     // que no lleva el corrimiento de los quads nativos.
-                    sprite_.set_wide_offset(0.0f);
-                    sprite_.draw(ctx, cmd, target_.image(),
+                    impl_->sprite_.set_wide_offset(0.0f);
+                    impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                  fv.panorama_subs, fv.panorama_sub_count, pack,
-                                 logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                 logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                  nullptr, fv.panorama_sub_tint);   // fundido E1
-                    sprite_.set_wide_offset(wide_dx_emu);
+                    impl_->sprite_.set_wide_offset(wide_dx_emu);
                 }
                 break;
             }
@@ -848,7 +955,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // Custom intercaladas quedan aproximadas ese frame (transiciones).
             if (emu_blitted) break;
             emu_blitted = true;
-            if (emu_tex_.is_ready()) {
+            if (impl_->emu_tex_.is_ready()) {
                 //  fase 0: el blit va CENTRADO en el ancho lógico, no a
                 // todo el canvas. Mandarlo al canvas entero no ensancha nada:
                 // ESTIRA el frame nativo, y la salida de 398 reescalada a 320
@@ -856,23 +963,23 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                 // distintos) — o sea, cero campo de visión ganado con la
                 // imagen deformada de yapa. Los lados quedan para la tira.
                 // Sin ensanchar, wide_dx = 0 y bw == canvas.width exacto
-                // (scene_sx = canvas.width / emu_w_), así que el blit es el de
+                // (scene_sx = canvas.width / impl_->emu_w_), así que el blit es el de
                 // siempre hasta el píxel.
-                // Sin ancho de frame conocido (`emu_w_ == 0`: FrameView
+                // Sin ancho de frame conocido (`impl_->emu_w_ == 0`: FrameView
                 // sintética de los oráculos GPU) no hay espacio lógico contra
                 // el cual centrar, y el blit va al canvas entero como siempre.
                 // Derivarlo igual daba una imagen del tamaño de la textura en
                 // un canvas más grande — lo que rompió video_shader_smoke.
-                const uint32_t src_w = emu_w_ ? emu_w_ : emu_tex_.width();
+                const uint32_t src_w = impl_->emu_w_ ? impl_->emu_w_ : impl_->emu_tex_.width();
                 const int32_t  bx = static_cast<int32_t>(wide_dx + 0.5f);
                 const int32_t  bw = logical_w
                     ? static_cast<int32_t>(static_cast<float>(src_w) * scene_sx + 0.5f)
                     : static_cast<int32_t>(canvas.width);
                 VkImageBlit emu = full_to_rect(src_w,
-                                               emu_h_ ? emu_h_ : emu_tex_.height(),
+                                               impl_->emu_h_ ? impl_->emu_h_ : impl_->emu_tex_.height(),
                                                bx, 0, bw,
                                                static_cast<int32_t>(canvas.height));
-                blit_tex(cmd, emu_tex_, target_.image(), &emu, 1, VK_FILTER_NEAREST);
+                blit_tex(cmd, impl_->emu_tex_, impl_->target_.image(), &emu, 1, VK_FILTER_NEAREST);
             }
             break;
         }
@@ -882,17 +989,17 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //    Skipped in Original mode (hd_on=false) — emu frame only.
             if (L.visible && hd_on && pack && fv.tile_sub_count > 0) {
                 // Mismo sistema de coordenadas que el blit del emu: las dims del
-                // FRAME actual (el fb cambia de modo de video), no las de emu_tex_.
+                // FRAME actual (el fb cambia de modo de video), no las de impl_->emu_tex_.
                 const float sx = static_cast<float>(canvas.width) /
-                                 static_cast<float>(emu_w_ ? emu_w_ : kEmuW);
+                                 static_cast<float>(impl_->emu_w_ ? impl_->emu_w_ : Impl::kEmuW);
                 const float sy = static_cast<float>(canvas.height) /
-                                 static_cast<float>(emu_h_ ? emu_h_ : kEmuH);
+                                 static_cast<float>(impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH);
 
-                auto& items = scratch_->tile_items;
+                auto& items = impl_->scratch_->tile_items;
                 items.clear();
 
                 for (uint32_t i = 0; i < fv.tile_sub_count; ++i) {
-                    VkTexture* tex = tile_cache_.get_or_load(fv.tile_subs[i].asset_path, pack, ctx, cmd);
+                    VkTexture* tex = impl_->tile_cache_.get_or_load(fv.tile_subs[i].asset_path, pack, ctx, cmd);
                     if (!tex) continue;
                     const int32_t dx = static_cast<int32_t>(fv.tile_subs[i].tile_x * 8u * sx);
                     const int32_t dy = static_cast<int32_t>(fv.tile_subs[i].tile_y * 8u * sy);
@@ -905,14 +1012,14 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                           [](const FrameScratch::TileItem& a,
                              const FrameScratch::TileItem& b) { return a.tex < b.tex; });
 
-                auto& group = scratch_->tile_group;
+                auto& group = impl_->scratch_->tile_group;
                 size_t j = 0;
                 while (j < items.size()) {
                     VkTexture* tex = items[j].tex;
                     group.clear();
                     while (j < items.size() && items[j].tex == tex)
                         group.push_back(items[j++].region);
-                    blit_tex(cmd, *tex, target_.image(),
+                    blit_tex(cmd, *tex, impl_->target_.image(),
                              group.data(), static_cast<uint32_t>(group.size()), VK_FILTER_LINEAR);
                 }
             }
@@ -932,9 +1039,9 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //     NO hay máscara conocida, porque sin ella no hay dónde
             //     ponerlo y pantalla completa es la degradación de siempre.
             if ((!scene_composed || !fv.video_plane_mask) &&
-                L.visible && hd_on && sprite_ok_ && fv.video_y && fv.video_u && fv.video_v && fv.video_w && fv.video_h) {
-                sprite_.set_dim(dim_bg, op_bg);
-                sprite_.draw_video(ctx, cmd, target_.image(),
+                L.visible && hd_on && impl_->sprite_ok_ && fv.video_y && fv.video_u && fv.video_v && fv.video_w && fv.video_h) {
+                impl_->sprite_.set_dim(dim_bg, op_bg);
+                impl_->sprite_.draw_video(ctx, cmd, impl_->target_.image(),
                                    static_cast<const uint8_t*>(fv.video_y), fv.video_y_stride,
                                    static_cast<const uint8_t*>(fv.video_u), fv.video_u_stride,
                                    static_cast<const uint8_t*>(fv.video_v), fv.video_v_stride,
@@ -949,11 +1056,11 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //     sigue dibujando ENCIMA (el menú cuyo texto cambia). Y como cubre
             //     todo, no hace falta suprimir los tiles originales — se evita la
             //     latencia de 1 frame del canal de supresión.
-            if (L.visible && hd_on && sprite_ok_ && fv.screen_sub_count > 0) {
-                sprite_.set_dim(dim_bg, op_bg);
-                sprite_.draw(ctx, cmd, target_.image(),
+            if (L.visible && hd_on && impl_->sprite_ok_ && fv.screen_sub_count > 0) {
+                impl_->sprite_.set_dim(dim_bg, op_bg);
+                impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                              fv.screen_subs, fv.screen_sub_count, pack,
-                             logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH);
+                             logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH);
             }
             break;
         }
@@ -964,20 +1071,20 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //     Sprites, reporte 2026-07-30). Acá queda sólo el FALLBACK del
             //     híbrido (frame sucio/sin escena): sobre el blit, aproximado.
             if (!scene_composed &&
-                L.visible && hd_on && sprite_ok_ && fv.panorama_sub_count > 0) {
-                sprite_.set_dim(dim_bg, op_bg);
+                L.visible && hd_on && impl_->sprite_ok_ && fv.panorama_sub_count > 0) {
+                impl_->sprite_.set_dim(dim_bg, op_bg);
                 //  fase 0: la tira ya viene en espacio LÓGICO desde la
                 // sesión (su rect trae el centrado sumado), igual que en el
                 // camino inline. Dejar puesto el offset de los quads nativos la
                 // corre el centrado DOS VECES — 39 px de más con ancho 398, que
                 // a ojo se lee como «la Panorámica está mal anclada» y no como
                 // un defecto del ensanchado.
-                sprite_.set_wide_offset(0.0f);
-                sprite_.draw(ctx, cmd, target_.image(),
+                impl_->sprite_.set_wide_offset(0.0f);
+                impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                              fv.panorama_subs, fv.panorama_sub_count, pack,
-                             logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                             logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                              nullptr, fv.panorama_sub_tint);   // fundido E1
-                sprite_.set_wide_offset(wide_dx_emu);
+                impl_->sprite_.set_wide_offset(wide_dx_emu);
             }
             break;
         }
@@ -988,11 +1095,11 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //     los sprites. `plane_tile_flips` vuelca la variante volteada del patrón.
             //     SIN gate de pack: VkSprite::draw cae al disco para assets sueltos, así
             //     la autoría en Editar previsualiza el fondo HD antes de construir un pack.
-            if (L.visible && hd_on && sprite_ok_ && fv.plane_tile_sub_hi > 0) {
-                sprite_.set_dim(1.0f);   // el atenuado va POR SUB (tinte + alpha)
-                sprite_.draw(ctx, cmd, target_.image(),
+            if (L.visible && hd_on && impl_->sprite_ok_ && fv.plane_tile_sub_hi > 0) {
+                impl_->sprite_.set_dim(1.0f);   // el atenuado va POR SUB (tinte + alpha)
+                impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                              fv.plane_tile_subs, fv.plane_tile_sub_hi, pack,
-                             logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                             logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                              fv.plane_tile_flips,
                              plane_tile_tint.empty() ? nullptr
                                                      : plane_tile_tint.data(),
@@ -1011,8 +1118,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //     de las asignaciones sueltas (assign_sprite con ruta de disco) → la
             //     preview HD de una pose se ve en vivo en Animar/Editar sin construir un
             //     pack. Los subs de pack (rutas del .ay) sólo aparecen con el pack cargado.
-            if (L.visible && hd_on && sprite_ok_ && fv.sprite_sub_count > 0) {
-                sprite_.set_dim(dim_spr, op_spr);
+            if (L.visible && hd_on && impl_->sprite_ok_ && fv.sprite_sub_count > 0) {
+                impl_->sprite_.set_dim(dim_spr, op_spr);
                 if (scene_composed) {
                     // R-5 2b: los subs con ancla los resuelve la escena (los
                     // dibuja en el z de la cadena, o los OMITE si el ancla está
@@ -1021,9 +1128,9 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                     for (uint32_t si = 0; si < fv.sprite_sub_count; ++si) {
                         if (si < sub_has_anchor.size() && sub_has_anchor[si])
                             continue;
-                        sprite_.draw(ctx, cmd, target_.image(),
+                        impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                      fv.sprite_subs + si, 1, pack,
-                                     logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                     logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                      fv.sprite_sub_flips ? fv.sprite_sub_flips + si : nullptr,
                                      fv.sprite_sub_tint  ? fv.sprite_sub_tint + si * 3 : nullptr,
                                      fv.sprite_sub_slot  ? fv.sprite_sub_slot + si : nullptr);
@@ -1036,9 +1143,9 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                     for (uint32_t si = 0; si < fv.sprite_sub_count; ++si) {
                         if (fv.sprite_sub_prio && fv.sprite_sub_prio[si])
                             continue;
-                        sprite_.draw(ctx, cmd, target_.image(),
+                        impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                      fv.sprite_subs + si, 1, pack,
-                                     logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                     logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                      fv.sprite_sub_flips ? fv.sprite_sub_flips + si : nullptr,
                                      fv.sprite_sub_tint  ? fv.sprite_sub_tint + si * 3 : nullptr,
                                      fv.sprite_sub_slot  ? fv.sprite_sub_slot + si : nullptr);
@@ -1054,11 +1161,11 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //     SIN gate de pack (como 4P): la autoría en vivo asigna archivos sueltos y
             //     VkSprite cae al disco. (: con el compose de Editar activo, los quads
             //     se RE-DIBUJAN después del 4C — ver 4M-bis abajo.)
-            if (L.visible && hd_on && sprite_ok_ && fv.entity_sub_count > 0) {
-                sprite_.set_dim(dim_spr, op_spr);
-                sprite_.draw(ctx, cmd, target_.image(),
+            if (L.visible && hd_on && impl_->sprite_ok_ && fv.entity_sub_count > 0) {
+                impl_->sprite_.set_dim(dim_spr, op_spr);
+                impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                              fv.entity_subs, fv.entity_sub_count, pack,
-                             logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH);
+                             logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH);
             }
             break;
         }
@@ -1066,11 +1173,11 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // 4A. Animaciones C-S2: frames HD de sheet EN FASE con el juego — sub-rect
             //     (UV) del sheet al bbox observado (Pop) o al transform tweeneado (Nivel
             //     1, dst float sub-píxel). Misma lane alpha-blend que los sprites.
-            if (L.visible && hd_on && sprite_ok_ && fv.anim_frame_count > 0) {
-                sprite_.set_dim(dim_spr, op_spr);
-                sprite_.draw_anim(ctx, cmd, target_.image(),
+            if (L.visible && hd_on && impl_->sprite_ok_ && fv.anim_frame_count > 0) {
+                impl_->sprite_.set_dim(dim_spr, op_spr);
+                impl_->sprite_.draw_anim(ctx, cmd, impl_->target_.image(),
                                   fv.anim_frames, fv.anim_frame_count, pack,
-                                  logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH);
+                                  logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH);
             }
             break;
         }
@@ -1088,11 +1195,11 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // de dibujar. Puesto antes del pase quedaría detrás de ello, que es
             // el defecto que la decisión evita.
             if (L.visible && scene_composed && fv.video_front &&
-                fv.video_plane_mask && hd_on && sprite_ok_ &&
+                fv.video_plane_mask && hd_on && impl_->sprite_ok_ &&
                 fv.video_y && fv.video_u && fv.video_v &&
                 fv.video_w && fv.video_h) {
-                sprite_.set_dim(1.0f);
-                sprite_.draw_video(ctx, cmd, target_.image(),
+                impl_->sprite_.set_dim(1.0f);
+                impl_->sprite_.draw_video(ctx, cmd, impl_->target_.image(),
                                    static_cast<const uint8_t*>(fv.video_y), fv.video_y_stride,
                                    static_cast<const uint8_t*>(fv.video_u), fv.video_u_stride,
                                    static_cast<const uint8_t*>(fv.video_v), fv.video_v_stride,
@@ -1106,27 +1213,27 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             //        sprite). Con escena compuesta, los que tienen elemento en la cadena ya
             //        se dibujaron INLINE en el pase pri-1 (z real) — acá solo el resto
             //        (fallback, mismo patrón que la Panorámica).
-            if (L.visible && hd_on && sprite_ok_ &&
+            if (L.visible && hd_on && impl_->sprite_ok_ &&
                 fv.plane_tile_sub_count > fv.plane_tile_sub_hi) {
-                sprite_.set_dim(1.0f);
+                impl_->sprite_.set_dim(1.0f);
                 if (scene_composed) {
                     for (uint32_t pi = fv.plane_tile_sub_hi;
                          pi < fv.plane_tile_sub_count; ++pi) {
                         if (pi < plane_hi_anchor.size() && plane_hi_anchor[pi])
                             continue;
-                        sprite_.draw(ctx, cmd, target_.image(),
+                        impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                      fv.plane_tile_subs + pi, 1, pack,
-                                     logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                     logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                      fv.plane_tile_flips + pi,
                                      plane_tile_tint.empty()
                                          ? nullptr
                                          : plane_tile_tint.data() + (size_t)pi * 3);
                     }
                 } else {
-                    sprite_.draw(ctx, cmd, target_.image(),
+                    impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                  fv.plane_tile_subs + fv.plane_tile_sub_hi,
                                  fv.plane_tile_sub_count - fv.plane_tile_sub_hi, pack,
-                                 logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                 logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                  fv.plane_tile_flips + fv.plane_tile_sub_hi,
                                  plane_tile_tint.empty()
                                      ? nullptr
@@ -1137,14 +1244,14 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // HÍBRIDO: los sprites HD pri-1 diferidos de la lane SpritesHd —
             // el hardware los pone DELANTE del plano de alta prioridad. Van
             // con el atenuado y la visibilidad de SU lane (son sprites).
-            if (!scene_composed && spr_lane_visible && hd_on && sprite_ok_ &&
+            if (!scene_composed && spr_lane_visible && hd_on && impl_->sprite_ok_ &&
                 fv.sprite_sub_count > 0 && fv.sprite_sub_prio) {
-                sprite_.set_dim(dim_spr, op_spr);
+                impl_->sprite_.set_dim(dim_spr, op_spr);
                 for (uint32_t si = 0; si < fv.sprite_sub_count; ++si) {
                     if (!fv.sprite_sub_prio[si]) continue;
-                    sprite_.draw(ctx, cmd, target_.image(),
+                    impl_->sprite_.draw(ctx, cmd, impl_->target_.image(),
                                  fv.sprite_subs + si, 1, pack,
-                                 logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                                 logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                                  fv.sprite_sub_flips ? fv.sprite_sub_flips + si : nullptr,
                                  fv.sprite_sub_tint  ? fv.sprite_sub_tint + si * 3 : nullptr,
                                  fv.sprite_sub_slot  ? fv.sprite_sub_slot + si : nullptr);
@@ -1165,7 +1272,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // «no aparece todas las veces», 2026-08-18).
             if (!hd_on) break;
             const AytherLayerContent& cc = L.content;
-            if (!L.visible || !cc.asset[0] || !cc.img_w || !cc.img_h || !sprite_ok_)
+            if (!L.visible || !cc.asset[0] || !cc.img_w || !cc.img_h || !impl_->sprite_ok_)
                 break;
             // : condición de aparición — atado a un Cuadro, el Acetato
             // existe sólo mientras ese Cuadro matchea. El matcher ya trae su
@@ -1213,10 +1320,10 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             float off = std::fmod(h * cc.factor + (float)(cc.drift_x * t),
                                   (float)cc.img_w);
             if (off > 0.f) off -= (float)cc.img_w;
-            auto& strip = scratch_->overlay_strip;
+            auto& strip = impl_->scratch_->overlay_strip;
             strip.clear();
-            const int ew = (int)(emu_w_ ? emu_w_ : kEmuW);
-            const int eh = (int)(emu_h_ ? emu_h_ : kEmuH);
+            const int ew = (int)(impl_->emu_w_ ? impl_->emu_w_ : Impl::kEmuW);
+            const int eh = (int)(impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH);
             // : fila única a `y` (default, ni un píxel distinto de hoy) o
             // tileado en X e Y desde el offset vertical (cubrir la pantalla con
             // un patrón sin exigir un PNG tan alto como el canvas). El drift_y
@@ -1363,7 +1470,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                     op *= 1.f - (cc.flicker_amp < 1.f ? cc.flicker_amp : 1.f)
                               * overlay_flicker_factor(fstep);
                 }
-                auto& alphas = scratch_->overlay_alphas;
+                auto& alphas = impl_->scratch_->overlay_alphas;
                 const uint8_t* ap = nullptr;
                 if (op < 1.f) {
                     alphas.assign(strip.size(),
@@ -1375,7 +1482,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                 // neutro). Sin CRAM de escena (core stock, frame no compuesto)
                 // no hay dato: se dibuja sin tinte, como siempre. El promedio
                 // salta el índice 0 (transparente), igual que el peak-hold.
-                auto& tintq = scratch_->overlay_tint;
+                auto& tintq = impl_->scratch_->overlay_tint;
                 const uint8_t* tp = nullptr;
                 if (cc.pal_line < 4 &&
                     (cc.ref_rgb[0] | cc.ref_rgb[1] | cc.ref_rgb[2]) &&
@@ -1418,9 +1525,9 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                         tp = tintq.data();
                     }
                 }
-                sprite_.draw(ctx, cmd, target_.image(), strip.data(),
+                impl_->sprite_.draw(ctx, cmd, impl_->target_.image(), strip.data(),
                              (uint32_t)strip.size(), pack,
-                             logical_w ? logical_w : kEmuW, emu_h_ ? emu_h_ : kEmuH,
+                             logical_w ? logical_w : Impl::kEmuW, impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                              nullptr, tp, nullptr, ap, cc.blend);
             }
             break;
@@ -1431,7 +1538,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     // 5. Offscreen TRANSFER_DST -> SHADER_READ_ONLY: the frontend samples it
     //    (CRT post-process, or the Lab viewport in R3.3) or blits it to the
     //    swapchain (blit_to_swapchain transitions SHADER_READ -> TRANSFER_SRC).
-    image_barrier(cmd, target_.image(),
+    image_barrier(cmd, impl_->target_.image(),
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -1442,8 +1549,8 @@ void AytherRenderer::copy_target_to_buffer(VkCommandBuffer cmd, VkBuffer dst) {
     // render() — barrera a TRANSFER_SRC, copia tightly-packed BGRA al buffer
     // host-visible del caller, y de vuelta a SHADER_READ_ONLY (el viewport del
     // Lab puede seguir sampleándolo mientras dura el export).
-    const VkExtent2D e = target_.extent();
-    image_barrier(cmd, target_.image(),
+    const VkExtent2D e = impl_->target_.extent();
+    image_barrier(cmd, impl_->target_.image(),
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1454,9 +1561,9 @@ void AytherRenderer::copy_target_to_buffer(VkCommandBuffer cmd, VkBuffer dst) {
     r.imageSubresource  = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
     r.imageOffset       = { 0, 0, 0 };
     r.imageExtent       = { e.width, e.height, 1 };
-    vkCmdCopyImageToBuffer(cmd, target_.image(),
+    vkCmdCopyImageToBuffer(cmd, impl_->target_.image(),
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, 1, &r);
-    image_barrier(cmd, target_.image(),
+    image_barrier(cmd, impl_->target_.image(),
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -1471,22 +1578,22 @@ void AytherRenderer::copy_target_to_buffer(VkCommandBuffer cmd, VkBuffer dst) {
 // puede samplear las dos en el mismo frame de UI, que es todo el punto.
 // ---------------------------------------------------------------------------
 bool AytherRenderer::capture_compare(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd) {
-    if (!target_.is_ready()) return false;
-    const VkExtent2D e = target_.extent();
+    if (!impl_->target_.is_ready()) return false;
+    const VkExtent2D e = impl_->target_.extent();
     // Lazy + resize: el canvas cambia con el zoom y con el tier de export.
-    if (!compare_.is_ready() || compare_.extent().width  != e.width
-                             || compare_.extent().height != e.height) {
-        if (compare_.is_ready()) compare_.shutdown(ctx);
-        if (!compare_.init(ctx, e.width, e.height, target_.format()))
+    if (!impl_->compare_.is_ready() || impl_->compare_.extent().width  != e.width
+                             || impl_->compare_.extent().height != e.height) {
+        if (impl_->compare_.is_ready()) impl_->compare_.shutdown(ctx);
+        if (!impl_->compare_.init(ctx, e.width, e.height, impl_->target_.format()))
             return false;
     }
-    image_barrier(cmd, target_.image(),
+    image_barrier(cmd, impl_->target_.image(),
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
     // La copia recién creada está en UNDEFINED; una ya usada, en SHADER_READ_ONLY.
     // Descartar el contenido viejo es correcto: se la va a sobrescribir entera.
-    image_barrier(cmd, compare_.image(),
+    image_barrier(cmd, impl_->compare_.image(),
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         0, VK_ACCESS_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1494,13 +1601,13 @@ bool AytherRenderer::capture_compare(const ayther::engine::VulkanContextView& ct
     r.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
     r.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
     r.extent         = { e.width, e.height, 1 };
-    vkCmdCopyImage(cmd, target_.image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                   compare_.image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r);
-    image_barrier(cmd, target_.image(),
+    vkCmdCopyImage(cmd, impl_->target_.image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   impl_->compare_.image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r);
+    image_barrier(cmd, impl_->target_.image(),
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-    image_barrier(cmd, compare_.image(),
+    image_barrier(cmd, impl_->compare_.image(),
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -1508,7 +1615,7 @@ bool AytherRenderer::capture_compare(const ayther::engine::VulkanContextView& ct
 }
 
 void AytherRenderer::compare_release(const ayther::engine::VulkanContextView& ctx) {
-    if (compare_.is_ready()) compare_.shutdown(ctx);
+    if (impl_->compare_.is_ready()) impl_->compare_.shutdown(ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -1516,27 +1623,27 @@ void AytherRenderer::compare_release(const ayther::engine::VulkanContextView& ct
 // ---------------------------------------------------------------------------
 bool AytherRenderer::readback_init(const ayther::engine::VulkanContextView& ctx) {
     readback_shutdown(ctx);
-    const VkExtent2D e = target_.extent();
+    const VkExtent2D e = impl_->target_.extent();
 
     VkCommandPoolCreateInfo pi{};
     pi.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pi.flags            = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
                           VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     pi.queueFamilyIndex = ctx.graphics_family();
-    if (vkCreateCommandPool(ctx.device(), &pi, nullptr, &rb_pool_) != VK_SUCCESS)
+    if (vkCreateCommandPool(ctx.device(), &pi, nullptr, &impl_->rb_pool_) != VK_SUCCESS)
         return false;
     VkCommandBufferAllocateInfo ai{};
     ai.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    ai.commandPool        = rb_pool_;
+    ai.commandPool        = impl_->rb_pool_;
     ai.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     ai.commandBufferCount = 1;
-    if (vkAllocateCommandBuffers(ctx.device(), &ai, &rb_cmd_) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(ctx.device(), &ai, &impl_->rb_cmd_) != VK_SUCCESS) {
         readback_shutdown(ctx);
         return false;
     }
     VkFenceCreateInfo fi{};
     fi.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    if (vkCreateFence(ctx.device(), &fi, nullptr, &rb_fence_) != VK_SUCCESS) {
+    if (vkCreateFence(ctx.device(), &fi, nullptr, &impl_->rb_fence_) != VK_SUCCESS) {
         readback_shutdown(ctx);
         return false;
     }
@@ -1551,7 +1658,7 @@ bool AytherRenderer::readback_init(const ayther::engine::VulkanContextView& ctx)
                 VMA_ALLOCATION_CREATE_MAPPED_BIT;
     aci.usage = VMA_MEMORY_USAGE_AUTO;
     VmaAllocationInfo info{};
-    if (vmaCreateBuffer(ctx.allocator(), &bi, &aci, &rb_buf_, &rb_alloc_, &info)
+    if (vmaCreateBuffer(ctx.allocator(), &bi, &aci, &impl_->rb_buf_, &impl_->rb_alloc_, &info)
             != VK_SUCCESS) {
         ayther::log::write(ayther::log::Severity::Error,
             "renderer", "readback_buffer_x_failed",
@@ -1561,14 +1668,14 @@ bool AytherRenderer::readback_init(const ayther::engine::VulkanContextView& ctx)
         readback_shutdown(ctx);
         return false;
     }
-    rb_map_ = info.pMappedData;
+    impl_->rb_map_ = info.pMappedData;
     ayther::log::write(ayther::log::Severity::Info,
         "renderer", "readback_listo_x_mb",
         "readback listo %ux%u (%zu MB)",
         e.width,
         e.height,
         static_cast<size_t>(bi.size) >> 20);
-    return rb_map_ != nullptr;
+    return impl_->rb_map_ != nullptr;
 }
 
 const uint8_t* AytherRenderer::export_frame(const ayther::engine::VulkanContextView& ctx, const FrameView& fv,
@@ -1576,102 +1683,102 @@ const uint8_t* AytherRenderer::export_frame(const ayther::engine::VulkanContextV
                                             bool hd_on,
                                             const AytherLayerStack* layers,
                                             uint8_t vdp_mask) {
-    if (!rb_map_) return nullptr;
-    vkResetCommandBuffer(rb_cmd_, 0);
+    if (!impl_->rb_map_) return nullptr;
+    vkResetCommandBuffer(impl_->rb_cmd_, 0);
     VkCommandBufferBeginInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (vkBeginCommandBuffer(rb_cmd_, &bi) != VK_SUCCESS) return nullptr;
-    render(ctx, rb_cmd_, fv, pack, hd_on, layers, vdp_mask);
-    copy_target_to_buffer(rb_cmd_, rb_buf_);
-    vkEndCommandBuffer(rb_cmd_);
+    if (vkBeginCommandBuffer(impl_->rb_cmd_, &bi) != VK_SUCCESS) return nullptr;
+    render(ctx, impl_->rb_cmd_, fv, pack, hd_on, layers, vdp_mask);
+    copy_target_to_buffer(impl_->rb_cmd_, impl_->rb_buf_);
+    vkEndCommandBuffer(impl_->rb_cmd_);
 
     VkSubmitInfo si{};
     si.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     si.commandBufferCount = 1;
-    si.pCommandBuffers    = &rb_cmd_;
-    if (vkQueueSubmit(ctx.graphics_queue(), 1, &si, rb_fence_) != VK_SUCCESS)
+    si.pCommandBuffers    = &impl_->rb_cmd_;
+    if (vkQueueSubmit(ctx.graphics_queue(), 1, &si, impl_->rb_fence_) != VK_SUCCESS)
         return nullptr;
-    vkWaitForFences(ctx.device(), 1, &rb_fence_, VK_TRUE, UINT64_MAX);
-    vkResetFences(ctx.device(), 1, &rb_fence_);
+    vkWaitForFences(ctx.device(), 1, &impl_->rb_fence_, VK_TRUE, UINT64_MAX);
+    vkResetFences(ctx.device(), 1, &impl_->rb_fence_);
     // La memoria puede no ser HOST_COHERENT: invalidar antes de leer.
-    vmaInvalidateAllocation(ctx.allocator(), rb_alloc_, 0, VK_WHOLE_SIZE);
-    return static_cast<const uint8_t*>(rb_map_);
+    vmaInvalidateAllocation(ctx.allocator(), impl_->rb_alloc_, 0, VK_WHOLE_SIZE);
+    return static_cast<const uint8_t*>(impl_->rb_map_);
 }
 
 const uint8_t* AytherRenderer::readback_compare(const ayther::engine::VulkanContextView& ctx) {
-    if (!rb_map_ || !compare_.is_ready()) return nullptr;
-    vkResetCommandBuffer(rb_cmd_, 0);
+    if (!impl_->rb_map_ || !impl_->compare_.is_ready()) return nullptr;
+    vkResetCommandBuffer(impl_->rb_cmd_, 0);
     VkCommandBufferBeginInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (vkBeginCommandBuffer(rb_cmd_, &bi) != VK_SUCCESS) return nullptr;
+    if (vkBeginCommandBuffer(impl_->rb_cmd_, &bi) != VK_SUCCESS) return nullptr;
     // La copia quedó SHADER_READ_ONLY tras capture_compare: mismo ida y vuelta
     // que copy_target_to_buffer, sobre la otra imagen.
-    const VkExtent2D e = compare_.extent();
-    image_barrier(rb_cmd_, compare_.image(),
+    const VkExtent2D e = impl_->compare_.extent();
+    image_barrier(impl_->rb_cmd_, impl_->compare_.image(),
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
     VkBufferImageCopy r{};
     r.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
     r.imageExtent      = { e.width, e.height, 1 };
-    vkCmdCopyImageToBuffer(rb_cmd_, compare_.image(),
-                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb_buf_, 1, &r);
-    image_barrier(rb_cmd_, compare_.image(),
+    vkCmdCopyImageToBuffer(impl_->rb_cmd_, impl_->compare_.image(),
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, impl_->rb_buf_, 1, &r);
+    image_barrier(impl_->rb_cmd_, impl_->compare_.image(),
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-    vkEndCommandBuffer(rb_cmd_);
+    vkEndCommandBuffer(impl_->rb_cmd_);
 
     VkSubmitInfo si{};
     si.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     si.commandBufferCount = 1;
-    si.pCommandBuffers    = &rb_cmd_;
-    if (vkQueueSubmit(ctx.graphics_queue(), 1, &si, rb_fence_) != VK_SUCCESS)
+    si.pCommandBuffers    = &impl_->rb_cmd_;
+    if (vkQueueSubmit(ctx.graphics_queue(), 1, &si, impl_->rb_fence_) != VK_SUCCESS)
         return nullptr;
-    vkWaitForFences(ctx.device(), 1, &rb_fence_, VK_TRUE, UINT64_MAX);
-    vkResetFences(ctx.device(), 1, &rb_fence_);
-    vmaInvalidateAllocation(ctx.allocator(), rb_alloc_, 0, VK_WHOLE_SIZE);
-    return static_cast<const uint8_t*>(rb_map_);
+    vkWaitForFences(ctx.device(), 1, &impl_->rb_fence_, VK_TRUE, UINT64_MAX);
+    vkResetFences(ctx.device(), 1, &impl_->rb_fence_);
+    vmaInvalidateAllocation(ctx.allocator(), impl_->rb_alloc_, 0, VK_WHOLE_SIZE);
+    return static_cast<const uint8_t*>(impl_->rb_map_);
 }
 
 /// : captura para el oráculo — graba capture_compare en el cmd de readback
 /// y lo submitea. En el Lab la captura viaja en el cmd del frame; acá no hay
 /// frame, así que necesita su propio submit.
 bool AytherRenderer::capture_compare_now(const ayther::engine::VulkanContextView& ctx) {
-    if (!rb_cmd_) return false;
-    vkResetCommandBuffer(rb_cmd_, 0);
+    if (!impl_->rb_cmd_) return false;
+    vkResetCommandBuffer(impl_->rb_cmd_, 0);
     VkCommandBufferBeginInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (vkBeginCommandBuffer(rb_cmd_, &bi) != VK_SUCCESS) return false;
-    const bool ok = capture_compare(ctx, rb_cmd_);
-    vkEndCommandBuffer(rb_cmd_);
+    if (vkBeginCommandBuffer(impl_->rb_cmd_, &bi) != VK_SUCCESS) return false;
+    const bool ok = capture_compare(ctx, impl_->rb_cmd_);
+    vkEndCommandBuffer(impl_->rb_cmd_);
     if (!ok) return false;
     VkSubmitInfo si{};
     si.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     si.commandBufferCount = 1;
-    si.pCommandBuffers    = &rb_cmd_;
-    if (vkQueueSubmit(ctx.graphics_queue(), 1, &si, rb_fence_) != VK_SUCCESS)
+    si.pCommandBuffers    = &impl_->rb_cmd_;
+    if (vkQueueSubmit(ctx.graphics_queue(), 1, &si, impl_->rb_fence_) != VK_SUCCESS)
         return false;
-    vkWaitForFences(ctx.device(), 1, &rb_fence_, VK_TRUE, UINT64_MAX);
-    vkResetFences(ctx.device(), 1, &rb_fence_);
+    vkWaitForFences(ctx.device(), 1, &impl_->rb_fence_, VK_TRUE, UINT64_MAX);
+    vkResetFences(ctx.device(), 1, &impl_->rb_fence_);
     return true;
 }
 
 void AytherRenderer::readback_shutdown(const ayther::engine::VulkanContextView& ctx) {
-    if (rb_buf_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(ctx.allocator(), rb_buf_, rb_alloc_);
-        rb_buf_ = VK_NULL_HANDLE; rb_alloc_ = VK_NULL_HANDLE; rb_map_ = nullptr;
+    if (impl_->rb_buf_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(ctx.allocator(), impl_->rb_buf_, impl_->rb_alloc_);
+        impl_->rb_buf_ = VK_NULL_HANDLE; impl_->rb_alloc_ = VK_NULL_HANDLE; impl_->rb_map_ = nullptr;
     }
-    if (rb_fence_ != VK_NULL_HANDLE) {
-        vkDestroyFence(ctx.device(), rb_fence_, nullptr);
-        rb_fence_ = VK_NULL_HANDLE;
+    if (impl_->rb_fence_ != VK_NULL_HANDLE) {
+        vkDestroyFence(ctx.device(), impl_->rb_fence_, nullptr);
+        impl_->rb_fence_ = VK_NULL_HANDLE;
     }
-    if (rb_pool_ != VK_NULL_HANDLE) {   // libera también el cmd alocado
-        vkDestroyCommandPool(ctx.device(), rb_pool_, nullptr);
-        rb_pool_ = VK_NULL_HANDLE; rb_cmd_ = VK_NULL_HANDLE;
+    if (impl_->rb_pool_ != VK_NULL_HANDLE) {   // libera también el cmd alocado
+        vkDestroyCommandPool(ctx.device(), impl_->rb_pool_, nullptr);
+        impl_->rb_pool_ = VK_NULL_HANDLE; impl_->rb_cmd_ = VK_NULL_HANDLE;
     }
 }
 

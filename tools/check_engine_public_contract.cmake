@@ -26,7 +26,8 @@ foreach(_header IN LISTS _actual_headers)
     file(STRINGS "${_path}" _includes
         REGEX "^[ \t]*#[ \t]*include[ \t]*[<\"]")
     foreach(_include IN LISTS _includes)
-        if(_include MATCHES "(src|private|internal|detail)/")
+        if(_include MATCHES
+           "(src|libretro_host|vulkan_backend|private|internal|detail)/")
             list(APPEND _violations "${_header}: ${_include}")
         endif()
     endforeach()

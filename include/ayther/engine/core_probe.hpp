@@ -61,7 +61,8 @@ private:
 /// ErrorCode::Io reports a platform loader failure. ErrorCode::BadFormat
 /// reports a library that loaded but did not export the required Libretro
 /// information symbols. The diagnostic message owns any platform error text.
-/// This operation does not initialize SDL, load a ROM, or initialize the core.
+/// This operation does not initialize SDL, Vulkan, a session, or the Libretro
+/// core, and it never loads content.
 [[nodiscard]] Result<CoreProbe> probe_core(
     const std::filesystem::path& core_path);
 

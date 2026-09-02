@@ -283,6 +283,7 @@ jobs:
             '-B', '${{ runner.temp }}/ayther-consumer',
             '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release',
+            '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF',
             '-DCMAKE_CXX_COMPILER=${{ matrix.compiler }}',
             "-DCMAKE_PREFIX_PATH=$env:AYTHER_PREFIX"
           )

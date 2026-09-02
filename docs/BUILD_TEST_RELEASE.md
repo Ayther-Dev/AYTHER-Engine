@@ -235,7 +235,7 @@ An engine consumer declares the renderer dependencies in its own package-manager
 environment and uses:
 
 ```cmake
-find_package(Ayther 0.1 CONFIG REQUIRED COMPONENTS engine)
+find_package(Ayther 0.1.0 CONFIG REQUIRED COMPONENTS engine)
 target_link_libraries(my_app PRIVATE Ayther::engine)
 ```
 

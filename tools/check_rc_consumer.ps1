@@ -80,6 +80,7 @@ $configure = @(
     '-B', $WorkDirectory,
     '-G', 'Ninja',
     '-DCMAKE_BUILD_TYPE=Release',
+    '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF',
     "-DCMAKE_PREFIX_PATH=$prefixPath"
 )
 if ($Compiler) { $configure += "-DCMAKE_CXX_COMPILER=$Compiler" }

@@ -2,7 +2,7 @@
 
 **Status:** pre-release, installable engine contracts
 
-**Last reviewed:** 2026-08-27
+**Last reviewed:** 2026-09-02
 
 This document describes the C++ source currently under `include/ayther/` and
 `src/`. It records contracts that are otherwise easy to miss at call sites:
@@ -43,7 +43,7 @@ Concurrency, Source files, and Performance sections.
 |---|---|---|
 | `Ayther::core` and `ayther_core_ffi.h` | Buildable, installable, unstable | Flat C ABI backed by Rust. Opaque handles use paired allocation and release functions. |
 | `Ayther::engine` and `ayther_sdk.h` | Buildable, installable, provisional | Higher-level C facade over a native session. |
-| `engine/capabilities.hpp`, `engine/core_probe.hpp`, and `engine/pack.hpp` | Installed, provisional | Typed C++ queries for versions, core metadata, packs, validation, tiers, and watching. Raw core handles do not cross this surface. |
+| `engine/capabilities.hpp`, `engine/core_probe.hpp`, `engine/input.hpp`, and `engine/pack.hpp` | Installed, provisional | Typed C++ queries for versions, core metadata, input, packs, validation, tiers, and watching. Raw core and Libretro declarations do not cross this surface. |
 | `AytherSession` | Installed, provisional | Primary C++ orchestration facade. Single-owner and single-thread driven. |
 | Audio, renderer, Vulkan, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
 
@@ -79,6 +79,12 @@ The session is not thread-safe. Drive `set_input()`, `step()`, reset, rewind,
 pack changes, and recording operations from one owning thread. Frontends may
 copy immutable frame data to another thread after respecting the `FrameView`
 lifetime boundary.
+
+`engine/input.hpp` publishes the stable Libretro joypad bit positions as
+`RetroPadButton`. `input_mask()` is the only conversion needed before passing a
+button to the raw `std::uint16_t` `set_input()` overload; neither the enum nor
+the conversion exposes a Libretro header. `InputState` is the typed multi-button
+value accepted by the session overload.
 
 Failure to activate optional replacement content should preserve native output
 when safe. Core/ROM loading, invalid required configuration, failed patches, and

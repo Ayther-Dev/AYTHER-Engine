@@ -503,7 +503,7 @@ int main(int argc, char** argv) {
                 if (e.layer == 0 && e.x == cR.x && e.y == cR.y) { er = &e; break; }
             if (er && er->sub >= 0 &&
                 renderer.sub_texture_state(*fv, *er) ==
-                    VkSprite::TexState::Ready) {
+                    ayther::AytherRenderer::TextureState::ready) {
                 ready = true;
                 if (!render(got)) break;   // un render más con la textura lista
             } else {

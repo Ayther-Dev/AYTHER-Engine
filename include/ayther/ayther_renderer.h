@@ -20,20 +20,13 @@
 // HD-tile, sprite and post-process passes land in R3.1 / R3.2.
 // ---------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
+
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include <ayther/engine/pack.hpp>
 #include <ayther/engine/vulkan_interop.hpp>
-
-#include "vulkan_backend/vk_render_target.h"
-#include "runtime_options.h"
-#include "vulkan_backend/vk_texture.h"        // emu-frame texture
-#include "vulkan_backend/tile_tex_cache.h"    // HD tile textures
-#include "vulkan_backend/vk_sprite.h"         // HD sprite overlay (R3.2)
-#include "vulkan_backend/vk_indexed_plane.h"  // R-5: indexed compose
-
-#include <string>
 
 class  AytherLayerStack;   // R-4 — layer model (ayther_layers.h)
 
@@ -63,8 +56,7 @@ public:
     // shaders are missing the sprite overlay is disabled (emu+tiles still work).
     bool init(const ayther::engine::VulkanContextView& ctx,
               uint32_t canvas_w, uint32_t canvas_h,
-              const char* shader_dir,
-              const RuntimeOptions& options = RuntimeOptions::process());
+              const char* shader_dir);
 
     // Recreate at a new canvas size (window / viewport resize).
     bool resize(const ayther::engine::VulkanContextView& ctx,
@@ -104,11 +96,11 @@ public:
     // Destroy all resources. Safe on a partially-initialized renderer.
     void shutdown(const ayther::engine::VulkanContextView& ctx);
 
-    bool is_ready() const { return target_.is_ready(); }
+    [[nodiscard]] bool is_ready() const;
 
     // Useful region of the last uploaded frame (the fb changes video mode).
-    uint32_t emu_frame_w() const { return emu_w_; }
-    uint32_t emu_frame_h() const { return emu_h_; }
+    [[nodiscard]] uint32_t emu_frame_w() const;
+    [[nodiscard]] uint32_t emu_frame_h() const;
 
     /// Readback (MP4 export): records into `cmd` the copy of the offscreen
     /// (left in SHADER_READ_ONLY after render()) to a host-visible buffer —
@@ -169,8 +161,8 @@ public:
     // the rest is dimmed (the HD ones draw normally on top). It only affects
     // the scene passes; on frames that fall back to the blit it does not
     // apply.
-    void set_checker(bool on) noexcept { checker_ = on; }
-    bool checker() const noexcept { return checker_; }
+    void set_checker(bool on) noexcept;
+    [[nodiscard]] bool checker() const noexcept;
 
     // FOCUSED layer: the one being authored is composed at full intensity and
     // the rest is dimmed, so the working focus reads at a glance.
@@ -181,14 +173,20 @@ public:
     // COMPOSITION decision, and composition has been ours since R-5: that
     // channel is boolean —it dims "the non-sprite"— and knows nothing about a
     // focused layer.
-    void set_focus_layer(int layer) noexcept { focus_layer_ = layer; }
-    int  focus_layer() const noexcept { return focus_layer_; }
+    void set_focus_layer(int layer) noexcept;
+    [[nodiscard]] int focus_layer() const noexcept;
 
     /// R-8: load state of an element's SUB asset (for the Lab coverage
     /// report). NotRequested/Pending/Ready/Failed; elements without a sub
     /// return NotRequested.
-    VkSprite::TexState sub_texture_state(const FrameView& fv,
-                                         const SceneElement& e) const;
+    enum class TextureState : std::uint8_t {
+        not_requested,
+        pending,
+        ready,
+        failed,
+    };
+    [[nodiscard]] TextureState sub_texture_state(
+        const FrameView& fv, const SceneElement& e) const;
 
     // ---- The offscreen result — the frontend presents or samples it --------
     /// Returns the public, borrowed Vulkan handoff for the current target.
@@ -197,10 +195,10 @@ public:
     [[nodiscard]] engine::RenderImageView render_image() const noexcept;
 
     // Legacy accessors retained for source compatibility during the 0.1.x line.
-    VkImage     framebuffer_image()   const { return target_.image();   }
-    VkImageView framebuffer_view()    const { return target_.view();    }
-    VkSampler   framebuffer_sampler() const { return target_.sampler(); }
-    VkExtent2D  framebuffer_extent()  const { return target_.extent();  }
+    [[nodiscard]] VkImage framebuffer_image() const;
+    [[nodiscard]] VkImageView framebuffer_view() const;
+    [[nodiscard]] VkSampler framebuffer_sampler() const;
+    [[nodiscard]] VkExtent2D framebuffer_extent() const;
 
     // ---- COMPARISON image (A/B preview) ------------------------------------
     // A second offscreen holding a COPY of the already-rendered frame, so two
@@ -216,16 +214,16 @@ public:
     // It is not created until somebody asks for it (capture_compare): a Lab
     // that never opens the A/B does not pay the memory of a second canvas,
     // which at 8K is not small.
-    bool        compare_ready() const { return compare_.is_ready(); }
+    [[nodiscard]] bool compare_ready() const;
     /// Returns the public, borrowed Vulkan handoff for the captured image.
     /// The value is invalid until capture_compare() succeeds.
     [[nodiscard]] engine::RenderImageView compare_render_image() const noexcept;
     /// The IMAGE, for the runtime split — which composes with per-region blits
     /// rather than sampling, so it needs the handle and not the view.
-    VkImage     compare_image()   const { return compare_.image();   }
-    VkImageView compare_view()    const { return compare_.view();    }
-    VkSampler   compare_sampler() const { return compare_.sampler(); }
-    VkExtent2D  compare_extent()  const { return compare_.extent();  }
+    [[nodiscard]] VkImage compare_image() const;
+    [[nodiscard]] VkImageView compare_view() const;
+    [[nodiscard]] VkSampler compare_sampler() const;
+    [[nodiscard]] VkExtent2D compare_extent() const;
 
     /// Copies the CURRENT offscreen (exactly as render() left it) into the
     /// comparison image. Creates/resizes the image if needed. Record it before
@@ -251,44 +249,9 @@ public:
     bool capture_compare_now(const ayther::engine::VulkanContextView& ctx);
 
 private:
-    /// Injected at init(); held by value so the renderer never outlives a
-    /// reference to somebody else's options.
-    RuntimeOptions options_;
-
     struct FrameScratch;
-
-    // Genesis Mode 5 max framebuffer — the native canvas the tile grid maps onto.
-    static constexpr uint32_t kEmuW = 320;
-    static constexpr uint32_t kEmuH = 240;
-
-    VkRenderTarget target_;       // offscreen HD frame
-    VkRenderTarget compare_;      // copy for the A/B (lazy, see above)
-    // ---- MP4 export readback (readback_init/export_frame) ------------------
-    // VmaAllocation forward-declared as in vk_texture.h (VMA is private).
-    VkCommandPool   rb_pool_  = VK_NULL_HANDLE;
-    VkCommandBuffer rb_cmd_   = VK_NULL_HANDLE;
-    VkFence         rb_fence_ = VK_NULL_HANDLE;
-    VkBuffer        rb_buf_   = VK_NULL_HANDLE;
-    VmaAllocation   rb_alloc_ = VK_NULL_HANDLE;
-    void*           rb_map_   = nullptr;
-    VkTexture      emu_tex_;
-    uint32_t  emu_w_ = 0, emu_h_ = 0;   // dims of the last uploaded frame   // emulator software framebuffer → GPU
-    TileTexCache   tile_cache_;   // HD tile textures from the pack
-    VkSprite       sprite_;       // HD sprite overlay pass (into the offscreen)
-    bool           sprite_ok_ = false;  // false if the SPIR-V shaders are absent
-    // R-5: the indexed pipeline (VRAM+CRAM on the GPU) used to compose the
-    // scene from the inventory when fv.scene is published — no blit.
-    VkIndexedPlane indexed_;
-    bool           indexed_ok_ = false;
-    bool           checker_    = false;   // R-8: UV checker mode
-    int            focus_layer_ = -1;     // focused layer (-1 = none)
-    // Capacity-retaining temporary storage belongs to this renderer instance.
-    // Keeping it behind an implementation object avoids exposing render-only
-    // element types in the public header while preserving allocation reuse.
-    std::unique_ptr<FrameScratch> scratch_;
-    // Copying the non-owning view avoids retaining the caller's value object;
-    // the host-owned Vulkan handles still obey VulkanContextView's lifetime.
-    ayther::engine::VulkanContextView context_{};
+    class Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace ayther

@@ -39,6 +39,11 @@ while(_pending)
     file(STRINGS "${_path}" _lines
         REGEX "^[ \t]*#[ \t]*include[ \t]*(\"|<ayther/)")
     foreach(_line IN LISTS _lines)
+        if(_line MATCHES
+           "(src|libretro_host|vulkan_backend|private|internal|detail)/")
+            list(APPEND _missing
+                "${_header} includes a forbidden private path: ${_line}")
+        endif()
         if(_line MATCHES "^[ \t]*#[ \t]*include[ \t]*\"([^\"]+)\"")
             set(_dependency "${CMAKE_MATCH_1}")
         elseif(_line MATCHES

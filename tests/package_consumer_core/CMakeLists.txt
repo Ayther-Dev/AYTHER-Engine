@@ -7,7 +7,8 @@ cmake_minimum_required(VERSION 3.21)
 # core-only and the release scope is wrong.
 project(AytherCorePackageConsumer LANGUAGES CXX)
 
-find_package(Ayther 0.1 CONFIG REQUIRED)
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+find_package(Ayther 0.1.0 CONFIG REQUIRED)
 
 if(DEFINED Ayther_SHADER_DIR)
     message(FATAL_ERROR

@@ -401,13 +401,14 @@ if(AYTHER_BUILD_ENGINE)
             $<BUILD_INTERFACE:ayther::ymfm>
             $<INSTALL_INTERFACE:Ayther::ymfm>
             Threads::Threads
-            SDL3::SDL3
+            $<INSTALL_INTERFACE:Ayther::sdl3>
             GPUOpen::VulkanMemoryAllocator
             $<BUILD_INTERFACE:Stb::Stb>
             $<BUILD_INTERFACE:dr_libs::dr_libs>
             tomlplusplus::tomlplusplus
             zstd::libzstd
-            ${CMAKE_DL_LIBS})
+            $<BUILD_INTERFACE:${CMAKE_DL_LIBS}>
+            $<INSTALL_INTERFACE:Ayther::platform>)
 
     if(AYTHER_ENABLE_VPX)
         target_link_libraries(ayther_engine PRIVATE
