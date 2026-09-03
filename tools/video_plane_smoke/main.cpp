@@ -31,7 +31,7 @@
 #include "ayther_layers.h"
 #include "ayther_renderer.h"
 #include "ayther_session.h"
-#include "vulkan_backend/vk_context.h"
+#include "../../tests/support/vulkan_test_context.h"
 
 #include <SDL3/SDL.h>
 
@@ -87,8 +87,8 @@ int main() {
     SDL_Window* win = SDL_CreateWindow("video_plane_smoke", 64, 64,
                                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (!win) { std::fprintf(stderr, "[FAIL] SDL_CreateWindow\n"); return 1; }
-    VkContext ctx;
-    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VkContext::init\n"); return 1; }
+    VulkanTestContext ctx;
+    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VulkanTestContext::init\n"); return 1; }
 
     ayther::AytherRenderer renderer;
     const std::string sh = std::string(AYTHER_SOURCE_DIR) +

@@ -24,7 +24,7 @@ set_target_properties(video_shader_smoke PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${C
 # ya es un flag de maquina de desarrollo.
 add_test(NAME video_shader COMMAND video_shader_smoke)
 
-# Necesita una GPU de verdad (crea un VkContext), asi que en una maquina sin
+# Necesita una GPU de verdad (crea un VulkanTestContext), asi que en una maquina sin
 # Vulkan —los runners de CI, por ejemplo— hay que poder dejarlo afuera:
 # ctest -LE gpu corre todo lo demas. Etiquetar es preferible a excluir por
 # nombre, que se desactualiza en silencio cuando se agrega el siguiente.

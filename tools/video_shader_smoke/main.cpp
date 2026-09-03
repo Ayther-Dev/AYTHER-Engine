@@ -57,7 +57,7 @@
 #include "ayther_renderer.h"
 #include "ayther_session.h"
 #include "ayther_video.h"
-#include "vulkan_backend/vk_context.h"
+#include "../../tests/support/vulkan_test_context.h"
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -97,13 +97,13 @@ constexpr int kChroma[] = { 0, 16, 32, 64, 90, 110, 128, 145, 170, 200, 224, 240
 
 int main() {
     // -- Vulkan sobre una ventana oculta (igual que el resto de los oráculos de
-    //    render: VkContext no es headless, necesita una superficie).
+    //    render: VulkanTestContext no es headless, necesita una superficie).
     if (!SDL_Init(SDL_INIT_VIDEO)) { std::fprintf(stderr, "[FAIL] SDL_Init\n"); return 1; }
     SDL_Window* win = SDL_CreateWindow("video_shader_smoke", 64, 64,
                                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (!win) { std::fprintf(stderr, "[FAIL] SDL_CreateWindow\n"); return 1; }
-    VkContext ctx;
-    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VkContext::init\n"); return 1; }
+    VulkanTestContext ctx;
+    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VulkanTestContext::init\n"); return 1; }
 
     ayther::AytherRenderer renderer;
     const std::string sh = std::string(AYTHER_SOURCE_DIR) + "/shaders/";

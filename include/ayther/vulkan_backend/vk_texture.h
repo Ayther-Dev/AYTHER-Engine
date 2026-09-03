@@ -14,6 +14,7 @@
 //   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL (suitable for blit src).
 // ---------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
+#include <ayther/engine/vulkan_interop.hpp>
 #include <cstddef>
 #include <cstdint>
 
@@ -25,7 +26,7 @@ using  VmaAllocation = VmaAllocation_T*;
 struct VmaAllocator_T;
 using  VmaAllocator = VmaAllocator_T*;
 
-class VkContext;  // forward
+
 
 struct TexPixelFormat {
     enum Value : uint32_t {
@@ -62,18 +63,18 @@ public:
     // for ASSET textures that get minified (an HD master drawn small aliases
     // without mips). Per-frame textures (the emu framebuffer) stay false: they
     // upload every frame and are never minified.
-    bool init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmapped = false,
+    bool init(const ayther::engine::VulkanContextView& ctx, uint32_t max_w, uint32_t max_h, bool mipmapped = false,
               TexImageFormat::Value img_fmt = TexImageFormat::Bgra8);
 
     // Upload 'pixels' (in the given retro pixel format) into the staging buffer
     // and record a pipeline barrier + buffer-to-image copy into 'cmd'.
     // 'cmd' must be in the recording state.
     // The image will be in SHADER_READ_ONLY_OPTIMAL after the call.
-    void upload(VkContext& ctx, VkCommandBuffer cmd,
+    void upload(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                 const void* pixels, uint32_t w, uint32_t h, size_t pitch,
                 TexPixelFormat::Value fmt);
 
-    void shutdown(VkContext& ctx);
+    void shutdown(const ayther::engine::VulkanContextView& ctx);
 
     /// Releases ONLY the staging buffer (the image stays alive). For textures
     /// with a SINGLE upload (assets: the staging used to be retained for the
@@ -82,7 +83,7 @@ public:
     /// upload). A later upload would be a bug (the staging no longer exists):
     /// it is logged and ignored.
     /// Returns the bytes released (0 if there was no staging left).
-    size_t release_staging(VkContext& ctx);
+    size_t release_staging(const ayther::engine::VulkanContextView& ctx);
 
     bool is_ready() const { return image_ != VK_NULL_HANDLE; }
 

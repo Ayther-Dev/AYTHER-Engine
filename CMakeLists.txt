@@ -176,6 +176,7 @@ unset(_ayther_vpx_include_dir)
 add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/audio_player.cpp
     src/capabilities.cpp
+    src/core_probe.cpp
     src/ayther_animation.cpp
     src/ayther_audio_events.cpp
     src/ayther_background_export.cpp
@@ -191,6 +192,7 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/ayther_video.cpp
     src/decode_limits.cpp
     src/log.cpp
+    src/pack.cpp
     src/psg_synth.cpp
     src/retro_runner.cpp
     src/rewind_buffer.cpp
@@ -203,7 +205,6 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/session/recording_controller.h
     src/voice_router.cpp
     src/vulkan_backend/tile_tex_cache.cpp
-    src/vulkan_backend/vk_context.cpp
     src/vulkan_backend/vk_indexed_plane.cpp
     src/vulkan_backend/vk_render_target.cpp
     src/vulkan_backend/vk_sprite.cpp
@@ -319,14 +320,13 @@ if(AYTHER_BUILD_ENGINE)
     if(NOT AYTHER_BUILD_RENDERER)
         message(FATAL_ERROR
             "AYTHER_BUILD_ENGINE requires AYTHER_BUILD_RENDERER because the "
-            "complete 24-source engine target includes SDL3/Vulkan backends.")
+            "complete engine target includes SDL3/Vulkan backends.")
     endif()
 
     find_package(Threads REQUIRED)
     find_package(SDL3 CONFIG REQUIRED)
     find_package(Vulkan REQUIRED)
     find_package(VulkanMemoryAllocator CONFIG REQUIRED)
-    find_package(vk-bootstrap CONFIG REQUIRED)
     find_package(tomlplusplus CONFIG REQUIRED)
     find_package(Stb REQUIRED)
     find_package(zstd CONFIG REQUIRED)
@@ -352,7 +352,6 @@ if(AYTHER_BUILD_ENGINE)
         SDL3::SDL3
         Vulkan::Vulkan
         GPUOpen::VulkanMemoryAllocator
-        vk-bootstrap::vk-bootstrap
         Stb::Stb
         dr_libs::dr_libs
         tomlplusplus::tomlplusplus
@@ -392,24 +391,24 @@ if(AYTHER_BUILD_ENGINE)
     target_link_libraries(ayther_engine
         PUBLIC
             # In-tree tools compile implementation headers directly. Preserve
-            # their dependency includes only in the build tree; the installed
-            # allowlist exposes neither SDL nor Vulkan types.
+            # SDL only in the build tree. The installed RenderImageView contract
+            # deliberately exposes Vulkan types, so consumers inherit its
+            # include directory and loader target through Vulkan::Vulkan.
             $<BUILD_INTERFACE:SDL3::SDL3>
-            $<BUILD_INTERFACE:Vulkan::Vulkan>
+            Vulkan::Vulkan
         PRIVATE
             $<BUILD_INTERFACE:Ayther::core>
             $<BUILD_INTERFACE:ayther::ymfm>
             $<INSTALL_INTERFACE:Ayther::ymfm>
             Threads::Threads
-            SDL3::SDL3
-            Vulkan::Vulkan
+            $<INSTALL_INTERFACE:Ayther::sdl3>
             GPUOpen::VulkanMemoryAllocator
-            vk-bootstrap::vk-bootstrap
             $<BUILD_INTERFACE:Stb::Stb>
             $<BUILD_INTERFACE:dr_libs::dr_libs>
             tomlplusplus::tomlplusplus
             zstd::libzstd
-            ${CMAKE_DL_LIBS})
+            $<BUILD_INTERFACE:${CMAKE_DL_LIBS}>
+            $<INSTALL_INTERFACE:Ayther::platform>)
 
     if(AYTHER_ENABLE_VPX)
         target_link_libraries(ayther_engine PRIVATE

@@ -30,7 +30,7 @@
 #include "ayther_session.h"
 #include "ayther_recording.h"
 #include "ayther_renderer.h"
-#include "vulkan_backend/vk_context.h"
+#include "../../tests/support/vulkan_test_context.h"
 #include <SDL3/SDL.h>
 
 #include <cstdint>
@@ -95,8 +95,8 @@ int main(int argc, char** argv) {
     SDL_Window* win = SDL_CreateWindow("snapshot_mask_smoke", 64, 64,
                                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (!win) { std::fprintf(stderr, "[FAIL] SDL_CreateWindow\n"); return 1; }
-    VkContext ctx;
-    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VkContext::init\n"); return 1; }
+    VulkanTestContext ctx;
+    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VulkanTestContext::init\n"); return 1; }
 
     const FrameView* fv = s->replay_seek(*rec, F);
     if (!fv || !fv->fb_width || fv->scene_dirty || !fv->scene_count) {

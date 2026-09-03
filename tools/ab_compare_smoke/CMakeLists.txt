@@ -20,7 +20,7 @@ set_target_properties(ab_compare_smoke PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMA
 
 add_test(NAME ab_compare COMMAND ab_compare_smoke)
 
-# Necesita una GPU de verdad (crea un VkContext), asi que en una maquina sin
+# Necesita una GPU de verdad (crea un VulkanTestContext), asi que en una maquina sin
 # Vulkan —los runners de CI, por ejemplo— hay que poder dejarlo afuera:
 # ctest -LE gpu corre todo lo demas. Etiquetar es preferible a excluir por
 # nombre, que se desactualiza en silencio cuando se agrega el siguiente.

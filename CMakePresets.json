@@ -36,7 +36,9 @@
         "CMAKE_CXX_COMPILER": "$env{ProgramFiles}/LLVM/bin/clang-cl.exe",
         "CMAKE_LINKER": "lld-link.exe",
         "CMAKE_MT": "llvm-mt.exe",
-        "CMAKE_RC_COMPILER": "llvm-rc.exe"
+        "CMAKE_RC_COMPILER": "llvm-rc.exe",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
     {

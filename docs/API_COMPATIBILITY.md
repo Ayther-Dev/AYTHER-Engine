@@ -76,6 +76,11 @@ destructors are non-throwing.
 | Emulator extension ABI | `1.10` | independently negotiated core protocol |
 | SDK C API revision | `1` | independent C facade contract |
 
+The current release-candidate distribution identifier is `v0.1.0-rc.5`.
+Distribution tooling preserves that full tag in artifact names and provenance;
+the linked C++ `engine::version()` query intentionally reports the numeric
+`0.1.0` release shared by the code and package metadata.
+
 The release value follows SemVer. During `0.x`, a new minor version may break
 source or binary compatibility; patch versions remain source-compatible within
 the same minor. Concretely, the published `0.1.x` C++ contract remains

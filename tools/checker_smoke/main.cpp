@@ -34,7 +34,7 @@
 #include "ayther_session.h"
 #include "ayther_recording.h"
 #include "ayther_renderer.h"
-#include "vulkan_backend/vk_context.h"
+#include "../../tests/support/vulkan_test_context.h"
 #include <SDL3/SDL.h>
 #include <stb_image_write.h>
 
@@ -190,8 +190,8 @@ int main(int argc, char** argv) {
     SDL_Window* win = SDL_CreateWindow("checker_smoke", 64, 64,
                                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (!win) { std::fprintf(stderr, "[FAIL] SDL_CreateWindow\n"); return 1; }
-    VkContext ctx;
-    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VkContext::init\n"); return 1; }
+    VulkanTestContext ctx;
+    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VulkanTestContext::init\n"); return 1; }
 
     const FrameView* fv = s->replay_seek(*rec, frame);
     if (!fv || !fv->fb_width || fv->scene_dirty || !fv->scene_vram) {
@@ -503,7 +503,7 @@ int main(int argc, char** argv) {
                 if (e.layer == 0 && e.x == cR.x && e.y == cR.y) { er = &e; break; }
             if (er && er->sub >= 0 &&
                 renderer.sub_texture_state(*fv, *er) ==
-                    VkSprite::TexState::Ready) {
+                    ayther::AytherRenderer::TextureState::ready) {
                 ready = true;
                 if (!render(got)) break;   // un render más con la textura lista
             } else {

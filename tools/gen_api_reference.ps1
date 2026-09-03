@@ -118,7 +118,7 @@ foreach ($h in $headers) {
 
     # Top-level declarations: the types and functions the consumer uses.
     $decls = [regex]::Matches($texto,
-        '(?m)^(?:struct|class|enum(?:\s+class)?|typedef|inline|[A-Za-z_][A-Za-z0-9_:<>\*\s]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(\(|\{|;)')
+        '(?m)^(?:struct|class|enum(?:[ \t]+class)?|typedef|inline|[A-Za-z_][A-Za-z0-9_:<>\* \t]*?)[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*(\(|\{|;)')
     $nombres = $decls | ForEach-Object { $_.Groups[1].Value } |
                Where-Object { $_ -notmatch '^(if|for|while|return|else|namespace)$' } |
                Select-Object -Unique | Sort-Object

@@ -96,10 +96,10 @@ attaching package include paths directly to `ayther_engine`:
 
 | Dependency | Target used by AYTHER | Visibility |
 |---|---|---|
-| SDL3 | `SDL3::SDL3` | Private link dependency; no installed header exposes SDL types |
-| Vulkan | `Vulkan::Vulkan` | Private link dependency; no installed header exposes Vulkan types |
+| SDL3 | `SDL3::SDL3` (`Ayther::sdl3` adapter when installed) | Private link dependency; no installed header exposes SDL types |
+| Vulkan | `Vulkan::Vulkan` | Public usage requirement for `engine/vulkan_interop.hpp`; implementation also uses it |
 | Vulkan Memory Allocator | `GPUOpen::VulkanMemoryAllocator` | Private |
-| vk-bootstrap | `vk-bootstrap::vk-bootstrap` | Private |
+| vk-bootstrap | `vk-bootstrap::vk-bootstrap` | GPU-test support only; production context creation belongs to Runtime |
 | stb | `Stb::Stb` compatibility target | Private, build-tree only |
 | dr_libs | `dr_libs::dr_libs` compatibility target | Private, build-tree only |
 | toml++ | `tomlplusplus::tomlplusplus` | Private |
@@ -116,15 +116,19 @@ roots. Third-party include directories are not repeated there: they arrive from
 the dependency targets above. Its private compile contract defines
 `VMA_STATIC_VULKAN_FUNCTIONS=1`, `VMA_DYNAMIC_VULKAN_FUNCTIONS=0`, and, only
 when `AYTHER_ENABLE_VPX=ON`, `AYTHER_HAVE_VPX=1`. VPX is linked only in that
-configuration; core, ymfm, Threads, VMA, vk-bootstrap, stb, dr_libs, toml++,
-zstd, and `${CMAKE_DL_LIBS}` form the remaining private link closure. SDL3 and
-Vulkan are public because installed AYTHER headers expose their types.
+configuration; core, ymfm, Threads, VMA, stb, dr_libs, toml++,
+zstd, and `${CMAKE_DL_LIBS}` form the remaining private link closure. The
+installed static archive preserves SDL through the stable `SDL3::SDL3` target;
+Vulkan remains public because installed AYTHER headers expose its types.
 
 The eight GLSL sources and their eight precompiled SPIR-V counterparts are
 registered as private `ayther_engine` resources. CMake marks them
 `HEADER_FILE_ONLY`, groups them under `Shaders` in IDE generators, and installs
 the SPIR-V list under `share/Ayther/shaders` without relying on a directory
-glob.
+glob. Installed packages with the `engine` component export the absolute,
+relocatable `Ayther_SHADER_DIR` from `AytherConfig.cmake`; core-only packages do
+not define it. Consumers must use that variable instead of assuming the data
+layout or reaching into an Engine checkout.
 
 ### 3. Clone and activate the Rust toolchain
 
@@ -380,8 +384,9 @@ CPU/integration test run.
 
 ## Consuming an installed engine
 
-Engine consumers must make SDL3, Vulkan, VulkanMemoryAllocator, vk-bootstrap,
-toml++, and zstd discoverable. The supported source workflow is to declare the
+Engine consumers must make SDL3, Vulkan, VulkanMemoryAllocator, toml++, and
+zstd discoverable. Applications such as Runtime that create the Vulkan context
+also depend directly on vk-bootstrap. The supported source workflow is to declare the
 same packages in the consumer's vcpkg manifest and configure with its toolchain.
 The AYTHER package does not silently copy those libraries into another project.
 `find_package(Ayther)` resolves these packages and verifies their imported
@@ -389,8 +394,20 @@ targets before loading `Ayther::engine`; stb and dr_libs remain compiled-in,
 private implementation dependencies and are not required from consumers.
 
 ```cmake
-find_package(Ayther 0.1 CONFIG REQUIRED COMPONENTS engine)
+find_package(Ayther 0.1.0 CONFIG REQUIRED COMPONENTS engine)
 target_link_libraries(my_app PRIVATE Ayther::engine)
+```
+
+Runtime must treat `Ayther_SHADER_DIR` as the only source for deploying the
+installed SPIR-V files; it must not reconstruct the package layout or refer to
+the Engine checkout. A target can stage them beside its executable with:
+
+```cmake
+add_custom_command(TARGET runtime POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${Ayther_SHADER_DIR}"
+        "$<TARGET_FILE_DIR:runtime>/shaders"
+    VERBATIM)
 ```
 
 Point `CMAKE_PREFIX_PATH` at the AYTHER install prefix. A VPX-enabled Windows

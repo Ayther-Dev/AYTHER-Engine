@@ -3,10 +3,9 @@
     Writes the release body for a tagged AYTHER pre-release.
 
 .DESCRIPTION
-    v0.1.x publishes three artifact families from one tag. The notes are
+    v0.1.x publishes two Engine variants on Windows and Linux. The notes are
     generated rather than hand-written so the scope statement cannot drift away
-    from what the workflow actually built: a reader must be able to tell, from
-    the release page alone, that ayther-core is NOT the complete engine.
+    from the four archives the workflow actually built.
 #>
 [CmdletBinding()]
 param(
@@ -34,29 +33,25 @@ $lines = @(
     '',
     '## Which archive do I want?',
     '',
-    'One tag, three artifact families, per platform:',
+    'One tag, two Engine variants, on Windows and Linux:',
     '',
     '| Archive | Contains | Does **not** contain |',
     '| --- | --- | --- |',
-    ("| ``ayther-core-$Tag-<platform>.zip`` | ``Ayther::core`` static archive, the C ABI " +
-     'headers, and the CMake package | The engine, the renderer, shaders, or any ' +
-     'SDL3/Vulkan dependency |'),
-    ("| ``ayther-engine-$Tag-<platform>.zip`` | Everything in core, **plus** " +
+    ("| ``ayther-engine-$Tag-<platform>.zip`` | ``Ayther::core``, " +
      '`Ayther::engine`, `Ayther::ymfm`, the public engine headers, and the ' +
      'compiled SPIR-V shaders | VP9 video decoding |'),
     ("| ``ayther-engine-vpx-$Tag-<platform>.zip`` | Everything in engine, **plus** the " +
      'VP9 decoder | -- |'),
     '',
-    '**The `ayther-core` archive is not the AYTHER Engine.** It is the core SDK on',
-    'its own: it links without SDL3 or Vulkan and renders nothing. If you want the',
-    'engine, take an `ayther-engine` archive. Every archive in this release was',
-    'built, tested, unpacked, payload-checked, and consumed by an out-of-tree',
+    'Every archive contains the complete Engine package, including its Core',
+    'archive. Every archive in this release was built, tested, unpacked,',
+    'payload-checked, and consumed by an out-of-tree',
     'CMake project before publication; an archive whose payload did not match its',
     'name would have failed the release.',
     '',
     '## Verifying an archive',
     '',
-    'Three independent records cover every asset. Check all of them:',
+    'Three independent records cover every archive. Check all of them:',
     '',
     '```text',
     'sha256sum --check CHECKSUMS.sha256',
@@ -80,18 +75,12 @@ $lines = @(
     'Unpack it and point `CMAKE_PREFIX_PATH` at the unpacked directory.',
     '',
     '```cmake',
-    '# ayther-core',
-    'find_package(Ayther 0.1 CONFIG REQUIRED)',
-    'target_link_libraries(my_app PRIVATE Ayther::core)',
-    '',
-    '# ayther-engine / ayther-engine-vpx',
-    'find_package(Ayther 0.1 CONFIG REQUIRED COMPONENTS engine)',
+    'find_package(Ayther 0.1.0 CONFIG REQUIRED COMPONENTS engine)',
     'target_link_libraries(my_app PRIVATE Ayther::engine)',
     '```',
     '',
     'An engine consumer resolves SDL3, Vulkan, VulkanMemoryAllocator,',
-    'vk-bootstrap, toml++, and zstd from its own package-manager environment.',
-    'A core consumer needs none of them.',
+    'toml++, and zstd from its own package-manager environment.',
     '',
     '## Changelog',
     '',

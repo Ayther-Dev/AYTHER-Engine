@@ -27,7 +27,8 @@
 #include "vulkan_backend/vk_sprite.h"
 #include "decode_limits.h"
 #include "log.h"
-#include "vulkan_backend/vk_context.h"
+#include <ayther/engine/vulkan_interop.hpp>
+#include "vulkan_backend/vk_diagnostics.h"
 #include "vulkan_backend/vk_texture.h"
 #include "ayther_animation.h"  // ayther::AnimHdFrame (draw_anim, C-S2)
 #include "ayther_core_ffi.h"   // AytherSpriteSub, ayther_pack_*
@@ -83,7 +84,7 @@ static std::vector<uint32_t> load_spv(const char* path) {
     return code;
 }
 
-static VkShaderModule make_shader_module(VkContext& ctx,
+static VkShaderModule make_shader_module(const ayther::engine::VulkanContextView& ctx,
                                           const std::vector<uint32_t>& code) {
     VkShaderModuleCreateInfo info{};
     info.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -97,7 +98,7 @@ static VkShaderModule make_shader_module(VkContext& ctx,
 // ---------------------------------------------------------------------------
 // VkSprite::create_render_pass
 // ---------------------------------------------------------------------------
-bool VkSprite::create_render_pass(VkContext& ctx, VkFormat fmt) {
+bool VkSprite::create_render_pass(const ayther::engine::VulkanContextView& ctx, VkFormat fmt) {
     // Swapchain attachment — preserves background, alpha-blends sprites on top.
     // The final layout is TRANSFER_DST_OPTIMAL so VkPresent::finalize() works.
     VkAttachmentDescription att{};
@@ -159,7 +160,7 @@ bool VkSprite::create_render_pass(VkContext& ctx, VkFormat fmt) {
 // ---------------------------------------------------------------------------
 // VkSprite::create_pipeline
 // ---------------------------------------------------------------------------
-bool VkSprite::create_pipeline(VkContext& ctx,
+bool VkSprite::create_pipeline(const ayther::engine::VulkanContextView& ctx,
                                 const char* vert_spv_path,
                                 const char* frag_spv_path,
                                 uint32_t    sampler_count,
@@ -390,7 +391,7 @@ bool VkSprite::create_pipeline(VkContext& ctx,
 // ---------------------------------------------------------------------------
 // VkSprite::create_sampler
 // ---------------------------------------------------------------------------
-bool VkSprite::create_sampler(VkContext& ctx) {
+bool VkSprite::create_sampler(const ayther::engine::VulkanContextView& ctx) {
     // Trilinear: los assets se cargan MIPMAPPED (VkTexture genera la cadena) —
     // minificar un máster HD sin mips aliasea aunque el filtro sea LINEAR.
     VkSamplerCreateInfo si{};
@@ -416,7 +417,7 @@ bool VkSprite::create_sampler(VkContext& ctx) {
 // ---------------------------------------------------------------------------
 // VkSprite::create_desc_pool
 // ---------------------------------------------------------------------------
-bool VkSprite::create_desc_pool(VkContext& ctx) {
+bool VkSprite::create_desc_pool(const ayther::engine::VulkanContextView& ctx) {
     // CADENA de pools: cada eslabón aloja 128 assets ×2 sets (NEAREST + LINEAR;
     // el draw elige por-quad según minificación). El pool ÚNICO se agotaba en
     // proyectos reales (Golden Axe: 65 assets ×2 caras = 260 sets > 256) y las
@@ -446,7 +447,7 @@ bool VkSprite::create_desc_pool(VkContext& ctx) {
     return true;
 }
 
-VkDescriptorSet VkSprite::alloc_desc_set(VkContext& ctx) {
+VkDescriptorSet VkSprite::alloc_desc_set(const ayther::engine::VulkanContextView& ctx) {
     for (int attempt = 0; attempt < 2; ++attempt) {
         if (desc_pools_.empty() && !create_desc_pool(ctx)) return VK_NULL_HANDLE;
         VkDescriptorSetAllocateInfo ai{};
@@ -468,7 +469,7 @@ VkDescriptorSet VkSprite::alloc_desc_set(VkContext& ctx) {
 // de `desc_pools_` se alocan con `desc_layout_` (1 binding) y sus tamaños
 // están calibrados para eso. Misma política de crecimiento bajo demanda.
 // ---------------------------------------------------------------------------
-bool VkSprite::create_mask_pool(VkContext& ctx) {
+bool VkSprite::create_mask_pool(const ayther::engine::VulkanContextView& ctx) {
     static constexpr uint32_t kSetsPerPool = 64;   // pares (pose, máscara) × filtro
     VkDescriptorPoolSize pool_size{};
     pool_size.type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -489,7 +490,7 @@ bool VkSprite::create_mask_pool(VkContext& ctx) {
     return true;
 }
 
-VkDescriptorSet VkSprite::alloc_mask_set(VkContext& ctx) {
+VkDescriptorSet VkSprite::alloc_mask_set(const ayther::engine::VulkanContextView& ctx) {
     for (int attempt = 0; attempt < 2; ++attempt) {
         if (mask_pools_.empty() && !create_mask_pool(ctx)) return VK_NULL_HANDLE;
         VkDescriptorSetAllocateInfo ai{};
@@ -509,7 +510,7 @@ VkDescriptorSet VkSprite::alloc_mask_set(VkContext& ctx) {
 // seq de ambas entradas: tras un evict/hot-reload el seq no coincide y se
 // re-escribe sobre el MISMO set (evict ya esperó GPU idle — mismo contrato que
 // la reutilización de sets de TexEntry).
-VkDescriptorSet VkSprite::get_mask_set(VkContext& ctx, const std::string& asset_key,
+VkDescriptorSet VkSprite::get_mask_set(const ayther::engine::VulkanContextView& ctx, const std::string& asset_key,
                                        const std::string& mask_key, TexEntry& asset,
                                        TexEntry& mask, bool linear) {
     if (!asset.valid || !asset.tex || !mask.valid || !mask.tex)
@@ -550,7 +551,9 @@ VkDescriptorSet VkSprite::get_mask_set(VkContext& ctx, const std::string& asset_
 // ---------------------------------------------------------------------------
 // VkSprite::create_framebuffers / destroy_framebuffers
 // ---------------------------------------------------------------------------
-bool VkSprite::create_framebuffer(VkContext& ctx, VkImageView view, uint32_t w, uint32_t h) {
+// Width and height deliberately mirror Vulkan's paired extent dimensions.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+bool VkSprite::create_framebuffer(const ayther::engine::VulkanContextView& ctx, VkImageView view, uint32_t w, uint32_t h) {
     fb_w_ = w;
     fb_h_ = h;
 
@@ -572,7 +575,7 @@ bool VkSprite::create_framebuffer(VkContext& ctx, VkImageView view, uint32_t w, 
     return true;
 }
 
-void VkSprite::destroy_framebuffers(VkContext& ctx) {
+void VkSprite::destroy_framebuffers(const ayther::engine::VulkanContextView& ctx) {
     for (auto fb : framebuffers_) {
         if (fb != VK_NULL_HANDLE)
             vkDestroyFramebuffer(ctx.device(), fb, nullptr);
@@ -588,10 +591,10 @@ VkSprite::~VkSprite() {
     if (context_) shutdown(*context_);
 }
 
-bool VkSprite::init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
+bool VkSprite::init(const ayther::engine::VulkanContextView& ctx, VkFormat fmt, uint32_t w, uint32_t h,
                     VkImageView target_view,
                     const char* vert_spv_path, const char* frag_spv_path) {
-    if (!ctx.is_ready()) return false;
+    if (!ctx.is_valid()) return false;
     context_ = &ctx;
 
     if (!create_render_pass(ctx, fmt))             return false;
@@ -702,7 +705,7 @@ bool VkSprite::init(VkContext& ctx, VkFormat fmt, uint32_t w, uint32_t h,
     return true;
 }
 
-void VkSprite::rebuild(VkContext& ctx, uint32_t w, uint32_t h, VkImageView target_view) {
+void VkSprite::rebuild(const ayther::engine::VulkanContextView& ctx, uint32_t w, uint32_t h, VkImageView target_view) {
     if (!pipeline_) return;
     vkDeviceWaitIdle(ctx.device());
     destroy_framebuffers(ctx);
@@ -714,7 +717,7 @@ void VkSprite::rebuild(VkContext& ctx, uint32_t w, uint32_t h, VkImageView targe
         fb_h_);
 }
 
-void VkSprite::shutdown(VkContext& ctx) {
+void VkSprite::shutdown(const ayther::engine::VulkanContextView& ctx) {
     // : parar el worker de decode (aunque el ctx no este listo).
     if (decode_worker_.joinable()) {
         {
@@ -725,7 +728,7 @@ void VkSprite::shutdown(VkContext& ctx) {
         decode_worker_.join();
         decode_quit_ = false;
     }
-    if (!ctx.is_ready()) return;
+    if (!ctx.is_valid()) return;
     vkDeviceWaitIdle(ctx.device());
 
     // Destroy all sprite textures.
@@ -784,7 +787,7 @@ void VkSprite::shutdown(VkContext& ctx) {
 // hasta que pump_uploads() suba la textura (1-3 frames después; con prewarm()
 // al alimentar las poses, la textura ya está lista en la primera aparición).
 // ---------------------------------------------------------------------------
-VkSprite::TexEntry* VkSprite::ensure_loaded(VkContext& ctx, VkCommandBuffer cmd,
+VkSprite::TexEntry* VkSprite::ensure_loaded(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                                               const std::string& path,
                                               AyArchive* pack, uint8_t flip,
                                               bool mask) {
@@ -992,7 +995,7 @@ void VkSprite::decode_loop() {
 // VkSprite::pump_uploads — sube al GPU los decodes terminados (acotado por
 // frame). Llamar 1×/frame FUERA de un render pass, aunque no haya subs.
 // ---------------------------------------------------------------------------
-void VkSprite::pump_uploads(VkContext& ctx, VkCommandBuffer cmd, int max_uploads) {
+void VkSprite::pump_uploads(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, int max_uploads) {
     // ---- Staging diferido (): liberar lo vencido -----------------------
     ++pump_tick_;
     if (!staging_release_.empty()) {
@@ -1141,7 +1144,7 @@ void VkSprite::prewarm(const std::string& path, AyArchive* pack, uint8_t flip,
 // VkSprite::finish_upload — textura + descriptores desde BGRA decodificado
 // (la mitad GPU del viejo ensure_loaded síncrono).
 // ---------------------------------------------------------------------------
-bool VkSprite::finish_upload(VkContext& ctx, VkCommandBuffer cmd, TexEntry& entry,
+bool VkSprite::finish_upload(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, TexEntry& entry,
                              const std::string& path, int w, int h,
                              const uint8_t* bgra, bool r8) {
     // DESGLOSE (). Los 3,5 ms de un upload no son el memcpy —eso es 0,31 ms
@@ -1249,7 +1252,7 @@ bool VkSprite::finish_upload(VkContext& ctx, VkCommandBuffer cmd, TexEntry& entr
 // ---------------------------------------------------------------------------
 // VkSprite::draw
 // ---------------------------------------------------------------------------
-void VkSprite::draw(VkContext& ctx, VkCommandBuffer cmd, VkImage target_image,
+void VkSprite::draw(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, VkImage target_image,
                     const AytherSpriteSub* subs, uint32_t count,
                     AyArchive* pack,
                     uint32_t emu_w, uint32_t emu_h,
@@ -1490,7 +1493,7 @@ void VkSprite::draw(VkContext& ctx, VkCommandBuffer cmd, VkImage target_image,
 // destino es un rect FLOAT (sub-píxel, para el tween geométrico Nivel 1).
 // Mismo pipeline/render pass: el sub-rect viaja en los push constants.
 // ---------------------------------------------------------------------------
-void VkSprite::draw_anim(VkContext& ctx, VkCommandBuffer cmd, VkImage target_image,
+void VkSprite::draw_anim(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, VkImage target_image,
                          const ayther::AnimHdFrame* frames, uint32_t count,
                          AyArchive* pack,
                          uint32_t emu_w, uint32_t emu_h) {
@@ -1603,7 +1606,7 @@ void VkSprite::draw_anim(VkContext& ctx, VkCommandBuffer cmd, VkImage target_ima
 //   Ver la nota del header: textura y descriptor PROPIOS, opaco a pantalla
 //   completa, LINEAR, y re-subida sólo cuando el contenido cambió.
 // ---------------------------------------------------------------------------
-void VkSprite::draw_video(VkContext& ctx, VkCommandBuffer cmd, VkImage target_image,
+void VkSprite::draw_video(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd, VkImage target_image,
                           const uint8_t* y, uint32_t y_stride,
                           const uint8_t* u, uint32_t u_stride,
                           const uint8_t* v, uint32_t v_stride,
@@ -1746,7 +1749,7 @@ void VkSprite::draw_video(VkContext& ctx, VkCommandBuffer cmd, VkImage target_im
 // this function so that no submitted command buffer references the textures
 // that are about to be freed.
 // ---------------------------------------------------------------------------
-void VkSprite::clear_textures(VkContext& ctx) {
+void VkSprite::clear_textures(const ayther::engine::VulkanContextView& ctx) {
     {   // : invalidar decodes en vuelo (los resultados con gen vieja se tiran)
         std::lock_guard<std::mutex> lk(decode_mx_);
         decode_jobs_.clear();
@@ -1780,7 +1783,7 @@ void VkSprite::clear_textures(VkContext& ctx) {
 // negative-cacheada (-2) cuyo archivo ahora existe → evict (levanta el
 // negative-cache). Llamar a baja cadencia (~1×/s).
 // ---------------------------------------------------------------------------
-void VkSprite::poll_disk(VkContext& ctx) {
+void VkSprite::poll_disk(const ayther::engine::VulkanContextView& ctx) {
     std::vector<std::string> dirty;
     for (const auto& [key, e] : tex_cache_) {
         if (e.pending || e.stale || e.disk_mtime == -1) continue;
@@ -1828,7 +1831,7 @@ void VkSprite::poll_disk(VkContext& ctx) {
 // de un path que había FALLADO al cargar también levanta el negative-cache (el
 // PNG puede existir recién ahora). GPU idle sólo si se destruye una textura que
 // pudo quedar referenciada por el frame anterior.
-void VkSprite::evict(VkContext& ctx, const std::string& path) {
+void VkSprite::evict(const ayther::engine::VulkanContextView& ctx, const std::string& path) {
     bool waited = false;
     for (int f = 0; f < 8; ++f) {
         // f 0-3 = asset y sus caras; f 4-7 = las claves de MÁSCARA (Vestuario,

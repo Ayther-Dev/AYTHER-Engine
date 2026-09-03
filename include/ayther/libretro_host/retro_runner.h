@@ -10,7 +10,7 @@
 #include "ayther_api.h"   // Versioned AYTHER core-extension contract.
 
 // Owns a Libretro core, loads a game ROM, and drives the emulation loop.
-// Phase 1 (v0.1.0): headless — logic + RAM access.
+// Initial headless phase: logic + RAM access.
 // Phase 2 (v0.2.0): video_cb_ feeds the TileHasher sprite fingerprinter.
 // Phase 3 (v0.3.0): video_cb_ also drives the Vulkan renderer.
 //

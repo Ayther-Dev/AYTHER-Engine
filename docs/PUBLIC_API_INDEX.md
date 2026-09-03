@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 15 headers
+## The 20 headers
 
 | header | what it provides |
 |---|---|
@@ -21,13 +21,18 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_core_ffi.h`](#ayther_core_ffih) | Installed public header. |
 | [`ayther_layers.h`](#ayther_layersh) | Installed public header. |
 | [`ayther_mode3.h`](#ayther_mode3h) | Installed public header. |
+| [`ayther_renderer.h`](#ayther_rendererh) | Installed public header. |
 | [`ayther_result.h`](#ayther_resulth) | Installed public header. |
 | [`ayther_sdk_version.h`](#ayther_sdk_versionh) | Installed public header. |
 | [`ayther_sdk.h`](#ayther_sdkh) | Installed public header. |
 | [`ayther_session.h`](#ayther_sessionh) | Installed public header. |
 | [`ayther_version.h`](#ayther_versionh) | Installed public header. |
 | [`engine/capabilities.hpp`](#enginecapabilitieshpp) | Installed public header. |
+| [`engine/core_probe.hpp`](#enginecore_probehpp) | Installed public header. |
 | [`engine/engine.hpp`](#engineenginehpp) | Installed public header. |
+| [`engine/input.hpp`](#engineinputhpp) | Installed public header. |
+| [`engine/pack.hpp`](#enginepackhpp) | Installed public header. |
+| [`engine/vulkan_interop.hpp`](#enginevulkan_interophpp) | Installed public header. |
 | [`log.h`](#logh) | Installed public header. |
 
 ---
@@ -66,7 +71,7 @@ persisted primary key is still `signature`.
 This header has no SDL dependency. Its deterministic table lookup is covered
 by tests/audio_match_rule_test.cpp.
 
-**Declares:** `AudioMatchIndex`, `AudioMatchRuleInfo`, `ayther`, `clear`, `Entry`, `uint8_t`
+**Declares:** `AudioMatchIndex`, `AudioMatchRuleInfo`, `ayther`, `uint8_t`
 
 _The installed header (`include/ayther/audio_match_rule.h`) carries the full documentation of every symbol._
 
@@ -115,7 +120,7 @@ game supplies the cursor. Level-1 phase state must be reset after detection
 loss or non-sequential seeks; callers must not assume backward-seek safety
 until that reset contract is enforced.
 
-**Declares:** `AnimationDef`, `AnimationPlayer`, `AnimHdFrame`, `ayther`, `HdPose`, `Impl`
+**Declares:** `AnimationDef`, `AnimationPlayer`, `AnimHdFrame`, `ayther`, `HdPose`
 
 _The installed header (`include/ayther/ayther_animation.h`) carries the full documentation of every symbol._
 
@@ -173,7 +178,7 @@ The detector, substitution FFI, engine coordinator, `AudioPlayer` event
 playback, and root target are integrated. Session replay and live paths share
 the persisted assignments but retain distinct scheduling policies.
 
-**Declares:** `AudioEventAssignment`, `AudioEventSubstitution`, `AudioEventTrigger`, `ayther`, `Impl`
+**Declares:** `AudioEventAssignment`, `AudioEventSubstitution`, `AudioEventTrigger`, `ayther`
 
 _The installed header (`include/ayther/ayther_audio_events.h`) carries the full documentation of every symbol._
 
@@ -266,9 +271,38 @@ The Rust profile implementation, FFI, engine resolver, session wiring, and
 root CMake target are integrated. The design mirrors the existing
 SpriteSubstitutor/metasprite flow and publishes results through FrameView.
 
-**Declares:** `ayther`, `EntityInstance`, `Impl`, `Mode3Resolver`
+**Declares:** `ayther`, `EntityInstance`, `Mode3Resolver`
 
 _The installed header (`include/ayther/ayther_mode3.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="ayther_rendererh"></a>
+
+## ayther_renderer.h
+
+AytherRenderer — the motor's visual (HD) layer (R3).
+
+Consumes a FrameView (the deterministic CPU output of AytherSession::step())
++ a borrowed ayther::engine::VulkanContextView, and renders the HD frame into
+an offscreen VkImage
+(VkRenderTarget). The frontend then presents that image:
+  - ayther_play blits it to its swapchain;
+  - ayther_lab samples it in an ImGui viewport.
+
+Kept SEPARATE from AytherSession on purpose: the session stays Vulkan-free /
+headless (CI, determinism, future mobile); the renderer is the swappable GPU
+layer. See docs/CPP_API_REFERENCE.md#rendering-and-vulkan.
+
+Lifecycle: init(ctx, w, h) → render(ctx, cmd, fv) per frame → shutdown(ctx).
+Single-owner; driven from the same thread as the session.
+
+R3.0: scaffold — owns the offscreen target; render() clears it. The emu-frame,
+HD-tile, sprite and post-process passes land in R3.1 / R3.2.
+
+**Declares:** `ayther`, `AytherLayerStack`, `AytherRenderer`, `FrameView`, `SceneElement`
+
+_The installed header (`include/ayther/ayther_renderer.h`) carries the full documentation of every symbol._
 
 ---
 
@@ -394,11 +428,51 @@ _The installed header (`include/ayther/engine/capabilities.hpp`) carries the ful
 
 ---
 
+<a id="enginecore_probehpp"></a>
+
+## engine/core_probe.hpp
+
+**Declares:** `CoreInfo`, `CoreProbe`
+
+_The installed header (`include/ayther/engine/core_probe.hpp`) carries the full documentation of every symbol._
+
+---
+
 <a id="engineenginehpp"></a>
 
 ## engine/engine.hpp
 
 _The installed header (`include/ayther/engine/engine.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="engineinputhpp"></a>
+
+## engine/input.hpp
+
+**Declares:** `final`
+
+_The installed header (`include/ayther/engine/input.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginepackhpp"></a>
+
+## engine/pack.hpp
+
+**Declares:** `ayther`, `AytherRenderer`, `AytherSession`, `final`, `PackFinding`, `PackInfo`, `PackValidationContext`, `PackValidationResult`
+
+_The installed header (`include/ayther/engine/pack.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginevulkan_interophpp"></a>
+
+## engine/vulkan_interop.hpp
+
+**Declares:** `RenderImageView`, `VmaAllocator_T`, `VulkanContextView`
+
+_The installed header (`include/ayther/engine/vulkan_interop.hpp`) carries the full documentation of every symbol._
 
 ---
 

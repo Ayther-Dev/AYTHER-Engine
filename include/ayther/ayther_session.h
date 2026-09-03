@@ -46,6 +46,8 @@
 #include "ayther_layers.h"     // AytherLayerContent (the pack's Acetates)
 #include "ayther_mode3.h"      // Mode3Resolver / EntityInstance (Mode 3, RAM anchoring)
 #include "ayther_result.h"     // ayther::Result / Error
+#include "engine/input.hpp"    // typed public joypad input contract
+#include "engine/pack.hpp"     // typed, non-owning pack boundary for frontends
 
 namespace ayther {
 
@@ -752,6 +754,9 @@ public:
 
     // -- Input: per port, libretro JOYPAD button bitmask -----------------------
     void set_input(int port, uint16_t buttons) noexcept;
+    void set_input(int port, engine::InputState input) noexcept {
+        set_input(port, input.bits());
+    }
 
     // -- Frame stepping --------------------------------------------------------
     // Advance exactly one emulation frame and run the full deterministic
@@ -2312,9 +2317,9 @@ public:
     bool audio_audible() const noexcept;
 
     // -- Borrowed motor resources the frontend reads (valid while owned) -------
-    // The active HD pack: the frontend reads asset bytes to upload HD textures.
-    // Non-owning — invalidated by set_pack()/reload_pack(). Null if no pack.
-    AyArchive*     pack()          const noexcept;
+    // The active HD pack. The typed value hides the raw core handle and is
+    // invalidated by set_pack()/reload_pack(). An empty view means no pack.
+    engine::PackView pack()        const noexcept;
     // Emulator work RAM (read-only) for inspection overlays (e.g. Sonic XY).
     const uint8_t* work_ram()      const noexcept;
     size_t         work_ram_size() const noexcept;

@@ -27,7 +27,7 @@
 #include "ayther_recording.h"
 #include "ayther_renderer.h"
 #include "ayther_layers.h"
-#include "vulkan_backend/vk_context.h"
+#include "../../tests/support/vulkan_test_context.h"
 #include <SDL3/SDL.h>
 
 #include <cstdint>
@@ -155,8 +155,8 @@ int main(int argc, char** argv) {
     SDL_Window* win = SDL_CreateWindow("group_hide_render_smoke", 64, 64,
                                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (!win) { std::fprintf(stderr, "[FAIL] SDL_CreateWindow\n"); return 1; }
-    VkContext ctx;
-    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VkContext::init\n"); return 1; }
+    VulkanTestContext ctx;
+    if (!ctx.init(win)) { std::fprintf(stderr, "[FAIL] VulkanTestContext::init\n"); return 1; }
 
     s->set_pose_preview(pvs);
     const FrameView* fv0 = s->replay_seek(*rec, f0);
@@ -256,7 +256,8 @@ int main(int argc, char** argv) {
             s->scene_inventory(iv);
             for (const SceneElement& e : iv)
                 if (e.layer == 3 && e.sub >= 0 &&
-                    renderer.sub_texture_state(*fvd, e) == VkSprite::TexState::Ready)
+                    renderer.sub_texture_state(*fvd, e) ==
+                        ayther::AytherRenderer::TextureState::ready)
                     ready = true;
         }
         std::printf("  textura del asset lista: %s\n\n", ready ? "sí" : "NO (test vacuo)");

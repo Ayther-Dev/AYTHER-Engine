@@ -1,5 +1,6 @@
 #include <ayther/engine/capabilities.hpp>
 
+#include "ayther_core_ffi.h"
 #include "ayther_version.h"
 
 namespace ayther::engine {
@@ -10,6 +11,10 @@ Version version() noexcept {
         AYTHER_VERSION_MINOR,
         AYTHER_VERSION_PATCH,
     };
+}
+
+std::uint32_t core_abi_revision() noexcept {
+    return ayther_core_version();
 }
 
 Capabilities probe_capabilities() noexcept {

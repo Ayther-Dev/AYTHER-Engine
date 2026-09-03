@@ -7953,7 +7953,9 @@ float AytherSession::audio_backlog_avg() const noexcept {
     return impl_->audio.drc_queue_avg();
 }
 
-AyArchive*     AytherSession::pack()          const noexcept { return impl_->pack.get(); }
+engine::PackView AytherSession::pack() const noexcept {
+    return engine::PackView{impl_->pack.get()};
+}
 const uint8_t* AytherSession::work_ram()      const noexcept { return impl_->runner.work_ram(); }
 size_t         AytherSession::work_ram_size() const noexcept { return impl_->runner.work_ram_size(); }
 

@@ -29,6 +29,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <type_traits>
 
 namespace {
 
@@ -53,8 +54,47 @@ void line(const char* key, const std::string& value) {
 int main(int argc, char** argv) {
     static_assert(sizeof(AySessionConfig) > 0);
     static_assert(sizeof(ayther::FrameView) > 0);
+    static_assert(std::is_standard_layout_v<ayther::engine::RenderImageView>);
+    static_assert(std::is_standard_layout_v<ayther::engine::VulkanContextView>);
+    static_assert(std::is_same_v<
+                  std::underlying_type_t<ayther::engine::RetroPadButton>,
+                  std::uint8_t>);
+    static_assert(ayther::engine::input_mask(
+                      ayther::engine::RetroPadButton::b) == 0x0001U);
+    static_assert(ayther::engine::input_mask(
+                      ayther::engine::RetroPadButton::r3) == 0x8000U);
+    static_assert(std::is_trivially_copyable_v<ayther::engine::PackView>);
+    static_assert(!std::is_copy_constructible_v<ayther::engine::PackWatcher>);
+
+    const ayther::engine::VulkanContextView empty_context{};
+    if (empty_context.is_valid()) {
+        std::cerr << "empty VulkanContextView unexpectedly reports valid\n";
+        return 1;
+    }
+
+    const ayther::engine::PackView empty_pack{};
+    const auto linked_core_abi = ayther::engine::core_abi_revision();
+    if (empty_pack.is_valid() || !empty_pack.render_tiers().is_legacy() ||
+        linked_core_abi == 0U ||
+        linked_core_abi != AYTHER_CORE_C_ABI_REVISION) {
+        std::cerr << "installed typed pack/core contract is invalid\n";
+        return 1;
+    }
+
+    const ayther::engine::RenderImageView empty_render_image{};
+    if (empty_render_image.is_valid()) {
+        std::cerr << "empty RenderImageView unexpectedly reports valid\n";
+        return 1;
+    }
 
     const auto engine_version = ayther::engine::version();
+    const auto headers_version = ayther::sdk_headers_version();
+    if (engine_version.major != headers_version.major ||
+        engine_version.minor != headers_version.minor ||
+        engine_version.patch != headers_version.patch) {
+        std::cerr << "installed Engine version differs from its headers\n";
+        return 1;
+    }
     const auto engine_capabilities = ayther::engine::probe_capabilities();
     if (engine_capabilities.renderer !=
             ayther::engine::RendererBackend::vulkan ||
@@ -62,6 +102,16 @@ int main(int argc, char** argv) {
         !engine_capabilities.libretro_video ||
         !engine_capabilities.libretro_audio) {
         std::cerr << "installed Engine capability contract is incomplete\n";
+        return 1;
+    }
+
+    const ayther::engine::CoreInfo serialization_contract{
+        .api_version = 1U,
+        .library_name = "installed-package",
+    };
+    if (serialization_contract.serialize().find(
+            "\"library_name\":\"installed-package\"") == std::string::npos) {
+        std::cerr << "installed Engine CoreInfo serialization is unavailable\n";
         return 1;
     }
 
@@ -94,6 +144,17 @@ int main(int argc, char** argv) {
     line("rom", basename_of(rom));
     line("pack", basename_of(pack));
     line("trust registry", basename_of(registry));
+
+    {
+        auto probed = ayther::engine::probe_core(core);
+        if (!probed) {
+            line("core probe", "FAILED: " + probed.error.message);
+            std::cout << "=== consumer FAILED ===\n";
+            return 1;
+        }
+        line("core probe", probed->info().library_name + " " +
+                               probed->info().library_version);
+    }
 
     ayther::AytherSession::Config config;
     config.core_path = core;

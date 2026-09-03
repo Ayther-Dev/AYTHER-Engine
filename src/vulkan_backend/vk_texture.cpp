@@ -1,7 +1,8 @@
 #include <chrono>
 #include "vulkan_backend/vk_texture.h"
 #include "log.h"
-#include "vulkan_backend/vk_context.h"
+#include <ayther/engine/vulkan_interop.hpp>
+#include "vulkan_backend/vk_diagnostics.h"
 #include <vk_mem_alloc.h>   // real VMA API (header forward-declares the handle only)
 #include <cstdio>
 #include <cstring>
@@ -17,7 +18,7 @@ VkTexture::~VkTexture() { release(); }
 // ~725 que el tramo decía costar. Lo único que quedaba fuera de los relojes era
 // el fprintf del final: era el 92%. Los tiempos quedan como guarda permanente —
 // baratos, y es lo que delataría que volvió a entrar trabajo no cronometrado.
-bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmapped,
+bool VkTexture::init(const ayther::engine::VulkanContextView& ctx, uint32_t max_w, uint32_t max_h, bool mipmapped,
                      TexImageFormat::Value img_fmt) {
     release();
     device_ = ctx.device();
@@ -126,7 +127,7 @@ bool VkTexture::init(VkContext& ctx, uint32_t max_w, uint32_t max_h, bool mipmap
     return true;
 }
 
-void VkTexture::shutdown(VkContext& ctx) {
+void VkTexture::shutdown(const ayther::engine::VulkanContextView& ctx) {
     (void)ctx;
     release();
 }
@@ -151,7 +152,7 @@ void VkTexture::release() noexcept {
     allocator_ = nullptr;
 }
 
-size_t VkTexture::release_staging(VkContext& ctx) {
+size_t VkTexture::release_staging(const ayther::engine::VulkanContextView& ctx) {
     if (staging_buf_ == VK_NULL_HANDLE) return 0;
     vmaDestroyBuffer(ctx.allocator(), staging_buf_, staging_alloc_);
     staging_buf_   = VK_NULL_HANDLE;
@@ -204,7 +205,7 @@ static void copy_bgra8888(const uint8_t* src, uint8_t* dst, uint32_t w) {
     std::memcpy(dst, src, static_cast<size_t>(w) * 4);
 }
 
-void VkTexture::upload(VkContext& ctx, VkCommandBuffer cmd,
+void VkTexture::upload(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                        const void* pixels, uint32_t w, uint32_t h,
                        size_t pitch, TexPixelFormat::Value fmt) {
     if (!pixels || w == 0 || h == 0) return;

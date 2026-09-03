@@ -48,11 +48,11 @@ cache eviction must reproduce the exact same order.
 `src/vulkan_backend/vk_sprite.cpp` around texture creation, upload failure,
 video texture replacement, eviction, and shutdown.
 
-**Correction:** introduce a move-only texture owner that binds the Vulkan
-cleanup operation to object lifetime. If destruction requires `VkContext`, use
-an owner carrying a non-owning context reference or a custom deleter whose
-lifetime is constrained by the renderer. Store that owner directly in cache
-entries. This applies RAII and removes duplicated cleanup paths.
+**Correction:** introduce a move-only texture owner that binds Vulkan cleanup
+to object lifetime. Resource owners retain only the borrowed device/allocator
+handles supplied by `VulkanContextView`; the application-owned context remains
+outside Engine. Store the owner directly in cache entries. This applies RAII
+and removes duplicated cleanup paths.
 
 ### 3. Make Vulkan destruction structurally unavoidable
 
@@ -66,9 +66,10 @@ use a dead context. The type system does not encode the required order.
 `VkRenderTarget` explicitly state that shutdown must be called.
 
 **Correction:** group device-dependent resources under one move-only owner that
-cannot outlive `VkContext`, or store the device/allocator handles required for
-destruction inside each wrapper. Keep `shutdown()` idempotent for early release,
-but make the destructor safe and authoritative.
+cannot outlive the host's `VulkanContextView`, or store the borrowed
+device/allocator handles required for destruction inside each wrapper. Keep
+`shutdown()` idempotent for early release, but make the destructor safe and
+authoritative.
 
 ### 4. Eliminate process-visible callback dispatch state
 
@@ -196,6 +197,13 @@ each subsystem becomes buildable. Preserve technical rationale, measurements,
 units, and safety warnings; remove obsolete chronology and task references.
 Standardize user-visible diagnostics through the structured logging work rather
 than translating isolated string literals in place.
+
+Runtime-facing pack operations now use the English, typed
+`engine/pack.hpp` contract. It owns copied metadata and validation findings,
+provides a move-only watcher, and limits archive borrowing to an opaque
+`PackView`. The core ABI revision is likewise available through
+`engine/capabilities.hpp`, so C++ frontends no longer include the raw FFI for
+these operations.
 
 The installed `ayther_session.h` and `ayther_core_ffi.h` still contain hundreds
 of Spanish comment lines. They are explicitly excluded from the new English-

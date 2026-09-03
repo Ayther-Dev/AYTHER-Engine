@@ -21,7 +21,13 @@ target_include_directories(ayther_test_support INTERFACE
 # Every Runtime-facing public header must compile first in an otherwise empty
 # translation unit. Object targets make this a build gate without requiring the
 # native Engine or any renderer dependency.
-foreach(_header_probe IN ITEMS capabilities_header engine_header)
+foreach(_header_probe IN ITEMS
+        capabilities_header
+        core_probe_header
+        input_header
+        layers_header
+        session_header
+        pack_header)
     add_library("ayther_${_header_probe}" OBJECT
         "${PROJECT_SOURCE_DIR}/tests/contracts/${_header_probe}.cpp")
     target_include_directories("ayther_${_header_probe}" PRIVATE
@@ -30,15 +36,78 @@ foreach(_header_probe IN ITEMS capabilities_header engine_header)
     ayther_instrument_target("ayther_${_header_probe}")
 endforeach()
 
+add_library(ayther_core_ffi_header OBJECT
+    "${PROJECT_SOURCE_DIR}/tests/contracts/core_ffi_header.cpp")
+target_include_directories(ayther_core_ffi_header PRIVATE
+    "${PROJECT_SOURCE_DIR}/include")
+target_compile_features(ayther_core_ffi_header PRIVATE cxx_std_20)
+ayther_instrument_target(ayther_core_ffi_header)
+
+# The installed Engine umbrella and Vulkan interop surface intentionally expose
+# Vulkan native types. They exist only for native Engine artifacts, and linking
+# the imported target supplies the same include contract package consumers get.
+if(AYTHER_BUILD_ENGINE)
+    foreach(_header_probe IN ITEMS
+            engine_header
+            renderer_header
+            vulkan_interop_header)
+        add_library("ayther_${_header_probe}" OBJECT
+            "${PROJECT_SOURCE_DIR}/tests/contracts/${_header_probe}.cpp")
+        target_include_directories("ayther_${_header_probe}" PRIVATE
+            "${PROJECT_SOURCE_DIR}/include")
+        target_link_libraries("ayther_${_header_probe}" PRIVATE Vulkan::Vulkan)
+        target_compile_features("ayther_${_header_probe}" PRIVATE cxx_std_20)
+        ayther_instrument_target("ayther_${_header_probe}")
+    endforeach()
+endif()
+
 add_test(
     NAME ayther.package.engine_public_contract
     COMMAND "${CMAKE_COMMAND}"
         "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
-        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;engine.hpp"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;pack.hpp;vulkan_interop.hpp"
         -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
 set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
     LABELS  "native;package")
+
+find_program(AYTHER_PWSH_EXECUTABLE NAMES pwsh)
+if(AYTHER_PWSH_EXECUTABLE)
+    add_test(
+        NAME ayther.package.release_assets
+        COMMAND "${AYTHER_PWSH_EXECUTABLE}" -NoProfile -File
+            "${PROJECT_SOURCE_DIR}/tests/release_assets_test.ps1"
+            -WorkDirectory
+            "${PROJECT_BINARY_DIR}/tests/release_assets_contract"
+            -Finalizer
+            "${PROJECT_SOURCE_DIR}/tools/finalize_release_assets.ps1"
+            -Packager
+            "${PROJECT_SOURCE_DIR}/tools/package_release.ps1")
+    set_tests_properties(ayther.package.release_assets PROPERTIES
+        TIMEOUT 30
+        LABELS  "package;quality")
+
+    add_test(
+        NAME ayther.package.external_consumer_gate
+        COMMAND "${AYTHER_PWSH_EXECUTABLE}" -NoProfile -File
+            "${PROJECT_SOURCE_DIR}/tests/external_consumer_gate_test.ps1"
+            -WorkDirectory
+            "${PROJECT_BINARY_DIR}/tests/external_consumer_gate_contract"
+            -Scanner
+            "${PROJECT_SOURCE_DIR}/tools/check_external_consumer_paths.ps1"
+            -Workflow
+            "${PROJECT_SOURCE_DIR}/.github/workflows/release.yml"
+            -Verifier
+            "${PROJECT_SOURCE_DIR}/tools/verify_staged_release_artifact.ps1"
+            -Packager
+            "${PROJECT_SOURCE_DIR}/tools/package_release.ps1")
+    set_tests_properties(ayther.package.external_consumer_gate PROPERTIES
+        TIMEOUT 30
+        LABELS  "package;quality")
+else()
+    message(WARNING
+        "pwsh was not found; PowerShell release contract tests are unavailable.")
+endif()
 
 function(ayther_add_native_test _source _category)
     get_filename_component(_name "${_source}" NAME_WE)
@@ -86,6 +155,21 @@ if(NOT AYTHER_BUILD_ENGINE)
     return()
 endif()
 
+# Link every public AytherRenderer method through the same target consumers use.
+# No source/private include directory is added: this must remain a pure public
+# header and Ayther::engine symbol-closure check.
+add_executable(ayther_renderer_link_smoke
+    "${PROJECT_SOURCE_DIR}/tests/contracts/renderer_link_smoke.cpp")
+target_link_libraries(ayther_renderer_link_smoke PRIVATE Ayther::engine)
+target_compile_features(ayther_renderer_link_smoke PRIVATE cxx_std_20)
+ayther_instrument_target(ayther_renderer_link_smoke)
+add_test(
+    NAME ayther.package.renderer_link_smoke
+    COMMAND ayther_renderer_link_smoke)
+set_tests_properties(ayther.package.renderer_link_smoke PROPERTIES
+    TIMEOUT 30
+    LABELS  "engine;native;package")
+
 # The installation allowlist must be transitively closed: every project header
 # included by a public header must itself be public and installed.
 add_test(
@@ -111,7 +195,9 @@ set(_ayther_english_documented_headers
     ayther_result.h
     ayther_sdk.h
     ayther_sdk_version.h
-    ayther_version.h)
+    ayther_version.h
+    engine/core_probe.hpp)
+list(APPEND _ayther_english_documented_headers engine/pack.hpp)
 add_test(
     NAME ayther.quality.documentation_language
     COMMAND "${CMAKE_COMMAND}"
@@ -154,6 +240,29 @@ endfunction()
 add_subdirectory(
     "${PROJECT_SOURCE_DIR}/tools/test_core"
     "${PROJECT_BINARY_DIR}/tools/test_core")
+
+# A loadable library without Libretro entry points makes the negative probe
+# case deterministic on every platform and independent of system DLL layout.
+add_library(ayther_not_a_core MODULE
+    "${PROJECT_SOURCE_DIR}/tests/support/not_a_core.cpp")
+set_target_properties(ayther_not_a_core PROPERTIES
+    PREFIX ""
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+target_compile_features(ayther_not_a_core PRIVATE cxx_std_20)
+target_link_libraries(ayther_not_a_core PRIVATE
+    $<BUILD_INTERFACE:ayther_strict_warnings>)
+
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/core_probe_test.cpp"
+    integration)
+target_compile_definitions(ayther_core_probe_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+    AYTHER_NOT_A_CORE_PATH="$<TARGET_FILE:ayther_not_a_core>"
+    AYTHER_MISSING_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}/missing-core")
+add_dependencies(ayther_core_probe_test
+    ayther_test_core
+    ayther_not_a_core)
 
 # Signed content for the release-candidate consumer, which cannot open an
 # unsigned pack in an optimized build.
@@ -201,6 +310,7 @@ if(AYTHER_ENABLE_VPX)
 endif()
 
 if(AYTHER_BUILD_GPU_TESTS)
+    find_package(vk-bootstrap CONFIG REQUIRED)
     foreach(_ayther_gpu_test IN ITEMS
             ab_compare_smoke
             overlay_blend_smoke
@@ -214,7 +324,11 @@ if(AYTHER_BUILD_GPU_TESTS)
             "${PROJECT_SOURCE_DIR}/tools/${_ayther_gpu_test}"
             "${PROJECT_BINARY_DIR}/tools/${_ayther_gpu_test}")
         target_include_directories("${_ayther_gpu_test}" PRIVATE
-            "${PROJECT_SOURCE_DIR}/include/ayther")
+            "${PROJECT_SOURCE_DIR}/include/ayther"
+            "${PROJECT_SOURCE_DIR}/tests/support")
+        target_link_libraries("${_ayther_gpu_test}" PRIVATE
+            GPUOpen::VulkanMemoryAllocator
+            vk-bootstrap::vk-bootstrap)
         ayther_instrument_target("${_ayther_gpu_test}")
     endforeach()
 endif()

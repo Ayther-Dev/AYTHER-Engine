@@ -27,13 +27,14 @@
 // no-op).
 // ---------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
+#include <ayther/engine/vulkan_interop.hpp>
 #include <cstddef>
 #include <cstdint>
 
 struct VmaAllocation_T;
 using  VmaAllocation = VmaAllocation_T*;
 
-class VkContext;
+
 class VkRenderTarget;
 
 class VkIndexedPlane {
@@ -44,26 +45,26 @@ public:
     VkIndexedPlane(const VkIndexedPlane&)            = delete;
     VkIndexedPlane& operator=(const VkIndexedPlane&) = delete;
 
-    bool init(VkContext& ctx, const VkRenderTarget& target,
+    bool init(const ayther::engine::VulkanContextView& ctx, const VkRenderTarget& target,
               const char* vert_spv_path, const char* frag_spv_path);
     /// R-5: the offscreen changed (resize) — recreates ONLY the framebuffer
     /// over the new view (pipeline, textures and shadows persist; the format
     /// does not change).
-    bool rebuild(VkContext& ctx, const VkRenderTarget& target);
-    void shutdown(VkContext& ctx);
+    bool rebuild(const ayther::engine::VulkanContextView& ctx, const VkRenderTarget& target);
+    void shutdown(const ayther::engine::VulkanContextView& ctx);
     bool is_ready() const { return pipeline_ != VK_NULL_HANDLE; }
 
     /// Raw core VRAM (64 KB, the host word-swapped view — the same one
     /// video_ram() returns). It compares against the shadow per tile (32 bytes)
     /// and uploads ONLY the tiles that changed (one copy region per dirty
     /// tile).
-    void upload_vram(VkContext& ctx, VkCommandBuffer cmd,
+    void upload_vram(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                      const uint8_t* vram, size_t size);
 
     /// Raw core CRAM (128 bytes, GPX layout 0000BBB0GGG0RRR0). If it changed,
     /// it re-converts the 64 colours and uploads the whole palette (256
     /// bytes).
-    void upload_cram(VkContext& ctx, VkCommandBuffer cmd,
+    void upload_cram(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                      const uint8_t* cram, size_t size);
 
     /// One plane tile on screen: destination in canvas px + identity.
@@ -110,7 +111,7 @@ public:
     /// Draws the quads (one draw + push constant per cell — the model of the
     /// epic: one effect per element = one uniform per quad). scissor_x crops
     /// columns from the left (the VDP left-column blanking, reg 0 bit 5).
-    void draw_cells(VkContext& ctx, VkCommandBuffer cmd,
+    void draw_cells(const ayther::engine::VulkanContextView& ctx, VkCommandBuffer cmd,
                     const CellQuad* cells, size_t count,
                     uint32_t canvas_w, uint32_t canvas_h, int32_t scissor_x = 0);
 
@@ -122,9 +123,9 @@ public:
     static uint32_t genesis_color_rgba(uint16_t packed);
 
 private:
-    VkContext* context_ = nullptr;
-    bool create_images(VkContext& ctx);
-    bool create_pipeline(VkContext& ctx, VkFormat fmt,
+    const ayther::engine::VulkanContextView* context_ = nullptr;
+    bool create_images(const ayther::engine::VulkanContextView& ctx);
+    bool create_pipeline(const ayther::engine::VulkanContextView& ctx, VkFormat fmt,
                          const char* vert_spv_path, const char* frag_spv_path);
 
     // Index texture (512×256 R8_UINT) + persistent staging.

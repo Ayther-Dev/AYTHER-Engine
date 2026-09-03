@@ -9,7 +9,8 @@
 #include "vulkan_backend/tile_tex_cache.h"
 #include "decode_limits.h"
 #include "log.h"
-#include "vulkan_backend/vk_context.h"
+#include <ayther/engine/vulkan_interop.hpp>
+#include "vulkan_backend/vk_diagnostics.h"
 #include "ayther_core_ffi.h"   // ayther_pack_file_size / ayther_pack_read
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -24,7 +25,7 @@
 
 VkTexture* TileTexCache::get_or_load(const std::string& asset_path,
                                      AyArchive*         pack,
-                                     VkContext&         ctx,
+                                     const ayther::engine::VulkanContextView&         ctx,
                                      VkCommandBuffer    cmd) {
     auto it = map.find(asset_path);
     if (it != map.end())
@@ -102,7 +103,7 @@ VkTexture* TileTexCache::get_or_load(const std::string& asset_path,
     return &entry.tex;
 }
 
-void TileTexCache::pump(VkContext& ctx) {
+void TileTexCache::pump(const ayther::engine::VulkanContextView& ctx) {
     ++tick_;
     if (staging_release_.empty()) return;
     size_t freed = 0;
@@ -122,7 +123,7 @@ void TileTexCache::pump(VkContext& ctx) {
             freed / 1024);
 }
 
-void TileTexCache::shutdown(VkContext& ctx) {
+void TileTexCache::shutdown(const ayther::engine::VulkanContextView& ctx) {
     (void)ctx;
     staging_release_.clear();   // : los Entry* dejan de existir
     map.clear();

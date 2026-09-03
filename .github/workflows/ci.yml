@@ -531,6 +531,7 @@ jobs:
           -B '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}'
           -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
           -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DCMAKE_PREFIX_PATH='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'

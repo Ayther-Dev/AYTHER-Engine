@@ -2,7 +2,7 @@
 
 **Status:** pre-release, installable engine contracts
 
-**Last reviewed:** 2026-08-27
+**Last reviewed:** 2026-09-02
 
 This document describes the C++ source currently under `include/ayther/` and
 `src/`. It records contracts that are otherwise easy to miss at call sites:
@@ -43,8 +43,10 @@ Concurrency, Source files, and Performance sections.
 |---|---|---|
 | `Ayther::core` and `ayther_core_ffi.h` | Buildable, installable, unstable | Flat C ABI backed by Rust. Opaque handles use paired allocation and release functions. |
 | `Ayther::engine` and `ayther_sdk.h` | Buildable, installable, provisional | Higher-level C facade over a native session. |
+| `engine/capabilities.hpp`, `engine/core_probe.hpp`, `engine/input.hpp`, and `engine/pack.hpp` | Installed, provisional | Typed C++ queries for versions, core metadata, input, packs, validation, tiers, and watching. Raw core and Libretro declarations do not cross this surface. |
 | `AytherSession` | Installed, provisional | Primary C++ orchestration facade. Single-owner and single-thread driven. |
-| Audio, renderer, Vulkan, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
+| `AytherRenderer` and `engine/vulkan_interop.hpp` | Installed, provisional | Public offscreen Vulkan renderer and borrowed-handle handoff contract. |
+| Audio, renderer implementation, Vulkan presentation, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
 
 ## Ownership and lifetime map
 
@@ -54,8 +56,10 @@ Concurrency, Source files, and Performance sections.
 | Rust opaque handles | Exclusive through `unique_handle` or paired C functions | Never dereference. Release with the matching API function only. |
 | `FrameView` returned by `step()` | Borrowed | Valid until the next operation that advances, resets, rewinds, reloads, or destroys the session. Copy data that must outlive that boundary. |
 | Memory returned by `RetroRunner` | Borrowed from the loaded core | Invalid after core reset, unload, or any operation documented by the core as reallocating memory. |
-| `AyArchive*` passed to renderer, audio, or video helpers | Borrowed | The caller must keep the archive alive for the complete call or cached operation that documents retention. |
-| SDL and Vulkan handles | Owned by their wrapper or owning subsystem | Destruction order matters. Device-dependent resources must be released before their `VkContext`. |
+| `engine::PackView` returned by `AytherSession::pack()` | Borrowed | Trivially copyable and non-owning. Invalid after the session reloads, replaces, or destroys its pack; callers cannot unwrap its hidden handle. |
+| `engine::PackInfo` and `engine::PackValidationResult` | Owned values | Strings and findings remain valid independently of temporary archive and report handles. |
+| `engine::PackWatcher` | Exclusive, move-only RAII | `create()` starts the platform watcher; destruction stops it and releases the hidden core handle. `poll()` is non-blocking. |
+| `VulkanContextView` handles | Borrowed by Engine from the host application | Device-dependent Engine resources and submitted work must finish before the host destroys its device or allocator. Surface and swapchain handles are not exposed to Engine. |
 | Callback `user` pointers in the C facade | Borrowed | Must remain valid until the callback is removed or the session is destroyed. Callbacks must not retain transient frame pointers. |
 
 ## Primary session contract
@@ -76,6 +80,12 @@ The session is not thread-safe. Drive `set_input()`, `step()`, reset, rewind,
 pack changes, and recording operations from one owning thread. Frontends may
 copy immutable frame data to another thread after respecting the `FrameView`
 lifetime boundary.
+
+`engine/input.hpp` publishes the stable Libretro joypad bit positions as
+`RetroPadButton`. `input_mask()` is the only conversion needed before passing a
+button to the raw `std::uint16_t` `set_input()` overload; neither the enum nor
+the conversion exposes a Libretro header. `InputState` is the typed multi-button
+value accepted by the session overload.
 
 Failure to activate optional replacement content should preserve native output
 when safe. Core/ROM loading, invalid required configuration, failed patches, and
@@ -102,15 +112,37 @@ identity generation.
 
 ### Emulator host
 
-`CoreLoader` owns one dynamic library handle. `RetroRunner` binds the libretro
-C callback model to an object instance, owns ROM bytes and core lifecycle, and
-exposes borrowed memory views. Dynamic libraries and ROMs are untrusted inputs.
-Symbol resolution, capability negotiation, buffer bounds, and versioned AYTHER
-extensions must be checked before use.
+Public consumers use the move-only `ayther::engine::CoreProbe` to inspect a
+core. It owns one dynamic library handle and copies `CoreInfo` before exposing
+metadata; platform handles, symbol lookup, and Libretro structures remain
+private. `RetroRunner` binds the libretro C callback model to an object
+instance, owns ROM bytes and core lifecycle, and exposes borrowed memory views.
+Dynamic libraries and ROMs are untrusted inputs. Symbol resolution, capability
+negotiation, buffer bounds, and versioned AYTHER extensions must be checked
+before use.
 
 The callback bridge currently relies on process-visible dispatch state. Until
 that design is replaced or formally constrained, callers must not drive two
 runner instances concurrently.
+
+### Packs and core ABI
+
+Public C++ consumers include `engine/pack.hpp`. `inspect_pack()` opens a pack
+temporarily and copies its manifest-backed metadata into `PackInfo`;
+`validate_pack()` copies every diagnostic into `PackValidationResult`, so no
+paired report-free function is exposed. An optional trust-registry path can be
+supplied when inspection must authenticate signed fixtures.
+
+`AytherSession::pack()` returns `PackView`, never `AyArchive*`. The view may be
+passed to `AytherRenderer`, used to choose a render tier before assets are
+loaded, or queried for owned metadata. It must not outlive a pack reload or its
+session. `PackWatcher` encapsulates the platform thread and raw watcher handle;
+destroy it before the session and resources affected by reload.
+
+`engine::core_abi_revision()` reports the linked core ABI revision without
+requiring the C header. Game-specific work-RAM interpretation is deliberately
+outside Engine. The flat `ayther_core_ffi.h` surface remains available only for
+callers intentionally selecting the public C ABI and for Engine internals.
 
 ### Audio
 
@@ -134,10 +166,13 @@ resources. It is intentionally separate from the session so headless execution
 does not require Vulkan.
 
 The renderer and its Vulkan helpers are thread-affine to the caller's render
-thread. The caller must ensure that `VkContext` outlives every dependent object
-and that GPU work is synchronized before resources referenced by submitted
-commands are destroyed or replaced. Explicit `shutdown(context)` requirements
-are provisional and must be treated as mandatory.
+thread. The caller passes a borrowed `engine::VulkanContextView` and must keep
+its instance, physical device, logical device, graphics queue, queue family,
+and VMA allocator valid until every dependent object is released. GPU work must
+be synchronized before resources referenced by submitted commands are
+destroyed or replaced. `shutdown(context_view)` provides deterministic release
+before the host context is torn down. If it is omitted, the destructor releases
+initialized renderer resources, so the borrowed context must still be alive.
 
 Asynchronous sprite decoding owns CPU buffers until the render thread pumps the
 completed uploads. Worker shutdown must wake the condition variable and join the
@@ -150,14 +185,15 @@ without treating the game as the whole window.
 
 The normal lifecycle is:
 
-1. the frontend creates `VkContext`;
-2. `AytherRenderer::init` creates device-dependent resources for one extent;
+1. the application creates and owns its Vulkan context and presentation state;
+2. it passes a borrowed `VulkanContextView` to `AytherRenderer::init`, which
+   creates device-dependent resources for one extent;
 3. each frame, the session produces `FrameView` and the renderer records into a
    caller-provided command buffer;
 4. the frontend presents, samples, or reads back the offscreen target;
 5. resize waits for conflicting GPU work, then recreates the target and every
    dependent framebuffer or descriptor;
-6. `shutdown(context)` releases renderer resources before the context dies.
+6. `shutdown(context_view)` releases renderer resources before the host context dies.
 
 A shared command-buffer model currently keeps render and presentation in one
 submission. Independent renderer submission and a dedicated render thread are
@@ -211,9 +247,9 @@ invent a newer public contract.
 | Facades and contracts | `ayther_session.h`, `ayther_sdk.h`, `ayther_result.h`, `ayther_sdk_version.h` | Session orchestration, C facade, errors, compatibility |
 | Identity and composition | `ayther_layers.h`, `ayther_animation.h`, `ayther_audio_events.h`, `ayther_mode3.h`, `widescreen.h`, `parallax_bands.h`, `pano_bands.h`, `panorama_cover.h` | Frame interpretation and replacement composition |
 | Audio | `audio_player.h`, `audio_hd_mixer.h`, `audio_live_resume.h`, `audio_match_rule.h`, `audio_seq_anchor.h`, `audio_bus_balance.h`, `audio_asset_level.h`, `voice_router.h`, `psg_synth.h` | Capture, matching, synthesis, routing, mixing, analysis |
-| Video and rendering | `ayther_video.h`, `ayther_renderer.h`, `vulkan_backend/*.h` | Decode, GPU upload, composition, readback |
+| Video and rendering | `ayther_video.h`, `ayther_renderer.h` | Decode, GPU upload, composition, readback |
 | Runtime state | `ayther_recording.h`, `rewind_buffer.h`, `failure_escalation.h`, `output_profile.h`, `ayther_config.h` | Persistence, recovery, policy, output geometry, configuration |
-| Emulator integration | `libretro_host/core_loader.h`, `libretro_host/retro_runner.h`, `libretro_host/ayther_api.h` | Dynamic loading, libretro lifecycle, versioned extensions |
+| Emulator integration | `engine/core_probe.hpp`, `libretro_host/retro_runner.h`, `libretro_host/ayther_api.h` | Public metadata probing, internal libretro lifecycle, versioned extensions |
 | Rust boundary | `ayther_core_ffi.h`, `ayther_unique_handle.h` | Flat ABI and RAII ownership adapters |
 
 `libretro_host/libretro.h` is a third-party protocol header. Preserve its
