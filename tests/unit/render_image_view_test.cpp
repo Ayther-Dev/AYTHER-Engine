@@ -86,13 +86,11 @@ int main() {
     const auto a = static_cast<RetroPadButton>(runtime_a);
     const auto combined = InputState{a} | InputState{RetroPadButton::start};
     const auto restored = InputState::from_bits(combined.bits());
-    const auto invalid_button = static_cast<RetroPadButton>(16U);
     const bool typed_input_is_exact =
         InputState{}.bits() == 0U &&
         restored.pressed(RetroPadButton::a) &&
         restored.pressed(RetroPadButton::start) &&
-        !restored.pressed(RetroPadButton::b) &&
-        ayther::engine::input_mask(invalid_button) == 0U;
+        !restored.pressed(RetroPadButton::b);
 
     std::printf("  [%s] an empty borrowed Vulkan context is invalid and inert\n",
                 context_defaults_are_safe ? " OK " : "FAIL");

@@ -551,6 +551,8 @@ VkDescriptorSet VkSprite::get_mask_set(const ayther::engine::VulkanContextView& 
 // ---------------------------------------------------------------------------
 // VkSprite::create_framebuffers / destroy_framebuffers
 // ---------------------------------------------------------------------------
+// Width and height deliberately mirror Vulkan's paired extent dimensions.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 bool VkSprite::create_framebuffer(const ayther::engine::VulkanContextView& ctx, VkImageView view, uint32_t w, uint32_t h) {
     fb_w_ = w;
     fb_h_ = h;

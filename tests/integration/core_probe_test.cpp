@@ -75,7 +75,7 @@ int main() {
     {
         auto probed = ayther::engine::probe_core(AYTHER_TEST_CORE_PATH);
         check(static_cast<bool>(probed), "the in-repository Libretro core loads");
-        if (probed) {
+        if (probed.value.has_value()) {
 #if defined(_WIN32) || defined(RTLD_NOLOAD)
             check(module_is_loaded(test_core_path),
                   "CoreProbe keeps the dynamic library loaded");
@@ -99,7 +99,7 @@ int main() {
                           std::string::npos,
                   "the probe serializes as one compact JSON object");
 
-            auto moved = std::move(*probed.value);
+            auto moved = std::move(probed.value.value());
             check(moved.info().library_name == "AYTHER Test Core",
                   "moving the RAII probe retains its owned metadata");
 #if defined(_WIN32) || defined(RTLD_NOLOAD)

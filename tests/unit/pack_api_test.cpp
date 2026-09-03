@@ -124,8 +124,8 @@ int main() {
         check(!moved.poll(), "an unchanged pack produces no watcher event");
         auto replacement = PackWatcher::create(fixture.pack_path());
         check(static_cast<bool>(replacement), "a second watcher can be created");
-        if (replacement) {
-            *replacement.value = std::move(moved);
+        if (replacement.value.has_value()) {
+            replacement.value.value() = std::move(moved);
             check(replacement->is_active(),
                   "move assignment transfers watcher ownership");
         }

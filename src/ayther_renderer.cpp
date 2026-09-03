@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>      // getenv (tope de uploads, )
 #include <filesystem>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -428,7 +429,13 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     //
     // Y NO se le aplica al VIDEO (): una textura persistente que se re-sube
     // cada frame no crea imagen, ni mips, ni descriptores — no pasa por acá.
-    if (impl_->sprite_ok_) impl_->sprite_.pump_uploads(ctx, cmd, impl_->options_.upload_budget());
+    if (impl_->sprite_ok_) {
+        constexpr auto kMaxUploadBudget =
+            static_cast<std::uint32_t>(std::numeric_limits<int>::max());
+        const auto upload_budget = static_cast<int>(
+            std::min(impl_->options_.upload_budget(), kMaxUploadBudget));
+        impl_->sprite_.pump_uploads(ctx, cmd, upload_budget);
+    }
     // : liberar el staging de tiles ya garantizados por fence (1×/frame).
     impl_->tile_cache_.pump(ctx);
 

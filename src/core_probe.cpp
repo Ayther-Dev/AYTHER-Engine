@@ -85,10 +85,11 @@ public:
                 "' with Windows error " + std::to_string(error_code);
         }
 #else
-        dlerror();
+        dlerror();  // NOLINT(concurrency-mt-unsafe): POSIX specifies per-thread error state.
         handle_ = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
         if (handle_ == nullptr) {
-            const char* error = dlerror();
+            // POSIX specifies that dlerror state is local to the calling thread.
+            const char* error = dlerror();  // NOLINT(concurrency-mt-unsafe)
             return "dlopen failed for '" + display_path(path) + "': " +
                 (error != nullptr ? error : "unknown platform error");
         }
