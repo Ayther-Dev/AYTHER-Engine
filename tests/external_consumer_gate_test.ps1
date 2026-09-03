@@ -183,10 +183,14 @@ Write-Host 'Package-consumer release topology contract passed.'
 $runtimeWorkflowText = [System.IO.File]::ReadAllText(
     (Resolve-Path -LiteralPath $RuntimeWorkflow).Path).Replace("`r`n", "`n")
 foreach ($requiredRuntimeStep in @(
-        'release:',
+        'workflow_run:',
+        '- Release',
+        '- completed',
         'workflow_dispatch:',
         'AYTHER_RUNTIME_REPOSITORY: Ayther-Dev/AYTHER-Runtime',
-        'Check out the exact published Engine tag',
+        'GH_TOKEN: ${{ github.token }}',
+        'Check out trusted Engine verification tools',
+        'ref: ${{ github.event.repository.default_branch }}',
         'Check out the pinned independent Runtime',
         'Verify and unpack the published Engine package',
         'Configure Runtime against the published Engine package',
@@ -196,6 +200,11 @@ foreach ($requiredRuntimeStep in @(
             $requiredRuntimeStep, [StringComparison]::Ordinal)) {
         throw "Runtime integration workflow is missing '$requiredRuntimeStep'."
     }
+}
+if (-not $runtimeWorkflowText.Contains(
+        "github.event.workflow_run.conclusion == 'success'",
+        [StringComparison]::Ordinal)) {
+    throw 'Automatic Runtime integration must require a successful Release workflow.'
 }
 foreach ($forbiddenRuntimePermission in @('environment: release', 'contents: write')) {
     if ($runtimeWorkflowText.Contains(

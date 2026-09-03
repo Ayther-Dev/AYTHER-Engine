@@ -1,9 +1,11 @@
 name: Runtime integration
 
 on:
-  release:
+  workflow_run:
+    workflows:
+      - Release
     types:
-      - published
+      - completed
   workflow_dispatch:
     inputs:
       tag:
@@ -21,20 +23,25 @@ permissions:
   attestations: read
 
 concurrency:
-  group: runtime-integration-${{ github.event.release.tag_name || inputs.tag }}
+  group: runtime-integration-${{ github.event.workflow_run.id || inputs.tag }}
   cancel-in-progress: false
 
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 2
   AYTHER_RUNTIME_REPOSITORY: Ayther-Dev/AYTHER-Runtime
   AYTHER_RUNTIME_REF: ${{ inputs.runtime_ref || '7580a88ed34e32f9ca7603152fb35c0e939dbc4e' }}
-  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
 
 jobs:
   runtime-consumer:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     name: Runtime ${{ matrix.product }} ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
     strategy:
       fail-fast: false
       matrix:
@@ -61,10 +68,10 @@ jobs:
             needs_vpx: true
 
     steps:
-      - name: Check out the exact published Engine tag
+      - name: Check out trusted Engine verification tools
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.event.repository.default_branch }}
           path: engine-gate
           persist-credentials: false
 

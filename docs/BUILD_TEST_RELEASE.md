@@ -353,10 +353,12 @@ Both variants pass through the same fresh-runner package gate.
 target visible after package discovery. Its own pinned vcpkg manifest supplies
 only the dependencies required by the installed Engine package.
 
-The independently versioned AYTHER Runtime is validated after publication by
-`.github/workflows/runtime-integration.yml`. That workflow consumes the signed,
-attested release archives but is deliberately not part of the release DAG: a
-Runtime repository or implementation failure cannot block an Engine release.
+The independently versioned AYTHER Runtime is validated after a successful
+`Release` workflow by `.github/workflows/runtime-integration.yml`. The
+`workflow_run` trigger avoids GitHub's suppression of events emitted with
+`GITHUB_TOKEN`. This separate workflow consumes the signed, attested release
+archives but is deliberately not part of the release DAG: a Runtime repository
+or implementation failure cannot block an Engine release.
 
 ## Publishing a release candidate
 
