@@ -97,6 +97,8 @@ if(AYTHER_PWSH_EXECUTABLE)
             "${PROJECT_SOURCE_DIR}/tools/check_external_consumer_paths.ps1"
             -Workflow
             "${PROJECT_SOURCE_DIR}/.github/workflows/release.yml"
+            -RuntimeWorkflow
+            "${PROJECT_SOURCE_DIR}/.github/workflows/runtime-integration.yml"
             -Verifier
             "${PROJECT_SOURCE_DIR}/tools/verify_staged_release_artifact.ps1"
             -Packager
