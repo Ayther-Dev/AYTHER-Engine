@@ -1,4 +1,5 @@
 #include <ayther/ayther_renderer.h>
+#include <ayther/ayther_session.h>
 
 #include <cstdio>
 #include <type_traits>
@@ -61,10 +62,45 @@ int main() {
 
     retain_renderer_surface();
 
-    const Renderer renderer;
+    Renderer renderer;
+    renderer.set_checker(true);
+    renderer.set_focus_layer(2);
+
+    const ayther::engine::VulkanContextView empty_context{};
+    const ayther::FrameView empty_frame{};
+    const ayther::SceneElement no_asset{};
+    renderer.prewarm_sprite("missing.png", 3U);
+    renderer.prewarm_sprite_mask("missing-mask.png", 1U);
+    renderer.poll_disk_sprite_textures(empty_context);
+    renderer.evict_sprite_texture(empty_context, "missing.png");
+    renderer.evict_pack_textures(empty_context);
+
     const bool inert = !renderer.is_ready() &&
+                       renderer.emu_frame_w() == 0U &&
+                       renderer.emu_frame_h() == 0U &&
+                       renderer.checker() && renderer.focus_layer() == 2 &&
+                       renderer.framebuffer_image() == VK_NULL_HANDLE &&
+                       renderer.framebuffer_view() == VK_NULL_HANDLE &&
+                       renderer.framebuffer_sampler() == VK_NULL_HANDLE &&
+                       renderer.framebuffer_extent().width == 0U &&
+                       !renderer.compare_ready() &&
+                       renderer.compare_image() == VK_NULL_HANDLE &&
+                       renderer.compare_view() == VK_NULL_HANDLE &&
+                       renderer.compare_sampler() == VK_NULL_HANDLE &&
+                       renderer.compare_extent().height == 0U &&
                        !renderer.render_image().is_valid() &&
-                       !renderer.compare_render_image().is_valid();
+                       !renderer.compare_render_image().is_valid() &&
+                       !renderer.init(empty_context, 1U, 1U, nullptr) &&
+                       !renderer.capture_compare(empty_context, VK_NULL_HANDLE) &&
+                       renderer.export_frame(empty_context, empty_frame, nullptr,
+                                             false) == nullptr &&
+                       renderer.readback_compare(empty_context) == nullptr &&
+                       !renderer.capture_compare_now(empty_context) &&
+                       renderer.sub_texture_state(empty_frame, no_asset) ==
+                           Renderer::TextureState::not_requested;
+    renderer.compare_release(empty_context);
+    renderer.readback_shutdown(empty_context);
+    renderer.shutdown(empty_context);
     std::printf("  [%s] public AytherRenderer surface links and defaults inert\n",
                 inert ? " OK " : "FAIL");
     return inert ? 0 : 1;

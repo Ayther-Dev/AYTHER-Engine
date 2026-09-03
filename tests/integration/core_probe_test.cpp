@@ -115,12 +115,13 @@ int main() {
 
     const ayther::engine::CoreInfo hostile{
         .api_version = 1U,
-        .library_name = "quote\"slash\\line\n",
+        .library_name = "quote\"slash\\back\bform\ffeed\ncarriage\rreturn",
         .library_version = "tab\tvalue",
         .valid_extensions = std::string{"bin\x01", 4U},
     };
     const std::string escaped = hostile.serialize();
-    check(escaped.find("quote\\\"slash\\\\line\\n") != std::string::npos &&
+    check(escaped.find("quote\\\"slash\\\\back\\bform\\ffeed\\ncarriage\\rreturn") !=
+              std::string::npos &&
               escaped.find("tab\\tvalue") != std::string::npos &&
               escaped.find("bin\\u0001") != std::string::npos,
           "serialization escapes quotes, slashes, and every control character");

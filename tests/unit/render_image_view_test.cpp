@@ -1,4 +1,5 @@
 #include <ayther/engine/vulkan_interop.hpp>
+#include <ayther/engine/input.hpp>
 
 #include <cstdint>
 #include <cstdio>
@@ -50,14 +51,66 @@ int main() {
     };
     const bool incomplete_view_is_rejected = !missing_sampler.is_valid();
 
+    const ayther::engine::VulkanContextView complete_context{
+        .instance_handle = non_null_handle<VkInstance>(),
+        .physical_device_handle = non_null_handle<VkPhysicalDevice>(),
+        .device_handle = non_null_handle<VkDevice>(),
+        .graphics_queue_handle = non_null_handle<VkQueue>(),
+        .graphics_queue_family_index = 7U,
+        .allocator_handle = non_null_handle<VmaAllocator>(),
+    };
+    const bool context_accessors_match = complete_context.is_valid() &&
+        complete_context.instance() == complete_context.instance_handle &&
+        complete_context.physical_device() == complete_context.physical_device_handle &&
+        complete_context.device() == complete_context.device_handle &&
+        complete_context.graphics_queue() == complete_context.graphics_queue_handle &&
+        complete_context.graphics_family() == 7U &&
+        complete_context.allocator() == complete_context.allocator_handle;
+
+    const ayther::engine::RenderImageView complete_image{
+        .image = non_null_handle<VkImage>(),
+        .image_view = non_null_handle<VkImageView>(),
+        .sampler = non_null_handle<VkSampler>(),
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {320U, 240U},
+        .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .ready_stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        .ready_access_mask = VK_ACCESS_SHADER_READ_BIT,
+        .queue_family_index = 7U,
+    };
+    const bool complete_image_is_valid = complete_image.is_valid();
+
+    using ayther::engine::InputState;
+    using ayther::engine::RetroPadButton;
+    const volatile std::uint8_t runtime_a = 8U;
+    const auto a = static_cast<RetroPadButton>(runtime_a);
+    const auto combined = InputState{a} | InputState{RetroPadButton::start};
+    const auto restored = InputState::from_bits(combined.bits());
+    const auto invalid_button = static_cast<RetroPadButton>(16U);
+    const bool typed_input_is_exact =
+        InputState{}.bits() == 0U &&
+        restored.pressed(RetroPadButton::a) &&
+        restored.pressed(RetroPadButton::start) &&
+        !restored.pressed(RetroPadButton::b) &&
+        ayther::engine::input_mask(invalid_button) == 0U;
+
     std::printf("  [%s] an empty borrowed Vulkan context is invalid and inert\n",
                 context_defaults_are_safe ? " OK " : "FAIL");
     std::printf("  [%s] an empty borrowed image view is invalid and inert\n",
                 defaults_are_safe ? " OK " : "FAIL");
     std::printf("  [%s] a handoff without the Engine sampler is invalid\n",
                 incomplete_view_is_rejected ? " OK " : "FAIL");
+    std::printf("  [%s] a complete borrowed Vulkan context preserves every handle\n",
+                context_accessors_match ? " OK " : "FAIL");
+    std::printf("  [%s] a complete rendered image handoff is valid\n",
+                complete_image_is_valid ? " OK " : "FAIL");
+    std::printf("  [%s] typed input masks compose and round-trip exactly\n",
+                typed_input_is_exact ? " OK " : "FAIL");
     const bool all_checks_pass = context_defaults_are_safe &&
                                  defaults_are_safe &&
-                                 incomplete_view_is_rejected;
+                                 incomplete_view_is_rejected &&
+                                 context_accessors_match &&
+                                 complete_image_is_valid &&
+                                 typed_input_is_exact;
     return all_checks_pass ? 0 : 1;
 }
