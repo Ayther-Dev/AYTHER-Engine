@@ -360,6 +360,13 @@ The independently versioned AYTHER Runtime is validated after a successful
 archives but is deliberately not part of the release DAG: a Runtime repository
 or implementation failure cannot block an Engine release.
 
+The integration matrix runs Runtime's CTest suite on both platforms. On Linux
+it excludes only `probe_core`, whose negative fixture is explicitly the
+Windows-only `SDL3.dll`; the package configuration, build, and the remaining
+Runtime tests still run against the verified Linux Engine archive. The final
+path audit accepts an empty imported-target report as valid evidence and still
+rejects any reference to the trusted Engine tooling checkout.
+
 ## Publishing a release candidate
 
 The version contract accepts a pre-release suffix. `CMakeLists.txt`,
