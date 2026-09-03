@@ -10,6 +10,9 @@ param(
     [string]$Workflow,
 
     [Parameter(Mandatory = $true)]
+    [string]$RuntimeWorkflow,
+
+    [Parameter(Mandatory = $true)]
     [string]$Verifier,
 
     [Parameter(Mandatory = $true)]
@@ -98,12 +101,12 @@ $workflowText = [System.IO.File]::ReadAllText(
 $buildOffset = $workflowText.IndexOf("`n  build:`n", [StringComparison]::Ordinal)
 $attestOffset = $workflowText.IndexOf("`n  attest:`n", [StringComparison]::Ordinal)
 $consumerOffset = $workflowText.IndexOf(
-    "`n  external-consumer:`n", [StringComparison]::Ordinal)
+    "`n  package-consumer:`n", [StringComparison]::Ordinal)
 $publishOffset = $workflowText.IndexOf("`n  publish:`n", [StringComparison]::Ordinal)
 if ($buildOffset -lt 0 -or $attestOffset -le $buildOffset -or
     $consumerOffset -le $attestOffset -or
     $publishOffset -le $consumerOffset) {
-    throw 'Release jobs must be ordered build -> attest -> external-consumer -> publish.'
+    throw 'Release jobs must be ordered build -> attest -> package-consumer -> publish.'
 }
 
 $buildJob = $workflowText.Substring($buildOffset, $attestOffset - $buildOffset)
@@ -134,14 +137,26 @@ $requiredExternalSteps = @(
     'Download the attested packaged artifacts',
     'Verify checksum, signature, provenance, and payload',
     'Configure the minimal consumer from the package prefix',
-    'Configure Runtime against only the extracted package',
-    'Build Runtime',
-    'Run Runtime CTest',
-    'Reject producer and monorepo paths',
+    'Build and run the minimal consumer',
+    'Reject producer paths',
+    '-DVCPKG_MANIFEST_DIR=$env:MINIMAL_SOURCE',
     "-ForbiddenRoots '`${{ github.workspace }}'")
 foreach ($requiredStep in $requiredExternalSteps) {
     if (-not $externalJob.Contains($requiredStep, [StringComparison]::Ordinal)) {
         throw "External-consumer workflow is missing '$requiredStep'."
+    }
+}
+
+foreach ($forbiddenRuntimeReference in @(
+        'AYTHER_RUNTIME_REPOSITORY',
+        'AYTHER_RUNTIME_REF',
+        'Check out the pinned independent Runtime',
+        'Configure Runtime',
+        'Build Runtime',
+        'Run Runtime CTest')) {
+    if ($workflowText.Contains(
+            $forbiddenRuntimeReference, [StringComparison]::Ordinal)) {
+        throw "Release workflow must not depend on Runtime ('$forbiddenRuntimeReference')."
     }
 }
 
@@ -159,11 +174,37 @@ foreach ($expectation in $matrixExpectations.GetEnumerator()) {
 }
 
 $publishJob = $workflowText.Substring($publishOffset)
-if (-not $publishJob.Contains('needs: external-consumer', [StringComparison]::Ordinal)) {
-    throw 'Publication must depend on the complete external-consumer matrix.'
+if (-not $publishJob.Contains('needs: package-consumer', [StringComparison]::Ordinal)) {
+    throw 'Publication must depend on the complete package-consumer matrix.'
 }
 
-Write-Host 'External-consumer workflow topology contract passed.'
+Write-Host 'Package-consumer release topology contract passed.'
+
+$runtimeWorkflowText = [System.IO.File]::ReadAllText(
+    (Resolve-Path -LiteralPath $RuntimeWorkflow).Path).Replace("`r`n", "`n")
+foreach ($requiredRuntimeStep in @(
+        'release:',
+        'workflow_dispatch:',
+        'AYTHER_RUNTIME_REPOSITORY: Ayther-Dev/AYTHER-Runtime',
+        'Check out the exact published Engine tag',
+        'Check out the pinned independent Runtime',
+        'Verify and unpack the published Engine package',
+        'Configure Runtime against the published Engine package',
+        'Build Runtime',
+        'Run Runtime CTest')) {
+    if (-not $runtimeWorkflowText.Contains(
+            $requiredRuntimeStep, [StringComparison]::Ordinal)) {
+        throw "Runtime integration workflow is missing '$requiredRuntimeStep'."
+    }
+}
+foreach ($forbiddenRuntimePermission in @('environment: release', 'contents: write')) {
+    if ($runtimeWorkflowText.Contains(
+            $forbiddenRuntimePermission, [StringComparison]::Ordinal)) {
+        throw "Runtime integration must not publish releases ('$forbiddenRuntimePermission')."
+    }
+}
+
+Write-Host 'Independent Runtime integration topology contract passed.'
 
 $verifierText = [System.IO.File]::ReadAllText(
     (Resolve-Path -LiteralPath $Verifier).Path).Replace("`r`n", "`n")

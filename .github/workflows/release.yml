@@ -16,10 +16,6 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
   CMAKE_BUILD_PARALLEL_LEVEL: 2
-  AYTHER_RUNTIME_REPOSITORY: Ayther-Dev/AYTHER-Runtime
-  # Release consumers are reproducible only when the independent Runtime source
-  # is immutable too. Advance this SHA deliberately with the compatibility gate.
-  AYTHER_RUNTIME_REF: e525d8a1a3156325e5ff2003983f5b00bc85ecd3
 
 jobs:
   validate:
@@ -81,7 +77,7 @@ jobs:
   build:
     # v0.1.x ships two Engine variants on two platforms. Each one is built,
     # tested, packaged twice, unpacked, and payload-checked. Consumption belongs
-    # to the fresh-runner external-consumer job below.
+    # to the fresh-runner package-consumer job below.
     name: ${{ matrix.product }} ${{ matrix.platform }}
     needs: validate
     runs-on: ${{ matrix.os }}
@@ -373,8 +369,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  external-consumer:
-    name: External consumer ${{ matrix.product }} ${{ matrix.platform }}
+  package-consumer:
+    name: Package consumer ${{ matrix.product }} ${{ matrix.platform }}
     needs: attest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
@@ -414,37 +410,22 @@ jobs:
       ARTIFACT_NAME: ${{ matrix.product }}-${{ github.ref_name }}-${{ matrix.platform }}
     steps:
       # This checkout provides only the gate harness. No producer build output
-      # exists on this runner, and all CMake source trees are copied to temp.
+      # exists on this runner, and the consumer source is copied to temp.
       - name: Check out the gate harness at the exact Engine tag
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: engine-gate
           persist-credentials: false
 
-      - name: Check out the pinned independent Runtime
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          repository: ${{ env.AYTHER_RUNTIME_REPOSITORY }}
-          ref: ${{ env.AYTHER_RUNTIME_REF }}
-          token: ${{ secrets.AYTHER_RUNTIME_READ_TOKEN || github.token }}
-          path: runtime-source-staging
-          persist-credentials: false
-
-      - name: Move consumer sources outside the Engine workspace
+      - name: Move the consumer source outside the Engine workspace
         shell: pwsh
         run: |
-          $runtimeSource = Join-Path '${{ runner.temp }}' 'runtime-source'
           $minimalSource = Join-Path '${{ runner.temp }}' 'minimal-consumer-source'
-          if ((Test-Path -LiteralPath $runtimeSource) -or
-              (Test-Path -LiteralPath $minimalSource)) {
+          if (Test-Path -LiteralPath $minimalSource) {
             throw 'A clean consumer source destination already exists.'
           }
-          Copy-Item -LiteralPath runtime-source-staging `
-            -Destination $runtimeSource -Recurse
           Copy-Item -LiteralPath engine-gate/tests/external_package_consumer `
             -Destination $minimalSource -Recurse
-          "RUNTIME_SOURCE=$runtimeSource" |
-            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "MINIMAL_SOURCE=$minimalSource" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -507,7 +488,7 @@ jobs:
             "-DCMAKE_CXX_COMPILER=$compiler",
             "-DCMAKE_PREFIX_PATH=$env:AYTHER_PREFIX",
             "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake",
-            "-DVCPKG_MANIFEST_DIR=$env:RUNTIME_SOURCE",
+            "-DVCPKG_MANIFEST_DIR=$env:MINIMAL_SOURCE",
             "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR"
           )
           if ($env:RUNNER_OS -eq 'Windows') {
@@ -534,70 +515,30 @@ jobs:
             throw 'The minimal external consumer failed to run.'
           }
 
-      - name: Configure Runtime against only the extracted package
+      - name: Reject producer paths
         shell: pwsh
         run: |
-          $compiler = '${{ matrix.compiler }}'
-          if ($env:RUNNER_OS -eq 'Windows') {
-            $compiler = Join-Path $env:ProgramFiles 'LLVM/bin/clang-cl.exe'
-          }
-          $arguments = @(
-            '-S', $env:RUNTIME_SOURCE,
-            '-B', '${{ runner.temp }}/runtime-build',
-            '-G', 'Ninja',
-            '-DCMAKE_BUILD_TYPE=Release',
-            '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF',
-            "-DCMAKE_CXX_COMPILER=$compiler",
-            "-DCMAKE_PREFIX_PATH=$env:AYTHER_PREFIX",
-            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake",
-            "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR"
-          )
-          if ($env:RUNNER_OS -eq 'Windows') {
-            $arguments += '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL'
-            $arguments += '-DVCPKG_TARGET_TRIPLET=x64-windows'
-          }
-          cmake @arguments
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Runtime failed to configure against the packaged Engine.'
-          }
-
-      - name: Build Runtime
-        run: cmake --build '${{ runner.temp }}/runtime-build'
-
-      - name: Run Runtime CTest
-        run: >-
-          ctest --test-dir '${{ runner.temp }}/runtime-build'
-          --output-on-failure
-
-      - name: Reject producer and monorepo paths
-        shell: pwsh
-        run: |
-          $caches = @(
-            '${{ runner.temp }}/minimal-consumer-build/CMakeCache.txt',
-            '${{ runner.temp }}/runtime-build/CMakeCache.txt'
-          )
           & engine-gate/tools/check_external_consumer_paths.ps1 `
-            -CacheFiles $caches `
+            -CacheFiles `
+              '${{ runner.temp }}/minimal-consumer-build/CMakeCache.txt' `
             -ImportedTargetsReport `
               '${{ runner.temp }}/minimal-consumer-build/imported-targets.txt' `
             -ForbiddenRoots '${{ github.workspace }}'
 
-      - name: Retain external-consumer diagnostics on failure
+      - name: Retain package-consumer diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: external-consumer-${{ matrix.product }}-${{ matrix.platform }}
+          name: package-consumer-${{ matrix.product }}-${{ matrix.platform }}
           path: |
             ${{ runner.temp }}/minimal-consumer-build/CMakeCache.txt
             ${{ runner.temp }}/minimal-consumer-build/imported-targets.txt
-            ${{ runner.temp }}/runtime-build/CMakeCache.txt
-            ${{ runner.temp }}/runtime-build/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 14
 
   publish:
-    name: Publish externally verified release
-    needs: external-consumer
+    name: Publish package-verified release
+    needs: package-consumer
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: release
@@ -610,7 +551,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download the externally verified candidate
+      - name: Download the package-verified candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: attested-release-inputs

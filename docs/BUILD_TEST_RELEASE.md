@@ -347,12 +347,16 @@ it is enforced in four places:
 - `tools/finalize_release_assets.ps1` rejects a missing or extra release input
   and writes `CHECKSUMS.sha256` over the four final ZIP files only.
 
-Both variants pass through the same fresh-runner gate.
+Both variants pass through the same fresh-runner package gate.
 `tests/external_package_consumer` asks for `COMPONENTS engine`, links only
 `Ayther::engine`, and records every path-bearing property of every imported
-target visible after package discovery. The same job then configures, builds,
-and tests the independently versioned AYTHER Runtime against that extracted
-prefix.
+target visible after package discovery. Its own pinned vcpkg manifest supplies
+only the dependencies required by the installed Engine package.
+
+The independently versioned AYTHER Runtime is validated after publication by
+`.github/workflows/runtime-integration.yml`. That workflow consumes the signed,
+attested release archives but is deliberately not part of the release DAG: a
+Runtime repository or implementation failure cannot block an Engine release.
 
 ## Publishing a release candidate
 
@@ -362,9 +366,9 @@ core `MAJOR.MINOR.PATCH`; `Cargo.toml` and `vcpkg.json` may additionally carry
 the full tag, because only those two understand SemVer pre-release.
 
 ```text
-pwsh tools/check_release_version.ps1 -Tag v0.1.0-rc.5
-git tag -a v0.1.0-rc.5 -m 'AYTHER v0.1.0-rc.5'
-git push origin v0.1.0-rc.5
+pwsh tools/check_release_version.ps1 -Tag v0.1.0-rc.6
+git tag -a v0.1.0-rc.6 -m 'AYTHER v0.1.0-rc.6'
+git push origin v0.1.0-rc.6
 ```
 
 Pushing the tag is the only manual step; everything after it is the workflow.
@@ -496,27 +500,29 @@ The release DAG has four explicit stages:
    rejects any missing or extra input, creates `CHECKSUMS.sha256`, signs every
    file, records SLSA provenance and SBOM attestations, and uploads one immutable
    candidate artifact for the consumer jobs.
-3. `external-consumer` is a fresh four-entry Windows/Linux × standard/VPX
+3. `package-consumer` is a fresh four-entry Windows/Linux × standard/VPX
    matrix. Each runner downloads the candidate, verifies SHA-256, Sigstore, and
-   GitHub provenance before extraction, configures and runs the minimal CMake
-   consumer, then configures, builds, and runs all CTests from the pinned AYTHER
-   Runtime checkout.
+   GitHub provenance before extraction, then configures and runs the minimal
+   CMake consumer using its repository-owned dependency manifest.
 4. `publish` depends on the aggregate result of that four-entry matrix and is
    the only job with `contents: write`. The protected `release` environment is
-   therefore reached only after every external consumer succeeds.
+   therefore reached only after every package consumer succeeds.
 
-The clean jobs copy both consumer source trees below `RUNNER_TEMP`; neither
-CMake configure references the Engine checkout. After CTest,
-`tools/check_external_consumer_paths.ps1` scans the minimal-consumer and Runtime
-`CMakeCache.txt` files plus a generated report of imported-target properties.
-Any spelling of the producer `GITHUB_WORKSPACE` path, including Windows
-backslashes or case differences, fails the release.
+The clean jobs copy the minimal consumer below `RUNNER_TEMP`; its CMake
+configure cannot use the Engine source checkout. After it runs,
+`tools/check_external_consumer_paths.ps1` scans its `CMakeCache.txt` and the
+generated report of imported-target properties. Any spelling of the producer
+`GITHUB_WORKSPACE` path, including Windows backslashes or case differences,
+fails the release.
 
-AYTHER Runtime is pinned by full commit SHA in the workflow rather than read
-from a moving branch. That commit must exist in
+The post-publication Runtime integration pins Runtime by full commit SHA rather
+than reading a moving branch. That commit must exist in
 `Ayther-Dev/AYTHER-Runtime`. If that repository is private or internal,
 configure the least-privilege `AYTHER_RUNTIME_READ_TOKEN` Actions secret;
 otherwise the workflow falls back to its ordinary repository token.
+The workflow can also be dispatched manually with an Engine tag and Runtime
+SHA. It has read-only contents and attestation permissions, does not reference
+the protected `release` environment, and cannot create or modify releases.
 
 Each candidate carries an SPDX 2.3 SBOM generated from the locked Cargo graph
 and exact installed files. The attestation job computes SHA-256 only over the
@@ -536,20 +542,20 @@ sequence -- download, checksum, Sigstore, provenance, unpack, payload check,
 and an out-of-tree consumer build:
 
 ```text
-pwsh tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.5 -Product ayther-engine
+pwsh tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.6 -Product ayther-engine
 ```
 
 A consumer verifies a downloaded archive with all three independent records:
 
 ```text
 sha256sum --check CHECKSUMS.sha256
-gh attestation verify ayther-engine-v0.1.0-rc.5-linux-x86_64.zip \
+gh attestation verify ayther-engine-v0.1.0-rc.6-linux-x86_64.zip \
   --repo Ayther-Dev/AYTHER-Engine
 cosign verify-blob \
-  --bundle ayther-engine-v0.1.0-rc.5-linux-x86_64.zip.sigstore.json \
+  --bundle ayther-engine-v0.1.0-rc.6-linux-x86_64.zip.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github.com/Ayther-Dev/AYTHER-Engine/.github/workflows/release.yml@refs/tags/v[0-9].*$' \
-  ayther-engine-v0.1.0-rc.5-linux-x86_64.zip
+  ayther-engine-v0.1.0-rc.6-linux-x86_64.zip
 ```
 
 AYTHER Runtime's pinned `bootstrap_ayther_engine.ps1` is the consumer path: it

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "ayther-external-package-consumer",
+  "version": "0.1.0",
+  "builtin-baseline": "15cd15b0da3c48a0c7720e4c87e0b6030334feed",
+  "supports": "windows | linux",
+  "dependencies": [
+    {
+      "name": "sdl3",
+      "features": [
+        "vulkan"
+      ]
+    },
+    "vulkan",
+    "vulkan-memory-allocator",
+    "tomlplusplus",
+    "zstd"
+  ]
+}

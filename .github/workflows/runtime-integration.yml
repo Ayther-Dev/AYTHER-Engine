@@ -1,0 +1,186 @@
+name: Runtime integration
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published Engine tag to validate
+        required: true
+        type: string
+      runtime_ref:
+        description: Full AYTHER-Runtime commit SHA
+        required: false
+        default: 7580a88ed34e32f9ca7603152fb35c0e939dbc4e
+        type: string
+
+permissions:
+  contents: read
+  attestations: read
+
+concurrency:
+  group: runtime-integration-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+  AYTHER_RUNTIME_REPOSITORY: Ayther-Dev/AYTHER-Runtime
+  AYTHER_RUNTIME_REF: ${{ inputs.runtime_ref || '7580a88ed34e32f9ca7603152fb35c0e939dbc4e' }}
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  runtime-consumer:
+    name: Runtime ${{ matrix.product }} ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - product: ayther-engine
+            os: ubuntu-latest
+            platform: linux-x86_64
+            compiler: clang++
+            needs_vpx: false
+          - product: ayther-engine
+            os: windows-latest
+            platform: windows-x86_64
+            compiler: clang-cl
+            needs_vpx: false
+          - product: ayther-engine-vpx
+            os: ubuntu-latest
+            platform: linux-x86_64
+            compiler: clang++
+            needs_vpx: true
+          - product: ayther-engine-vpx
+            os: windows-latest
+            platform: windows-x86_64
+            compiler: clang-cl
+            needs_vpx: true
+
+    steps:
+      - name: Check out the exact published Engine tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          path: engine-gate
+          persist-credentials: false
+
+      - name: Check out the pinned independent Runtime
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          repository: ${{ env.AYTHER_RUNTIME_REPOSITORY }}
+          ref: ${{ env.AYTHER_RUNTIME_REF }}
+          token: ${{ secrets.AYTHER_RUNTIME_READ_TOKEN || github.token }}
+          path: runtime-source-staging
+          persist-credentials: false
+
+      - name: Move Runtime outside the Engine workspace
+        shell: pwsh
+        run: |
+          $runtimeSource = Join-Path '${{ runner.temp }}' 'runtime-source'
+          if (Test-Path -LiteralPath $runtimeSource) {
+            throw 'A clean Runtime source destination already exists.'
+          }
+          Copy-Item -LiteralPath runtime-source-staging `
+            -Destination $runtimeSource -Recurse
+          "RUNTIME_SOURCE=$runtimeSource" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Select the runner vcpkg installation
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_INSTALLED_DIR=${{ runner.temp }}/vcpkg-installed" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install the external Linux VPX dependency
+        if: runner.os == 'Linux' && matrix.needs_vpx
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libvpx-dev pkg-config
+
+      - name: Install verified Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify and unpack the published Engine package
+        shell: pwsh
+        run: |
+          $workDirectory = Join-Path '${{ runner.temp }}' 'verified-release'
+          & engine-gate/tools/verify_release_artifact.ps1 `
+            -Tag $env:RELEASE_TAG `
+            -Product '${{ matrix.product }}' `
+            -Platform '${{ matrix.platform }}' `
+            -WorkDirectory $workDirectory `
+            -Repository '${{ github.repository }}' `
+            -SkipConsumer
+          $name = '${{ matrix.product }}' + '-' + $env:RELEASE_TAG + `
+            '-' + '${{ matrix.platform }}'
+          $prefix = Join-Path $workDirectory "unpacked/$name"
+          if (-not (Test-Path -LiteralPath $prefix -PathType Container)) {
+            throw "The verified Engine prefix is missing: '$prefix'."
+          }
+          "AYTHER_PREFIX=$prefix" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure Runtime against the published Engine package
+        shell: pwsh
+        run: |
+          $compiler = '${{ matrix.compiler }}'
+          if ($env:RUNNER_OS -eq 'Windows') {
+            $compiler = Join-Path $env:ProgramFiles 'LLVM/bin/clang-cl.exe'
+          }
+          $arguments = @(
+            '-S', $env:RUNTIME_SOURCE,
+            '-B', '${{ runner.temp }}/runtime-build',
+            '-G', 'Ninja',
+            '-DCMAKE_BUILD_TYPE=Release',
+            '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF',
+            "-DCMAKE_CXX_COMPILER=$compiler",
+            "-DCMAKE_PREFIX_PATH=$env:AYTHER_PREFIX",
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake",
+            "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR"
+          )
+          if ($env:RUNNER_OS -eq 'Windows') {
+            $arguments += '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL'
+            $arguments += '-DVCPKG_TARGET_TRIPLET=x64-windows'
+          }
+          cmake @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Runtime failed to configure against the published Engine.'
+          }
+
+      - name: Build Runtime
+        run: cmake --build '${{ runner.temp }}/runtime-build'
+
+      - name: Run Runtime CTest
+        run: >-
+          ctest --test-dir '${{ runner.temp }}/runtime-build'
+          --output-on-failure
+
+      - name: Reject Engine checkout paths
+        shell: pwsh
+        run: |
+          $emptyReport = Join-Path '${{ runner.temp }}' 'empty-imported-targets.txt'
+          New-Item -ItemType File -Path $emptyReport -Force | Out-Null
+          & engine-gate/tools/check_external_consumer_paths.ps1 `
+            -CacheFiles '${{ runner.temp }}/runtime-build/CMakeCache.txt' `
+            -ImportedTargetsReport $emptyReport `
+            -ForbiddenRoots '${{ github.workspace }}/engine-gate'
+
+      - name: Retain Runtime integration diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-integration-${{ matrix.product }}-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/runtime-build/CMakeCache.txt
+            ${{ runner.temp }}/runtime-build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 14
