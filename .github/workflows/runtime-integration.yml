@@ -167,9 +167,22 @@ jobs:
         run: cmake --build '${{ runner.temp }}/runtime-build'
 
       - name: Run Runtime CTest
-        run: >-
-          ctest --test-dir '${{ runner.temp }}/runtime-build'
-          --output-on-failure
+        shell: pwsh
+        run: |
+          $arguments = @(
+            '--test-dir', '${{ runner.temp }}/runtime-build',
+            '--output-on-failure'
+          )
+          if ($env:RUNNER_OS -eq 'Linux') {
+            # Runtime's probe_core oracle deliberately uses SDL3.dll as its
+            # non-core fixture. It is a Windows-only Runtime contract, not an
+            # Engine package-integration test.
+            $arguments += @('-E', '^probe_core$')
+          }
+          ctest @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Runtime tests failed against the published Engine package.'
+          }
 
       - name: Reject Engine checkout paths
         shell: pwsh

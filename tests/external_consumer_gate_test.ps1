@@ -81,6 +81,14 @@ Write-Utf8File $report 'Ayther::engine|IMPORTED_LOCATION|C:/temp/prefix/lib/engi
     -ImportedTargetsReport $report `
     -ForbiddenRoots $producerRoot
 
+# A consumer may legitimately expose no path-bearing imported target
+# properties. An empty report is still valid evidence and must be auditable.
+Write-Utf8File $report ''
+& $Scanner `
+    -CacheFiles $cacheA, $cacheB `
+    -ImportedTargetsReport $report `
+    -ForbiddenRoots $producerRoot
+
 $forwardProducerRoot = $producerRoot.Replace('\', '/')
 Write-Utf8File $cacheB "LEAK:FILEPATH=$forwardProducerRoot/build/engine.lib"
 Assert-ScannerRejects `
@@ -195,7 +203,8 @@ foreach ($requiredRuntimeStep in @(
         'Verify and unpack the published Engine package',
         'Configure Runtime against the published Engine package',
         'Build Runtime',
-        'Run Runtime CTest')) {
+        'Run Runtime CTest',
+        "`$arguments += @('-E', '^probe_core`$')")) {
     if (-not $runtimeWorkflowText.Contains(
             $requiredRuntimeStep, [StringComparison]::Ordinal)) {
         throw "Runtime integration workflow is missing '$requiredRuntimeStep'."
