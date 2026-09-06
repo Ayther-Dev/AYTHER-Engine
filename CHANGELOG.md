@@ -140,6 +140,15 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Resolution selection now includes the 1440p tier and agrees with the public
+  C++ tier values for HD, Full HD, 2K, 4K, and 8K.
+- Plane sets match complete occurrences in any VDP plane, independently of the
+  plane recorded at capture. Emitted overlays follow the occurrence's plane.
+- Layer focus retains 50% brightness outside a focused plane and 25% outside
+  focused sprites, with consistent tint and opacity across rendering paths.
+- External-core test executables resolve their binary from `AYTHER_ABI_CORE`
+  or `core.lock`. Native CI rejects unexplained skips and missing test results.
+
 - Installed packages with the `engine` component now export a relocatable
   `Ayther_SHADER_DIR`, backed by the complete installed SPIR-V set; the
   out-of-tree package consumer verifies the asset contract.

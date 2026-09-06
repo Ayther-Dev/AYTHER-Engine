@@ -1957,8 +1957,8 @@ pub unsafe extern "C" fn ayther_pack_set_tier(ptr: *mut AyArchive, ideal: i32) {
 
 /// Maps an output height to its ideal tier and activates it.
 ///
-/// Heights up to 720 select HD, up to 1080 select Full HD, up to 2160 select 4K,
-/// and larger outputs select 8K.
+/// Heights up to 720 select HD, up to 1080 select Full HD, up to 1440 select
+/// 2K, up to 2160 select 4K, and larger outputs select 8K.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -1971,16 +1971,7 @@ pub unsafe extern "C" fn ayther_pack_set_tier_for_height(ptr: *mut AyArchive, ou
         if ptr.is_null() {
             return;
         }
-        let ideal: u8 = if out_height_px <= 720 {
-            0
-        } else if out_height_px <= 1080 {
-            1
-        } else if out_height_px <= 2160 {
-            2
-        } else {
-            3
-        };
-        (*ptr).set_tier(ideal);
+        (*ptr).set_tier(crate::archive_vfs::tier_for_height(out_height_px));
     }
 }
 

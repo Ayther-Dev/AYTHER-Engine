@@ -10,6 +10,7 @@ foreach(_source IN ITEMS
         audio_match_rule_test.cpp
         audio_seq_anchor_test.cpp
         cram_palette_test.cpp
+        core_path_test.cpp
         decode_limits_test.cpp
         failure_escalation_test.cpp
         log_test.cpp
@@ -20,6 +21,7 @@ foreach(_source IN ITEMS
         pano_bands_test.cpp
         panorama_cover_test.cpp
         parallax_bands_test.cpp
+        plane_set_match_test.cpp
         recording_controller_test.cpp
         render_image_view_test.cpp
         runtime_options_test.cpp

@@ -121,6 +121,15 @@ Repeated sky or other low-information regions may not contain enough unusual
 cells to recover a unique camera position. That is an observation limit, not a
 reason to fabricate an anchor.
 
+## Plane-set substitution
+
+Plane-set substitution matches an object's relative cell layout within any one
+of the three VDP planes. Capture-plane metadata is provenance, not part of that
+match. Visible members must all be present in the same plane, while members
+outside the viewport are excused. Cells claimed by higher-ranked content cannot
+participate. The resulting overlay uses the occurrence's plane and its anchor's
+priority, so matching and composition refer to the same visible object.
+
 ## RAM anchoring (Mode 3)
 
 Game profiles map RAM observations to logical entities. `ram_anchor` assigns

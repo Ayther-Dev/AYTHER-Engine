@@ -1778,13 +1778,16 @@ public:
 
     // -- Plane SETS (Paint Phase C): HD substitution per multi-tile ELEMENT ---
     // A set = a group of plane tiles with relative offsets in CELLS (the Paint
-    // Elements catalogue). The matcher runs in the plane scan: for every
-    // appearance of the anchor (member[0]) it verifies the rest at their offsets;
+    // Elements catalogue). The matcher searches all three planes: for every
+    // appearance of an anchor it verifies the rest in that same plane;
     // if ALL are there → ONE overlay of the asset stretched to the bbox (the
     // lo/hi lane according to the VDP priority of the anchor) and the member
     // tiles are suppressed by identity (the same 1-frame latency as channel
     // 0x105).
     struct PlaneSetMember { uint64_t hash; int16_t cx, cy; };
+    /// `plane` records capture provenance and does not restrict matching. All
+    /// visible members must appear together in the occurrence's plane, which
+    /// determines the emitted quad's layer and anchor priority.
     /// `ref_rgb` (3 bytes, optional): the E1 tint reference — the RGB average
     /// 0-255 of the element's CRAM line "as it looks normally" (captured when it
     /// was created, the same contract as the poses' `ref`). With a reference, the

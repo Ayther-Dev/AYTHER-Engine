@@ -75,7 +75,9 @@ public:
     [[nodiscard]] PackRenderTiers render_tiers() const noexcept;
 
     /// Selects the best declared tier for a presentation height. No-op for an
-    /// empty view or a legacy pack.
+    /// empty view or a legacy pack. Height ceilings are 720/1080/1440/2160 pixels
+    /// for HD/Full HD/2K/4K; larger heights select 8K. Missing tiers fall upward,
+    /// then to the largest included tier if none covers the requested height.
     void select_render_tier_for_height(std::uint32_t height) const noexcept;
 
 private:

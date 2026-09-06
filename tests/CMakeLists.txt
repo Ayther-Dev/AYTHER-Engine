@@ -74,6 +74,14 @@ set_tests_properties(ayther.package.engine_public_contract PROPERTIES
 find_program(AYTHER_PWSH_EXECUTABLE NAMES pwsh)
 if(AYTHER_PWSH_EXECUTABLE)
     add_test(
+        NAME ayther.quality.core_test_results
+        COMMAND "${AYTHER_PWSH_EXECUTABLE}" -NoProfile -File
+            "${PROJECT_SOURCE_DIR}/tests/core_test_results_test.ps1"
+            -Checker "${PROJECT_SOURCE_DIR}/tools/check_core_test_results.ps1"
+            -WorkDirectory "${PROJECT_BINARY_DIR}/tests/core_test_results")
+    set_tests_properties(ayther.quality.core_test_results PROPERTIES
+        TIMEOUT 60 LABELS "quality")
+    add_test(
         NAME ayther.package.release_assets
         COMMAND "${AYTHER_PWSH_EXECUTABLE}" -NoProfile -File
             "${PROJECT_SOURCE_DIR}/tests/release_assets_test.ps1"
@@ -313,6 +321,14 @@ endif()
 
 if(AYTHER_BUILD_GPU_TESTS)
     find_package(vk-bootstrap CONFIG REQUIRED)
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/focus_layer_test.cpp" renderer)
+    target_link_libraries(ayther_focus_layer_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_focus_layer_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.focus_layer_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
     foreach(_ayther_gpu_test IN ITEMS
             ab_compare_smoke
             overlay_blend_smoke

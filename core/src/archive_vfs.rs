@@ -191,11 +191,26 @@ pub struct RegionConfig {
 
 /// Resolution tiers included by `manifest.toml → [tiers]`.
 ///
-/// Indices `0..=3` represent HD 3×, Full HD 4.5×, 4K 9×, and 8K 18×.
+/// Indices `0..=4` represent HD, Full HD, 2K, 4K, and 8K, in ascending order.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TierConfig {
     /// Included tier indices.
     pub included: Vec<u32>,
+}
+
+/// Returns the smallest resolution tier whose height covers the output.
+///
+/// Heights are in pixels. Nonpositive heights select HD; heights above 2160
+/// select the highest tier, 8K. Archive selection may fall back to a smaller
+/// tier only when the pack does not include a tier large enough.
+pub const fn tier_for_height(output_height: i32) -> u8 {
+    match output_height {
+        ..=720 => 0,
+        721..=1080 => 1,
+        1081..=1440 => 2,
+        1441..=2160 => 3,
+        _ => 4,
+    }
 }
 
 /// Subsystems included by `manifest.toml → [systems]`.
@@ -1941,6 +1956,60 @@ systems = ["tiles"]
     }
 
     #[test]
+    fn output_height_selects_the_expected_tier_asset_through_ffi() {
+        let mut files = minimal_files();
+        for tier in 0..=4_u8 {
+            files.insert(format!("tiers/{tier}/graphics/resolution.bin"), vec![tier]);
+        }
+        let mut archive = mock_resident(files, 0b1_1111, Some(4));
+        for (height, expected_tier) in [
+            (i32::MIN, 0),
+            (0, 0),
+            (720, 0),
+            (721, 1),
+            (1080, 1),
+            (1081, 2),
+            (1440, 2),
+            (1441, 3),
+            (2160, 3),
+            (2161, 4),
+            (4320, 4),
+            (i32::MAX, 4),
+        ] {
+            // SAFETY: The exclusive archive reference remains live for the call.
+            unsafe { crate::ayther_pack_set_tier_for_height(&mut archive, height) };
+            assert_eq!(
+                archive.read("graphics/resolution.bin"),
+                Some(vec![expected_tier]),
+                "incorrect asset selected for {height}px"
+            );
+        }
+    }
+
+    #[test]
+    fn output_height_tiers_never_decrease() {
+        for height in 0..=5000 {
+            assert!(tier_for_height(height) <= tier_for_height(height + 1));
+        }
+    }
+
+    #[test]
+    fn output_height_selection_uses_available_tiers_and_preserves_flat_packs() {
+        let mut sparse = mock_resident(minimal_files(), 0b1_0010, Some(4));
+        // SAFETY: Each exclusive reference points to a live archive.
+        unsafe { crate::ayther_pack_set_tier_for_height(&mut sparse, 1440) };
+        assert_eq!(sparse.active_tier(), Some(4));
+        let mut limited = mock_resident(minimal_files(), 0b0_0110, Some(2));
+        // SAFETY: The exclusive reference points to a live archive.
+        unsafe { crate::ayther_pack_set_tier_for_height(&mut limited, 4320) };
+        assert_eq!(limited.active_tier(), Some(2));
+        let mut flat = mock_resident(minimal_files(), 0, None);
+        // SAFETY: The exclusive reference points to a live archive.
+        unsafe { crate::ayther_pack_set_tier_for_height(&mut flat, 4320) };
+        assert_eq!(flat.active_tier(), None);
+    }
+
+    #[test]
     fn regional_override() {
         let mut files = minimal_files();
         files.insert(
@@ -1983,9 +2052,8 @@ systems = ["tiles"]
         // Display 720p → tier exacto HD.
         a.set_tier(0);
         assert_eq!(a.read("a.png"), Some(b"hd".to_vec()));
-        // Display 4K (tier 2 no incluido) → el MAYOR disponible (Full HD),
-        // nunca "upscalear" eligiendo de menos habiendo más.
-        a.set_tier(2);
+        // No 4K tier is available, so selection falls back to Full HD.
+        a.set_tier(3);
         assert_eq!(a.active_tier(), Some(1));
         assert_eq!(a.read("a.png"), Some(b"fullhd".to_vec()));
         // Audio tier-independiente: en la raíz, se lee igual con tier activo.

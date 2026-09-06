@@ -1,3 +1,4 @@
+#include "../common/core_path.h"
 // ---------------------------------------------------------------------------
 // audio_mute_smoke — valida el MUTE SELECTIVO POR CANAL del fork (C-A3).
 //
@@ -76,12 +77,14 @@ int main(int argc, char** argv) {
         core = argv[1];
         rom  = argv[2];
     } else {
-        core = std::string(AYTHER_SOURCE_DIR)
-             + "/third_party/cores/genesis_plus_gx_libretro_vram.dll";
-        if (!std::filesystem::exists(core)) {
-            std::printf("[skip] no está el core del fork: %s\n", core.c_str());
-            return 77;   // SALTEADO, no aprobado: ver #415
+        const auto core_path = ayther::test::configured_core_path(AYTHER_SOURCE_DIR);
+        if (!core_path.available()) {
+            std::fprintf(stderr, "[%s] %s\n",
+                         core_path.failure_exit_code == 77 ? "skip" : "FAIL",
+                         core_path.diagnostic.c_str());
+            return core_path.failure_exit_code;
         }
+        core = core_path.path.string();
         rom = ayther::synth::canonical_rom_path();
         if (rom.empty()) {
             std::fprintf(stderr, "[FAIL] no pude escribir la ROM sintética\n");

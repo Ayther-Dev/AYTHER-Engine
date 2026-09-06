@@ -1,3 +1,4 @@
+#include "../common/core_path.h"
 // ---------------------------------------------------------------------------
 // render_output_smoke — ¿SE VE? El oráculo del camino que el usuario mira.
 //
@@ -152,16 +153,14 @@ Shot measure(const std::string& core, const std::string& rom, int frames) {
 int main() {
     std::printf("=== render_output_smoke — ¿lo que sale a pantalla SE VE? ===\n");
 
-    const std::string core =
-#ifdef AYTHER_SOURCE_DIR
-        std::string(AYTHER_SOURCE_DIR) + "/third_party/cores/genesis_plus_gx_libretro_vram.dll";
-#else
-        "genesis_plus_gx_libretro_vram.dll";
-#endif
-    if (!std::filesystem::exists(core)) {
-        std::printf("[skip] no está el core del fork: %s\n", core.c_str());
-        return 77;
+    const auto core_path = ayther::test::configured_core_path(AYTHER_SOURCE_DIR);
+    if (!core_path.available()) {
+        std::fprintf(stderr, "[%s] %s\n",
+                     core_path.failure_exit_code == 77 ? "skip" : "FAIL",
+                     core_path.diagnostic.c_str());
+        return core_path.failure_exit_code;
     }
+    const std::string core = core_path.path.string();
 
     const auto dir = std::filesystem::temp_directory_path();
     const std::string rom_draw  = (dir / "ayther_render_smoke_draw.md").string();

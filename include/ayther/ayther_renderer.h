@@ -176,6 +176,8 @@ public:
     // COMPOSITION decision, and composition has been ours since R-5: that
     // channel is boolean —it dims "the non-sprite"— and knows nothing about a
     // focused layer.
+    /// Unfocused content retains 75% opacity and uses 50% brightness when a
+    /// plane is focused, or 25% when sprites are focused.
     void set_focus_layer(int layer) noexcept;
     [[nodiscard]] int focus_layer() const noexcept;
 

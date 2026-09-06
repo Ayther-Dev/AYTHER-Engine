@@ -3,6 +3,8 @@
 #include "trusted_pack_fixture.h"
 
 #include <cstdio>
+#include <array>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -25,11 +27,16 @@ const char* const kManifest = "[pack]\n"
                               "schema     = 2\n"
                               "output     = \"pixel-perfect\"\n"
                               "\n[systems]\n"
-                              "included = [\"sprites\"]\n";
+                              "included = [\"sprites\"]\n"
+                              "\n[tiers]\nincluded = [0, 1, 2, 3, 4]\n";
 
 bool bake(ayther::test::TrustedPackFixture& fixture) {
     const std::string manifest = kManifest;
     char error[512]{};
+    for (std::uint8_t tier = 0; tier <= 4; ++tier) {
+        const auto path = "tiers/" + std::to_string(tier) + "/graphics/resolution.bin";
+        if (!fixture.add_bytes(path.c_str(), &tier, 1)) return false;
+    }
     return fixture.add_bytes("manifest.toml",
                              reinterpret_cast<const std::uint8_t*>(manifest.data()),
                              manifest.size()) &&
@@ -76,6 +83,29 @@ int main() {
     if (!bake(fixture)) {
         std::printf("  [FAIL] could not bake fixture\n");
         return 1;
+    }
+
+    auto* archive = fixture.open();
+    check(archive != nullptr, "the signed multi-tier fixture opens");
+    if (!archive) return 1;
+    const std::array height_cases{
+        std::pair{0, PackRenderTier::hd},
+        std::pair{720, PackRenderTier::hd},
+        std::pair{721, PackRenderTier::full_hd},
+        std::pair{1080, PackRenderTier::full_hd},
+        std::pair{1081, PackRenderTier::two_k},
+        std::pair{1440, PackRenderTier::two_k},
+        std::pair{1441, PackRenderTier::four_k},
+        std::pair{2160, PackRenderTier::four_k},
+        std::pair{2161, PackRenderTier::eight_k},
+        std::pair{std::numeric_limits<int>::max(), PackRenderTier::eight_k},
+    };
+    for (const auto& [height, expected_tier] : height_cases) {
+        ayther_pack_set_tier_for_height(archive, height);
+        std::uint8_t selected_asset = 255;
+        const auto size = ayther_pack_read(archive, "graphics/resolution.bin", &selected_asset, 1);
+        check(size == 1 && selected_asset == static_cast<std::uint8_t>(expected_tier),
+              "FFI asset selection agrees with the public C++ tier values");
     }
 
     const auto inspected = inspect_pack(fixture.pack_path(), fixture.registry_path());

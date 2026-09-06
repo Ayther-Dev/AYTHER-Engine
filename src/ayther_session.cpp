@@ -34,6 +34,7 @@
 #include "ayther_recording.h"              // AytherRecording (R7)
 #include "session/emulation_observer.h"
 #include "session/pack_runtime.h"
+#include "session/plane_set_match.h"
 #include "session/recording_controller.h"
 #include "ayther_video.h"                  // VideoClip: el paso-video ()
 #include "ayther_core_ffi.h"                // ayther_sf2_* ()
@@ -2719,26 +2720,17 @@ const FrameView& AytherSession::produce_frame() {
                     && !im.plane_sets.empty() && npick > 0) {
                     // (`consumed` ya viene dimensionado con lo que reclamaron
                     //  las entidades de mayor rango — no se pisa.)
-                    auto poskey = [](uint8_t plane, int px, int py) -> uint64_t {
-                        return ((uint64_t)plane << 32)
-                             | ((uint64_t)(uint16_t)(int16_t)px << 16)
-                             | (uint16_t)(int16_t)py;
-                    };
-                    std::unordered_map<uint64_t, uint32_t> pos2idx;
-                    pos2idx.reserve(npick);
-                    for (uint32_t i = 0; i < npick; ++i)
-                        pos2idx.emplace(poskey(im.plane_cells[i].plane,
-                                               im.plane_cells[i].screen_x,
-                                               im.plane_cells[i].screen_y), i);
+                    const session::PlaneSetMatcher plane_set_matcher{
+                        std::span{im.plane_cells, npick}, sw, sh};
                     // Frecuencia por hash de ESTE frame — ordena las anclas.
                     std::unordered_map<uint64_t, uint32_t> freq;
                     freq.reserve(npick);
                     for (uint32_t i = 0; i < npick; ++i)
                         ++freq[im.plane_cells[i].hash];
-                    std::unordered_set<uint64_t> sup_hashes;
-                    std::vector<uint32_t> mi;
+                    std::unordered_set<uint64_t> matched_hashes;
+                    std::vector<uint32_t> matched_cell_indices;
                     std::vector<uint32_t> order;
-                    std::unordered_set<uint64_t> done;   // orígenes emitidos (por set)
+                    std::unordered_set<uint64_t> matched_origins;   // Origins already emitted for this set.
                     // ANIMACIÓN (): el paso vigente de cada secuencia se
                     // resuelve UNA vez por frame y no por match — llamarlo
                     // dentro del bucle re-anclaría el reloj tantas veces como
@@ -2783,73 +2775,50 @@ const FrameView& AytherSession::produce_frame() {
                         };
                         std::stable_sort(order.begin(), order.end(),
                                          [&](uint32_t a, uint32_t b) { return f(a) < f(b); });
-                        done.clear();
-                        for (uint32_t anck : order) {
-                            const auto& anc = def.members[anck];
-                            for (uint32_t i = 0; i < npick; ++i) {
-                                const PlaneCellHit& pc = im.plane_cells[i];
-                                if (pc.plane != def.plane || pc.hash != anc.hash ||
-                                    consumed[i]) continue;
-                                const int ox = pc.screen_x - anc.cx * 8;
-                                const int oy = pc.screen_y - anc.cy * 8;
-                                if (done.count(poskey(def.plane, ox, oy))) continue;
-                                mi.clear();
-                                bool all = true;
-                                for (const auto& m : def.members) {
-                                    const int ex = ox + m.cx * 8;
-                                    const int ey = oy + m.cy * 8;
-                                    if (ex < 0 || ex >= sw || ey < 0 || ey >= sh)
-                                        continue;   // fuera del área visible: excusado
-                                    auto pit = pos2idx.find(poskey(def.plane, ex, ey));
-                                    if (pit == pos2idx.end() ||
-                                        im.plane_cells[pit->second].hash != m.hash ||
-                                        consumed[pit->second]) { all = false; break; }
-                                    mi.push_back(pit->second);
-                                }
-                                if (!all || mi.empty()) continue;
-                                done.insert(poskey(def.plane, ox, oy));
-                                for (uint32_t k : mi) consumed[k] = 1;
-                                for (const auto& m : def.members) sup_hashes.insert(m.hash);
-                                AytherSpriteSub s{};
-                                std::snprintf(s.asset_path, sizeof(s.asset_path), "%s",
+                        matched_origins.clear();
+                        for (const uint32_t anchor_member : order) {
+                            for (uint32_t cell_index = 0; cell_index < npick; ++cell_index) {
+                                const auto occurrence = plane_set_matcher.match(
+                                    def.members, anchor_member, cell_index, consumed, matched_cell_indices);
+                                if (!occurrence) continue;
+                                const auto origin_key = session::plane_cell_position_key(
+                                    occurrence->plane, occurrence->origin_x, occurrence->origin_y);
+                                if (!matched_origins.insert(origin_key).second) continue;
+                                const PlaneCellHit& anchor_cell = im.plane_cells[cell_index];
+                                for (uint32_t k : matched_cell_indices) consumed[k] = 1;
+                                for (const auto& m : def.members) matched_hashes.insert(m.hash);
+                                AytherSpriteSub substitution{};
+                                std::snprintf(substitution.asset_path, sizeof(substitution.asset_path), "%s",
                                               use_asset->c_str());
-                                // : el offset de re-anclaje del HUD. Con
-                                // (0,0) —todo Objeto que ya cae dentro del área
-                                // segura— el quad sale en el mismo píxel que
-                                // antes, así que un proyecto sin autorar nada
-                                // no cambia un byte.
-                                s.screen_x = (int16_t)(ox + def.off_x);
-                                s.screen_y = (int16_t)(oy + def.off_y);
-                                s.w_tiles  = (uint8_t)(def.w_cells < 255 ? def.w_cells : 255);
-                                s.h_tiles  = (uint8_t)(def.h_cells < 255 ? def.h_cells : 255);
-                                // Tinte E1 del SET (fundido de paleta): con
-                                // referencia autorada, el ancla aporta su línea
-                                // CRAM y el quad se tinta live/ref por canal —
-                                // el isologotipo del título de GA era invisible
-                                // en el pre-fade (CRAM negra) y el HD quedaba a
-                                // todo color encima (reporte 2026-08-19). Sin
-                                // referencia: 0xFF = neutro, como siempre.
-                                const bool has_ref = def.ref_rgb[0] | def.ref_rgb[1]
-                                                   | def.ref_rgb[2];
-                                s.palette  = has_ref ? (uint8_t)(pc.palette & 3) : 0xFF;
-                                s.synth_pal = 0xFF;  // sin síntesis E1
-                                if (has_ref)
-                                    std::memcpy(s.ref_rgb, def.ref_rgb, 3);
-                                setq[(pc.flags >> 2) & 1].push_back(s);
-                                setq_plane[(pc.flags >> 2) & 1].push_back(def.plane);
+                                // Apply authored HUD offsets after matching in native screen coordinates.
+                                substitution.screen_x = static_cast<int16_t>(occurrence->origin_x + def.off_x);
+                                substitution.screen_y = static_cast<int16_t>(occurrence->origin_y + def.off_y);
+                                substitution.w_tiles = static_cast<uint8_t>(std::min<uint16_t>(def.w_cells, 255));
+                                substitution.h_tiles = static_cast<uint8_t>(std::min<uint16_t>(def.h_cells, 255));
+                                const bool has_reference = def.ref_rgb[0] || def.ref_rgb[1] || def.ref_rgb[2];
+                                // The occurrence supplies the live palette; absent references stay neutral.
+                                substitution.palette = has_reference
+                                    ? static_cast<uint8_t>(anchor_cell.palette & 3) : 0xFF;
+                                substitution.synth_pal = 0xFF;
+                                if (has_reference) {
+                                    std::memcpy(substitution.ref_rgb, def.ref_rgb, 3);
+                                }
+                                const auto priority = (anchor_cell.flags >> 2) & 1;
+                                setq[priority].push_back(substitution);
+                                setq_plane[priority].push_back(occurrence->plane);
                             }
                         }
                     }
                     // Supresión de los originales por identidad — se aplica en
                     // el PRÓXIMO produce (misma latencia aceptada que 0x105).
-                    if (!sup_hashes.empty()) {
+                    if (!matched_hashes.empty()) {
                         bool added = false;
                         if (!im.plane_tile_suppress_any)
                             std::memset(im.plane_tile_suppress_want, 0,
                                         sizeof(im.plane_tile_suppress_want));
                         for (uint32_t i = 0; i < n_plane_tiles; ++i) {
                             const PlaneTileOccurrence& o = im.plane_tile_occs[i];
-                            if (o.plane > 2 || !sup_hashes.count(o.hash)) continue;
+                            if (o.plane > 2 || !matched_hashes.count(o.hash)) continue;
                             const uint32_t key = ((uint32_t)o.pattern << 2) | (o.palette & 3u);
                             im.plane_tile_suppress_want[o.plane * 1024u + (key >> 3)]
                                 |= (1u << (key & 7u));
