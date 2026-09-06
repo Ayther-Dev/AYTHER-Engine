@@ -210,8 +210,13 @@ An override is never silently replaced by a different binary.
 
 Native CI captures the complete test log and runs
 `tools/check_core_test_results.ps1 -LogPath native-ctest.log`. The checker requires
-one result for each of these four tests, rejects failures and unexplained skips,
-and reports which paths were not exercised when the optional core is absent.
+one result for each of these four tests and the six bundled-core tests:
+`abi_negociacion`, `abi_frame_delta`, `abi_multilayer`, `abi_lecturas`,
+`abi_escrituras`, and `e2e_determinismo`. The bundled-core tests must run even
+when the optional external core is absent. The checker also scans every other
+reported test, rejects failures, duplicate results, and unexplained skips, and
+reports which external-core paths were not exercised. Only the four
+external-core tests may skip, and only when their optional locked core is absent.
 Its deterministic contract test is `ayther.quality.core_test_results`.
 
 `ayther.unit.plane_set_match_test` verifies cross-plane occurrence matching,

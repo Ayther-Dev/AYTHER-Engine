@@ -140,6 +140,10 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Native CI now requires all ten core-related test results and rejects failures,
+  duplicate results, and unexplained skips across the complete CTest log.
+  Missing optional external cores no longer excuse bundled-core ABI or
+  determinism tests that did not run.
 - Resolution selection now includes the 1440p tier and agrees with the public
   C++ tier values for HD, Full HD, 2K, 4K, and 8K.
 - Plane sets match complete occurrences in any VDP plane, independently of the

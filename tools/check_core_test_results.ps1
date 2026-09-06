@@ -1,10 +1,12 @@
 <#
 .SYNOPSIS
-Checks that the four external-core oracles ran or have a verifiable missing core.
+Checks native CTest coverage and rejects unexplained skipped tests.
 .DESCRIPTION
-Consumes a full native CTest log. A configured core override must exist. Without
-an override, only absence of the binary named by core.lock permits skipped tests.
-Malformed logs, missing test results, and failures always produce a nonzero exit.
+Consumes a full native CTest log and requires all ten core-related test results.
+The ABI and determinism tests use bundled cores and must run. Only the four
+external-core tests may skip when the optional binary named by core.lock is
+absent. A configured core override must exist. Failures, duplicate results,
+missing required results, and skips in any other test produce a nonzero exit.
 #>
 [CmdletBinding()]
 param(
@@ -18,16 +20,31 @@ Set-StrictMode -Version Latest
 
 try {
     $log = Get-Content -LiteralPath $LogPath -Raw
-    $expectedTests = @('audio_mute', 'audio_output', 'render_output', 'subsystem_routing')
+    $optionalCoreTests = @('audio_mute', 'audio_output', 'render_output', 'subsystem_routing')
+    $requiredCoreTests = @(
+        'abi_negociacion', 'abi_frame_delta', 'abi_multilayer',
+        'abi_lecturas', 'abi_escrituras', 'e2e_determinismo'
+    )
+    $expectedTests = $optionalCoreTests + $requiredCoreTests
+    $pattern = '(?m)^\s*\d+/\d+ Test\s+#\d+:\s*(?<name>\S+)\s+\.+\s*' +
+        '(?<status>Passed|\*\*\*Skipped|\*\*\*[^\r\n]+)'
+    $results = [regex]::Matches($log, $pattern)
+    $seenTests = @{}
     $skippedTests = @()
-    foreach ($testName in $expectedTests) {
-        $pattern = '(?m)^\s*\d+/\d+ Test\s+#\d+:\s*' +
-            [regex]::Escape($testName) + '\s+\.+\s*(?<status>Passed|\*\*\*Skipped|\*\*\*[^\r\n]+)'
-        $results = [regex]::Matches($log, $pattern)
-        if ($results.Count -ne 1) { throw "Expected one result for $testName, found $($results.Count)." }
-        $status = $results[0].Groups['status'].Value
+    foreach ($result in $results) {
+        $testName = $result.Groups['name'].Value
+        if ($seenTests.ContainsKey($testName)) { throw "Duplicate result for $testName." }
+        $seenTests[$testName] = $true
+        $status = $result.Groups['status'].Value
         if ($status -eq '***Skipped') { $skippedTests += $testName }
-        elseif ($status -ne 'Passed') { throw "Core test failed: $testName ($status)." }
+        elseif ($status -ne 'Passed') { throw "CTest test failed: $testName ($status)." }
+    }
+    foreach ($testName in $expectedTests) {
+        if (-not $seenTests.ContainsKey($testName)) { throw "Missing result for $testName." }
+    }
+    $unexpectedSkips = @($skippedTests | Where-Object { $_ -notin $optionalCoreTests })
+    if ($unexpectedSkips.Count -gt 0) {
+        throw "These tests must run regardless of optional core availability: $($unexpectedSkips -join ', ')."
     }
 
     if ($CorePath) {
@@ -55,7 +72,7 @@ try {
     }
 
     if ($skippedTests.Count -eq 0) {
-        Write-Output 'All four external-core oracles passed.'
+        Write-Output 'All ten core-related tests passed; no CTest results were skipped.'
     } elseif ($coreAvailable) {
         throw "Core exists at $CorePath but these tests were skipped: $($skippedTests -join ', ')."
     } else {
