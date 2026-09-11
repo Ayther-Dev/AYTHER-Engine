@@ -140,6 +140,25 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The scene inventory joined 1x1 plane-tile subs to cells by screen position
+  alone, so a plane-B cell under a plane-A glyph took the glyph's sub, was
+  marked claimed, and the compose skipped the original beneath it (Golden Axe,
+  Stage 1: the HD "MAGIC" letters erased the tree trunk and showed the
+  backdrop). The join now requires the sub's plane
+  (`src/session/plane_sub_join.h`, unit oracle `plane_sub_join_test`).
+- Native CI now requires all ten core-related test results and rejects failures,
+  duplicate results, and unexplained skips across the complete CTest log.
+  Missing optional external cores no longer excuse bundled-core ABI or
+  determinism tests that did not run.
+- Resolution selection now includes the 1440p tier and agrees with the public
+  C++ tier values for HD, Full HD, 2K, 4K, and 8K.
+- Plane sets match complete occurrences in any VDP plane, independently of the
+  plane recorded at capture. Emitted overlays follow the occurrence's plane.
+- Layer focus retains 50% brightness outside a focused plane and 25% outside
+  focused sprites, with consistent tint and opacity across rendering paths.
+- External-core test executables resolve their binary from `AYTHER_ABI_CORE`
+  or `core.lock`. Native CI rejects unexplained skips and missing test results.
+
 - Installed packages with the `engine` component now export a relocatable
   `Ayther_SHADER_DIR`, backed by the complete installed SPIR-V set; the
   out-of-tree package consumer verifies the asset contract.

@@ -1,8 +1,5 @@
-# focus_layer_smoke (#372) — el atenuado sigue a la capa que se autora: la capa
-# enfocada queda byte-exacta y las otras cumplen por pixel la formula del
-# compositor (tinte 0.25 Y opacidad 75%, con el fondo leido ocultando el
-# elemento). Requiere GPU (ventana SDL oculta).
-# Built only when -DAYTHER_BUILD_SPIKE=ON. ROM via AYTHER_PROBE_ROM.
+# Recording-based GPU oracle for focus brightness and opacity.
+# Requires a Vulkan device and a caller-supplied recording.
 add_executable(focus_layer_smoke main.cpp)
 target_link_libraries(focus_layer_smoke PRIVATE
     ayther_engine

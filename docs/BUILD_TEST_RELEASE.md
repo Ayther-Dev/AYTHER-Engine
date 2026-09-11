@@ -202,6 +202,30 @@ inventory, so it belongs in the release pipeline after dependency resolution.
 
 ## What CTest proves
 
+The external-core oracles `audio_mute`, `audio_output`, `render_output`, and
+`subsystem_routing` resolve `AYTHER_ABI_CORE` first, then the `vram_file` filename
+in `third_party/cores/core.lock`. An invalid explicit path or malformed lock is a
+failure. Only an absent optional locked binary produces CTest skip code 77.
+An override is never silently replaced by a different binary.
+
+Native CI captures the complete test log and runs
+`tools/check_core_test_results.ps1 -LogPath native-ctest.log`. The checker requires
+one result for each of these four tests and the six bundled-core tests:
+`abi_negociacion`, `abi_frame_delta`, `abi_multilayer`, `abi_lecturas`,
+`abi_escrituras`, and `e2e_determinismo`. The bundled-core tests must run even
+when the optional external core is absent. The checker also scans every other
+reported test, rejects failures, duplicate results, and unexplained skips, and
+reports which external-core paths were not exercised. Only the four
+external-core tests may skip, and only when their optional locked core is absent.
+Its deterministic contract test is `ayther.quality.core_test_results`.
+
+`ayther.unit.plane_set_match_test` verifies cross-plane occurrence matching,
+partial visibility, and rejection of split or consumed members.
+`ayther.renderer.focus_layer_test` runs under `AYTHER_BUILD_GPU_TESTS` and checks
+pixel brightness and opacity for all four focus layers using a synthetic scene.
+Rust tier tests and the C++ pack API test verify selection using actual asset
+reads, including 1440p/2160p boundaries and missing-tier fallback.
+
 The headless preset registers two tests: `ayther.core.ffi` covers representative
 layout, handle, pack, script, identity, and audio entry points; `sf2_synth`
 covers the null-handle SoundFont contract without external assets.

@@ -508,13 +508,17 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     // La opacidad no es decorativa — oscurecer solo deja el HD igual de OPACO, y
     // una capa de fondo atenuada seguía tapando por completo a la enfocada que
     // tiene detrás (el caso normal al autorar el Plano B con un Cuadro delante).
-    const float dim_lo   = 0.25f;
-    const float dim_op   = 0.75f;
+    // Plane focus leaves more context visible because planes can be sparse.
+    const float unfocused_brightness = impl_->focus_layer_ == 3 ? 0.25f : 0.5f;
+    constexpr float kUnfocusedOpacity = 0.75f;
+    const auto unfocused_tint = static_cast<uint32_t>(std::lround(unfocused_brightness * 64.0f));
+    const uint32_t unfocused_rgb =
+        unfocused_tint | (unfocused_tint << 8) | (unfocused_tint << 16);
     const bool  focusing = impl_->focus_layer_ >= 0;
-    const float dim_spr  = focusing && impl_->focus_layer_ != 3 ? dim_lo : 1.0f;
-    const float dim_bg   = focusing && impl_->focus_layer_ >  1 ? dim_lo : 1.0f;
-    const float op_spr   = dim_spr < 1.0f ? dim_op : 1.0f;
-    const float op_bg    = dim_bg  < 1.0f ? dim_op : 1.0f;
+    const float dim_spr  = focusing && impl_->focus_layer_ != 3 ? unfocused_brightness : 1.0f;
+    const float dim_bg   = focusing && impl_->focus_layer_ >  1 ? unfocused_brightness : 1.0f;
+    const float op_spr   = dim_spr < 1.0f ? kUnfocusedOpacity : 1.0f;
+    const float op_bg    = dim_bg  < 1.0f ? kUnfocusedOpacity : 1.0f;
     // Tiles de plano: el sub SÍ sabe su capa (por el elemento que lo reclama),
     // así que A y B se distinguen. Una sola llamada mezcla capas, así que el
     // atenuado va POR SUB — tinte Q2.6 (64 = 1.0, 16 = 0.25) y opacidad 0-255.
@@ -533,7 +537,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
         if (plane_tile_tint.empty())
             plane_tile_tint.assign((size_t)fv.plane_tile_sub_count * 3, 64);
         plane_tile_alpha.assign((size_t)fv.plane_tile_sub_hi,
-                                (uint8_t)(255 * dim_op));
+                                (uint8_t)(255 * kUnfocusedOpacity));
         auto& plane_focused = impl_->scratch_->plane_focused;
         plane_focused.assign(fv.plane_tile_sub_hi, 0);
         if (scene_ready)
@@ -544,15 +548,13 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                     (int)e.layer == impl_->focus_layer_)
                     plane_focused[e.sub] = 1;
             }
-        // El atenuado COMPONE sobre el tinte E1 (0.25× de lo que el sub ya
-        // traiga), no lo pisa — un set con fundido y fuera de foco queda
-        // fundido Y atenuado. La capa enfocada conserva su E1 intacto.
-        const uint32_t dimq = (uint32_t)(64 * dim_lo + 0.5f);   // Q2.6
+        // Multiply the authored palette tint by the focus brightness;
+        // the focused layer retains its authored tint unchanged.
         for (uint32_t s = 0; s < fv.plane_tile_sub_hi; ++s) {
             if (plane_focused[s]) { plane_tile_alpha[s] = 255; continue; }
             for (int c = 0; c < 3; ++c) {
                 uint8_t& v = plane_tile_tint[(size_t)s * 3 + c];
-                v = (uint8_t)(((uint32_t)v * dimq) >> 6);
+                v = (uint8_t)(((uint32_t)v * unfocused_tint) >> 6);
             }
         }
     }
@@ -750,15 +752,13 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
             // modo flat — resalta el contorno del elemento para la autoría.
             // R-8: en modo checker los efectos se pisan — cat 0 dibuja el
             // original ATENUADO (tinte 0.5×) para que lo sin mapear salte.
-            // Capa enfocada: lo que NO se está autorando se atenúa a 0.25x
-            // (0x10 en Q2.6) y al 75% de la opacidad que tuviera. Pisa el tinte
-            // de R-6, igual que el checker: las tres son vistas de autoría y la
-            // última que se pide manda.
+            // Focus overrides authoring tint and preserves 75% of the
+            // element's opacity. Every draw path uses the same Q2.6 brightness.
             const bool dimmed = impl_->focus_layer_ >= 0 && (int)e.layer != impl_->focus_layer_;
             const uint32_t fx = impl_->checker_
                 ? 0xFF202020u
                 : dimmed
-                ? (0x101010u |
+                ? (unfocused_rgb |
                    ((uint32_t)(e.fx_opacity * 3u / 4u) << 24))
                 : (uint32_t)e.fx_tint[0] |
                   ((uint32_t)e.fx_tint[1] << 8) |
@@ -938,7 +938,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                     fv.video_y && fv.video_u && fv.video_v &&
                     fv.video_w && fv.video_h) {
                     const bool vdim = focusing && impl_->focus_layer_ != li;
-                    impl_->sprite_.set_dim(vdim ? dim_lo : 1.0f, vdim ? dim_op : 1.0f);
+                    impl_->sprite_.set_dim(vdim ? unfocused_brightness : 1.0f, vdim ? kUnfocusedOpacity : 1.0f);
                     impl_->sprite_.draw_video(ctx, cmd, impl_->target_.image(),
                                        static_cast<const uint8_t*>(fv.video_y), fv.video_y_stride,
                                        static_cast<const uint8_t*>(fv.video_u), fv.video_u_stride,
@@ -950,8 +950,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
                     pano_lane_vis && scene_vis[li] && fv.panorama_sub_count > 0) {
                     // Acá la capa es EXACTA: la tira reemplaza celdas de ESTA.
                     const bool pano_dim = focusing && impl_->focus_layer_ != li;
-                    impl_->sprite_.set_dim(pano_dim ? dim_lo : 1.0f,
-                                    pano_dim ? dim_op : 1.0f);
+                    impl_->sprite_.set_dim(pano_dim ? unfocused_brightness : 1.0f,
+                                    pano_dim ? kUnfocusedOpacity : 1.0f);
                     //  fase 0: la tira se mapea con el ancho LÓGICO — sus
                     // coordenadas ya vienen en ese espacio desde la sesión. Sin
                     // ensanchar, logical_w == impl_->emu_w_ y no cambia nada.

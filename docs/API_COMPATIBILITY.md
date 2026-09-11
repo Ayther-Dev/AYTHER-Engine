@@ -27,6 +27,19 @@ Content identities are compatibility surfaces even when no type layout
 changes. Their exact definitions and known-answer tests are documented in
 [Pack identity specification](IDENTITY_SPECIFICATION.md).
 
+## Resolution tier values
+
+The C++ enum, manifest `[tiers].included` entries, and Rust selector share these
+values: `0=HD`, `1=Full HD`, `2=2K`, `3=4K`, `4=8K`. Height selection rounds up
+at 720, 1080, 1440, and 2160 pixels, then falls back according to pack contents.
+
+This corrects a pre-release implementation discrepancy: the public enum already
+declared five tiers while the height selector still used four. Packs authored
+with the older four-tier convention (`2=4K`, `3=8K`) must be rebuilt with corrected
+indices. There is no manifest discriminator for those older meanings, so the
+reader cannot infer them safely. Flat packs remain compatible. No function
+signature, struct layout, container version, or manifest schema changes here.
+
 ## Ownership and lifetime
 
 - A pointer returned by a `*_new`, `*_open`, or `*_load` function is owned by

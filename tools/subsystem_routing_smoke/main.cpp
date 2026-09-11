@@ -1,3 +1,4 @@
+#include "../common/core_path.h"
 // ---------------------------------------------------------------------------
 // subsystem_routing_smoke — #292: apagar UN subsistema devuelve el original, y
 // no se lleva puestos a los demás.
@@ -44,12 +45,14 @@ void check(bool ok, const char* what) {
 int main() {
     std::printf("=== subsystem_routing_smoke — #292: apagar uno no apaga los otros ===\n");
 
-    const std::string core =
-        std::string(AYTHER_SOURCE_DIR) + "/third_party/cores/genesis_plus_gx_libretro_vram.dll";
-    if (!std::filesystem::exists(core)) {
-        std::printf("[skip] no está el core del fork: %s\n", core.c_str());
-        return 77;
+    const auto core_path = ayther::test::configured_core_path(AYTHER_SOURCE_DIR);
+    if (!core_path.available()) {
+        std::fprintf(stderr, "[%s] %s\n",
+                     core_path.failure_exit_code == 77 ? "skip" : "FAIL",
+                     core_path.diagnostic.c_str());
+        return core_path.failure_exit_code;
     }
+    const std::string core = core_path.path.string();
     const std::string rom = ayther::synth::canonical_rom_path();
     if (rom.empty()) { std::fprintf(stderr, "[FAIL] no pude escribir la ROM\n"); return 1; }
 

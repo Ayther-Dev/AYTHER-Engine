@@ -516,7 +516,11 @@ jobs:
             build/${{ matrix.preset }}
 
       - name: Test native targets
-        run: ctest --preset ${{ matrix.preset }}
+        shell: pwsh
+        run: |
+          ctest --preset ${{ matrix.preset }} 2>&1 | Tee-Object -FilePath native-ctest.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tools/check_core_test_results.ps1 -LogPath native-ctest.log
 
       - name: Install the native package
         run: >-

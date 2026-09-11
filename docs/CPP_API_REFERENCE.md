@@ -139,6 +139,12 @@ loaded, or queried for owned metadata. It must not outlive a pack reload or its
 session. `PackWatcher` encapsulates the platform thread and raw watcher handle;
 destroy it before the session and resources affected by reload.
 
+`PackView::select_render_tier_for_height()` selects HD through 720 pixels,
+Full HD through 1080, 2K through 1440, 4K through 2160, and 8K above that.
+Selection uses the smallest included tier at least as large as the requested
+tier, or the largest available tier when none qualifies. Flat packs are unchanged.
+The same mapping applies to `ayther_pack_set_tier_for_height()` in the C ABI.
+
 `engine::core_abi_revision()` reports the linked core ABI revision without
 requiring the C header. Game-specific work-RAM interpretation is deliberately
 outside Engine. The flat `ayther_core_ffi.h` surface remains available only for

@@ -1,37 +1,8 @@
-// ---------------------------------------------------------------------------
-// focus_layer_smoke (#372) — el ATENUADO SIGUE A LA CAPA que se está autorando,
-// verificado POR PÍXEL en el compose (GPU), sin UI.
-//
-// La HUELLA de un elemento (los píxeles que realmente aporta) se obtiene
-// rindiendo dos veces: normal y con el elemento OCULTO. Donde difieren, ese
-// elemento es el que manda — lo que otro dibuja encima queda excluido solo, sin
-// razonar sobre solapes de bbox. Y el render con el elemento oculto es además
-// el término `dst` del blending, que es lo que hace verificable la opacidad.
-//
-// Sobre un frame real de GA (compone al 100%, R-5):
-//
-//   Parte 1 — VRAM (HD apagado, las 4 capas):
-//     · enfocada su capa, la huella queda BYTE-EXACTA: lo que se autora se ve
-//       como es, nunca atenuado.
-//     · enfocada OTRA capa, cada píxel cumple la fórmula del compositor
-//         out = src·(16/64)·(191/255) + dst·(1 − 191/255)
-//       o sea tinte 0.25 Y opacidad 75%. El contrafáctico —comparar contra
-//       src·0.25 a secas— es el que prueba que la opacidad está puesta: si el
-//       atenuado fuera opaco, ese check pasaría y este fallaría.
-//
-//   Parte 2 — HD (encendido): el atenuado tiene que ALCANZAR a los assets, que
-//     es justamente lo que se está autorando. Fue el bug real de #372: dimear
-//     sólo los quads VRAM se ve nada más en lo que NO tiene asset. Acá no hay
-//     fórmula exacta (el alpha del PNG no se puede despejar de un render), así
-//     que se verifica lo que sí es incondicional: enfocada su capa la huella HD
-//     queda byte-exacta, y enfocada otra se oscurece en TODOS los canales.
-//
-//   Parte 3 — sin foco (-1) el render vuelve byte-exacto al camino de siempre.
-//
-//   Build: -DAYTHER_BUILD_SPIKE=ON → target focus_layer_smoke (requiere GPU)
-//   Args:  <rec.arp> [frame]   (default 900)
-//   Env:   AYTHER_PROBE_ROM
-// ---------------------------------------------------------------------------
+// Recording-based layer-focus oracle. The focused layer remains unchanged;
+// other layers combine 75% opacity with 50% brightness for plane focus or
+// 25% brightness for sprite focus. Hidden-element renders supply the background
+// for the per-pixel blend comparison. Includes native cells and an HD sprite.
+// Usage: focus_layer_smoke <recording.arp> [frame]
 #include "ayther_env.h"
 #include "ayther_session.h"
 #include "ayther_recording.h"
@@ -75,7 +46,6 @@ static void check(bool ok, const char* what) {
 // Los dos factores del atenuado, tal como los emite el compositor:
 //   tinte    0x10 en Q2.6   → 16/64
 //   opacidad 255·3/4 = 191  → 191/255   (el shader divide por 255)
-static const float kTint = 16.0f / 64.0f;
 static const float kOpac = 191.0f / 255.0f;
 
 static const char* kLayerName[4] = { "Plano B", "Plano A", "Window", "Sprites" };
@@ -213,6 +183,7 @@ int main(int argc, char** argv) {
 
         // 2-3. enfocar OTRA capa → fórmula exacta (tinte Y opacidad)
         const int other = (L + 1) & 3;
+        const float unfocused_brightness = other == 3 ? 0.25f : 0.5f;
         renderer.set_focus_layer(other);
         s->set_hidden_elements(&he, 1);
         if (!render_to(dst)) { std::fprintf(stderr, "[FAIL] render dst\n"); return false; }
@@ -224,9 +195,9 @@ int main(int argc, char** argv) {
                 bool ok = true, valid_without_opacity = true;
                 for (int ch = 0; ch < 3; ++ch) {
                     const float src = (float)base[i + ch];
-                    const float exp = src * kTint * kOpac + (float)dst[i + ch] * (1.0f - kOpac);
+                    const float exp = src * unfocused_brightness * kOpac + (float)dst[i + ch] * (1.0f - kOpac);
                     if (std::fabs((float)got[i + ch] - exp) > 2.0f) ok = false;
-                    if (std::fabs((float)got[i + ch] - src * kTint) > 2.0f)
+                    if (std::fabs((float)got[i + ch] - src * unfocused_brightness) > 2.0f)
                         valid_without_opacity = false;
                 }
                 if (!ok) ++bad;
@@ -234,13 +205,12 @@ int main(int argc, char** argv) {
             }
             char msg[256];
             std::snprintf(msg, sizeof(msg),
-                          "con %s enfocada, %s de %s cumple src*0.25*0.749 + "
-                          "dst*0.251 por pixel (%zu/%zu fuera de +-2)",
-                          kLayerName[other], what, kLayerName[L], bad, fp.size());
+                          "focus %s: %s of %s follows brightness %.2f and 75%% opacity "
+                          "(%zu/%zu pixels outside tolerance)",
+                          kLayerName[other], what, kLayerName[L], unfocused_brightness, bad, fp.size());
             check(bad == 0, msg);
             std::snprintf(msg, sizeof(msg),
-                          "y la OPACIDAD se nota: %zu/%zu px no coinciden con el "
-                          "atenuado opaco (src*0.25)",
+                          "opacity is measurable: %zu/%zu pixels differ from opaque dimming",
                           opaque_would_fail, fp.size());
             check(opaque_would_fail > 0, msg);
         }

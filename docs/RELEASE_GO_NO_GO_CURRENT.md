@@ -1,67 +1,73 @@
 # Current release gate: go / no-go decision
 
-**Pre-release decision: GO for `v0.1.0-rc.6`.**
+**Pre-release decision: GO for `v0.1.0-rc.7`.**
 
 **Stable-release decision: NO-GO for `v0.1.0`.**
 
-**Decision date:** 2026-09-02
+**Decision date:** 2026-09-11
 
-**Evidence cutoff:** 2026-09-02T22:36:17-03:00
+**Evidence cutoff:** 2026-09-11T01:30:00-03:00
 
 **Candidate identity:** the commit targeted by the annotated tag
-`v0.1.0-rc.6`. The tag object records the exact candidate SHA and is the
+`v0.1.0-rc.7`. The tag object records the exact candidate SHA and is the
 authoritative binding between this decision and the immutable source revision.
 
 **Evidence baseline before the decision record:**
-`b01bc0cc961dbc65ff8c5e26adfd56959c87d818` (candidate before this decision
-record)
+`65a5e4e6d56b` (`main` at the last published candidate, `v0.1.0-rc.6`) plus
+the fix-forward commits `41f8212`, `8bc74e9` and `fd37fcc` on
+`feat/runtime-integration-gate-fix`, which this record accompanies.
 
 **Decider:** the sole maintainer, operating under
 [GOV-2026-001](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review)
 
-This record supersedes the operational GO for `v0.1.0-rc.5`. That candidate's
-four Engine packages built successfully, but its release workflow incorrectly
-made publication depend on AYTHER Runtime. The external-consumer matrix failed
-before the protected environment and no release was published. The earlier
-successful `v0.1.0-rc.4` publication, the assessment of
-`d68cfad0cc9619063d407d930a78140ee2d61b0b` and the
-[2026-08-30 decision](RELEASE_GO_NO_GO.md) remain immutable historical
-snapshots.
+This record supersedes the operational GO for `v0.1.0-rc.6`, which was
+published successfully as a pre-release. The `rc.6` decision, the earlier
+`v0.1.0-rc.4` publication and the [2026-08-30 decision](RELEASE_GO_NO_GO.md)
+remain immutable historical snapshots.
+
+## Why a new candidate
+
+`v0.1.0-rc.6` ships a scene-inventory defect visible to every consumer that
+substitutes 1×1 plane tiles: the cell→sub join looked a sub up by screen
+position only, so a plane-B cell under a plane-A glyph received the glyph's
+sub, was marked claimed, and the compose skipped the original beneath. In
+Golden Axe, Stage 1, the HD "MAGIC" letters erased the tree trunk under them
+and showed the backdrop (reported by the Lab on 2026-09-11). `rc.7` is the
+fix-forward candidate: `fd37fcc` moves the join to
+`src/session/plane_sub_join.h`, requires the same plane, and fixes it with the
+unit oracle `ayther.unit.plane_sub_join_test`. The candidate also carries the
+resolution-tier, plane-set, layer-focus and native-CI coverage changes listed
+under *Fixed* in the changelog.
 
 ## Decision scope
 
-The GO authorizes publishing `v0.1.0-rc.6` as a **pre-release candidate** so
-that the release pipeline, artifact verification, external consumption, and
-rollback procedure can be exercised. It does not authorize publishing the
-stable `v0.1.0` release.
+The GO authorizes publishing `v0.1.0-rc.7` as a **pre-release candidate** so
+that consumers (AYTHER Lab and AYTHER Runtime) can pin a package that contains
+the inventory fix, and so that the release pipeline, artifact verification and
+external consumption are exercised again on a fix-forward candidate. It does
+not authorize publishing the stable `v0.1.0` release.
 
 Stable remains NO-GO because supported-release blockers and the required
-rollback rehearsal are not yet closed. Evidence produced by this RC may close
-part of that gap, but it does not retroactively turn this decision into a
-stable-release GO.
+rollback rehearsal are not yet closed.
 
 ## Evidence supporting the RC GO
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.6` passes for prerelease `rc.6` of `0.1.0` |
-| Required CI on the last published baseline | **Pass** | [CI run 33523137567](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33523137567) passed on `9b040fd4233a0ebf1003ecbe9dbdda5561ba8713` |
-| CodeQL workflow on the last published baseline | **Pass** | [CodeQL run 33523136980](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33523136980) passed on the same SHA |
+| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.7` passes for prerelease `rc.7` of `0.1.0` (Cargo, vcpkg, CMake and `ayther_version.h` all at `0.1.0`) |
+| Required CI on the last published baseline | **Pass** | [CI run 33711947727](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33711947727) passed on `65a5e4e6d56b`; the scheduled run [34370139361](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/34370139361) of 2026-09-09 passed on the same SHA |
+| Required CI on the candidate | **Pending the pull request** | The fix-forward pull request from `feat/runtime-integration-gate-fix` must pass the required CI gate before the merge; the tag is created only on the merged `main` commit |
 | Open code-scanning findings | **Pass** | GitHub returned no open code-scanning alerts at the evidence cutoff |
-| `rc.2` release outcome | **Failed before publication; remediated by fix-forward** | [Release run 33514264266](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33514264266) rejected MSVC-style `/pathmap:` under `clang-cl`; no publication job or environment approval was reached, and the immutable `v0.1.0-rc.2` tag was not moved or deleted |
-| Windows deterministic-prefix regression | **Pass** | PR [#10](https://github.com/Ayther-Dev/AYTHER-Engine/pull/10) passes Clang's prefix map through `/clang:-ffile-prefix-map=...`; its required CI gate passed both Windows native matrices, including VPX |
-| `rc.3` release outcome | **Failed after environment approval; remediated by fix-forward** | [Release run 33519665837](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33519665837) completed all six reproducible build jobs, then found four consumer reports mixed into the advertised release asset set; signing and publication did not run, and the immutable `v0.1.0-rc.3` tag was not moved or deleted |
-| Release-asset scope correction | **Pass subject to final protected checks** | PR [#12](https://github.com/Ayther-Dev/AYTHER-Engine/pull/12) restricts `release-*` inputs to ZIPs and SPDX SBOMs while retaining consumer reports as separate CI evidence |
-| `rc.4` release outcome | **Pass** | [Release run 33524332545](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33524332545) passed the contract, all six reproducible builds, protected-environment approval, signing, attestations, and publication as [pre-release `v0.1.0-rc.4`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.4) |
-| `rc.5` release outcome | **Failed before publication; remediated by fix-forward** | [Release run 33701112974](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/33701112974) built and attested all four Engine packages. Its Runtime checkout initially referenced an unpublished commit; after that commit became available, Runtime's Linux post-build command failed. The protected environment and publication job were never reached, and the immutable tag was not moved or deleted. |
-| Runtime implementation repair | **Pass, informational for Engine release** | AYTHER-Runtime PR [#1](https://github.com/Ayther-Dev/AYTHER-Runtime/pull/1) limits DLL staging to Windows; its controls passed and it was merged as `7580a88ed34e32f9ca7603152fb35c0e939dbc4e` |
-| Release-scope correction | **Pass subject to final protected checks** | The release DAG now gates publication on its repository-owned minimal consumer only. Runtime validation moved to a read-only, post-publication workflow and cannot block or publish Engine releases. |
-| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.6` did not exist at the evidence cutoff |
-| Release controls | **Pass with temporary governance exception** | The `release` environment requires approval and accepts `v*`; immutable tag protection blocks update and deletion |
+| Inventory fix has a pure oracle | **Pass** | `tests/unit/plane_sub_join_test.cpp`: a B cell under an A glyph is not the glyph's, the A cell is, a sub emitted on B is found only by B, multi-cell sets do not enter this path, two subs at one position on two planes each join their own cell |
+| Local native suites on the candidate | **Pass** | `windows-release-engine-vpx`: full build, unit 23/23, non-GPU CTest selection green (2026-09-11, maintainer's machine) |
+| Consumer verification of the fix | **Pass** | AYTHER Lab rebuilt against the candidate's installed prefix and re-ran the reported case on a copy of the real project: at Stage 1 frame 60 the six plane-B cells under the glyphs go from claimed to free and the trunk is drawn again; the eleven glyphs stay replaced |
+| `rc.6` release outcome | **Pass** | Published 2026-09-03 as [pre-release `v0.1.0-rc.6`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.6) with all four archives, checksums, SBOMs and Sigstore bundles; consumed by AYTHER Lab `0.1.0-beta.1` |
+| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.7` did not exist at the evidence cutoff |
+| Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment requires the maintainer's approval and accepts `v*` |
 
 The final candidate commit is the merge result containing this record. Before
-tag creation, required CI and CodeQL must be green on that exact `main` commit.
-The annotated tag message must contain both the explicit GO and the full target
+tag creation, required CI must be green on that exact `main` commit. The
+annotated tag message must contain both the explicit GO and the full target
 SHA. This avoids claiming that a file inside a Git commit can contain its own
 SHA: changing such a file would itself produce a different commit.
 
@@ -101,20 +107,20 @@ If publication or post-publication verification exposes a defect, follow
 evidence, withdraw affected release assets as documented, notify consumers,
 and publish a fix-forward candidate under a new version.
 
-After publication, download and verify the released archives on Windows and
-Linux, then rehearse the rollback procedure. Record those results before
+After publication, AYTHER Lab pins the `vpx` Windows archive in its dependency
+lock and re-validates its own candidate against it; record that result before
 re-evaluating the stable `v0.1.0` gate.
 
 ## Reproducing the pre-tag checks
 
 ```text
 git rev-parse main
-pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.6
+pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.7
 gh run list --branch main --limit 12
 gh api 'repos/Ayther-Dev/AYTHER-Engine/code-scanning/alerts?state=open'
 gh api repos/Ayther-Dev/AYTHER-Engine/environments/release
 gh api repos/Ayther-Dev/AYTHER-Engine/rulesets
-gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.6
+gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.7
 ```
 
 Ruleset identifiers are not treated as stable evidence. Enumerate the active
