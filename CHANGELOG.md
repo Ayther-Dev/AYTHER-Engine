@@ -140,6 +140,12 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The scene inventory joined 1x1 plane-tile subs to cells by screen position
+  alone, so a plane-B cell under a plane-A glyph took the glyph's sub, was
+  marked claimed, and the compose skipped the original beneath it (Golden Axe,
+  Stage 1: the HD "MAGIC" letters erased the tree trunk and showed the
+  backdrop). The join now requires the sub's plane
+  (`src/session/plane_sub_join.h`, unit oracle `plane_sub_join_test`).
 - Native CI now requires all ten core-related test results and rejects failures,
   duplicate results, and unexplained skips across the complete CTest log.
   Missing optional external cores no longer excuse bundled-core ABI or
