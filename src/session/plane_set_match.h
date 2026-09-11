@@ -28,6 +28,7 @@ struct PlaneSetMatch {
 /// Cell positions must fit in signed 16-bit coordinates, as PlaneCellHit requires.
 class PlaneSetMatcher final {
   public:
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the visible size is (width, height) by convention.
     PlaneSetMatcher(std::span<const PlaneCellHit> cells, int width, int height)
         : cells_{cells}, width_{width}, height_{height} {
         positions_.reserve(cells.size());

@@ -12,26 +12,25 @@
 // join did not.
 //
 // Pure: no session, no GPU. Fixed by tests/unit/plane_sub_join_test.cpp.
-#include "ayther_core_ffi.h" // AytherSpriteSub (C struct, global namespace)
+#include "ayther_session.h" // PlaneCellHit; AytherSpriteSub comes with it
 
 #include <cstdint>
+#include <span>
 
 namespace ayther::session {
 
-/// Index of the 1×1 sub replacing cell (`plane`, `x`, `y`), or -1. `subs` and
-/// `sub_plane` are parallel (`n` entries): screen position and emitting plane
-/// of each sub. Subs wider than one cell (sets) are joined elsewhere, by rect
-/// and same plane.
-[[nodiscard]] inline std::int32_t plane_sub_at(const ::AytherSpriteSub *subs,
-                                               const std::uint8_t *sub_plane,
-                                               std::uint32_t n, std::uint8_t plane,
-                                               std::int16_t x, std::int16_t y) noexcept {
-    if (subs == nullptr || sub_plane == nullptr)
-        return -1;
-    for (std::uint32_t i = 0; i < n; ++i) {
+/// Index of the 1×1 sub replacing `cell` (its plane and screen position), or
+/// -1. `subs` and `sub_plane` are parallel: screen position and emitting plane
+/// of each sub; only the first `min(size)` entries are consulted. Subs wider
+/// than one cell (sets) are joined elsewhere, by rect and same plane.
+[[nodiscard]] inline std::int32_t plane_sub_at(std::span<const ::AytherSpriteSub> subs,
+                                               std::span<const std::uint8_t> sub_plane,
+                                               const PlaneCellHit &cell) noexcept {
+    const std::size_t n = subs.size() < sub_plane.size() ? subs.size() : sub_plane.size();
+    for (std::size_t i = 0; i < n; ++i) {
         const ::AytherSpriteSub &q = subs[i];
-        if (q.w_tiles == 1 && q.h_tiles == 1 && q.screen_x == x && q.screen_y == y &&
-            sub_plane[i] == plane)
+        if (q.w_tiles == 1 && q.h_tiles == 1 && q.screen_x == cell.screen_x &&
+            q.screen_y == cell.screen_y && sub_plane[i] == cell.plane)
             return static_cast<std::int32_t>(i);
     }
     return -1;

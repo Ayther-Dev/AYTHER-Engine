@@ -6,6 +6,7 @@
 // lookup was by x,y only), was marked claimed, and the compose skipped it.
 // Pure: no ROM, no GPU, no session.
 #include "session/plane_sub_join.h"
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -16,14 +17,22 @@ void check(bool condition, const char *message) {
         ++failures;
     std::printf("[%s] %s\n", condition ? "PASS" : "FAIL", message);
 }
-AytherSpriteSub sub_at(std::int16_t x, std::int16_t y, std::uint8_t w = 1, std::uint8_t h = 1) {
+/// A sub covering `cells` (as w_tiles x h_tiles) at the cell's screen position.
+AytherSpriteSub sub_at(const ayther::PlaneCellHit &at, std::uint8_t cells_wide = 1) {
     AytherSpriteSub s{};
     std::memset(&s, 0, sizeof(s));
-    s.screen_x = x;
-    s.screen_y = y;
-    s.w_tiles = w;
-    s.h_tiles = h;
+    s.screen_x = at.screen_x;
+    s.screen_y = at.screen_y;
+    s.w_tiles = cells_wide;
+    s.h_tiles = 1;
     return s;
+}
+ayther::PlaneCellHit cell(std::uint8_t plane, const std::array<std::int16_t, 2> &xy) {
+    ayther::PlaneCellHit c{};
+    c.plane = plane;
+    c.screen_x = xy[0];
+    c.screen_y = xy[1];
+    return c;
 }
 } // namespace
 int main() {
@@ -31,26 +40,26 @@ int main() {
     constexpr std::uint8_t A = 0, B = 1, W = 2; // PlaneCellHit plane codes
     // The reported case: glyph "M" on A at (80,8); trunk on B at (80,8). Plus a
     // direct HD tile on B at (16,24) and a 2×1 set on A at (40,24).
-    AytherSpriteSub subs[3] = {sub_at(80, 8), sub_at(16, 24), sub_at(40, 24, 2, 1)};
-    const std::uint8_t sub_plane[3] = {A, B, A};
-    check(plane_sub_at(subs, sub_plane, 3, A, 80, 8) == 0, "the A cell at (80,8) finds its glyph");
-    check(plane_sub_at(subs, sub_plane, 3, B, 80, 8) == -1,
+    const std::array<AytherSpriteSub, 3> subs{
+        sub_at(cell(A, {80, 8})), sub_at(cell(B, {16, 24})), sub_at(cell(A, {40, 24}), 2)};
+    const std::array<std::uint8_t, 3> sub_plane{A, B, A};
+    check(plane_sub_at(subs, sub_plane, cell(A, {80, 8})) == 0, "the A cell at (80,8) finds its glyph");
+    check(plane_sub_at(subs, sub_plane, cell(B, {80, 8})) == -1,
           "the B cell under the glyph is not the glyph's: the trunk is drawn");
-    check(plane_sub_at(subs, sub_plane, 3, W, 80, 8) == -1, "nor the Window cell at that position");
-    check(plane_sub_at(subs, sub_plane, 3, B, 16, 24) == 1, "a sub emitted on B is found by the B cell");
-    check(plane_sub_at(subs, sub_plane, 3, A, 16, 24) == -1, "and not by the A cell above it");
-    check(plane_sub_at(subs, sub_plane, 3, A, 40, 24) == -1,
+    check(plane_sub_at(subs, sub_plane, cell(W, {80, 8})) == -1, "nor the Window cell at that position");
+    check(plane_sub_at(subs, sub_plane, cell(B, {16, 24})) == 1, "a sub emitted on B is found by the B cell");
+    check(plane_sub_at(subs, sub_plane, cell(A, {16, 24})) == -1, "and not by the A cell above it");
+    check(plane_sub_at(subs, sub_plane, cell(A, {40, 24})) == -1,
           "a sub wider than one cell (a set) is not joined by this path");
-    check(plane_sub_at(subs, sub_plane, 3, A, 88, 8) == -1, "another position of the same plane: none");
-    check(plane_sub_at(subs, sub_plane, 0, A, 80, 8) == -1, "no subs: -1");
-    check(plane_sub_at(nullptr, sub_plane, 3, A, 80, 8) == -1 &&
-              plane_sub_at(subs, nullptr, 3, A, 80, 8) == -1,
-          "null pointers: -1");
+    check(plane_sub_at(subs, sub_plane, cell(A, {88, 8})) == -1, "another position of the same plane: none");
+    check(plane_sub_at({}, {}, cell(A, {80, 8})) == -1, "no subs: -1");
+    check(plane_sub_at(subs, std::span<const std::uint8_t>{sub_plane}.first(1), cell(B, {16, 24})) == -1,
+          "a sub without a recorded plane is not joined");
     // Two 1×1 subs at the same position on different planes: each cell finds its own.
-    AytherSpriteSub twins[2] = {sub_at(8, 8), sub_at(8, 8)};
-    const std::uint8_t twin_plane[2] = {B, A};
-    check(plane_sub_at(twins, twin_plane, 2, A, 8, 8) == 1 &&
-              plane_sub_at(twins, twin_plane, 2, B, 8, 8) == 0,
+    const std::array<AytherSpriteSub, 2> twins{sub_at(cell(B, {8, 8})), sub_at(cell(A, {8, 8}))};
+    const std::array<std::uint8_t, 2> twin_plane{B, A};
+    check(plane_sub_at(twins, twin_plane, cell(A, {8, 8})) == 1 &&
+              plane_sub_at(twins, twin_plane, cell(B, {8, 8})) == 0,
           "same position on two planes: each cell joins the sub of its plane");
     std::printf("plane_sub_join: %d failures\n", failures);
     return failures == 0 ? 0 : 1;

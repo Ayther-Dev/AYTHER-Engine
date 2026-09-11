@@ -49,6 +49,7 @@
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <span>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -7209,10 +7210,11 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement>& out) const {
     // oracle) and requires the SAME plane, not only the position: a plane-B
     // cell under a plane-A glyph used to receive the glyph's sub and the
     // compose skipped the trunk beneath (Golden Axe Stage 1, 2026-09-11).
-    auto plane_sub_at = [&im](const FrameView& fv, uint8_t plane, int16_t x,
-                              int16_t y) -> int32_t {
-        return session::plane_sub_at(fv.plane_tile_subs, im.plane_tile_sub_plane,
-                                     fv.plane_tile_sub_count, plane, x, y);
+    auto plane_sub_at = [&im](const FrameView& fv, const PlaneCellHit& pc) -> int32_t {
+        if (!fv.plane_tile_subs || !fv.plane_tile_sub_count) return -1;
+        return session::plane_sub_at(
+            std::span<const AytherSpriteSub>(fv.plane_tile_subs, fv.plane_tile_sub_count),
+            std::span<const uint8_t>(im.plane_tile_sub_plane, fv.plane_tile_sub_count), pc);
     };
 
     // R-5 (): MÁSCARA de sprites (x=0) — semántica del VDP que la lista
@@ -7398,7 +7400,7 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement>& out) const {
                 e.flips    = (uint8_t)(pc.flags & 3);
                 e.layer    = pl == 1 ? 0 : pl == 0 ? 1 : 2;   // 0=B · 1=A · 2=W
                 e.priority = pri;
-                e.sub      = plane_sub_at(v, pc.plane, pc.screen_x, pc.screen_y);
+                e.sub      = plane_sub_at(v, pc);
                 // Celda CONSUMIDA por un SET (Objeto): enlazar al quad del set
                 // de SU MISMO plano que la contiene — con esto el compose
                 // dibuja el HD del set en el z de la cadena (un sprite pri-1

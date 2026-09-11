@@ -511,7 +511,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView& ctx, VkComm
     // Plane focus leaves more context visible because planes can be sparse.
     const float unfocused_brightness = impl_->focus_layer_ == 3 ? 0.25f : 0.5f;
     constexpr float kUnfocusedOpacity = 0.75f;
-    const auto unfocused_tint = static_cast<uint32_t>(unfocused_brightness * 64.0f + 0.5f);
+    const auto unfocused_tint = static_cast<uint32_t>(std::lround(unfocused_brightness * 64.0f));
     const uint32_t unfocused_rgb =
         unfocused_tint | (unfocused_tint << 8) | (unfocused_tint << 16);
     const bool  focusing = impl_->focus_layer_ >= 0;
