@@ -35,6 +35,7 @@
 #include "session/emulation_observer.h"
 #include "session/pack_runtime.h"
 #include "session/plane_set_match.h"
+#include "session/plane_sub_join.h"
 #include "session/recording_controller.h"
 #include "ayther_video.h"                  // VideoClip: el paso-video ()
 #include "ayther_core_ffi.h"                // ayther_sf2_* ()
@@ -7204,16 +7205,15 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement>& out) const {
         for (uint32_t i = 0; i < v.sprite_sub_count; ++i)
             if (v.sprite_sub_slot[i] < 80 && slot2sub[v.sprite_sub_slot[i]] < 0)
                 slot2sub[v.sprite_sub_slot[i]] = (int32_t)i;
-    auto plane_sub_at = (v.plane_tile_sub_count && v.plane_tile_subs)
-        ? [](const FrameView& fv, int16_t x, int16_t y) -> int32_t {
-              for (uint32_t i = 0; i < fv.plane_tile_sub_count; ++i) {
-                  const AytherSpriteSub& q = fv.plane_tile_subs[i];
-                  if (q.screen_x == x && q.screen_y == y &&
-                      q.w_tiles == 1 && q.h_tiles == 1) return (int32_t)i;
-              }
-              return -1;
-          }
-        : [](const FrameView&, int16_t, int16_t) -> int32_t { return -1; };
+    // The 1×1 cell→sub join lives in session/plane_sub_join.h (with its own
+    // oracle) and requires the SAME plane, not only the position: a plane-B
+    // cell under a plane-A glyph used to receive the glyph's sub and the
+    // compose skipped the trunk beneath (Golden Axe Stage 1, 2026-09-11).
+    auto plane_sub_at = [&im](const FrameView& fv, uint8_t plane, int16_t x,
+                              int16_t y) -> int32_t {
+        return session::plane_sub_at(fv.plane_tile_subs, im.plane_tile_sub_plane,
+                                     fv.plane_tile_sub_count, plane, x, y);
+    };
 
     // R-5 (): MÁSCARA de sprites (x=0) — semántica del VDP que la lista
     // parseada no aplana (parse_satb agrega el sprite aunque el render lo
@@ -7398,7 +7398,7 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement>& out) const {
                 e.flips    = (uint8_t)(pc.flags & 3);
                 e.layer    = pl == 1 ? 0 : pl == 0 ? 1 : 2;   // 0=B · 1=A · 2=W
                 e.priority = pri;
-                e.sub      = plane_sub_at(v, pc.screen_x, pc.screen_y);
+                e.sub      = plane_sub_at(v, pc.plane, pc.screen_x, pc.screen_y);
                 // Celda CONSUMIDA por un SET (Objeto): enlazar al quad del set
                 // de SU MISMO plano que la contiene — con esto el compose
                 // dibuja el HD del set en el z de la cadena (un sprite pri-1
