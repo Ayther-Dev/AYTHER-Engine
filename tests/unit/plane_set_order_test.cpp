@@ -9,6 +9,7 @@
 #include "session/plane_set_order.h"
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <vector>
 namespace {
 int failures = 0;
@@ -23,7 +24,7 @@ constexpr std::uint64_t kBar = 0x0000000000000A17ull;    // seven tiles, 7x1
 constexpr std::uint64_t kEmpty = 0x0000000000000001ull;  // one tile
 constexpr std::uint64_t kBorder = 0x0000000000000002ull; // one tile
 } // namespace
-int main() {
+int main() try {
     // The reported case, inserted with the small sets FIRST and lowest ids.
     const std::vector<std::uint64_t> reported =
         plane_set_order({{kEmpty, 1, 1}, {kBorder, 1, 1}, {kBar, 7, 7}});
@@ -45,4 +46,12 @@ int main() {
     check(plane_set_order({}).empty(), "no sets: empty order");
     std::printf("plane_set_order: %d failures\n", failures);
     return failures == 0 ? 0 : 1;
+} catch (const std::exception &error) {
+    std::fprintf(stderr, "[FAIL] Unexpected exception: %s
+", error.what());
+    return 1;
+} catch (...) {
+    std::fprintf(stderr, "[FAIL] Unexpected non-standard exception
+");
+    return 1;
 }
