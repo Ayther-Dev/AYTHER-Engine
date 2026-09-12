@@ -47,11 +47,9 @@ int main() try {
     std::printf("plane_set_order: %d failures\n", failures);
     return failures == 0 ? 0 : 1;
 } catch (const std::exception &error) {
-    std::fprintf(stderr, "[FAIL] Unexpected exception: %s
-", error.what());
+    std::fprintf(stderr, "[FAIL] Unexpected exception: %s\n", error.what());
     return 1;
 } catch (...) {
-    std::fprintf(stderr, "[FAIL] Unexpected non-standard exception
-");
+    std::fprintf(stderr, "[FAIL] Unexpected non-standard exception\n");
     return 1;
 }
