@@ -140,6 +140,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Plane sets were tried in the container's bucket order, so a one-member set
+  could claim a cell before the larger set containing it was tried, and the
+  larger set never matched (Golden Axe: assigning HD to the one-tile
+  "Magic bar - Empty" and "Magic bar - Border" Objects cancelled the
+  seven-tile "Ax Battler - Magic bar"). Sets are now tried by complexity —
+  more members, then larger bbox, then id — so the most specific element
+  claims first and the order is total (`src/session/plane_set_order.h`, unit
+  oracle `plane_set_order_test`, overlap case in `paint_set_smoke`).
 - The scene inventory joined 1x1 plane-tile subs to cells by screen position
   alone, so a plane-B cell under a plane-A glyph took the glyph's sub, was
   marked claimed, and the compose skipped the original beneath it (Golden Axe,
