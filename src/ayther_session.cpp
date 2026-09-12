@@ -2747,7 +2747,6 @@ const FrameView& AytherSession::produce_frame() {
                     // reclamada hace fallar al set entero. Si el de 1 tile se
                     // probara antes que el de 7 que lo contiene, el de 7 no
                     // matchearía nunca (session/plane_set_order.h).
-                    if (im.plane_set_order_dirty) im.rebuild_plane_set_order();
                     for (const uint64_t sid : im.plane_set_order) {
                         const auto set_it = im.plane_sets.find(sid);
                         if (set_it == im.plane_sets.end()) continue;
@@ -4275,17 +4274,17 @@ void AytherSession::define_plane_set(uint64_t id, uint8_t plane, uint16_t w_cell
     d.members.assign(members, members + member_count);
     if (ref_rgb) std::memcpy(d.ref_rgb, ref_rgb, 3);
     impl_->plane_sets[id] = std::move(d);
-    impl_->plane_set_order_dirty = true;
+    impl_->rebuild_plane_set_order();
 }
 
 void AytherSession::undefine_plane_set(uint64_t id) {
     impl_->plane_sets.erase(id);
-    impl_->plane_set_order_dirty = true;
+    impl_->rebuild_plane_set_order();
 }
 
 void AytherSession::clear_plane_sets() {
     impl_->plane_sets.clear();
-    impl_->plane_set_order_dirty = true;
+    impl_->rebuild_plane_set_order();
 }
 
 void AytherSession::define_plane_sequence(uint64_t id,

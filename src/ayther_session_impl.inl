@@ -218,17 +218,17 @@ struct AytherSession::Impl {
     /// descending (session/plane_set_order.h). A set claims the cells it
     /// matches, so the order decides who wins an overlap: the seven-tile
     /// Object must be tried before the one-tile Objects it contains.
-    /// Rebuilt on demand: every mutation of `plane_sets` sets the flag.
+    /// Rebuilt on every mutation of `plane_sets` (define, undefine, clear,
+    /// pack load): the sets are few, and this way the matcher never reads
+    /// a stale order.
     std::vector<uint64_t> plane_set_order;
-    bool                  plane_set_order_dirty = true;
     void rebuild_plane_set_order() {
         std::vector<session::PlaneSetOrderKey> keys;
         keys.reserve(plane_sets.size());
         for (const auto& [id, d] : plane_sets)
             keys.push_back({ id, static_cast<uint32_t>(d.members.size()),
                              static_cast<uint32_t>(d.w_cells) * d.h_cells });
-        plane_set_order       = session::plane_set_order(std::move(keys));
-        plane_set_order_dirty = false;
+        plane_set_order = session::plane_set_order(std::move(keys));
     }
     // ANIMACIÓN (): secuencia de plane sets con RELOJ PROPIO. Ver el
     // header para por qué es reproductor y no seguidor del contenido.
@@ -3320,7 +3320,7 @@ struct AytherSession::Impl {
                 d.off_y = s.off_y;
                 plane_sets[s.id] = std::move(d);   // por id → recargar es idempotente
             }
-            plane_set_order_dirty = true;
+            rebuild_plane_set_order();
         }
         // CUADROS (CU001): pantallas estáticas completas.
         {

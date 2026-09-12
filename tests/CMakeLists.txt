@@ -274,6 +274,15 @@ add_dependencies(ayther_core_probe_test
     ayther_test_core
     ayther_not_a_core)
 
+# The plane-set catalogue mutations (define, undefine, clear) rebuild the
+# matcher's order; a live session with the test core drives them.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/plane_set_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_plane_set_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_plane_set_session_test ayther_test_core)
+
 # Signed content for the release-candidate consumer, which cannot open an
 # unsigned pack in an optimized build.
 add_subdirectory(
