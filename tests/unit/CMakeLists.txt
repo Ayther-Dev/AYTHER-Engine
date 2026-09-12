@@ -22,6 +22,7 @@ foreach(_source IN ITEMS
         panorama_cover_test.cpp
         parallax_bands_test.cpp
         plane_set_match_test.cpp
+        plane_set_order_test.cpp
         plane_sub_join_test.cpp
         recording_controller_test.cpp
         render_image_view_test.cpp

@@ -214,6 +214,22 @@ struct AytherSession::Impl {
         int16_t off_x = 0, off_y = 0;
     };
     std::unordered_map<uint64_t, PlaneSetDef> plane_sets;
+    /// Ids of `plane_sets` in the order the matcher tries them — complexity
+    /// descending (session/plane_set_order.h). A set claims the cells it
+    /// matches, so the order decides who wins an overlap: the seven-tile
+    /// Object must be tried before the one-tile Objects it contains.
+    /// Rebuilt on every mutation of `plane_sets` (define, undefine, clear,
+    /// pack load): the sets are few, and this way the matcher never reads
+    /// a stale order.
+    std::vector<uint64_t> plane_set_order;
+    void rebuild_plane_set_order() {
+        std::vector<session::PlaneSetOrderKey> keys;
+        keys.reserve(plane_sets.size());
+        for (const auto& [id, d] : plane_sets)
+            keys.push_back({ id, static_cast<uint32_t>(d.members.size()),
+                             static_cast<uint32_t>(d.w_cells) * d.h_cells });
+        plane_set_order = session::plane_set_order(std::move(keys));
+    }
     // ANIMACIÓN (): secuencia de plane sets con RELOJ PROPIO. Ver el
     // header para por qué es reproductor y no seguidor del contenido.
     struct PlaneSeqDef {
@@ -3304,6 +3320,7 @@ struct AytherSession::Impl {
                 d.off_y = s.off_y;
                 plane_sets[s.id] = std::move(d);   // por id → recargar es idempotente
             }
+            rebuild_plane_set_order();
         }
         // CUADROS (CU001): pantallas estáticas completas.
         {

@@ -1793,6 +1793,9 @@ public:
     /// was created, the same contract as the poses' `ref`). With a reference, the
     /// set's quad is tinted live/ref per channel and follows the palette fades;
     /// nullptr/{0,0,0} = no tint (the previous behaviour).
+    /// Overlaps: sets are tried by complexity (more members, then larger bbox,
+    /// then id) and the winner claims its cells, so a set contained in a larger
+    /// one only substitutes the appearances the larger one does not cover.
     void define_plane_set(uint64_t id, uint8_t plane, uint16_t w_cells,
                           uint16_t h_cells, const PlaneSetMember* members,
                           uint32_t member_count, const std::string& asset_path,

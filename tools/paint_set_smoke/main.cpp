@@ -270,6 +270,36 @@ int main() {
         }
     }
 
+    // ── Solape: el set más COMPLEJO gana (2026-09-11) ─────────────────────
+    // Un set de 1 tile sobre el ANCLA del 2×1, definido ANTES y con id menor.
+    // El orden de prueba es por complejidad y no el del contenedor: el 2×1 se
+    // lleva sus dos celdas y el de 1 tile no emite nada en el ancla. Es el
+    // reporte de Golden Axe («Magic bar - Empty/Border», de 1 tile, anulaban
+    // a «Ax Battler - Magic bar», de 7) reducido a lo mínimo.
+    {
+        s->clear_plane_sets();
+        ayther::AytherSession::PlaneSetMember one[1] = {{anchor->hash, 0, 0}};
+        s->define_plane_set(0x0001, 0, 1, 1, one, 1, "dummy_one.png");
+        ayther::AytherSession::PlaneSetMember two[2] = {{anchor->hash, 0, 0}, {right->hash, 1, 0}};
+        s->define_plane_set(SET_ID, 0, 2, 1, two, 2, "dummy_set.png");
+        const FrameView* fv = settle(F);
+        bool big = false, one_on_anchor = false;
+        for (uint32_t j = 0; fv && j < fv->plane_tile_sub_count; ++j) {
+            const auto& sub = fv->plane_tile_subs[j];
+            const bool at_anchor = sub.screen_x == (int16_t)anchor->sx &&
+                                   sub.screen_y == (int16_t)anchor->sy;
+            if (at_anchor && sub.w_tiles == 2 && !std::strcmp(sub.asset_path, "dummy_set.png"))
+                big = true;
+            if (at_anchor && sub.w_tiles == 1 && !std::strcmp(sub.asset_path, "dummy_one.png"))
+                one_on_anchor = true;
+        }
+        check(big, "solape: el 2×1 sigue emitiendo su quad aunque un set de 1 tile "
+                   "con id menor comparta su ancla");
+        check(!one_on_anchor, "solape: el set de 1 tile no reclama la celda del ancla del 2×1");
+        s->clear_plane_sets();
+        settle(F);
+    }
+
     // ── El set viene del PACK, no de la API ──────────────────────────────
     // Es el hueco que cerraba plane_sets.toml: hasta acá el catálogo de Pintar
     // sólo existía en la sesión de autoría, así que el .ay entregado NO

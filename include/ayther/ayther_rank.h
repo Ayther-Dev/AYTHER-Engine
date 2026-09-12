@@ -19,6 +19,12 @@
 // them all. The only ladders were INTRA-domain, with two incompatible claim
 // arrays: `claimed[]` over sprite occurrences and `consumed[]` over plane
 // cells.
+//
+// The same rule holds WITHIN the plane-set domain (2026-09-11): sets are tried
+// by complexity — more members, then larger bbox, then id — so the seven-tile
+// Object claims its cells before the one-tile Objects it contains are tried
+// (src/session/plane_set_order.h). The order is total and explicit; it no
+// longer depends on the container.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
