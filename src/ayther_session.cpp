@@ -5952,6 +5952,7 @@ void AytherSession::unassign_audio_event(uint64_t signature) {
     impl_->hd_failed_keys.erase(signature);
     impl_->audio_event_channels.erase(signature);
     impl_->audio_event_duration.erase(signature);
+    impl_->audio_event_span.erase(signature);
     impl_->audio_event_looping.erase(signature);
     impl_->audio_event_tail.erase(signature);
     impl_->hd_oneshot_cut.erase(signature);
@@ -5964,6 +5965,7 @@ void AytherSession::clear_audio_event_assignments() noexcept {
     impl_->hd_failed_keys.clear();
     impl_->audio_event_channels.clear();
     impl_->audio_event_duration.clear();
+    impl_->audio_event_span.clear();
     impl_->audio_event_looping.clear();
     impl_->audio_event_members.clear();
     impl_->audio_event_head.clear();       // 
@@ -6678,6 +6680,7 @@ void AytherSession::load_audio_events_toml(const char* text) {
     impl_->audio_event_assign.clear();
     impl_->audio_event_channels.clear();
     impl_->audio_event_duration.clear();
+    impl_->audio_event_span.clear();
     impl_->audio_event_looping.clear();
     // : members por firma → mute selectivo dentro de la ventana (el
     // parser Rust del catálogo tolera/ignora el campo; acá se lee con toml++).
@@ -6705,6 +6708,10 @@ void AytherSession::load_audio_events_toml(const char* text) {
         if (s.duration_frames) {   // entrada de SECUENCIA (Mezclar)
             impl_->audio_event_duration[s.signature] = s.duration_frames;
             impl_->audio_event_looping[s.signature]  = s.looping != 0;
+            // El PASO, sólo si el pack lo dijo y dice algo distinto de la
+            // ventana. Ausente = segmentar por la ventana (lo de siempre).
+            if (s.span_frames && s.span_frames != s.duration_frames)
+                impl_->audio_event_span[s.signature] = s.span_frames;
         }
         //  F3: regla persistida con su identidad (el parser ya validó que
         // una regla sin instrumento cae a exacta). Legacy = sin regla.

@@ -35,6 +35,16 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Sequence substitutions in a pack can now carry their segmentation step
+  separately from their window, through an optional `span` key on each
+  `[[event]]` of `audio_events.toml` and a matching `span_frames` field on
+  `AytherEventSub`. The window says how long the replacement claims and sounds;
+  the step says how soon a new occurrence of the trigger means a NEW pass. An
+  absent or zero `span` keeps segmenting by the window, so every pack baked
+  before this key reads and sounds exactly as it did, and an older engine
+  ignores the key. The field occupies the alignment hole that already sat
+  before `match_instrument`, so no offset moves, the struct size is unchanged
+  and the C ABI revision stays at 7; `event_sub_layout_tests` pins that.
 - A public move-only `ayther::engine::CoreProbe` facade that owns temporary
   Libretro library loading, copies core metadata, returns platform diagnostics,
   and serializes the result without exposing loader or Libretro headers.
@@ -140,6 +150,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A Sequence played from a baked pack could never re-anchor on its own period.
+  The pack had no way to express the segmentation step, so `audio_event_seq_view`
+  left it at zero and the policy fell back to the window: a Sequence whose HD is
+  longer than its phrase re-anchored at most once per HD length, and a phrase
+  whose last note rings past the loop point swallowed the pass starting there.
+  Only the live and replay paths ever carried a real step. Reading the new
+  `span` key closes that gap; the authoring tool has to re-export the pack for
+  the correction to reach an already-baked one.
 - Plane sets were tried in the container's bucket order, so a one-member set
   could claim a cell before the larger set containing it was tried, and the
   larger set never matched (Golden Axe: assigning HD to the one-tile

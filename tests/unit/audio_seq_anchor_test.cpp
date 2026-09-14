@@ -60,6 +60,41 @@ int main() {
         check(table({{kHat, 0}}, {off}).at(1).empty(), "sub sin asset: no ancla");
     }
 
+    // ---- El paso NO es la ventana: la cola de la última nota no puede
+    // comerse la pasada siguiente (reporte 2026-09-14, «OST - Wilderness»).
+    //
+    // La frase dura 853 frames, pero UNA nota sostenida resuena 4 frames más
+    // allá del punto de loop. Con el paso sacado de ese máximo (857) la ventana
+    // [90, 947) se traga el anclaje verdadero de f943 —una ocurrencia real del
+    // disparador— y la pasada aparecía 106 frames después, en un frame donde la
+    // frase no empieza. Con el paso medido por los ARRANQUES (853) ancla donde
+    // suena, aunque la ventana anterior siga abierta.
+    {
+        const std::vector<Ev> pasadas = {
+            {kHat, 90}, {kHat, 423}, {kHat, 516}, {kHat, 836},   // internas
+            {kHat, 943},                                          // la pasada REAL
+        };
+        SeqAnchorSub m; m.key = 2; m.trigger_signature = kHat;
+        m.duration_frames = 857;   // ventana: hasta que la cola deja de sonar
+        m.span_frames     = 853;   // paso: hasta el fin de lo que arranca último
+        m.signatures = {kHat};
+        const auto t = table(pasadas, {m});
+        check(t.at(2) == std::vector<uint32_t>{90, 943},
+              "paso < ventana: la pasada siguiente ancla con la ventana todavía abierta → " +
+                  fmt(t.at(2)));
+
+        // El defecto, para que la prueba MUESTRE lo que cuida.
+        SeqAnchorSub viejo = m; viejo.span_frames = 857;
+        check(table(pasadas, {viejo}).at(2) == std::vector<uint32_t>{90},
+              "con el paso pegado a la ventana, la pasada de f943 se pierde (el defecto)");
+
+        // El contrato de la AUSENCIA: 0 = segmentar por la ventana, que es lo
+        // que dice todo pack horneado antes de que la clave existiera.
+        SeqAnchorSub sin_paso = m; sin_paso.span_frames = 0;
+        check(table(pasadas, {sin_paso}).at(2) == std::vector<uint32_t>{90},
+              "paso 0 = segmentar por la ventana (packs anteriores a la clave)");
+    }
+
     // ---- El caso Intro/Loop, reducido ---------------------------------------
     // Intro: abre con kHat en 1, dura 100 (HD); tiene kBass como miembro.
     // Loop: abre con kBass en 101, dura 50, paso 50; tiene kHat como miembro.
