@@ -788,6 +788,13 @@ struct AytherSession::Impl {
     // loop}. Al rising-edge de la firma, el runtime abre una ventana de
     // range-mute de sus canales + HD (loop hasta cerrarla). 0 = sub clásica.
     std::unordered_map<uint64_t, uint32_t>    audio_event_duration;
+    // El PASO de segmentación de esa Secuencia: cuándo una ocurrencia nueva del
+    // disparador significa una pasada NUEVA y no la misma sonando todavía. NO es
+    // la ventana: una frase con un HD más largo que ella tiene que volver a
+    // anclar igual, y una frase cuya última nota resuena pasado el punto de loop
+    // no puede comerse la pasada que arranca ahí. AUSENTE = segmentar por la
+    // ventana, que es lo que dice todo pack horneado antes de este campo.
+    std::unordered_map<uint64_t, uint32_t>    audio_event_span;
     std::unordered_map<uint64_t, bool>        audio_event_looping;
     // : tail por firma — cuántos frames puede seguir el HD DESPUÉS de su
     // end_frame (0 = corte exacto). AUSENTE del mapa = ILIMITADO: el legacy
@@ -856,6 +863,12 @@ struct AytherSession::Impl {
             if (!dur) continue;
             SeqAnchorSub a;
             a.key = sig; a.trigger_signature = sig; a.duration_frames = dur;
+            // El paso del pack. Ausente = 0 = la política segmenta por la
+            // ventana; hasta que el pack pudo transportarlo, ÉSE era el único
+            // comportamiento posible acá y el camino vivo era el único que
+            // llevaba un paso de verdad.
+            const auto sp = audio_event_span.find(sig);
+            if (sp != audio_event_span.end()) a.span_frames = sp->second;
             const auto as = audio_event_assign.find(sig);
             a.enabled = as != audio_event_assign.end() && !as->second.empty();
             const auto lp = audio_event_looping.find(sig);

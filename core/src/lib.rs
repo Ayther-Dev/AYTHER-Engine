@@ -5438,6 +5438,13 @@ pub struct AytherEventSub {
     pub _pad: u8,
     /// Sequence window in frames, or zero for a classic per-event substitution.
     pub duration_frames: u32,
+    /// Segmentation step in frames, or zero to segment by `duration_frames`.
+    ///
+    /// This occupies the alignment hole that already sat before
+    /// `match_instrument`, so no offset moves and the size does not change. An
+    /// older binary reads zero there, and zero is exactly what a pack baked
+    /// before this field means: segment by the window.
+    pub span_frames: u32,
     /// Timbre identity used by the rule, or zero when no rule applies.
     pub match_instrument: u64,
     /// Match rule: 0 exact signature, 1 instrument, or 2 instrument and note.
@@ -5696,6 +5703,7 @@ pub unsafe extern "C" fn ayther_audio_events_format(
                 asset: read_asset_field(&s.asset),
                 channels: s.channels,
                 duration_frames: s.duration_frames,
+                span_frames: s.span_frames,
                 looping: s.looping != 0,
                 match_rule: s.match_rule,
                 match_instrument: s.match_instrument,
@@ -5745,6 +5753,7 @@ pub unsafe extern "C" fn ayther_audio_events_parse(
                 dst.looping = e.looping as u8;
                 dst._pad = 0;
                 dst.duration_frames = e.duration_frames;
+                dst.span_frames = e.span_frames;
                 dst.match_instrument = e.match_instrument;
                 dst.match_rule = e.match_rule;
                 dst.match_pitch = e.match_pitch;
@@ -6060,6 +6069,59 @@ pub unsafe extern "C" fn ayther_audio_sub_resolve_events(
 // ---------------------------------------------------------------------------
 // Content-derived asset identifiers.
 // ---------------------------------------------------------------------------
+#[cfg(test)]
+mod event_sub_layout_tests {
+    use super::*;
+
+    /// `span_frames` was added into the alignment hole that already sat before
+    /// `match_instrument`, so nothing after it moves and the size stays put.
+    /// That is what lets an older binary read zero there and keep behaving as
+    /// it always did. If this test fails, the C ABI revision has to move with
+    /// it — the claim in the header comment is no longer true.
+    #[test]
+    fn span_frames_reuses_padding_without_moving_anything() {
+        use std::mem::{offset_of, size_of};
+        assert_eq!(
+            size_of::<AytherEventSub>(),
+            296,
+            "el tamaño no puede moverse"
+        );
+        assert_eq!(offset_of!(AytherEventSub, signature), 0);
+        assert_eq!(offset_of!(AytherEventSub, asset), 8);
+        assert_eq!(offset_of!(AytherEventSub, channels), 264);
+        assert_eq!(offset_of!(AytherEventSub, duration_frames), 272);
+        // El hueco que se reusa: 276..280 estaba de relleno.
+        assert_eq!(offset_of!(AytherEventSub, span_frames), 276);
+        assert_eq!(offset_of!(AytherEventSub, match_instrument), 280);
+        assert_eq!(offset_of!(AytherEventSub, bus), 290);
+    }
+
+    /// El paso cruza la frontera C tal cual, y su ausencia sigue siendo 0.
+    #[test]
+    fn span_crosses_the_ffi_boundary() {
+        let toml = "[[event]]\nsignature = \"0x00000000000000ab\"\n\
+                    asset = \"loop.ogg\"\nchannels = \"0x1\"\n\
+                    duration = 857\nspan = 853\n\n\
+                    [[event]]\nsignature = \"0x00000000000000ac\"\n\
+                    asset = \"one.ogg\"\nchannels = \"0x1\"\nduration = 300\n";
+        let c = std::ffi::CString::new(toml).unwrap();
+        let mut out: Vec<AytherEventSub> = Vec::new();
+        // SAFETY: the buffer is sized by the first call, as the FFI documents.
+        let n = unsafe { ayther_audio_events_parse(c.as_ptr(), std::ptr::null_mut(), 0) };
+        assert_eq!(n, 2);
+        out.resize_with(n as usize, || unsafe { std::mem::zeroed() });
+        // SAFETY: `out` holds exactly `n` writable entries.
+        unsafe { ayther_audio_events_parse(c.as_ptr(), out.as_mut_ptr(), n) };
+        assert_eq!(out[0].duration_frames, 857);
+        assert_eq!(out[0].span_frames, 853, "el paso llega al otro lado");
+        assert_eq!(out[1].duration_frames, 300);
+        assert_eq!(
+            out[1].span_frames, 0,
+            "sin la clave, 0 = segmentar por la ventana"
+        );
+    }
+}
+
 #[cfg(test)]
 mod engine_version_ffi_tests {
     use super::*;

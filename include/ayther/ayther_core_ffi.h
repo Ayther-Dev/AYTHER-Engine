@@ -1444,7 +1444,17 @@ struct AytherEventSub {
     uint8_t  looping;      ///< 1 = the HD loops until the window closes
     uint8_t  _pad;
     uint32_t duration_frames;  ///< window in frames (0 = classic per-event sub)
-    /// F3: match rule — sizeof 288 (it was 272; both sides live in this repo).
+    /// SEGMENTATION step in frames — 0 = segment by duration_frames.
+    ///
+    /// The window says how long the substitution claims and sounds; this says
+    /// how soon a new occurrence of the trigger means a NEW pass instead of the
+    /// same one still playing. It takes the alignment hole that was already
+    /// sitting before `match_instrument`, so no offset moves and the size does
+    /// not change: an older binary reads zero there, and zero is exactly what a
+    /// pack baked before this field means.
+    uint32_t span_frames;
+    /// F3: match rule — both sides of this struct live in this repo, and its
+    /// layout is pinned by `event_sub_layout_tests` on the Rust side.
     uint64_t match_instrument; ///< timbre identity of the rule (0 = no rule)
     uint8_t  match_rule;       ///< 0 exact (legacy) · 1 instrument · 2 instr+note
     uint8_t  match_pitch;      ///< MIDI note of rule 2 (255 = no pitch)

@@ -1043,6 +1043,18 @@ pub struct EventSub {
     /// plays. Zero selects classic per-event behavior, which mutes only while the
     /// trigger signature is active.
     pub duration_frames: u32,
+    /// Segmentation step: how soon the Sequence may anchor again.
+    ///
+    /// The window (`duration_frames`) says how long the replacement claims and
+    /// sounds. This says how long it takes for a new occurrence of the trigger
+    /// to mean a NEW pass instead of the same one still playing. They are not
+    /// the same number: a phrase whose HD is longer than its events must still
+    /// re-anchor once per pass, and a phrase whose last note rings past the
+    /// loop point must not swallow the pass that starts there.
+    ///
+    /// Zero keeps the historical behavior of segmenting by `duration_frames`,
+    /// so a pack baked before this field reads exactly as it read then.
+    pub span_frames: u32,
     /// Whether the replacement loops until the duration window closes.
     pub looping: bool,
     /// Matching rule for this assignment.
@@ -1092,6 +1104,12 @@ pub fn events_to_toml(subs: &[EventSub]) -> String {
         // (un pack viejo y uno sin secuencias son byte-idénticos al formato previo).
         if e.duration_frames != 0 {
             s.push_str(&format!("duration = {}\n", e.duration_frames));
+        }
+        // The segmentation step travels only when it differs from the window:
+        // absent means "segment by the window", which is what every pack baked
+        // before this field says, so those stay byte-identical.
+        if e.span_frames != 0 && e.span_frames != e.duration_frames {
+            s.push_str(&format!("span = {}\n", e.span_frames));
         }
         if e.looping {
             s.push_str("loop = true\n");
@@ -1165,6 +1183,20 @@ pub fn events_from_toml(text: &str) -> Vec<EventSub> {
             .and_then(|v| v.as_integer())
             .unwrap_or(0)
             .max(0) as u32;
+        // Absent = segment by the window, which is what packs baked before this
+        // field mean. Never larger than the window: a step past the end of the
+        // claim cannot suppress anything the window did not already cover, and
+        // clamping keeps a malformed pack from freezing the Sequence.
+        let span_frames = e
+            .get("span")
+            .and_then(|v| v.as_integer())
+            .unwrap_or(0)
+            .max(0) as u32;
+        let span_frames = if duration_frames != 0 {
+            span_frames.min(duration_frames)
+        } else {
+            0
+        };
         let looping = e.get("loop").and_then(|v| v.as_bool()).unwrap_or(false);
         // F3: regla de match — ausente o desconocida = exacta (legacy).
         // Una regla SIN instrumento no puede armarse → cae a exacta.
@@ -1198,6 +1230,7 @@ pub fn events_from_toml(text: &str) -> Vec<EventSub> {
             asset,
             channels,
             duration_frames,
+            span_frames,
             looping,
             match_rule,
             match_instrument: if match_rule == MATCH_EXACT {
@@ -1807,6 +1840,7 @@ mod tests {
             asset: asset.into(),
             channels,
             duration_frames,
+            span_frames: 0,
             looping,
             match_rule: MATCH_EXACT,
             match_instrument: 0,
@@ -1858,6 +1892,54 @@ channels = "0x0000003f"
     /// Un nombre desconocido cae a 0 y no a Efectos: un pack de mañana puede
     /// traer un bus nuevo, y meterlo en Efectos lo haría bajar con un slider
     /// que no es el suyo.
+    /// El PASO de segmentación viaja aparte de la ventana. Sin esta clave, un
+    /// pack sólo podía decir cuánto dura la sustitución, y el motor segmentaba
+    /// por eso mismo: una Secuencia cuyo HD es más largo que su frase no volvía
+    /// a anclar nunca, y una frase cuya última nota resuena pasado el punto de
+    /// loop se comía la pasada siguiente.
+    #[test]
+    fn span_round_trips_and_defaults_to_the_window() {
+        let mut s = sub(0xAB, "audio/music/loop.ogg", 0x03C7, 857, true);
+        s.span_frames = 853;
+        let toml = events_to_toml(&[s.clone()]);
+        assert!(toml.contains("duration = 857\n"), "la ventana viaja");
+        assert!(
+            toml.contains("span = 853\n"),
+            "y el paso también, por separado"
+        );
+        assert_eq!(events_from_toml(&toml), vec![s], "round-trip exacto");
+
+        // Ausente = segmentar por la ventana, que es lo que dice todo pack
+        // horneado antes de este campo.
+        let viejo = r#"
+[[event]]
+signature = "0x00000000000000ab"
+asset = "audio/music/loop.ogg"
+channels = "0x000003c7"
+duration = 857
+loop = true
+"#;
+        assert_eq!(events_from_toml(viejo)[0].span_frames, 0);
+
+        // Un paso igual a la ventana no se escribe: no dice nada que la
+        // ventana no diga, y así un pack sin frases queda byte-idéntico.
+        let mut igual = sub(0xAC, "x.ogg", 0x1, 300, false);
+        igual.span_frames = 300;
+        assert!(!events_to_toml(&[igual]).contains("span ="));
+
+        // Un paso mayor que la ventana es un pack malformado: se recorta en vez
+        // de dejar la Secuencia congelada para siempre.
+        let roto = r#"
+[[event]]
+signature = "0x00000000000000ad"
+asset = "x.ogg"
+channels = "0x1"
+duration = 100
+span = 4000
+"#;
+        assert_eq!(events_from_toml(roto)[0].span_frames, 100);
+    }
+
     #[test]
     fn unknown_bus_does_not_default_to_effects() {
         let raro = r#"
