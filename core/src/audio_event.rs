@@ -326,6 +326,68 @@ pub struct AudioEventDetector {
     frame: u32,
 }
 
+struct DetectorStateReader<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> DetectorStateReader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, position: 0 }
+    }
+
+    fn bytes(&mut self, length: usize) -> Option<&'a [u8]> {
+        let end = self.position.checked_add(length)?;
+        let result = self.bytes.get(self.position..end)?;
+        self.position = end;
+        Some(result)
+    }
+
+    fn u8(&mut self) -> Option<u8> {
+        Some(self.bytes(1)?[0])
+    }
+
+    fn bool(&mut self) -> Option<bool> {
+        match self.u8()? {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
+    }
+
+    fn u16(&mut self) -> Option<u16> {
+        Some(u16::from_le_bytes(self.bytes(2)?.try_into().ok()?))
+    }
+
+    fn u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.bytes(4)?.try_into().ok()?))
+    }
+
+    fn u64(&mut self) -> Option<u64> {
+        Some(u64::from_le_bytes(self.bytes(8)?.try_into().ok()?))
+    }
+
+    fn finished(&self) -> bool {
+        self.position == self.bytes.len()
+    }
+}
+
+fn state_write_bool(output: &mut Vec<u8>, value: bool) {
+    output.push(u8::from(value));
+}
+
+fn state_write_u16(output: &mut Vec<u8>, value: u16) {
+    output.extend_from_slice(&value.to_le_bytes());
+}
+
+fn state_write_u32(output: &mut Vec<u8>, value: u32) {
+    output.extend_from_slice(&value.to_le_bytes());
+}
+
+fn state_write_u64(output: &mut Vec<u8>, value: u64) {
+    output.extend_from_slice(&value.to_le_bytes());
+}
+
 impl Default for AudioEventDetector {
     fn default() -> Self {
         Self::new()
@@ -333,6 +395,11 @@ impl Default for AudioEventDetector {
 }
 
 impl AudioEventDetector {
+    /// Current serialized detector-state contract.
+    pub const STATE_VERSION: u16 = 1;
+    /// Maximum accepted serialized detector state.
+    pub const STATE_SIZE_LIMIT: usize = 1024 * 1024;
+
     /// Creates a detector with all channels inactive.
     pub fn new() -> Self {
         Self {
@@ -379,6 +446,206 @@ impl AudioEventDetector {
     /// Resets all detector state for a new capture or analysis pass.
     pub fn reset(&mut self) {
         *self = Self::new();
+    }
+
+    /// Serializes every value that can affect subsequent detection.
+    pub fn save_state(&self) -> Option<Vec<u8>> {
+        let mut output = Vec::with_capacity(1024 + self.events.len() * 28);
+        output.extend_from_slice(b"AYAEVST\0");
+        state_write_u16(&mut output, Self::STATE_VERSION);
+        output.extend_from_slice(&self.fm_regs);
+        for value in self.fm_on {
+            state_write_bool(&mut output, value);
+        }
+        for value in self.fm_start {
+            state_write_u32(&mut output, value);
+        }
+        for value in self.fm_sig {
+            state_write_u64(&mut output, value);
+        }
+        for value in self.fm_inst {
+            state_write_u64(&mut output, value);
+        }
+        for value in self.fm_seen {
+            state_write_bool(&mut output, value);
+        }
+        state_write_u16(&mut output, self.initial_active);
+        state_write_bool(&mut output, self.dac_enabled);
+        state_write_bool(&mut output, self.dac_on);
+        state_write_u32(&mut output, self.dac_start);
+        state_write_u64(&mut output, self.dac_sig);
+        state_write_u32(&mut output, self.dac_last_loud);
+        state_write_u32(&mut output, self.dac_silence);
+        state_write_bool(&mut output, self.dac_wrote);
+        output.extend_from_slice(&[self.dac_min, self.dac_max]);
+        state_write_u64(&mut output, self.dac_frame_hash);
+        output.push(self.psg_latch);
+        for value in self.psg_freq {
+            state_write_u16(&mut output, value);
+        }
+        for value in self.psg_on {
+            state_write_bool(&mut output, value);
+        }
+        for value in self.psg_start {
+            state_write_u32(&mut output, value);
+        }
+        for value in self.psg_sig {
+            state_write_u64(&mut output, value);
+        }
+        for value in self.psg_inst {
+            state_write_u64(&mut output, value);
+        }
+        for value in self.psg_seen {
+            state_write_bool(&mut output, value);
+        }
+        for value in self.pcm_on {
+            state_write_bool(&mut output, value);
+        }
+        for value in self.pcm_start {
+            state_write_u32(&mut output, value);
+        }
+        for value in self.pcm_sig {
+            state_write_u64(&mut output, value);
+        }
+        for value in self.pcm_inst {
+            state_write_u64(&mut output, value);
+        }
+        output.extend_from_slice(&self.pcm_vel);
+        output.extend_from_slice(&self.pcm_pitch);
+        output.extend_from_slice(&self.fm_pitch);
+        output.extend_from_slice(&self.psg_pitch);
+        output.extend_from_slice(&self.fm_vel);
+        output.extend_from_slice(&self.psg_vel);
+        state_write_bool(&mut output, self.pal);
+        state_write_u32(&mut output, self.frame);
+        state_write_u32(&mut output, self.events.len().try_into().ok()?);
+        for event in &self.events {
+            state_write_u64(&mut output, event.signature);
+            state_write_u64(&mut output, event.instrument);
+            output.extend_from_slice(&[event.chip, event.channel]);
+            state_write_u32(&mut output, event.start_frame);
+            state_write_u32(&mut output, event.end_frame);
+            output.extend_from_slice(&[event.pitch, event.velocity]);
+        }
+        (output.len() <= Self::STATE_SIZE_LIMIT).then_some(output)
+    }
+
+    /// Replaces the detector only after the complete payload validates.
+    pub fn restore_state(&mut self, payload: &[u8]) -> bool {
+        if payload.is_empty() || payload.len() > Self::STATE_SIZE_LIMIT {
+            return false;
+        }
+        let mut input = DetectorStateReader::new(payload);
+        let restored = (|| -> Option<Self> {
+            if input.bytes(8)? != b"AYAEVST\0" || input.u16()? != Self::STATE_VERSION {
+                return None;
+            }
+            let mut state = Self::new();
+            state.fm_regs.copy_from_slice(input.bytes(0x200)?);
+            for value in &mut state.fm_on {
+                *value = input.bool()?;
+            }
+            for value in &mut state.fm_start {
+                *value = input.u32()?;
+            }
+            for value in &mut state.fm_sig {
+                *value = input.u64()?;
+            }
+            for value in &mut state.fm_inst {
+                *value = input.u64()?;
+            }
+            for value in &mut state.fm_seen {
+                *value = input.bool()?;
+            }
+            state.initial_active = input.u16()?;
+            state.dac_enabled = input.bool()?;
+            state.dac_on = input.bool()?;
+            state.dac_start = input.u32()?;
+            state.dac_sig = input.u64()?;
+            state.dac_last_loud = input.u32()?;
+            state.dac_silence = input.u32()?;
+            state.dac_wrote = input.bool()?;
+            state.dac_min = input.u8()?;
+            state.dac_max = input.u8()?;
+            state.dac_frame_hash = input.u64()?;
+            state.psg_latch = input.u8()?;
+            for value in &mut state.psg_freq {
+                *value = input.u16()?;
+            }
+            for value in &mut state.psg_on {
+                *value = input.bool()?;
+            }
+            for value in &mut state.psg_start {
+                *value = input.u32()?;
+            }
+            for value in &mut state.psg_sig {
+                *value = input.u64()?;
+            }
+            for value in &mut state.psg_inst {
+                *value = input.u64()?;
+            }
+            for value in &mut state.psg_seen {
+                *value = input.bool()?;
+            }
+            for value in &mut state.pcm_on {
+                *value = input.bool()?;
+            }
+            for value in &mut state.pcm_start {
+                *value = input.u32()?;
+            }
+            for value in &mut state.pcm_sig {
+                *value = input.u64()?;
+            }
+            for value in &mut state.pcm_inst {
+                *value = input.u64()?;
+            }
+            state.pcm_vel.copy_from_slice(input.bytes(8)?);
+            state.pcm_pitch.copy_from_slice(input.bytes(8)?);
+            state.fm_pitch.copy_from_slice(input.bytes(6)?);
+            state.psg_pitch.copy_from_slice(input.bytes(4)?);
+            state.fm_vel.copy_from_slice(input.bytes(6)?);
+            state.psg_vel.copy_from_slice(input.bytes(4)?);
+            state.pal = input.bool()?;
+            state.frame = input.u32()?;
+            let event_count = usize::try_from(input.u32()?).ok()?;
+            if event_count > payload.len() / 28 {
+                return None;
+            }
+            state.events.reserve(event_count);
+            for _ in 0..event_count {
+                let event = AudioEvent {
+                    signature: input.u64()?,
+                    instrument: input.u64()?,
+                    chip: input.u8()?,
+                    channel: input.u8()?,
+                    start_frame: input.u32()?,
+                    end_frame: input.u32()?,
+                    pitch: input.u8()?,
+                    velocity: input.u8()?,
+                };
+                let valid_channel = match event.chip {
+                    CHIP_FM => event.channel < 6,
+                    CHIP_PSG => event.channel < 4,
+                    CHIP_PCM => event.channel < 8,
+                    _ => false,
+                };
+                if !valid_channel
+                    || event.start_frame > event.end_frame
+                    || (event.pitch > 127 && event.pitch != NO_PITCH)
+                    || event.velocity > 127
+                {
+                    return None;
+                }
+                state.events.push(event);
+            }
+            input.finished().then_some(state)
+        })();
+        if let Some(restored) = restored {
+            *self = restored;
+            true
+        } else {
+            false
+        }
     }
 
     /// Processes one frame of chip writes and advances event detection.
@@ -518,6 +785,11 @@ impl AudioEventDetector {
     /// Returns the number of completed events.
     pub fn event_count(&self) -> usize {
         self.events.len()
+    }
+
+    /// Last emulation frame represented by this state.
+    pub fn frame(&self) -> u32 {
+        self.frame
     }
 
     /// Clears completed events without changing live channel state.
@@ -1150,27 +1422,125 @@ pub fn events_to_toml(subs: &[EventSub]) -> String {
 
 /// Parses an `audio_events.toml` catalog and ignores malformed entries.
 pub fn events_from_toml(text: &str) -> Vec<EventSub> {
+    events_from_toml_observed(text, |_| {})
+}
+
+/// A parser branch, borrowed only for the synchronous observation call.
+/// Declaration precedes rejection/acceptance and preserves the source ordinal.
+#[derive(Debug, PartialEq)]
+pub enum CatalogObservation<'a> {
+    /// The document has an event array, including an empty one.
+    Begin {
+        /// Number of source entries before filtering.
+        entries: usize,
+    },
+    /// One raw entry, even if it cannot become a substitution.
+    Declared {
+        /// Zero-based position in the source array.
+        ordinal: usize,
+        /// Authored signature text, if the field is a string.
+        signature_text: Option<&'a str>,
+        /// The canonical signature computed by the existing parser.
+        signature: Option<u64>,
+        /// Authored asset text, including a declared empty string.
+        asset: Option<&'a str>,
+    },
+    /// The existing parser accepted the entry; no playback is implied.
+    Accepted {
+        /// Source position, not the filtered output position.
+        ordinal: usize,
+        /// Signature stored in the accepted substitution.
+        signature: u64,
+    },
+    /// The existing parser skipped the entry in the stated branch.
+    Rejected {
+        /// Source position of the skipped entry.
+        ordinal: usize,
+        /// Actual branch that skipped the entry.
+        reason: CatalogReason,
+    },
+    /// Parsing reached the end of the declared array.
+    End {
+        /// Entries accepted by parsing; not distinct map keys or voices.
+        accepted: usize,
+    },
+    /// No entry inventory can be obtained from this document.
+    Unavailable {
+        /// Actual branch preventing enumeration.
+        reason: CatalogReason,
+    },
+}
+
+/// Stable reason numbers for the additive catalog observation C interface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum CatalogReason {
+    /// TOML syntax could not be parsed.
+    InvalidSyntax = 1,
+    /// The event member is absent or is not an array.
+    MissingEventArray = 2,
+    /// The signature is absent, not text, or not a hexadecimal u64.
+    InvalidSignature = 3,
+    /// The asset is absent or not text. Empty text remains accepted as before.
+    MissingAsset = 4,
+}
+
+/// Observes the actual parser decisions without changing accepted values/order.
+/// The receiver must copy borrowed text before returning and must not panic,
+/// block, reenter Engine or influence parsing. No observation history is stored.
+pub fn events_from_toml_observed(
+    text: &str,
+    mut observe: impl FnMut(CatalogObservation<'_>),
+) -> Vec<EventSub> {
     let mut out = Vec::new();
     let tbl: toml::Value = match toml::from_str(text) {
         Ok(t) => t,
-        Err(_) => return out,
+        Err(_) => {
+            observe(CatalogObservation::Unavailable {
+                reason: CatalogReason::InvalidSyntax,
+            });
+            return out;
+        }
     };
     let arr = match tbl.get("event").and_then(|v| v.as_array()) {
         Some(a) => a,
-        None => return out,
+        None => {
+            observe(CatalogObservation::Unavailable {
+                reason: CatalogReason::MissingEventArray,
+            });
+            return out;
+        }
     };
-    for e in arr {
-        let sig = match e
-            .get("signature")
-            .and_then(|v| v.as_str())
-            .and_then(parse_hex_u64)
-        {
+    observe(CatalogObservation::Begin { entries: arr.len() });
+    for (ordinal, e) in arr.iter().enumerate() {
+        let signature_text = e.get("signature").and_then(|v| v.as_str());
+        let signature = signature_text.and_then(parse_hex_u64);
+        let asset_text = e.get("asset").and_then(|v| v.as_str());
+        observe(CatalogObservation::Declared {
+            ordinal,
+            signature_text,
+            signature,
+            asset: asset_text,
+        });
+        let sig = match signature {
             Some(s) => s,
-            None => continue,
+            None => {
+                observe(CatalogObservation::Rejected {
+                    ordinal,
+                    reason: CatalogReason::InvalidSignature,
+                });
+                continue;
+            }
         };
-        let asset = match e.get("asset").and_then(|v| v.as_str()) {
+        let asset = match asset_text {
             Some(a) => a.to_string(),
-            None => continue,
+            None => {
+                observe(CatalogObservation::Rejected {
+                    ordinal,
+                    reason: CatalogReason::MissingAsset,
+                });
+                continue;
+            }
         };
         let channels = e
             .get("channels")
@@ -1241,7 +1611,14 @@ pub fn events_from_toml(text: &str) -> Vec<EventSub> {
             match_pitch,
             bus,
         });
+        observe(CatalogObservation::Accepted {
+            ordinal,
+            signature: sig,
+        });
     }
+    observe(CatalogObservation::End {
+        accepted: out.len(),
+    });
     out
 }
 
@@ -1802,6 +2179,48 @@ mod tests {
         d.reset();
         assert_eq!(d.event_count(), 0);
         assert!(!d.fm_on[0]);
+    }
+
+    #[test]
+    fn serialized_state_restores_detector_atomically() {
+        let mut source = AudioEventDetector::new();
+        source.set_pal(true);
+        source.process_frame(
+            41,
+            &[
+                fm(0xA4, 0x24),
+                fm(0xA0, 0x3B),
+                fm(0x28, fm_keyon(0)),
+                psg(0x8E),
+                psg(0x0F),
+                psg(0x90),
+            ],
+        );
+        let state = source.save_state().expect("complete detector state");
+
+        let mut restored = AudioEventDetector::new();
+        assert!(restored.restore_state(&state));
+        assert_eq!(restored.frame, 41);
+        assert!(restored.pal);
+        assert_eq!(restored.fm_regs, source.fm_regs);
+        assert_eq!(restored.active_channels().len(), 2);
+
+        source.process_frame(42, &[fm(0x28, fm_keyoff(0)), psg(0x9F)]);
+        restored.process_frame(42, &[fm(0x28, fm_keyoff(0)), psg(0x9F)]);
+        assert_eq!(restored.events.len(), source.events.len());
+        for (actual, expected) in restored.events.iter().zip(&source.events) {
+            assert_eq!(actual.signature, expected.signature);
+            assert_eq!(actual.instrument, expected.instrument);
+            assert_eq!(actual.start_frame, expected.start_frame);
+            assert_eq!(actual.end_frame, expected.end_frame);
+            assert_eq!(actual.pitch, expected.pitch);
+        }
+
+        let before = restored.save_state().expect("state before rejection");
+        let mut invalid = state;
+        invalid[8] = 2;
+        assert!(!restored.restore_state(&invalid));
+        assert_eq!(restored.save_state().expect("unchanged state"), before);
     }
 
     #[test]

@@ -22,6 +22,7 @@ target_include_directories(ayther_test_support INTERFACE
 # translation unit. Object targets make this a build gate without requiring the
 # native Engine or any renderer dependency.
 foreach(_header_probe IN ITEMS
+        audio_observer_header
         capabilities_header
         core_probe_header
         input_header
@@ -65,13 +66,14 @@ add_test(
     NAME ayther.package.engine_public_contract
     COMMAND "${CMAKE_COMMAND}"
         "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
-        "-DAYTHER_ENGINE_PUBLIC_HEADERS=capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;pack.hpp;vulkan_interop.hpp"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=audio_fact_queue.hpp;audio_hd_state.hpp;audio_initial_snapshot.hpp;audio_observation_close.hpp;audio_observation_overflow.hpp;audio_observation_worker.hpp;audio_observer.hpp;audio_pcm_queue.hpp;audio_production_limit.hpp;capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;pack.hpp;vulkan_interop.hpp"
         -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
 set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
     LABELS  "native;package")
 
 find_program(AYTHER_PWSH_EXECUTABLE NAMES pwsh)
+add_subdirectory(audio_qa/observer_contract)
 if(AYTHER_PWSH_EXECUTABLE)
     add_test(
         NAME ayther.quality.core_test_results
@@ -220,6 +222,7 @@ set_tests_properties(ayther.quality.documentation_language PROPERTIES
 
 add_subdirectory(unit)
 add_subdirectory(integration)
+add_subdirectory(audio_qa)
 add_subdirectory(renderer)
 
 # Pass optional local core/ROM paths to ABI probes without making them required
@@ -373,3 +376,8 @@ unset(_ayther_gpu_test)
 unset(_ayther_native_tool_tests)
 unset(_ayther_tool_test)
 unset(_ayther_vpx_test)
+
+# Audio pack prewarming must resolve archive IDs through the session as well.
+target_compile_definitions(ayther_audio_asset_fallback_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_audio_asset_fallback_test ayther_test_core)

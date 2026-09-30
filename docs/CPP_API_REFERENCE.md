@@ -45,6 +45,7 @@ Concurrency, Source files, and Performance sections.
 | `Ayther::engine` and `ayther_sdk.h` | Buildable, installable, provisional | Higher-level C facade over a native session. |
 | `engine/capabilities.hpp`, `engine/core_probe.hpp`, `engine/input.hpp`, and `engine/pack.hpp` | Installed, provisional | Typed C++ queries for versions, core metadata, input, packs, validation, tiers, and watching. Raw core and Libretro declarations do not cross this surface. |
 | `AytherSession` | Installed, provisional | Primary C++ orchestration facade. Single-owner and single-thread driven. |
+| `engine/audio_observer.hpp` | Contrato QA 1.0, incorporación al SDK declarada | Vistas prestadas de hechos y PCM; binding sin propiedad, sin transporte ni retorno de decisiones. La conexión de productores y publicación del paquete se verifican por separado. |
 | `AytherRenderer` and `engine/vulkan_interop.hpp` | Installed, provisional | Public offscreen Vulkan renderer and borrowed-handle handoff contract. |
 | Audio, renderer implementation, Vulkan presentation, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
 

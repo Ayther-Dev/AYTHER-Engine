@@ -14,6 +14,7 @@ The primary Runtime-facing C++ entry point lives under
 
 ```cpp
 #include <ayther/engine/engine.hpp>
+#include <ayther/engine/audio_observer.hpp>
 #include <ayther/engine/capabilities.hpp>
 #include <ayther/engine/core_probe.hpp>
 #include <ayther/engine/input.hpp>
@@ -36,6 +37,103 @@ library, documented third-party API headers, or other installed
 `libretro_host/`, `vulkan_backend/`, `private/`, `internal/`, or `detail/`. A
 future `detail/` directory requires an explicit contract, installation rule,
 and compatibility coverage before use.
+
+## Observación de audio QA (API 1.0)
+
+`AytherSession::audio_initial_snapshot()` devuelve una copia propietaria del
+límite HD actual. `prepare_fresh_hd_audio()` establece una sesión HD nueva sin
+avanzar ni reiniciar el juego emulado; conserva asignaciones cargadas y devuelve
+fallo cuando el backend no puede acreditar que eliminó el audio encolado de la
+ejecución anterior.
+
+`audio_hd_state.hpp` versiona por separado el estado HD aportado. Su validador
+compara la identidad opaca del estado de juego, el cuadro y la presencia de las
+cinco secciones obligatorias antes de que una restauración pueda mutar Engine.
+`audio_hd_detector_windows_state()` copia detector, flancos, ventanas, anclajes
+y aprendizaje. `restore_audio_hd_detector_windows()` los reemplaza de forma
+transaccional después de validar el encabezado y el payload completo, sin
+avanzar el juego. El detector usa un payload opaco binario con versión y límite
+de 1 MiB; las colecciones públicas están acotadas a 4096 entradas.
+
+`audio_hd_voices_state()` copia voces y PCM compartido sin consumirlo.
+`restore_audio_hd_voices()` valida y reemplaza de forma atómica hasta 256 voces
+y 64 MiB de PCM, sin mezclar ni encolar muestras. Las identidades PCM son
+locales al estado; la identidad de ocurrencia y la clave de negocio permanecen
+separadas. Dos voces pueden reutilizar clave y PCM: `occurrence` sigue siendo
+única y sus cursores y parámetros no se combinan.
+
+`audio_hd_requests_pending_state()` copia solicitudes lógicas, disparos y el
+staging principal sin consumirlo. `restore_audio_hd_requests_pending()` valida
+y reemplaza esos datos y vacía primero cualquier backlog SDL heredado. El PCM
+pendiente está limitado a 16 MiB y sus lotes deben cubrirlo de forma contigua.
+La procedencia de hasta 256 lotes originales se restaura junto con staging para
+que el primer flush no declare ausente audio que sí estaba pendiente.
+Una cola SDL no vacía, una entrega auxiliar en curso o una fase de conversión
+auxiliar no nula hacen que la copia sea incompleta: la API no inventa bytes que
+SDL no permite inspeccionar sin consumo. La instantánea inicial expone también
+las solicitudes y marcadores restaurados.
+
+`freeze_audio_production()` fija de forma idempotente el último cuadro y el
+límite semiabierto de muestras principales ya producidas. Tras esa llamada la
+sesión no ejecuta nuevos pasos y AudioPlayer no acepta nuevas entradas, voces,
+silencios de cebado ni restauraciones. La estructura pública distingue muestras
+producidas, staging pendiente y salida ya entregada para que el drenaje no se
+confunda con síntesis adicional.
+
+`finalize_audio_hd_voices_for_test()` se acepta únicamente después de esa
+congelación. Emite un final `test_end` por cada voz activa con su posición de
+fuente y la frontera congelada, y después retira las voces sin mezclar muestras
+ni completar bucles o colas. El resultado informa aceptación, cantidad y la
+posición usada; una repetición aceptada informa cero y no duplica finales. Si
+el límite de muestras es incompleto, los hechos usan el cuadro final en vez de
+atribuir una posición de salida exacta.
+
+`drain_frozen_audio()` requiere esa frontera y que no queden voces activas.
+Entrega el staging principal ya incluido en el límite sin ejecutar pasos,
+mezclar voces, cebar silencio ni producir muestras. El resultado informa los
+frames entregados y restantes. Una entrega SDL fallida conserva el bloque para
+diagnóstico o reintento; una repetición posterior a un drenaje completo entrega
+cero frames y mantiene el mismo límite.
+
+`audio_observer.hpp` publica vistas de hechos, causas, orden de estado compartido,
+ocurrencias y PCM, además de un binding no propietario. Solo depende de C++20;
+no exige Runtime, SDL, disco, UI, RTTI ni un formato de transporte. La pareja 1.0
+es independiente de la release y de la ABI del core; se rechazan 1.1 y 2.0 hasta
+que exista soporte explícito. Declarar estos tipos no anuncia capacidades de
+instrumentación que todavía no estén implementadas.
+
+Todos los spans y textos, incluidos los anidados en variantes, pertenecen al
+productor y vencen al retornar el callback. El consumidor copia lo necesario a
+almacenamiento acotado. Es propietario del contexto y lo mantiene vivo hasta
+desconectar y detener todos los productores. Productores distintos pueden llamar
+concurrentemente; la recepción proporciona una entrega acotada y sin bloqueo.
+Se prohíben reentrada o mutación de Engine, I/O, serialización, esperas y reservas
+sin límite en los callbacks. Una pérdida de copia se registra separadamente y
+no puede modificar una decisión sonora. El binding solo cambia con productores
+detenidos. Un callback nulo desactiva ese flujo.
+
+Los identificadores de hecho son locales a la ejecución: productor y secuencia
+no nulos. Runtime añade la identidad de ejecución al copiar. Una ocurrencia es
+distinta de la clave de negocio; los rangos PCM son semiabiertos y sus unidades
+son sample frames completos, con tasa y timeline explícitos. Orden de llegada y
+orden causal no son equivalentes. Los campos desconocidos/no aplicables llevan
+motivo; no se sustituyen por valores inventados.
+
+Los límites declarados son 256 causas y órdenes de estado, 128 campos por hecho,
+4096 bytes por texto, 64 KiB por hecho codificado y 256 KiB de PCM por vista,
+hasta 192 kHz y ocho canales. Los límites del framing pueden exigir dividir el
+PCM en bloques menores para incluir metadatos. Son cotas del contrato; este
+binding no valida datos ni acredita los presupuestos de ejecución. Los
+productores y el bridge deben verificarlas y diagnosticar pérdidas.
+
+QA-041 verifica consumo sin dependencias y añade la cabecera al inventario de
+instalación y a las pruebas del repositorio. QA-042 verifica vida útil y
+no interferencia del binding; la integración de productores y el paquete nuevo
+se verifican en las tareas posteriores del plan de audio QA.
+
+QA-045 conecta el inventario de catálogo y las ramas del parser mediante
+Config.audio_observer. Su esquema, límites y distinción respecto de carga y
+reproducción se describen en [observación de audio](AUDIO_OBSERVATION.md).
 
 ## Language, exceptions, and RTTI
 

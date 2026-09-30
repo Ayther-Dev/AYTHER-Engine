@@ -16,6 +16,15 @@ ayther_sdk.h
 ayther_sdk_version.h
 ayther_session.h
 log.h
+engine/audio_fact_queue.hpp
+engine/audio_hd_state.hpp
+engine/audio_initial_snapshot.hpp
+engine/audio_observation_close.hpp
+engine/audio_observation_overflow.hpp
+engine/audio_observation_worker.hpp
+engine/audio_observer.hpp
+engine/audio_pcm_queue.hpp
+engine/audio_production_limit.hpp
 engine/capabilities.hpp
 engine/core_probe.hpp
 engine/engine.hpp

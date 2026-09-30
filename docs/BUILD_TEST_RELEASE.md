@@ -263,6 +263,13 @@ find_package(Ayther 0.1.0 CONFIG REQUIRED COMPONENTS engine)
 target_link_libraries(my_app PRIVATE Ayther::engine)
 ```
 
+Los paquetes locales de una campaña QA se identifican como desarrollo y no
+usan el nombre, hash, firma ni procedencia de un release publicado. Además de
+la configuración CMake y las cabeceras de versión, llevan un manifiesto de
+contenido y metadatos que declaran `officialRelease: false`, la referencia base
+y la versión del contrato ejercitado. Un consumidor debe fijar el hash exacto
+de ese archivo y conservar separada su selección de cualquier lock de release.
+
 The native export also provides `Ayther::ymfm`; a VPX-enabled package provides
 `Ayther::vpx`. `tests/package_consumer/` compiles only the installed C facade,
 C++ session facade, and version header, then links and executes outside the
