@@ -276,13 +276,17 @@ static void dump_composite(const FrameView* fv, const std::string& path, int S) 
 // Two-phase (2026-07-19, defecto #8): match_pose ENUMERA candidatas completas
 // SIN reclamar; el driver hace la asignación greedy por EVIDENCIA (hits reales
 // DESC, desempate estable = orden por cantidad de miembros) — igual que el
-// motor tras el fix del robo de ancla en el borde.
+// motor tras el fix del robo de ancla en el borde. A igual hits desempatan,
+// como en el motor, el acuerdo de flips RELATIVOS (qué pose) y después el
+// ABSOLUTO (qué cara).
 struct InstMatch {
     bool complete = false;
     uint8_t mirror = 0;
     int ox = 0, oy = 0;
     std::vector<int> member_occ;                 // -1 = ausente (tolerado offscreen)
     size_t hits = 0;                             // del mejor arreglo parcial
+    uint32_t agree = 0;                          // miembros con flip == autorado ^ mirror
+    uint32_t rel_agree = 0;                      // mayor grupo con el mismo observado ^ autorado
     std::vector<std::string> missing_notes;      // diagnóstico por miembro faltante
 };
 
@@ -338,10 +342,15 @@ static std::vector<InstMatch> match_pose(const PoseDef& p, const FrameView& fv,
         arrs[2][i] = { x, Hpx - y - mpx[i].second };
         arrs[3][i] = { Wpx - x - mpx[i].first, Hpx - y - mpx[i].second };
     }
+    // Con flips por miembro y 2+ miembros se prueban los CUATRO arreglos
+    // aunque coincidan en posiciones (disposiciones simétricas): sólo el
+    // acuerdo de flips elige la cara. Espejo del motor (keep_all).
+    const bool has_flips = p.flips.size() == nm;
+    const bool keep_all = has_flips && nm >= 2;
     InstMatch best_partial;
     for (int ai = 0; ai < 4; ++ai) {
         bool dup = false;
-        for (int bi = 0; bi < ai && !dup; ++bi) dup = arrs[ai] == arrs[bi];
+        for (int bi = 0; bi < ai && !dup && !keep_all; ++bi) dup = arrs[ai] == arrs[bi];
         if (dup) continue;
         const Arr& rel = arrs[ai];
         std::vector<std::pair<int, int>> tried;
@@ -360,6 +369,7 @@ static std::vector<InstMatch> match_pose(const PoseDef& p, const FrameView& fv,
             std::vector<int> cand(nm, -1);
             std::vector<std::string> notes;
             size_t hits = 0;
+            uint32_t buckets[4] = { 0, 0, 0, 0 };   // por (observado ^ autorado) & 3
             bool ok = true;
             for (size_t i = 0; i < nm; ++i) {
                 const int wx = ox + rel[i].first, wy = oy + rel[i].second;
@@ -372,7 +382,16 @@ static std::vector<InstMatch> match_pose(const PoseDef& p, const FrameView& fv,
                     if (taken) continue;
                     if (o.screen_x == wx && o.screen_y == wy) { got = (int)q; break; }
                 }
-                if (got >= 0) { cand[i] = got; ++hits; continue; }
+                if (got >= 0) {
+                    cand[i] = got;
+                    ++hits;
+                    if (has_flips) {
+                        const auto& o = fv.sprite_occs[got];
+                        const unsigned ob = (o.hflip & 1u) | ((o.vflip & 1u) << 1);
+                        ++buckets[(ob ^ p.flips[i]) & 3u];
+                    }
+                    continue;
+                }
                 if (member_invisible(wx, wy, mpx[i].first, mpx[i].second, W, H)) {
                     char n[128];
                     std::snprintf(n, sizeof(n), "m%zu %016llx esperado en (%d,%d) FUERA de pantalla (tolerado)",
@@ -407,6 +426,11 @@ static std::vector<InstMatch> match_pose(const PoseDef& p, const FrameView& fv,
                 m.ox = ox; m.oy = oy;
                 m.member_occ = cand;
                 m.hits = hits;
+                m.agree = buckets[ai];
+                // Sin flips, neutro (= hits): unos flips desconocidos nunca
+                // separan. Espejo del motor.
+                m.rel_agree = has_flips ? *std::max_element(buckets, buckets + 4)
+                                        : static_cast<uint32_t>(hits);
                 out.push_back(std::move(m));
             } else if (hits > best_partial.hits) {
                 best_partial.hits = hits;
@@ -600,11 +624,16 @@ int main(int argc, char** argv) {
         for (const PoseDef* p : order)
             for (auto& m : match_pose(*p, *fv, claimed, W, H))
                 if (m.complete) cands.push_back({ p, std::move(m) });
-        // FASE 2: greedy por evidencia — hits reales DESC; sort estable → a
-        // igual hits queda el orden de fase 1 (más miembros primero). Espejo
-        // del motor (vram_sprite.rs resolve()).
+        // FASE 2: greedy por evidencia — hits reales DESC, luego acuerdo de
+        // flips relativos y absolutos DESC; sort estable → a igual clave queda
+        // el orden de fase 1 (más miembros primero). Espejo del motor
+        // (vram_sprite.rs resolve()).
         std::stable_sort(cands.begin(), cands.end(),
-                         [](const PoseCand& a, const PoseCand& b) { return a.m.hits > b.m.hits; });
+                         [](const PoseCand& a, const PoseCand& b) {
+                             if (a.m.hits != b.m.hits) return a.m.hits > b.m.hits;
+                             if (a.m.rel_agree != b.m.rel_agree) return a.m.rel_agree > b.m.rel_agree;
+                             return a.m.agree > b.m.agree;
+                         });
         std::vector<const PoseDef*> matched;
         for (const auto& c : cands) {
             bool free_members = true;

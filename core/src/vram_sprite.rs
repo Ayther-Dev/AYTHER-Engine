@@ -445,6 +445,31 @@ pub fn pose_key_of(hashes: &[u64]) -> u64 {
     xxh3_64(&b)
 }
 
+/// Computes the in-between identity of a pose including its relative member flips.
+///
+/// `flips` is parallel to `hashes` (bit 0 = H, bit 1 = V). Only the flip of each
+/// member RELATIVE to member 0 counts: mirroring the whole pose, or inverting
+/// every member at once, is a state of the same pose. Absent flips, a length
+/// that does not match `hashes`, a single member, or uniform flips return
+/// [`pose_key_of`] unchanged, so only poses with mixed flips get a new key.
+/// Otherwise it is xxHash3 over the member hashes in captured order followed by
+/// one byte `(f_i ^ f_0) & 3` per member.
+pub fn pose_key_with_flips(hashes: &[u64], flips: Option<&[u8]>) -> u64 {
+    let Some(fl) = flips.filter(|f| f.len() == hashes.len() && hashes.len() >= 2) else {
+        return pose_key_of(hashes);
+    };
+    let f0 = fl[0];
+    if fl.iter().all(|&f| (f ^ f0) & 3 == 0) {
+        return pose_key_of(hashes);
+    }
+    let mut b = Vec::with_capacity(hashes.len() * 9);
+    for h in hashes {
+        b.extend_from_slice(&h.to_le_bytes());
+    }
+    b.extend(fl.iter().map(|&f| (f ^ f0) & 3));
+    xxh3_64(&b)
+}
+
 /// One resolved HD substitution for a sprite.
 #[derive(Clone, Debug)]
 pub struct SpriteSub {
@@ -481,8 +506,11 @@ pub struct SpriteSub {
     ///
     /// It is xxHash3 over member hashes in captured order; a per-sprite result
     /// hashes its single member, so one-sprite `[[sub]]` and `[[pose]]` entries
-    /// share an identity. [`TweenPlayer`] uses the value to track instances and
-    /// ignore variant changes that do not represent a new pose.
+    /// share an identity. A pose whose members carry mixed flips also hashes
+    /// each member's flip relative to member 0 (see [`pose_key_with_flips`]),
+    /// so two poses that differ only in a member's relative flip get distinct
+    /// keys. [`TweenPlayer`] uses the value to track instances and ignore
+    /// variant changes that do not represent a new pose.
     pub pose_key: u64,
     /// Authored palette of the chosen candidate when it differs from the observed
     /// palette, or `0xFF` when no palette synthesis is required.
@@ -1238,6 +1266,11 @@ struct PoseEntry {
     /// (occ.flip == member_flip ^ arr_bits). None = pose legacy sin flips ->
     /// comportamiento previo (orden estable).
     flips: Option<Vec<u8>>,
+    /// Identidad del sub (`pose_key_with_flips(hashes, flips)`), calculada una
+    /// vez al cargar: dos poses que sólo difieren en el flip RELATIVO de un
+    /// miembro son poses distintas y el tween entre ellas se dispara. Poses no
+    /// mixtas → `pose_key_of(hashes)`, idéntica a la de siempre.
+    pose_key: u64,
 }
 
 /// Elección de asset por variante + síntesis pendiente. Además del
@@ -1499,7 +1532,9 @@ impl PoseSetSubstitutor {
             _ => None, // dims corruptas/ausentes → fallback del frame vivo
         };
         let flips = match flips {
-            Some(f) if f.len() == hashes.len() => Some(f),
+            // Máscara & 3 como en parse_toml: un override vivo y el pack
+            // resuelven igual aunque el ABI traiga bits fuera de rango.
+            Some(f) if f.len() == hashes.len() => Some(f.into_iter().map(|x| x & 3).collect()),
             _ => None, // flips corruptos/ausentes → sin desempate
         };
         for (k, _) in &candidates {
@@ -1507,6 +1542,7 @@ impl PoseSetSubstitutor {
                 self.note_sig_mask(k.slots);
             }
         }
+        let pose_key = pose_key_with_flips(&hashes, flips.as_deref());
         self.overrides.push(PoseEntry {
             hashes,
             rel,
@@ -1520,6 +1556,7 @@ impl PoseSetSubstitutor {
             ref_rgb,
             ref_line,
             flips,
+            pose_key,
         });
     }
     /// Removes all live pose overrides.
@@ -1561,8 +1598,16 @@ impl PoseSetSubstitutor {
             inst: Vec<usize>,                   // occs con hit REAL
             missing: Vec<(i16, i16, i16, i16)>, // ausentes tolerados (bbox)
             ///  miembros cuyo flip SAT observado coincide con el autorado
-            /// XOR el espejo del arreglo (0 si la pose no trae flips).
+            /// XOR el espejo del arreglo (0 si la pose no trae flips). Decide
+            /// la CARA entre arreglos de la misma pose.
             agree: u32,
+            /// Grupo más grande de miembros con el mismo `observado ^ autorado`:
+            /// cuántos miembros coinciden en flip RELATIVO, salvo un espejo
+            /// global. Decide QUÉ pose entre variantes de los mismos sprites
+            /// que sólo difieren en el flip de algún miembro. Sin flips vale
+            /// `inst.len()` (neutro): unos flips desconocidos nunca separan, y
+            /// con un solo acierto tampoco hay evidencia relativa.
+            rel_agree: u32,
         }
         let mut cands: Vec<Cand> = Vec::new();
         for &pose in &order {
@@ -1636,13 +1681,20 @@ impl PoseSetSubstitutor {
                 // redundantes), cada uno con sus bits de espejo (0=capturado,
                 // bit0=H, bit1=V) — viajan al sub para que el render dibuje la
                 // cara canónica pre-volteada en las instancias espejadas.
+                // Con flips autorados y 2+ miembros se conservan los CUATRO:
+                // en una disposición simétrica el espejo coincide en posiciones
+                // pero no en flips, y sólo el acuerdo de flips (fase 2) elige
+                // la cara. Una pose de un solo sprite mantiene el descarte: el
+                // render ya aplica el flip de la occurrence y el horneado
+                // pre-espeja su HD.
+                let keep_all = pose.flips.is_some() && pose.hashes.len() >= 2;
                 let mut arrangements: Vec<(&[(i16, i16)], u8)> = vec![(rel.as_slice(), 0)];
                 for (m, bits) in [
                     (mir_h.as_slice(), 1u8),
                     (mir_v.as_slice(), 2u8),
                     (mir_hv.as_slice(), 3u8),
                 ] {
-                    if !arrangements.iter().any(|(a, _)| *a == m) {
+                    if keep_all || !arrangements.iter().any(|(a, _)| *a == m) {
                         arrangements.push((m, bits));
                     }
                 }
@@ -1674,7 +1726,10 @@ impl PoseSetSubstitutor {
                         let mut inst: Vec<usize> = Vec::with_capacity(pose.hashes.len());
                         let mut missing: Vec<(i16, i16, i16, i16)> = Vec::new();
                         let mut ok = true;
-                        let mut agree: u32 = 0;
+                        // Cubos por `observado ^ autorado` (0..3): el cubo del
+                        // espejo del arreglo es el acuerdo de CARA; el mayor,
+                        // el acuerdo RELATIVO (identidad).
+                        let mut buckets = [0u32; 4];
                         for (i, &h) in pose.hashes.iter().enumerate() {
                             let (wx, wy) = (ox + arrangement[i].0, oy + arrangement[i].1);
                             let (mw, mh) = mpx[i];
@@ -1691,9 +1746,7 @@ impl PoseSetSubstitutor {
                                     // flips autorados).
                                     if let Some(fl) = &pose.flips {
                                         let ob = (o.hflip & 1) | ((o.vflip & 1) << 1);
-                                        if ob == (fl[i] ^ arr_bits) {
-                                            agree += 1;
-                                        }
+                                        buckets[((ob ^ fl[i]) & 3) as usize] += 1;
                                     }
                                 }
                                 None if self.member_invisible(
@@ -1714,12 +1767,20 @@ impl PoseSetSubstitutor {
                         if !ok || inst.is_empty() {
                             continue;
                         }
+                        // occ.flip == member_flip ^ arr_bits ⇔ cubo arr_bits.
+                        let agree = buckets[arr_bits as usize];
+                        let rel_agree = if pose.flips.is_some() {
+                            buckets.iter().copied().max().unwrap_or(0)
+                        } else {
+                            inst.len() as u32
+                        };
                         cands.push(Cand {
                             pose,
                             arr_bits,
                             inst,
                             missing,
                             agree,
+                            rel_agree,
                         });
                     }
                 }
@@ -1729,11 +1790,24 @@ impl PoseSetSubstitutor {
         // Hits reales DESC: una instancia con 6 occs verificadas pesa más que
         // una de 16 miembros con 1 solo visible. Sort estable → a igual hits
         // queda el orden de la fase 1 (más miembros, overrides primero).
-        //  a IGUAL evidencia gana el arreglo cuyo flip SAT observado
-        // coincide con los flips autorados (occ.flip == member_flip^arr_bits)
-        // -> resuelve la cara ambigua de instancias PARCIALES al borde. Poses
-        // sin flips: agree 0 uniforme = orden estable previo.
-        cands.sort_by_key(|c| (std::cmp::Reverse(c.inst.len()), std::cmp::Reverse(c.agree)));
+        // A IGUAL evidencia gana primero la pose cuyos flips RELATIVOS
+        // coinciden con los observados (rel_agree): entre variantes de los
+        // mismos sprites que sólo difieren en el flip de algún miembro decide
+        // la identidad, y unos flips guardados corridos por un XOR global
+        // siguen identificando su variante. Después, el arreglo cuyo flip SAT
+        // observado coincide con los autorados (occ.flip == member_flip^arr_bits)
+        // -> resuelve la cara ambigua de instancias PARCIALES al borde y de
+        // disposiciones simétricas. Una pose sin flips tiene rel_agree neutro
+        // (= hits) y agree 0: frente a otra pose decide sólo el acuerdo
+        // ABSOLUTO, como antes; una pose con flips cuyo flip relativo NO
+        // coincide cede ante ella.
+        cands.sort_by_key(|c| {
+            (
+                std::cmp::Reverse(c.inst.len()),
+                std::cmp::Reverse(c.rel_agree),
+                std::cmp::Reverse(c.agree),
+            )
+        });
         for c in cands {
             // Algún miembro ya reclamado por una instancia con más evidencia →
             // esta candidata cae (las anclas alternativas de su pose ya fueron
@@ -1854,7 +1928,7 @@ impl PoseSetSubstitutor {
                         h_px: (g.4 - g.2).max(1) as u16,
                         mirror,
                         palette: g.0,
-                        pose_key: pose_key_of(&pose.hashes),
+                        pose_key: pose.pose_key,
                         synth_pal: choice.synth_pal,
                         ref_rgb: ref_of(g.0),
                         u0: (g.1 - x0) as f32 / fw,
@@ -1875,7 +1949,7 @@ impl PoseSetSubstitutor {
                     h_px: (y1 - y0).max(1) as u16,
                     mirror,
                     palette: anchor_pal, // ancla = miembro 0
-                    pose_key: pose_key_of(&pose.hashes),
+                    pose_key: pose.pose_key,
                     synth_pal: choice.synth_pal,
                     ref_rgb: pose.ref_rgb,
                     u0: 0.0,
@@ -1945,7 +2019,7 @@ impl PoseSetSubstitutor {
                 // candidato; sin candidatos queda 0 como antes.
                 mirror: choice.synth_mirror,
                 palette: occs[members[0]].palette, // ancla = primer miembro
-                pose_key: pose_key_of(&pose.hashes),
+                pose_key: pose.pose_key,
                 synth_pal: choice.synth_pal,
                 ref_rgb: pose.ref_rgb,
                 u0: 0.0,
@@ -2114,6 +2188,7 @@ impl PoseSetSubstitutor {
                         self.note_sig_mask(k.slots);
                     }
                 }
+                let pose_key = pose_key_with_flips(&hashes, flips.as_deref());
                 self.catalog.push(PoseEntry {
                     hashes,
                     rel,
@@ -2127,6 +2202,7 @@ impl PoseSetSubstitutor {
                     base_mirror,
                     ref_rgb,
                     ref_line,
+                    pose_key,
                 });
             }
         }
@@ -4361,6 +4437,376 @@ mod tests {
         let subs = mk(None).resolve(&[occ3], &mut claimed);
         assert_eq!(subs.len(), 1);
         assert_eq!(subs[0].mirror, 0, "sin flips autorados no hay desempate");
+    }
+
+    // ---- Variantes de flip RELATIVO (enano de Golden Axe) ----
+    //
+    // Geometría real de la Pose 0x10b «Dwarf - Stand 01»: saco, cabeza y
+    // cuerpo con rel (0,0)|(14,2)|(7,8) y dims 16×16|24×24|16×24 px (2×2, 3×3
+    // y 2×3 tiles). Bbox 38×32 → el espejo H exacto por miembro pone los x en
+    // 22|0|15. La variante A tiene el miembro 0 espejado respecto de los otros
+    // (flips 1|0|0); la B, todos en la misma cara (0|0|0).
+
+    const DWARF_HASHES: [u64; 3] = [0xD1, 0xD2, 0xD3];
+    const DWARF_REL: [(i16, i16); 3] = [(0, 0), (14, 2), (7, 8)];
+    const DWARF_DIMS: [(i16, i16); 3] = [(16, 16), (24, 24), (16, 24)];
+
+    fn add_dwarf(ps: &mut PoseSetSubstitutor, flips: Vec<u8>, asset: &str) {
+        ps.add_override_variants(
+            DWARF_HASHES.to_vec(),
+            Some(DWARF_REL.to_vec()),
+            Some(DWARF_DIMS.to_vec()),
+            Some(flips),
+            38,
+            32,
+            0,
+            [0, 0, 0],
+            [[0; 3]; 4],
+            asset.into(),
+            String::new(),
+            Vec::new(),
+        );
+    }
+
+    /// Occurrences del enano con origen (ox,oy) y flips H observados por
+    /// miembro. `mirrored` = arreglo espejado en H (x relativos 22|0|15).
+    fn dwarf_occs(ox: i16, oy: i16, hflips: [u8; 3], mirrored: bool) -> Vec<SpriteOccurrence> {
+        let xs: [i16; 3] = if mirrored { [22, 0, 15] } else { [0, 14, 7] };
+        (0..3)
+            .map(|i| {
+                let mut o = occ_sized(
+                    DWARF_HASHES[i],
+                    ox + xs[i],
+                    oy + DWARF_REL[i].1,
+                    (DWARF_DIMS[i].0 / 8) as u8,
+                    (DWARF_DIMS[i].1 / 8) as u8,
+                );
+                o.hflip = hflips[i];
+                o
+            })
+            .collect()
+    }
+
+    fn resolve_all(ps: &PoseSetSubstitutor, occs: &[SpriteOccurrence]) -> Vec<SpriteSub> {
+        let mut claimed = vec![false; occs.len()];
+        ps.resolve(occs, &mut claimed)
+    }
+
+    /// Dos Poses con los MISMOS sprites y la misma disposición que sólo
+    /// difieren en el flip relativo de un miembro: cada frame elige la que
+    /// coincide en flips relativos; una Pose sola se sigue reconociendo en la
+    /// otra variante (preferencia, no exclusión); y unos flips guardados
+    /// corridos por un XOR global (backfill antiguo sobre la cara espejada)
+    /// siguen identificando su variante. Antes sólo el acuerdo ABSOLUTO
+    /// desempataba y los flips corridos perdían contra la otra variante.
+    #[test]
+    fn pose_set_flip_variants_prefer_agreeing_pose() {
+        let mut ps = PoseSetSubstitutor::new();
+        add_dwarf(&mut ps, vec![1, 0, 0], "a.png");
+        add_dwarf(&mut ps, vec![0, 0, 0], "b.png");
+        // Frame de A (cabeza espejada respecto del cuerpo).
+        let subs = resolve_all(&ps, &dwarf_occs(100, 80, [1, 0, 0], false));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "a.png");
+        assert_eq!(subs[0].mirror, 0);
+        // Frame de B (todos en la misma cara).
+        let subs = resolve_all(&ps, &dwarf_occs(100, 80, [0, 0, 0], false));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "b.png");
+        assert_eq!(subs[0].mirror, 0);
+        // A espejada entera: posiciones 22|0|15 y flips 0|1|1 → sigue siendo A,
+        // en la cara espejada.
+        let subs = resolve_all(&ps, &dwarf_occs(100, 80, [0, 1, 1], true));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "a.png");
+        assert_eq!(subs[0].mirror, 1);
+        // Las dos formas a la vez: cada instancia recibe su variante.
+        let mut occs = dwarf_occs(40, 80, [1, 0, 0], false);
+        occs.extend(dwarf_occs(200, 80, [0, 0, 0], false));
+        let mut subs = resolve_all(&ps, &occs);
+        subs.sort_by_key(|s| s.screen_x);
+        assert_eq!(subs.len(), 2);
+        assert_eq!(
+            (subs[0].asset_path.as_str(), subs[1].asset_path.as_str()),
+            ("a.png", "b.png")
+        );
+        // Sólo A en el catálogo: un frame de B la sigue reconociendo.
+        let mut solo = PoseSetSubstitutor::new();
+        add_dwarf(&mut solo, vec![1, 0, 0], "a.png");
+        let subs = resolve_all(&solo, &dwarf_occs(100, 80, [0, 0, 0], false));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "a.png");
+        // A guardada con flips CORRIDOS (0|1|1 = 1|0|0 XOR 1): el flip
+        // relativo es el mismo → un frame de A sigue eligiendo A.
+        let mut shifted = PoseSetSubstitutor::new();
+        add_dwarf(&mut shifted, vec![0, 1, 1], "a.png");
+        add_dwarf(&mut shifted, vec![0, 0, 0], "b.png");
+        let subs = resolve_all(&shifted, &dwarf_occs(100, 80, [1, 0, 0], false));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(
+            subs[0].asset_path, "a.png",
+            "los flips relativos identifican la variante aunque estén corridos"
+        );
+    }
+
+    /// Disposición SIMÉTRICA (pila vertical de 8 px): el espejo H coincide
+    /// geométricamente con la captura. Antes se descartaba por posiciones y
+    /// una instancia espejada (los dos miembros volteados) elegía la variante
+    /// cuyo flip ABSOLUTO coincidía en un miembro (B) sin espejo; ahora
+    /// conserva los cuatro arreglos y elige A con mirror 1.
+    #[test]
+    fn pose_set_symmetric_layout_mirrored_instance() {
+        let mut ps = PoseSetSubstitutor::new();
+        for (flips, asset) in [(vec![0, 0], "a.png"), (vec![1, 0], "b.png")] {
+            ps.add_override_variants(
+                vec![0x51, 0x52],
+                Some(vec![(0, 0), (0, 8)]),
+                Some(vec![(8, 8), (8, 8)]),
+                Some(flips),
+                8,
+                16,
+                0,
+                [0, 0, 0],
+                [[0; 3]; 4],
+                asset.into(),
+                String::new(),
+                Vec::new(),
+            );
+        }
+        let stack = |h0: u8, h1: u8| {
+            let mut a = occ_at(0x51, 100, 100);
+            let mut b = occ_at(0x52, 100, 108);
+            a.hflip = h0;
+            b.hflip = h1;
+            vec![a, b]
+        };
+        for ((h0, h1), asset, mirror) in [
+            ((0, 0), "a.png", 0),
+            ((1, 1), "a.png", 1),
+            ((1, 0), "b.png", 0),
+            ((0, 1), "b.png", 1),
+        ] {
+            let subs = resolve_all(&ps, &stack(h0, h1));
+            assert_eq!(subs.len(), 1, "observado ({h0},{h1})");
+            assert_eq!(subs[0].asset_path, asset, "observado ({h0},{h1})");
+            assert_eq!(subs[0].mirror, mirror, "observado ({h0},{h1})");
+        }
+    }
+
+    /// Una Pose de UN solo sprite conserva el descarte de espejos repetidos:
+    /// el render ya aplica el flip de la ocurrencia y el horneado pre-espeja su
+    /// HD, así que el sub sale con mirror 0 tenga el flip que tenga.
+    #[test]
+    fn pose_set_single_member_mirror_unchanged() {
+        for (stored, observed) in [(0u8, 1u8), (1, 0), (1, 1)] {
+            let mut ps = PoseSetSubstitutor::new();
+            ps.add_override_variants(
+                vec![0x61],
+                Some(vec![(0, 0)]),
+                Some(vec![(16, 8)]),
+                Some(vec![stored]),
+                16,
+                8,
+                0,
+                [0, 0, 0],
+                [[0; 3]; 4],
+                "one.png".into(),
+                String::new(),
+                Vec::new(),
+            );
+            let mut o = occ_sized(0x61, 50, 50, 2, 1);
+            o.hflip = observed;
+            let subs = resolve_all(&ps, &[o]);
+            assert_eq!(subs.len(), 1);
+            assert_eq!(subs[0].mirror, 0, "guardado {stored}, observado {observed}");
+            assert_eq!(subs[0].pose_key, pose_key_of(&[0x61]));
+        }
+    }
+
+    /// `pose_key_with_flips`: sólo cuenta el flip RELATIVO al miembro 0. Las
+    /// Poses no mixtas (sin flips, uniformes, longitud errónea o un solo
+    /// miembro) conservan byte a byte la clave de `pose_key_of`.
+    #[test]
+    fn pose_key_relative_flips() {
+        let h = DWARF_HASHES;
+        let base = pose_key_of(&h);
+        assert_eq!(pose_key_with_flips(&h, None), base);
+        assert_eq!(pose_key_with_flips(&h, Some(&[0, 0, 0])), base);
+        assert_eq!(pose_key_with_flips(&h, Some(&[1, 1, 1])), base);
+        assert_eq!(pose_key_with_flips(&h, Some(&[3, 3, 3])), base);
+        assert_eq!(
+            pose_key_with_flips(&h, Some(&[1, 0])),
+            base,
+            "longitud errónea"
+        );
+        assert_eq!(
+            pose_key_with_flips(&[0x61], Some(&[1])),
+            pose_key_of(&[0x61])
+        );
+        let a = pose_key_with_flips(&h, Some(&[1, 0, 0]));
+        assert_ne!(a, base, "una Pose mixta tiene clave propia");
+        // Valores fijados: el orden de bytes publicado en
+        // IDENTITY_SPECIFICATION (hashes LE y después un byte (f_i ^ f_0) & 3
+        // por miembro) no puede cambiar sin romper el contrato.
+        assert_eq!(a, 0x11b0_2591_6668_830b);
+        assert_eq!(
+            pose_key_with_flips(&h, Some(&[0, 1, 0])),
+            0x8b77_2d57_5fdb_27ff
+        );
+        // Espejar o invertir todos los miembros a la vez = la misma Pose.
+        assert_eq!(pose_key_with_flips(&h, Some(&[0, 1, 1])), a);
+        assert_eq!(pose_key_with_flips(&h, Some(&[2, 3, 3])), a);
+        // Otro flip relativo = otra Pose.
+        assert_ne!(pose_key_with_flips(&h, Some(&[0, 1, 0])), a);
+        assert_ne!(pose_key_with_flips(&h, Some(&[2, 0, 0])), a);
+    }
+
+    /// La transición entre las dos variantes de flip de la misma Pose se
+    /// dispara: cada variante emite su propio `pose_key`. Antes las dos
+    /// compartían clave y el TweenPlayer cortaba sin intermedio.
+    #[test]
+    fn tween_fires_between_flip_variants() {
+        let mut ps = PoseSetSubstitutor::new();
+        add_dwarf(&mut ps, vec![1, 0, 0], "a.png");
+        add_dwarf(&mut ps, vec![0, 0, 0], "b.png");
+        let mut p = TweenPlayer::new();
+        p.parse_toml("[[tween]]\ntarget = \"b.png\"\nfrom = \"a.png\"\nframes = [\"ab.png\"]\n");
+        let mut step = |hflips: [u8; 3]| {
+            let subs = resolve_all(&ps, &dwarf_occs(100, 80, hflips, false));
+            assert_eq!(subs.len(), 1);
+            let s = &subs[0];
+            let cx = s.screen_x as i64 + s.w_px as i64 / 2;
+            let cy = s.screen_y as i64 + s.h_px as i64 / 2;
+            p.begin_frame();
+            p.resolve(&s.asset_path, s.pose_key, cx, cy)
+        };
+        assert_eq!(step([1, 0, 0]), "a.png");
+        assert_eq!(step([0, 0, 0]), "ab.png", "el intermedio se dispara");
+    }
+
+    /// Las dos variantes horneadas como `[[pose]]` con `flips` distintos se
+    /// cargan del pack, cada frame elige la suya y sus `pose_key` difieren
+    /// (la no mixta conserva la clave de siempre).
+    #[test]
+    fn pose_set_pack_flip_variants_parse() {
+        let mut ps = PoseSetSubstitutor::new();
+        ps.parse_toml(concat!(
+            "[[pose]]\nhashes = [\"0xd1\", \"0xd2\", \"0xd3\"]\nasset = \"a.png\"\n",
+            "rel = \"0,0|14,2|7,8\"\ndims = \"16,16|24,24|16,24\"\nflips = \"1|0|0\"\n",
+            "[[pose]]\nhashes = [\"0xd1\", \"0xd2\", \"0xd3\"]\nasset = \"b.png\"\n",
+            "rel = \"0,0|14,2|7,8\"\ndims = \"16,16|24,24|16,24\"\nflips = \"0|0|0\"\n",
+        ));
+        assert_eq!(ps.catalog_len(), 2);
+        let a = resolve_all(&ps, &dwarf_occs(100, 80, [1, 0, 0], false));
+        let b = resolve_all(&ps, &dwarf_occs(100, 80, [0, 0, 0], false));
+        assert_eq!((a.len(), b.len()), (1, 1));
+        assert_eq!(a[0].asset_path, "a.png");
+        assert_eq!(b[0].asset_path, "b.png");
+        assert_ne!(a[0].pose_key, b[0].pose_key);
+        assert_eq!(
+            a[0].pose_key,
+            pose_key_with_flips(&DWARF_HASHES, Some(&[1, 0, 0]))
+        );
+        assert_eq!(b[0].pose_key, pose_key_of(&DWARF_HASHES));
+    }
+
+    /// Una pose SIN flips frente a otra CON flips sobre las mismas
+    /// ocurrencias: el acuerdo relativo es neutro para la primera (unos flips
+    /// desconocidos nunca separan) y un solo acierto no trae evidencia
+    /// relativa, así que sólo el acuerdo ABSOLUTO desempata, como antes, y si
+    /// no hay acuerdo queda el orden estable de la fase 1.
+    #[test]
+    fn pose_set_flips_vs_no_flips_keep_stable_order() {
+        let add = |ps: &mut PoseSetSubstitutor,
+                   hashes: Vec<u64>,
+                   rel: Vec<(i16, i16)>,
+                   flips: Option<Vec<u8>>,
+                   w: u16,
+                   asset: &str| {
+            let dims = vec![(8, 8); hashes.len()];
+            ps.add_override_variants(
+                hashes,
+                Some(rel),
+                Some(dims),
+                flips,
+                w,
+                8,
+                0,
+                [0, 0, 0],
+                [[0; 3]; 4],
+                asset.into(),
+                String::new(),
+                Vec::new(),
+            );
+        };
+        // Compuesta de 3 miembros sin flips y una parte de 1 miembro con
+        // flips [0]; sólo el ancla visible al borde derecho, volteada en H.
+        let mut ps = PoseSetSubstitutor::new();
+        add(
+            &mut ps,
+            vec![0xA1, 0xA2, 0xA3],
+            vec![(0, 0), (8, 0), (16, 0)],
+            None,
+            24,
+            "big.png",
+        );
+        add(
+            &mut ps,
+            vec![0xA1],
+            vec![(0, 0)],
+            Some(vec![0]),
+            8,
+            "small.png",
+        );
+        let mut o = occ_at(0xA1, 312, 100);
+        o.hflip = 1;
+        let subs = resolve_all(&ps, &[o]);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(
+            subs[0].asset_path, "big.png",
+            "un acierto no decide por flips"
+        );
+        // Mismos dos sprites, una pose sin flips (antes en el orden) y otra
+        // con flips 0|0 en una disposición NO simétrica en H.
+        let mut ps = PoseSetSubstitutor::new();
+        let pair = || (vec![0x71, 0x72], vec![(0, 0), (8, 0)]);
+        let (h, r) = pair();
+        add(&mut ps, h, r, None, 16, "plain.png");
+        let (h, r) = pair();
+        add(&mut ps, h, r, Some(vec![0, 0]), 16, "flips.png");
+        let occs = |hf: u8| {
+            let mut a = occ_at(0x71, 100, 100);
+            let mut b = occ_at(0x72, 108, 100);
+            a.hflip = hf;
+            b.hflip = hf;
+            vec![a, b]
+        };
+        // Observado 1|1: ningún arreglo coincide en flip absoluto → orden
+        // estable, gana la pose sin flips.
+        let subs = resolve_all(&ps, &occs(1));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "plain.png");
+        // Observado 0|0: el acuerdo absoluto prefiere la pose con flips.
+        let subs = resolve_all(&ps, &occs(0));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "flips.png");
+    }
+
+    /// Los flips de un override vivo se enmascaran con `& 3` como al parsear
+    /// el pack: un bit fuera de rango no cambia la resolución.
+    #[test]
+    fn pose_set_override_flips_masked() {
+        let mut ps = PoseSetSubstitutor::new();
+        add_dwarf(&mut ps, vec![5, 4, 4], "a.png");
+        add_dwarf(&mut ps, vec![0, 0, 0], "b.png");
+        let subs = resolve_all(&ps, &dwarf_occs(100, 80, [1, 0, 0], false));
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "a.png");
+        assert_eq!(subs[0].mirror, 0);
+        assert_eq!(
+            subs[0].pose_key,
+            pose_key_with_flips(&DWARF_HASHES, Some(&[1, 0, 0]))
+        );
     }
 
     /// Las poses LEGACY (sin rel) no ganan tolerancia: sin offsets no hay
