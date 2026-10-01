@@ -1,54 +1,56 @@
 # Current release gate: go / no-go decision
 
-**Pre-release decision: GO for `v0.1.0-rc.8`.**
+**Pre-release decision: GO for `v0.1.0-rc.10`.**
 
 **Stable-release decision: NO-GO for `v0.1.0`.**
 
-**Decision date:** 2026-09-11
+**Decision date:** 2026-10-01
 
-**Evidence cutoff:** 2026-09-11T13:30:00-03:00
+**Evidence cutoff:** 2026-10-01T00:55:00-03:00
 
 **Candidate identity:** the commit targeted by the annotated tag
-`v0.1.0-rc.8`. The tag object records the exact candidate SHA and is the
+`v0.1.0-rc.10`. The tag object records the exact candidate SHA and is the
 authoritative binding between this decision and the immutable source revision.
 
 **Evidence baseline before the decision record:**
-`414b704b0c5d` (`main` at the last published candidate, `v0.1.0-rc.7`) plus
-the fix-forward commit `5313662` on `fix/plane-set-order-rc8`, which this
-record accompanies.
+`f3066ecf650c` (`main` after merging pull request #20), which is the last
+published candidate `v0.1.0-rc.9` (`af2623d536c9`) plus the fix commit
+`5e3e966` on `fix/pose-relative-flips`.
 
 **Decider:** the sole maintainer, operating under
 [GOV-2026-001](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review)
 
-This record supersedes the operational GO for `v0.1.0-rc.7`, which was
-published successfully as a pre-release. The `rc.7` and `rc.6` decisions, the
-earlier `v0.1.0-rc.4` publication and the [2026-08-30 decision](RELEASE_GO_NO_GO.md)
-remain immutable historical snapshots.
+This record supersedes the operational GO for `v0.1.0-rc.8`. `v0.1.0-rc.9`
+was published on 2026-09-15 as a pre-release without its own decision record;
+this record covers the step from `rc.9` to `rc.10`. The `rc.8`, `rc.7` and
+`rc.6` decisions, the earlier `v0.1.0-rc.4` publication and the
+[2026-08-30 decision](RELEASE_GO_NO_GO.md) remain immutable historical
+snapshots.
 
 ## Why a new candidate
 
-`v0.1.0-rc.7` ships a plane-set matching defect visible to every consumer that
-substitutes overlapping multi-tile elements: the matcher walked `plane_sets`
-— an `unordered_map` — in bucket order, and a set claims the cells it
-matches, so a one-member set with a lucky id could claim a cell before the
-larger set containing it was tried, and the larger set never matched. In
-Golden Axe, assigning HD to the one-tile "Magic bar - Empty" and "Magic bar -
-Border" Objects cancelled the seven-tile "Ax Battler - Magic bar" (reported by
-the Lab on 2026-09-11). `rc.8` is the fix-forward candidate: `5313662` tries
-the sets by complexity — more members, then larger bbox, then id — through
-`src/session/plane_set_order.h`, applying within the plane-set domain the
-ladder rule `ayther_rank.h` already states between domains, and fixes it with
-the unit oracle `ayther.unit.plane_set_order_test` and an overlap case in
-`tools/paint_set_smoke`.
+`v0.1.0-rc.9` cannot tell apart two poses whose only difference is the flip of
+one member sprite relative to the others, a case reported by the Lab on
+2026-09-30 with Golden Axe's dwarf standing with its head facing its body and
+facing away. Per-member flips already travel in the pack, but the pose
+matcher used them only as a tiebreak: in a left-right symmetric layout it
+dropped the mirror arrangement by comparing positions alone, so a mirrored
+instance could resolve to the wrong variant, and `pose_key_of` ignored flips,
+so a tween between the two variants never fired. `rc.10` is the fix-forward
+candidate: `5e3e966` keeps every mirror for multi-member poses with flips,
+ranks candidates by hits, relative flip agreement (neutral for poses without
+flips) and absolute agreement, gives mixed relative flips their own in-between
+key (`pose_key_with_flips`), and masks live-override flips like the pack
+parser. A whole-pose mirror is still a state of the same pose.
 
 ## Decision scope
 
-The GO authorizes publishing `v0.1.0-rc.8` as a **pre-release candidate** so
-that consumers (AYTHER Lab and AYTHER Runtime) can pin a package in which a
-larger plane set outranks the one-tile sets it contains, and so that the
-release pipeline, artifact verification and external consumption are
-exercised again on a fix-forward candidate. It does not authorize publishing
-the stable `v0.1.0` release.
+The GO authorizes publishing `v0.1.0-rc.10` as a **pre-release candidate** so
+that consumers (AYTHER Lab and AYTHER Runtime) can pin a package whose pose
+matcher prefers the flip variant that agrees and tweens between variants, and
+so that the release pipeline, artifact verification and external consumption
+are exercised again on a fix-forward candidate. It does not authorize
+publishing the stable `v0.1.0` release.
 
 Stable remains NO-GO because supported-release blockers and the required
 rollback rehearsal are not yet closed.
@@ -57,17 +59,17 @@ rollback rehearsal are not yet closed.
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.8` passes for prerelease `rc.8` of `0.1.0` (Cargo, vcpkg, CMake and `ayther_version.h` all at `0.1.0`) |
-| Required CI on the last published baseline | **Pass** | [CI run 34555815917](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/34555815917) and [Push on main 34555815459](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/34555815459) passed on `414b704b0c5d`; [Runtime integration 34596513727](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/34596513727) passed on the same SHA after the `rc.7` publication |
-| Required CI on the candidate | **Pending the pull request** | [Pull request #18](https://github.com/Ayther-Dev/AYTHER-Engine/pull/18) from `fix/plane-set-order-rc8` must pass the required CI gate before the merge; the tag is created only on the merged `main` commit |
+| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.10` passes for prerelease `rc.10` of `0.1.0` on `f3066ec` |
+| Required CI on the change | **Pass** | [Pull request #20](https://github.com/Ayther-Dev/AYTHER-Engine/pull/20): all required checks green, including the [Required CI gate](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/36801603174), Rust and C++ coverage gates, ASan/UBSan, fuzz smokes and CodeQL; the opt-in GPU job was skipped |
+| Required CI on the merged baseline | **Pass** | [CI push 36810971724](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/36810971724) and CodeQL 36810971003 passed on `f3066ecf650c`; required CI must also be green on the merge commit that adds this record before the tag |
 | Open code-scanning findings | **Pass** | GitHub returned no open code-scanning alerts at the evidence cutoff |
-| Matching fix has a pure oracle | **Pass** | `tests/unit/plane_set_order_test.cpp`: the reported case (a seven-member set and two one-member sets with lower ids) yields the seven-member set first in any insertion order; equal member counts fall to the larger bbox; a full tie falls to ascending id; member count outranks bbox area; no sets gives an empty order |
-| Matching fix reproduced on the real core | **Pass** | `tools/paint_set_smoke` overlap case (a one-tile set with a lower id sharing the anchor of a 2×1 set) run on the maintainer's machine against the real core and ROM: the 2×1 keeps its quad and the one-tile set does not claim the anchor. The tool is not wired into CI; its pre-existing pack-open step fails in Release builds because the development key is rejected by trust policy, unrelated to this candidate |
-| Local native suites on the candidate | **Pass** | `windows-release-engine-vpx`: full build, unit 24/24, non-GPU CTest selection 62/62 including the repository policy tests (2026-09-11, maintainer's machine); `windows-native`: full build, unit 24/24 |
-| Consumer verification of the fix | **Pending the Lab pin** | AYTHER Lab consumes the published package, not the tree; the reported project case (Golden Axe, "Ax Battler - Magic bar" over "Magic bar - Empty/Border") is re-run when the Lab pins `rc.8`, and that result is recorded in the Lab's validation record before the stable gate is re-evaluated |
-| `rc.7` release outcome | **Pass** | Published 2026-09-11 as [pre-release `v0.1.0-rc.7`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.7) with all four archives, checksums, SBOMs and Sigstore bundles; pinned by AYTHER Lab on its `rc.7` bump branch with the engine compatibility oracle green (54 checks) |
-| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.8` did not exist at the evidence cutoff |
-| Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment requires the maintainer's approval and accepts `v*` |
+| Matching fix has unit oracles | **Pass** | New tests in `core/src/vram_sprite.rs`: the dwarf flip variants (each form, the mirrored form, a lone variant, flips stored shifted), the mirrored symmetric stack, an unchanged single-member mirror, `pose_key_with_flips` with pinned vectors, a tween between variants, pack parsing of two variants, and stable order against poses without flips; the ones covering defects fail against the `rc.9` logic |
+| Local suites on the candidate | **Pass** | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` (415 passed), `gen_notice -Check`, `check_doc_references`, `gen_api_reference -Check`; `windows-native` full build and non-GPU CTest 60/60 with 4 core-dependent tests skipped for lack of the test core (2026-09-30, maintainer's machine) |
+| ABI and package surface | **Pass** | No public header or C ABI change (core C ABI revision 7, package `0.1.0`); `git diff --stat v0.1.0-rc.9 f3066ec` touches only `core/src/vram_sprite.rs`, `CHANGELOG.md`, `docs/IDENTITY_SPECIFICATION.md` and `tools/pose_replay_scan/main.cpp` |
+| Consumer verification of the fix | **Pending the Lab pin** | AYTHER Lab ships the C++ twin of the resolver with the same rules (Lab pull requests #6 and #7); the parity oracle against this package and the Golden Axe dwarf case run when the Lab pins `rc.10` |
+| `rc.9` release outcome | **Pass** | Published 2026-09-15 as [pre-release `v0.1.0-rc.9`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.9) with 18 assets; pinned by AYTHER Runtime `v0.1.0-beta.6` and by AYTHER Lab |
+| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.10` did not exist at the evidence cutoff |
+| Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment requires the maintainer's approval (`required_reviewers`, `branch_policy`) |
 
 The final candidate commit is the merge result containing this record. Before
 tag creation, required CI must be green on that exact `main` commit. The
@@ -111,21 +113,22 @@ If publication or post-publication verification exposes a defect, follow
 evidence, withdraw affected release assets as documented, notify consumers,
 and publish a fix-forward candidate under a new version.
 
-After publication, AYTHER Lab pins the `vpx` Windows archive in its dependency
-lock and re-validates its own candidate against it, including the reported
-Golden Axe case; record that result before re-evaluating the stable `v0.1.0`
-gate.
+After publication, AYTHER Runtime pins the candidate and publishes a matching
+beta, and AYTHER Lab pins both in its dependency lock with a parity oracle
+between its C++ twin of the pose resolver and this release; the Golden Axe
+dwarf case (two standing poses that differ only in the head's flip) is
+re-run there and recorded before re-evaluating the stable `v0.1.0` gate.
 
 ## Reproducing the pre-tag checks
 
 ```text
 git rev-parse main
-pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.8
+pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.10
 gh run list --branch main --limit 12
 gh api 'repos/Ayther-Dev/AYTHER-Engine/code-scanning/alerts?state=open'
 gh api repos/Ayther-Dev/AYTHER-Engine/environments/release
 gh api repos/Ayther-Dev/AYTHER-Engine/rulesets
-gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.8
+gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.10
 ```
 
 Ruleset identifiers are not treated as stable evidence. Enumerate the active
