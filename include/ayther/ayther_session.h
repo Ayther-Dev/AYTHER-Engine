@@ -935,6 +935,19 @@ public:
     const AytherAudioEvent* audio_events() const noexcept;
     uint32_t                audio_event_count() const noexcept;
     void                    clear_audio_events() noexcept;
+    /// Restores the events of an earlier analyze_audio_events of the SAME take
+    /// (a frontend cache), without replaying anything: afterwards the session
+    /// behaves as if it had just analysed it — audio_events() returns these,
+    /// and event substitution, sequence anchoring and the DAW export work on
+    /// them. The router's chip-write cache that the analysis also fills is
+    /// rebuilt lazily on the next seek. The caller guarantees that the events
+    /// belong to the take it replays: key the cache by the take's content and
+    /// by kAudioEventAlgo. `events == nullptr` or `count == 0` clears them.
+    void set_audio_events(const AytherAudioEvent* events, uint32_t count);
+    /// Version of the event detector's output. A cache of audio_events() made
+    /// with another value is stale (signatures or windows may differ); it is
+    /// bumped whenever the detector changes what it produces.
+    static constexpr uint32_t kAudioEventAlgo = 1;
 
     // -- Per-event audio substitution (C-A3b) ---------------------------------
     // It assigns an HD asset to an event SIGNATURE: ALL events with that

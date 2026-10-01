@@ -5916,7 +5916,22 @@ uint32_t AytherSession::analyze_audio_events(const AytherRecording& rec) {
     const uint32_t k = ayther_audio_event_count(im.audio_event_det.get());
     im.audio_events.resize(k);
     if (k) ayther_audio_event_get(im.audio_event_det.get(), im.audio_events.data(), k);
+    im.audio_events_changed();
     return k;
+}
+
+// Los eventos de un análisis ANTERIOR de la misma toma (el frontend los guarda
+// al lado de la toma): la sesión queda como si acabara de analizarla, sin
+// re-simular nada. Lo único que el análisis deja y esto no es el caché de
+// escrituras del router (voice_prime), que se arma solo en el próximo seek.
+void AytherSession::set_audio_events(const AytherAudioEvent* events, uint32_t count) {
+    Impl& im = *impl_;
+    // Región del reloj del detector en vivo, como en analyze_audio_events.
+    const uint8_t pal = timing_fps() > 1.0 && timing_fps() < 55.0 ? 1 : 0;
+    if (im.audio_live_det) ayther_audio_event_set_pal(im.audio_live_det.get(), pal);
+    if (events && count) im.audio_events.assign(events, events + count);
+    else                 im.audio_events.clear();
+    im.audio_events_changed();
 }
 
 const AytherAudioEvent* AytherSession::audio_events() const noexcept {
@@ -5925,7 +5940,10 @@ const AytherAudioEvent* AytherSession::audio_events() const noexcept {
 uint32_t AytherSession::audio_event_count() const noexcept {
     return static_cast<uint32_t>(impl_->audio_events.size());
 }
-void AytherSession::clear_audio_events() noexcept { impl_->audio_events.clear(); }
+void AytherSession::clear_audio_events() noexcept {
+    impl_->audio_events.clear();
+    impl_->audio_events_changed();
+}
 
 // -- Sustitución de audio por evento (C-A3b) --------------------------------
 void AytherSession::assign_audio_event(uint64_t signature, const char* asset_path) {

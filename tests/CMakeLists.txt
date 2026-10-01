@@ -283,6 +283,15 @@ target_compile_definitions(ayther_plane_set_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_plane_set_session_test ayther_test_core)
 
+# Restoring cached audio events (set_audio_events) leaves the session as an
+# analysis would; a live session with the test core drives it.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/audio_events_restore_test.cpp"
+    integration)
+target_compile_definitions(ayther_audio_events_restore_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_audio_events_restore_test ayther_test_core)
+
 # Signed content for the release-candidate consumer, which cannot open an
 # unsigned pack in an optimized build.
 add_subdirectory(
