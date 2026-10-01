@@ -2,7 +2,7 @@
 
 **Status:** implemented public contract; pre-release and not frozen
 
-**Last verified:** 2026-08-29
+**Last verified:** 2026-09-30
 
 AYTHER binds every replacement to an identity derived from observed emulated
 state. This document specifies those identities precisely enough for an
@@ -106,15 +106,43 @@ re-authoring because the previous parser could hash the wrong graphic.
 
 ### Pose identity
 
+A pose is its member sprites, their layout, and the flip of each member
+relative to the others. Mirroring the whole pose, or inverting every member's
+flip at once, is a state of the same pose, not a new one.
+
 `pose_key` preserves capture order:
 
 ```text
 buf = concat(hash.to_le_bytes() for hash in captured_hashes)
+if flips is present, len(flips) == len(hashes) >= 2,
+   and some (flips[i] ^ flips[0]) & 3 != 0:
+    buf += [(f ^ flips[0]) & 3 for f in flips]   # one byte per member
 pose_key = xxh3_64(buf)
 ```
 
 Do not sort. A one-sprite pose intentionally has the same content identity on
-the single-substitution and pose paths.
+the single-substitution and pose paths. A pose whose flips are absent, of the
+wrong length, uniform, or that has a single member is not mixed: its key is the
+hash-only key above, byte for byte. Only mixed-flip poses append the relative
+flip bytes, so two poses that differ only in a member's relative flip get
+distinct keys while a globally shifted copy of the same flips (`1|0|0` and
+`0|1|1`) keeps one key. Reference: `pose_key_with_flips` in
+`core/src/vram_sprite.rs`.
+
+When several authored poses complete over the same occurrences with the same
+number of real hits, resolution prefers, in order: the pose with the largest
+group of matched members sharing one `observed_flip ^ authored_flip` value
+(relative agreement, which decides which pose), then the arrangement whose
+observed flips equal `authored_flip ^ arrangement_mirror` (absolute agreement,
+which decides the face), then the stable base order: more members first, live
+overrides before the pack catalog, then load order. A pose without flips has
+relative agreement equal to its hit count, so unknown flips never separate
+poses and its absolute agreement is zero. This is a preference, not a filter:
+a pose alone is still recognized when the other relative-flip variant is on
+screen. Poses
+with flips and two or more members try all four mirror arrangements even when
+some coincide in position; single-member poses and poses without flips discard
+positionally repeated arrangements.
 
 ### Animation group identity
 
@@ -284,7 +312,7 @@ alternative mechanism and open at 60 percent matching hashes per layer.
 | Set `tiles` | Signed cell offsets relative to the set anchor |
 | Pose `rel` | Signed screen pixels relative to pose origin |
 | Pose `dims` | Pixel dimensions for each member |
-| `flips` | Bit 0 H flip, bit 1 V flip |
+| `flips` | Bit 0 H flip, bit 1 V flip, per member at capture; the flip relative to member 0 is part of pose identity |
 | `slots` | `u16` mask; slot values must be below 16 |
 | `ref` / `refs` | Average capture-time RGB in 0–255; layered form prefixes palette line 0–3 |
 
@@ -362,9 +390,15 @@ The following mistakes compile and run but produce incompatible packs:
 2. applying word-swap correction to sprites or omitting it from plane tiles;
 3. applying H/V flips while decoding identity graphics;
 4. sorting `pose_key` members or failing to sort `anim_group_id` members;
-5. including FM carrier total level in instrument identity;
-6. including audio-write cycle in an event signature;
-7. combining screen signatures across planes.
+5. hashing absolute instead of relative member flips into `pose_key`, or
+   appending flip bytes for a pose whose flips are uniform, absent, or
+   single-member;
+6. treating relative-flip agreement as a hard filter instead of a preference,
+   or discarding positionally repeated mirror arrangements of a multi-member
+   pose with flips;
+7. including FM carrier total level in instrument identity;
+8. including audio-write cycle in an event signature;
+9. combining screen signatures across planes.
 
 An independent implementation should run the published KATs before consuming
 real content. ROM-based comparison is useful integration evidence but cannot

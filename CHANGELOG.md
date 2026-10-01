@@ -139,6 +139,20 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   Events and work RAM are compared run-to-run but not pinned: both were
   measured to change with the optimisation level, so pinning them left the
   `-O0` coverage job permanently red.
+- A pose's `pose_key` now includes each member's flip relative to member 0
+  when the members carry mixed flips. Two poses with the same sprites and
+  layout that differ only in a member's relative flip get distinct keys, so the
+  in-between between them fires. Poses with uniform, absent, or single-member
+  flips keep their previous key byte for byte; only mixed-flip poses change.
+  Packs store in-betweens by asset rather than by `pose_key`, so no baked pack
+  breaks.
+- A mirrored instance of a pose with authored flips and a symmetric layout,
+  where a mirror arrangement coincides with the captured positions, is now
+  emitted with its mirror bits instead of in the captured face. An HD asset
+  drawn facing the opposite way in such a pose now renders inverted and is
+  corrected with the asset's own horizontal flip. The same applies when such a
+  pose's stored flips are shifted by a global mirror from the captured face.
+  Single-sprite poses keep the previous behavior.
 
 ### Deprecated
 
@@ -158,6 +172,21 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   Only the live and replay paths ever carried a real step. Reading the new
   `span` key closes that gap; the authoring tool has to re-export the pack for
   the correction to reach an already-baked one.
+- Two poses with the same sprites and layout that differ only in the flip of a
+  member resolved by absolute flip agreement alone. Flips stored shifted by a
+  global mirror, as older authoring backfills saved them from a mirrored face,
+  lost against the other variant, and in symmetric layouts the mirror
+  arrangement was discarded by comparing positions only, so a mirrored
+  instance could pick the wrong variant. Phase 2 now prefers the pose whose
+  relative member flips agree with the observed ones, then the arrangement
+  whose absolute flips agree. A single pose is still recognized in the other
+  variant. A pose without flips counts as full relative agreement, and a single
+  hit carries no relative evidence, so against a pose without flips only
+  absolute agreement decides, as before, and the phase-1 order breaks the
+  remaining ties. The one change in such a contest: a pose with flips whose
+  relative flips disagree with the observed ones now yields to a pose without
+  flips at equal hits, where before it could win on partial absolute
+  agreement.
 - Plane sets were tried in the container's bucket order, so a one-member set
   could claim a cell before the larger set containing it was tried, and the
   larger set never matched (Golden Axe: assigning HD to the one-tile
