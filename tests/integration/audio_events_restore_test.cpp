@@ -13,7 +13,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <exception>
 #include <memory>
 #include <string>
@@ -27,24 +26,40 @@ void check(bool condition, const char *message) {
     std::printf("[%s] %s\n", condition ? "PASS" : "FAIL", message);
 }
 
-AytherAudioEvent event(uint64_t sig, uint32_t start, uint32_t end, uint8_t chip, uint8_t channel) {
+// The fields that tell two events apart; the rest stay at their defaults.
+struct Spec {
+    uint64_t signature;
+    uint32_t start_frame;
+    uint32_t end_frame;
+    uint8_t chip;
+    uint8_t channel;
+};
+
+AytherAudioEvent event(const Spec &spec) {
     AytherAudioEvent e{};
-    e.signature = sig;
-    e.instrument = sig ^ 0xABCDu;
-    e.start_frame = start;
-    e.end_frame = end;
-    e.chip = chip;
-    e.channel = channel;
+    e.signature = spec.signature;
+    e.instrument = spec.signature ^ 0xABCDu;
+    e.start_frame = spec.start_frame;
+    e.end_frame = spec.end_frame;
+    e.chip = spec.chip;
+    e.channel = spec.channel;
     e.pitch = 60;
     e.velocity = 100;
     return e;
+}
+
+bool same_event(const AytherAudioEvent &a, const AytherAudioEvent &b) {
+    // Member by member: the struct has padding, so its bytes are not its value.
+    return a.signature == b.signature && a.instrument == b.instrument && a.start_frame == b.start_frame &&
+           a.end_frame == b.end_frame && a.chip == b.chip && a.channel == b.channel && a.pitch == b.pitch &&
+           a.velocity == b.velocity;
 }
 
 bool same(const AytherAudioEvent *a, const std::vector<AytherAudioEvent> &b, uint32_t n) {
     if (n != b.size())
         return false;
     for (uint32_t i = 0; i < n; ++i)
-        if (std::memcmp(&a[i], &b[i], sizeof(AytherAudioEvent)) != 0)
+        if (!same_event(a[i], b[i]))
             return false;
     return true;
 }
@@ -73,16 +88,16 @@ int main() try {
     check(session->audio_event_count() == 0 && session->audio_events() == nullptr,
           "a new session has no audio events");
 
-    const std::vector<AytherAudioEvent> first = {event(0x1111, 10, 40, 0, 2), event(0x2222, 12, 12, 1, 3),
-                                                 event(0x3333, 50, 90, 0, 5)};
+    const std::vector<AytherAudioEvent> first = {event({0x1111, 10, 40, 0, 2}), event({0x2222, 12, 12, 1, 3}),
+                                                 event({0x3333, 50, 90, 0, 5})};
     session->set_audio_events(first.data(), static_cast<uint32_t>(first.size()));
     check(same(session->audio_events(), first, session->audio_event_count()),
           "restored events read back unchanged, field by field");
 
     // The same count with other content: the derived caches used to be keyed
     // by the count alone.
-    const std::vector<AytherAudioEvent> second = {event(0x4444, 1, 2, 0, 0), event(0x5555, 3, 4, 1, 1),
-                                                  event(0x6666, 5, 6, 0, 4)};
+    const std::vector<AytherAudioEvent> second = {event({0x4444, 1, 2, 0, 0}), event({0x5555, 3, 4, 1, 1}),
+                                                  event({0x6666, 5, 6, 0, 4})};
     session->set_audio_events(second.data(), static_cast<uint32_t>(second.size()));
     check(same(session->audio_events(), second, session->audio_event_count()),
           "a second restore with the same count replaces the first");
