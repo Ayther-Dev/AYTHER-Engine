@@ -773,6 +773,14 @@ struct AytherSession::Impl {
     AytherAudioOccurrence  audio_occs[kMaxAudioOccs];
     std::vector<AytherAudioWrite> chip_writes;  // raw FM/PSG bus writes this frame (copiado del core tras el produce)
     std::vector<AytherAudioEvent> audio_events; // eventos detectados por el último analyze_audio_events
+    /// Los eventos cambiaron (análisis, restauración o borrado): los cachés
+    /// derivados se rehacen. Se keyaban por la CANTIDAD de eventos, y dos tomas
+    /// con la misma cantidad dejaban los de la anterior.
+    void audio_events_changed() {
+        seq_anchor_for_n    = SIZE_MAX;
+        synth_oneshot_for_n = SIZE_MAX;
+        synth_oneshot_cache.clear();
+    }
     // : el otro camino del audio. El chip PCM de Sega CD no tiene bus
     // expuesto — llega ya tipificado por poll_audio_events — así que no puede
     // viajar en `chip_writes`. Se desempaqueta una vez por frame y entra al

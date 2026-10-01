@@ -35,6 +35,10 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `AytherSession::set_audio_events` restores the events of an earlier
+  `analyze_audio_events` of the same take without replaying it, so a frontend
+  can cache them next to the take; `AytherSession::kAudioEventAlgo` versions
+  the detector output for such caches.
 - Sequence substitutions in a pack can now carry their segmentation step
   separately from their window, through an optional `span` key on each
   `[[event]]` of `audio_events.toml` and a matching `span_frames` field on
@@ -164,6 +168,10 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The caches derived from the audio events (sequence anchors, one-shot
+  timbres) were keyed by the event count alone, so analysing another take
+  with the same count kept the previous ones; any change of the events now
+  rebuilds them.
 - A Sequence played from a baked pack could never re-anchor on its own period.
   The pack had no way to express the segmentation step, so `audio_event_seq_view`
   left it at zero and the policy fell back to the window: a Sequence whose HD is
