@@ -4130,7 +4130,6 @@ const FrameView &AytherSession::produce_frame() {
         if (oc.screen_x == sub.screen_x && oc.screen_y == sub.screen_y &&
             oc.w_tiles == sub.w_tiles && oc.h_tiles == sub.h_tiles) {
           pr = oc.priority & 1;
-          best_slot = 0;
           break;
         }
         const int ox1 = oc.screen_x + oc.w_tiles * 8;

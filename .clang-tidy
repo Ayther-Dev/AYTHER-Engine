@@ -20,6 +20,7 @@ Checks: >
 
 WarningsAsErrors: >
   clang-analyzer-*,
+  -clang-analyzer-optin.performance.Padding,
   cppcoreguidelines-virtual-class-destructor,
   concurrency-*
 

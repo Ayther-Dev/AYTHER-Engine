@@ -2336,14 +2336,14 @@ bool AudioPlayer::decode_audio_bytes(WavEntry &entry,
     const int n_samples =
         stb_vorbis_decode_memory(raw.data(), static_cast<int>(raw.size()),
                                  &channels, &sample_rate, &decoded);
+    const std::unique_ptr<short, decltype(&std::free)> decoded_owner(
+        decoded, &std::free);
     if (n_samples < 0 || !decoded) {
       ayther::log::write(ayther::log::Severity::Error, "audio.player",
                          "stb_vorbis_decode_memory",
                          "stb_vorbis_decode_memory failed");
       return false;
     }
-    const std::unique_ptr<short, decltype(&std::free)> decoded_owner(
-        decoded, &std::free);
     entry.spec.format = SDL_AUDIO_S16;
     entry.spec.channels = channels;
     entry.spec.freq = sample_rate;

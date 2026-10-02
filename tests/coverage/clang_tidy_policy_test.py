@@ -11,6 +11,7 @@ def test_clang_tidy_blocks_defects_but_not_advisory_heuristics() -> None:
     )[0]
 
     assert "clang-analyzer-*" in warnings_as_errors
+    assert "-clang-analyzer-optin.performance.Padding" in warnings_as_errors
     assert "concurrency-*" in warnings_as_errors
     assert "cppcoreguidelines-virtual-class-destructor" in warnings_as_errors
     assert "bugprone-*" not in warnings_as_errors
