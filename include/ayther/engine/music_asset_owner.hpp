@@ -14,8 +14,8 @@ struct MusicVoiceOwner {
   MusicIdentityId identity{};
   OccurrenceId occurrence{};
   AudioBusId bus{};
-  friend constexpr bool operator==(MusicVoiceOwner, MusicVoiceOwner) noexcept =
-      default;
+  friend constexpr bool operator==(MusicVoiceOwner,
+                                   MusicVoiceOwner) noexcept = default;
 };
 
 struct MusicAssetBinding {

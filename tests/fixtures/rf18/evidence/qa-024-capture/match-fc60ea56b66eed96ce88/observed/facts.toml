@@ -1,0 +1,62 @@
+schema_version = 1
+observer_enabled = true
+trace_complete = true
+
+[[facts]]
+event_id = 1
+sequence = 0
+kind = "candidate"
+signature = 10
+best_signature = 0
+rank = -1
+
+[[facts]]
+event_id = 1
+sequence = 1
+kind = "pitch_rejected"
+signature = 10
+best_signature = 0
+rank = -1
+
+[[facts]]
+event_id = 1
+sequence = 2
+kind = "candidate"
+signature = 20
+best_signature = 0
+rank = -1
+
+[[facts]]
+event_id = 1
+sequence = 3
+kind = "winner_updated"
+signature = 20
+best_signature = 20
+rank = 1
+
+[[facts]]
+event_id = 1
+sequence = 4
+kind = "candidate"
+signature = 15
+best_signature = 20
+rank = 1
+
+[[facts]]
+event_id = 1
+sequence = 5
+kind = "winner_updated"
+signature = 15
+best_signature = 15
+rank = 1
+
+[[facts]]
+event_id = 1
+sequence = 6
+kind = "selected"
+signature = 15
+best_signature = 15
+rank = 1
+
+[audit]
+executable_sha256 = "467568e290fe75b4de06a7eb24f7839f8dbeb7616e378557d7c00c3f62466c62"

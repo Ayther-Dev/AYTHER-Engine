@@ -45,25 +45,38 @@ public:
     // Deliberately no deadline update: later evidence cannot extend P18-03.
   }
 
-  [[nodiscard]] CandidateDecision evaluate(
-      std::uint64_t music_time_ns, bool position_resolved, bool author_choice,
-      std::uint64_t evidence_observed_until_ns) noexcept {
+  [[nodiscard]] CandidateDecision
+  evaluate(std::uint64_t music_time_ns, bool position_resolved,
+           bool author_choice,
+           std::uint64_t evidence_observed_until_ns) noexcept {
     if (!active_)
       return {};
     if (evidence_observed_until_ns > music_time_ns)
-      return {CandidateDecisionStatus::pending, "future_evidence_rejected",
-              true, true, false, false};
+      return {CandidateDecisionStatus::pending,
+              "future_evidence_rejected",
+              true,
+              true,
+              false,
+              false};
     if (music_time_ns >= deadline_music_ns_) {
       active_ = false;
       timed_out_entry_ = entry_;
-      return {CandidateDecisionStatus::timed_out, "recognition_timeout", true,
-              true, false, false};
+      return {CandidateDecisionStatus::timed_out,
+              "recognition_timeout",
+              true,
+              true,
+              false,
+              false};
     }
     if (!position_resolved)
       return {CandidateDecisionStatus::pending, {}, true, true, false, false};
     active_ = false;
     if (author_choice)
-      return {CandidateDecisionStatus::author_selected, {}, false, true, true,
+      return {CandidateDecisionStatus::author_selected,
+              {},
+              false,
+              true,
+              true,
               false};
     return {CandidateDecisionStatus::recognized, {}, false, true, false, true};
   }

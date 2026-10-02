@@ -61,10 +61,10 @@ event_range(const std::vector<MusicEvent> &events, std::size_t begin,
   return {events[begin].begin, last.begin + last.duration.value_or(1)};
 }
 
-[[nodiscard]] inline bool identity_window_matches(
-    const std::vector<MusicEvent> &smaller,
-    const std::vector<MusicEvent> &larger, std::size_t offset,
-    std::uint64_t frame_tolerance) {
+[[nodiscard]] inline bool
+identity_window_matches(const std::vector<MusicEvent> &smaller,
+                        const std::vector<MusicEvent> &larger,
+                        std::size_t offset, std::uint64_t frame_tolerance) {
   if (offset + smaller.size() > larger.size() || smaller.empty())
     return false;
   const auto smaller_origin = smaller.front().begin;
@@ -86,7 +86,8 @@ find_music_patterns(const std::vector<MusicEvent> &input,
                     const PatternAnalysisOptions &options) {
   const auto events = detail::causal_ordered(input);
   std::vector<MusicPatternProposal> proposals;
-  if (options.minimum_events < 2 || options.minimum_events > options.maximum_events)
+  if (options.minimum_events < 2 ||
+      options.minimum_events > options.maximum_events)
     return proposals;
   const auto maximum = std::min(options.maximum_events, events.size());
   for (std::size_t reference_count = options.minimum_events;
@@ -97,13 +98,14 @@ find_music_patterns(const std::vector<MusicEvent> &input,
            reference_begin + reference_count <= events.size();
            ++reference_begin) {
         for (std::size_t observed_begin = reference_begin + 1;
-             observed_begin + observed_count <= events.size(); ++observed_begin) {
-          const auto reference = detail::event_window(
-              events, reference_begin, reference_count);
+             observed_begin + observed_count <= events.size();
+             ++observed_begin) {
+          const auto reference =
+              detail::event_window(events, reference_begin, reference_count);
           const auto observed =
               detail::event_window(events, observed_begin, observed_count);
-          auto score = score_music_events(reference, observed, "captured events",
-                                          options.frame_tolerance);
+          auto score = score_music_events(
+              reference, observed, "captured events", options.frame_tolerance);
           if (!score.score || *score.score < options.minimum_score)
             continue;
           proposals.push_back(
@@ -131,12 +133,13 @@ relate_music_patterns(const std::vector<NamedMusicPattern> &patterns,
   std::vector<PatternRelation> relations;
   for (const auto &smaller : patterns) {
     for (const auto &larger : patterns) {
-      if (smaller.id == larger.id || smaller.events.size() >= larger.events.size())
+      if (smaller.id == larger.id ||
+          smaller.events.size() >= larger.events.size())
         continue;
       for (std::size_t offset = 0;
            offset + smaller.events.size() <= larger.events.size(); ++offset) {
-        if (!detail::identity_window_matches(smaller.events, larger.events, offset,
-                                             frame_tolerance))
+        if (!detail::identity_window_matches(smaller.events, larger.events,
+                                             offset, frame_tolerance))
           continue;
         relations.push_back({smaller.id, larger.id,
                              offset == 0 ? PatternRelationKind::prefix

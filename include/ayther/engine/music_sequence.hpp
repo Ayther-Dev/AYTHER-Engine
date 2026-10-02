@@ -44,7 +44,8 @@ struct SampleRegion {
   std::uint64_t end{};
 
   [[nodiscard]] constexpr bool valid() const noexcept { return begin < end; }
-  friend constexpr bool operator==(SampleRegion, SampleRegion) noexcept = default;
+  friend constexpr bool operator==(SampleRegion,
+                                   SampleRegion) noexcept = default;
 };
 
 struct SequenceSegment {
@@ -96,9 +97,8 @@ struct AssetAssignment {
   std::uint64_t required_source_length{};
 
   AssetAssignment() = default;
-  AssetAssignment(AssetAssignmentId assignment_id,
-                  SequenceSegmentId segment_id, AssetId asset_id,
-                  SampleRegion source_region,
+  AssetAssignment(AssetAssignmentId assignment_id, SequenceSegmentId segment_id,
+                  AssetId asset_id, SampleRegion source_region,
                   std::uint64_t minimum_source_length = 0)
       : id(assignment_id), segment(segment_id), asset(asset_id),
         region(source_region), required_source_length(minimum_source_length) {}
@@ -149,17 +149,17 @@ template <class Range, class Id, class Projection>
 [[nodiscard]] inline bool
 valid_sequence_shape(const MusicSequenceDefinition &definition) {
   const auto segment_exists = [&](const SequenceSegmentId id) {
-    return std::ranges::any_of(definition.segments,
-                               [&](const auto &value) { return value.id == id; });
+    return std::ranges::any_of(
+        definition.segments, [&](const auto &value) { return value.id == id; });
   };
   const auto node_exists = [&](const SequenceNodeId id) {
-    return std::ranges::any_of(definition.nodes,
-                               [&](const auto &value) { return value.id == id; });
+    return std::ranges::any_of(
+        definition.nodes, [&](const auto &value) { return value.id == id; });
   };
   const auto assignment_exists = [&](const AssetAssignmentId id) {
-    return std::ranges::any_of(
-        definition.assignments,
-        [&](const auto &value) { return value.id == id; });
+    return std::ranges::any_of(definition.assignments, [&](const auto &value) {
+      return value.id == id;
+    });
   };
 
   if (!definition.identity || !definition.bus || !definition.entry_node ||
@@ -183,16 +183,19 @@ valid_sequence_shape(const MusicSequenceDefinition &definition) {
           definition.assignments, [](const auto &value) { return value.id; }))
     return false;
 
-  return std::ranges::all_of(definition.nodes, [&](const auto &node) {
-           return segment_exists(node.segment) &&
-                  assignment_exists(node.assignment);
-         }) &&
-         std::ranges::all_of(definition.edges, [&](const auto &edge) {
-           return node_exists(edge.from) && node_exists(edge.to);
-         }) &&
-         std::ranges::all_of(definition.points, [&](const auto &point) {
-           return node_exists(point.node);
-         }) &&
+  return std::ranges::all_of(definition.nodes,
+                             [&](const auto &node) {
+                               return segment_exists(node.segment) &&
+                                      assignment_exists(node.assignment);
+                             }) &&
+         std::ranges::all_of(definition.edges,
+                             [&](const auto &edge) {
+                               return node_exists(edge.from) &&
+                                      node_exists(edge.to);
+                             }) &&
+         std::ranges::all_of(
+             definition.points,
+             [&](const auto &point) { return node_exists(point.node); }) &&
          std::ranges::all_of(definition.assignments, [&](const auto &value) {
            return segment_exists(value.segment) && value.asset &&
                   value.region.valid();
@@ -218,8 +221,8 @@ public:
   [[nodiscard]] bool transition_to(const SequenceNodeId destination) {
     if (!position_.occurrence)
       return false;
-    const bool authored = std::ranges::any_of(
-        definition_->edges, [&](const auto &edge) {
+    const bool authored =
+        std::ranges::any_of(definition_->edges, [&](const auto &edge) {
           return edge.from == position_.node && edge.to == destination;
         });
     return authored && enter_node(destination);
@@ -228,9 +231,10 @@ public:
   [[nodiscard]] bool return_internal_loop() {
     if (!position_.occurrence)
       return false;
-    const bool loop_authored = std::ranges::any_of(
-        definition_->points, [&](const auto &point) {
-          return point.node == position_.node && point.role == PointRole::loop_end;
+    const bool loop_authored =
+        std::ranges::any_of(definition_->points, [&](const auto &point) {
+          return point.node == position_.node &&
+                 point.role == PointRole::loop_end;
         });
     if (!loop_authored)
       return false;
@@ -244,9 +248,10 @@ public:
 
 private:
   [[nodiscard]] bool enter_node(const SequenceNodeId node_id) {
-    const auto node = std::ranges::find_if(
-        definition_->nodes,
-        [&](const auto &value) { return value.id == node_id; });
+    const auto node =
+        std::ranges::find_if(definition_->nodes, [&](const auto &value) {
+          return value.id == node_id;
+        });
     if (node == definition_->nodes.end())
       return false;
 

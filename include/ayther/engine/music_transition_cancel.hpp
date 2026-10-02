@@ -23,18 +23,16 @@ struct MusicTransitionCancelDecision {
   bool transaction_boundary{};
 };
 
-[[nodiscard]] inline MusicTransitionCancelDecision cancel_music_transition(
-    MusicTransitionQueue &queue, std::size_t active_voices,
-    std::uint32_t sample_rate, bool paused, TransitionCancelCause cause) {
+[[nodiscard]] inline MusicTransitionCancelDecision
+cancel_music_transition(MusicTransitionQueue &queue, std::size_t active_voices,
+                        std::uint32_t sample_rate, bool paused,
+                        TransitionCancelCause cause) {
   queue.cancel();
   const bool restore = cause == TransitionCancelCause::restore_generation;
   const bool synthesize = active_voices != 0 && !paused && !restore;
-  return {active_voices,
-          synthesize ? envelope_frames(sample_rate, 5) : 0,
-          synthesize,
-          cause == TransitionCancelCause::external_replace,
-          false,
-          restore};
+  return {active_voices, synthesize ? envelope_frames(sample_rate, 5) : 0,
+          synthesize,    cause == TransitionCancelCause::external_replace,
+          false,         restore};
 }
 
 } // namespace ayther::engine

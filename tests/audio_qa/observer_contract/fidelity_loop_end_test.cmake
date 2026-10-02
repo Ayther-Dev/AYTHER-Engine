@@ -30,15 +30,15 @@ function(require_text relative)
   endforeach()
 endfunction()
 
-set(evidence "specs/001-AYTHER-bug-audio-qa/evidence")
+set(evidence "evidence")
 require_hash("${evidence}/qa-030-frozen-index-r2.json"
-             "d25f805903e5d2681ed45b3d541a5f337019abb7c25fbfd127de18268eeb3c06")
+             "0774ef15df20a28e0c07b9226adc587fec2d19f46b5f93a990765ecd2152669d")
 require_hash("${evidence}/qa-023-oracle-manifest.json"
-             "025efd3557f572dd30ee27054d259cd1a74760758cf4e82f575ee44f09f183b3")
+             "16a83ad1331d06cd6d427c9ff7f6c20ae517db776f74d916ff0280c7b0ebd3ce")
 require_hash("${evidence}/qa-026-oracle-manifest.json"
-             "bd2132a3b6e26c1afac92c72d46ecf6cf8c37d981e2e70b587baa04f093a8a32")
+             "4a9cb5e16d86efece34061f8bd4a80370ec0ac961b8eb28a51ce4721e665531a")
 require_hash("${evidence}/qa-028-oracle-manifest.json"
-             "655ed825919c5c086c772b593c6765763f0336036da1237d725a01c71570a9c7")
+             "623db2a17408a075269efe490f5d1af7f4e63cacdc61f40a61a7c345d8102e35")
 
 set(resume "${evidence}/qa-023-capture/resume_voice-c49e23985b44ae4ec40a/observed/staging.toml")
 set(loop_run "${evidence}/qa-026-capture/loop-e62656aa825a3febbe83/observed/run.toml")
@@ -49,19 +49,19 @@ set(natural_run "${evidence}/qa-028-capture/natural-603c746041b3a783c45b/observe
 set(natural_trace "${evidence}/qa-028-capture/natural-603c746041b3a783c45b/observed/trace.toml")
 
 require_hash("${resume}"
-             "b8592cbe7cd1fa59efd0a9e25cb2fdccbd61ba6310c0484385ff1d8ba9b27d7a")
+             "cba7fb801e24975b9e60edcdef1d6299c3fc40f41896ce7a2228f80e5cc66c4a")
 require_hash("${loop_run}"
-             "771d5a3a979c8a040b60f297854ad8fc548482bc710c7a379c3b073a206a5ccd")
+             "b1927f3243ed716c848a26768d3578bbef8a5f80e449a2ef3e92a383b5165571")
 require_hash("${loop_trace}"
-             "8827ed088796a2fd7f828a7595068483971857f7f5be194bf30adab5f7db5657")
+             "4e5abcd6e20f7be604a0d1f8c6a16689693bc71669470e97d85ca7c2db401b0d")
 require_hash("${window_run}"
-             "5e16450640e9e3d85b53b90d4f757f8f667cca805dff08d2f202c1105476f3df")
+             "77a74acc45f41839c9904308707e7f5a05a11739a43bb89705b7db129258035c")
 require_hash("${window_trace}"
-             "4e32917cf902a40fdada1ef9495123b3398c4accf89d76ba70b942dcfbd19b72")
+             "c50c55b26880f8c1d6fec5bc5125a19c00e60a78498170f0409192fc9d627261")
 require_hash("${natural_run}"
-             "808ce1a2465d536947bdff3020e5ae5fdda2bc8dec6f9af4c9afe122e1329fab")
+             "1870ea5419228d891ac3ce2b5736226da5f15a1241ee869d9444854b19bb2178")
 require_hash("${natural_trace}"
-             "493a9ae34c4f03e751e9e9f1a124d37e7d109c6f71970190d4403268fddea79c")
+             "3efb2bd91be3a3d85c098b9e360737feb724ea6c1da6532593e1a6fbf06a572d")
 
 require_text("${resume}" "resume_action = \"restart\""
              "resume_offset_seconds = 1.5"

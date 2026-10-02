@@ -17,13 +17,19 @@ ayther::engine::MusicSequenceDefinition valid_definition() {
   value.bus = AudioBusId{1};
   value.entry_node = SequenceNodeId{1};
   value.segments = {{SequenceSegmentId{1}, "loop"}};
-  value.nodes = {{SequenceNodeId{1}, SequenceSegmentId{1}, AssetAssignmentId{1}}};
-  value.edges = {{SequenceEdgeId{1}, SequenceNodeId{1}, SequenceNodeId{1},
-                  0, true, {{"playing", true}}}};
-  value.points = {{SequencePointId{1}, SequenceNodeId{1}, 0, PointRole::loop_begin},
-                  {SequencePointId{2}, SequenceNodeId{1}, 100, PointRole::loop_end}};
-  value.assignments = {{AssetAssignmentId{1}, SequenceSegmentId{1}, AssetId{1},
-                        {0, 100}}};
+  value.nodes = {
+      {SequenceNodeId{1}, SequenceSegmentId{1}, AssetAssignmentId{1}}};
+  value.edges = {{SequenceEdgeId{1},
+                  SequenceNodeId{1},
+                  SequenceNodeId{1},
+                  0,
+                  true,
+                  {{"playing", true}}}};
+  value.points = {
+      {SequencePointId{1}, SequenceNodeId{1}, 0, PointRole::loop_begin},
+      {SequencePointId{2}, SequenceNodeId{1}, 100, PointRole::loop_end}};
+  value.assignments = {
+      {AssetAssignmentId{1}, SequenceSegmentId{1}, AssetId{1}, {0, 100}}};
   value.assignments[0].required_source_length = 100;
   return value;
 }

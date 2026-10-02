@@ -1,0 +1,54 @@
+schema_version = 1
+source = "controlled_active_events"
+signature = 1000
+asset = "fixture.wav"
+original_sample = 200
+asset_frames = 128
+asset_sample_base = 1000
+asset_sample_step = 37
+sample_rate = 44100
+channels = 2
+audio_enabled = true
+transport_playing = true
+bypass = false
+window_duration = 0
+
+[[frames]]
+frame = 0
+active = true
+previous_active = false
+voices_started = 1
+voices_active = 1
+logical_anchor = 0
+output_begin = 0
+output_end = 16
+
+[[frames]]
+frame = 1
+active = true
+previous_active = true
+voices_started = 1
+voices_active = 1
+logical_anchor = 0
+output_begin = 16
+output_end = 32
+
+[[frames]]
+frame = 2
+active = true
+previous_active = true
+voices_started = 1
+voices_active = 1
+logical_anchor = 0
+output_begin = 32
+output_end = 48
+
+[[frames]]
+frame = 3
+active = true
+previous_active = true
+voices_started = 1
+voices_active = 1
+logical_anchor = 0
+output_begin = 48
+output_end = 64

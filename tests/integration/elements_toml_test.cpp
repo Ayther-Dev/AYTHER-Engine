@@ -647,13 +647,9 @@ int main() {
               invalid_gain.diagnostic.find("[0, 4]") != std::string::npos,
           "continuidad: ganancia fuera de rango informa valor y rango");
 
-    const auto fixture_path = std::filesystem::path(__FILE__)
-                                  .parent_path()
-                                  .parent_path()
-                                  .parent_path()
-                                  .parent_path() /
-                              "specs" / "001-AYTHER-bug-audio-qa" / "fixtures" /
-                              "audio-continuity-schema1.toml";
+    const auto fixture_path =
+        std::filesystem::path(__FILE__).parent_path().parent_path() /
+        "fixtures" / "rf18" / "fixtures" / "audio-continuity-schema1.toml";
     std::ifstream fixture_file(fixture_path, std::ios::binary);
     const std::string fixture((std::istreambuf_iterator<char>(fixture_file)),
                               std::istreambuf_iterator<char>());

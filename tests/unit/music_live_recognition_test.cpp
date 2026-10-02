@@ -15,9 +15,18 @@ int main() {
   using namespace ayther::engine;
   int failures = 0;
   constexpr std::uint64_t mib = 1024ULL * 1024ULL;
-  const LiveRecognitionEvidence approximate{
-      0.90, false, 6, true, true, false, 2'000'000'000ULL, 128,
-      32 * mib, false, AnalysisExecutionContext::audio, false};
+  const LiveRecognitionEvidence approximate{0.90,
+                                            false,
+                                            6,
+                                            true,
+                                            true,
+                                            false,
+                                            2'000'000'000ULL,
+                                            128,
+                                            32 * mib,
+                                            false,
+                                            AnalysisExecutionContext::audio,
+                                            false};
   const auto accepted = evaluate_live_recognition(approximate);
   check(accepted.status == LiveRecognitionStatus::recognized &&
             accepted.automatic && !accepted.offline_analysis_executed,
@@ -38,7 +47,8 @@ int main() {
   weak.position_resolved = false;
   check(evaluate_live_recognition(weak).status ==
             LiveRecognitionStatus::pending,
-        "approximate match requires resolved position or author choice", failures);
+        "approximate match requires resolved position or author choice",
+        failures);
   weak.author_selected = true;
   check(evaluate_live_recognition(weak).status ==
             LiveRecognitionStatus::author_selected,
@@ -52,16 +62,16 @@ int main() {
             LiveRecognitionStatus::recognized,
         "validated exact anchor does not require four matched pairs", failures);
 
-  for (auto over : {
-           LiveRecognitionEvidence{0.90, false, 6, true, true, false,
-                                   2'000'000'001ULL, 128, 32 * mib, false,
-                                   AnalysisExecutionContext::audio, false},
-           LiveRecognitionEvidence{0.90, false, 6, true, true, false,
-                                   2'000'000'000ULL, 129, 32 * mib, false,
-                                   AnalysisExecutionContext::audio, false},
-           LiveRecognitionEvidence{0.90, false, 6, true, true, false,
-                                   2'000'000'000ULL, 128, 32 * mib + 1, false,
-                                   AnalysisExecutionContext::audio, false}}) {
+  for (auto over :
+       {LiveRecognitionEvidence{0.90, false, 6, true, true, false,
+                                2'000'000'001ULL, 128, 32 * mib, false,
+                                AnalysisExecutionContext::audio, false},
+        LiveRecognitionEvidence{0.90, false, 6, true, true, false,
+                                2'000'000'000ULL, 129, 32 * mib, false,
+                                AnalysisExecutionContext::audio, false},
+        LiveRecognitionEvidence{0.90, false, 6, true, true, false,
+                                2'000'000'000ULL, 128, 32 * mib + 1, false,
+                                AnalysisExecutionContext::audio, false}}) {
     const auto limited = evaluate_live_recognition(over);
     check(limited.status == LiveRecognitionStatus::limit &&
               limited.diagnostic == "recognition_limit" &&

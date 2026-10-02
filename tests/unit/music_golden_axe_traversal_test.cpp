@@ -20,13 +20,12 @@ ayther::engine::MusicSequenceDefinition battle_fixture(std::string name) {
   sequence.entry_node = SequenceNodeId{1};
   sequence.segments = {{SequenceSegmentId{1}, "intro"},
                        {SequenceSegmentId{2}, "loop"}};
-  sequence.nodes = {{SequenceNodeId{1}, SequenceSegmentId{1},
-                     AssetAssignmentId{1}},
-                    {SequenceNodeId{2}, SequenceSegmentId{2},
-                     AssetAssignmentId{2}}};
+  sequence.nodes = {
+      {SequenceNodeId{1}, SequenceSegmentId{1}, AssetAssignmentId{1}},
+      {SequenceNodeId{2}, SequenceSegmentId{2}, AssetAssignmentId{2}}};
   sequence.edges = {{SequenceEdgeId{1}, SequenceNodeId{1}, SequenceNodeId{2}}};
-  sequence.points = {{SequencePointId{1}, SequenceNodeId{2}, 16,
-                      PointRole::loop_end}};
+  sequence.points = {
+      {SequencePointId{1}, SequenceNodeId{2}, 16, PointRole::loop_end}};
   sequence.assignments = {
       {AssetAssignmentId{1}, SequenceSegmentId{1}, AssetId{1}, {0, 16}},
       {AssetAssignmentId{2}, SequenceSegmentId{2}, AssetId{2}, {16, 48}}};
@@ -43,12 +42,10 @@ ayther::engine::MusicSequenceDefinition wilderness_fixture(std::string name) {
   sequence.segments = {{SequenceSegmentId{10}, "intro"},
                        {SequenceSegmentId{11}, "loop-1"},
                        {SequenceSegmentId{12}, "loop-2"}};
-  sequence.nodes = {{SequenceNodeId{10}, SequenceSegmentId{10},
-                     AssetAssignmentId{10}},
-                    {SequenceNodeId{11}, SequenceSegmentId{11},
-                     AssetAssignmentId{11}},
-                    {SequenceNodeId{12}, SequenceSegmentId{12},
-                     AssetAssignmentId{12}}};
+  sequence.nodes = {
+      {SequenceNodeId{10}, SequenceSegmentId{10}, AssetAssignmentId{10}},
+      {SequenceNodeId{11}, SequenceSegmentId{11}, AssetAssignmentId{11}},
+      {SequenceNodeId{12}, SequenceSegmentId{12}, AssetAssignmentId{12}}};
   sequence.edges = {
       {SequenceEdgeId{10}, SequenceNodeId{10}, SequenceNodeId{11}},
       {SequenceEdgeId{11}, SequenceNodeId{11}, SequenceNodeId{10}},
@@ -70,28 +67,29 @@ int main() {
 
   const auto battle = battle_fixture("The Battle");
   CausalMusicRecognizer battle_recognizer{battle};
-  check(battle_recognizer.observe({7, MusicSignalRole::entry_trigger, {}, false,
-                                   "shared"}) ==
+  check(battle_recognizer.observe(
+            {7, MusicSignalRole::entry_trigger, {}, false, "shared"}) ==
             MusicRecognitionAction::entered,
         "The Battle enters Intro only while inactive", failures);
-  const auto battle_occurrence = battle_recognizer.state().position().occurrence;
+  const auto battle_occurrence =
+      battle_recognizer.state().position().occurrence;
   const auto intro_appearance = battle_recognizer.state().position().appearance;
-  check(battle_recognizer.observe({7, MusicSignalRole::entry_trigger, {}, false,
-                                   "shared"}) ==
+  check(battle_recognizer.observe(
+            {7, MusicSignalRole::entry_trigger, {}, false, "shared"}) ==
                 MusicRecognitionAction::continuity_evidence &&
             battle_recognizer.state().position().appearance == intro_appearance,
         "shared title/menu signature does not rearm Intro", failures);
   check(battle_recognizer.observe(
             {8, MusicSignalRole::transition, SequenceNodeId{2}, true,
-             "declared-boundary"}) ==
-            MusicRecognitionAction::transitioned,
+             "declared-boundary"}) == MusicRecognitionAction::transitioned,
         "declared boundary advances Intro to Loop", failures);
   const auto loop_appearance = battle_recognizer.state().position().appearance;
-  check(battle_recognizer.internal_loop() &&
-            battle_recognizer.state().position().appearance == loop_appearance &&
-            battle_recognizer.state().position().iteration == 1 &&
-            battle_recognizer.state().position().occurrence == battle_occurrence,
-        "The Battle loop return preserves occurrence and appearance", failures);
+  check(
+      battle_recognizer.internal_loop() &&
+          battle_recognizer.state().position().appearance == loop_appearance &&
+          battle_recognizer.state().position().iteration == 1 &&
+          battle_recognizer.state().position().occurrence == battle_occurrence,
+      "The Battle loop return preserves occurrence and appearance", failures);
 
   const auto wilderness = wilderness_fixture("Wilderness");
   CausalMusicRecognizer wilderness_recognizer{wilderness};
@@ -103,17 +101,15 @@ int main() {
       wilderness_recognizer.state().position().occurrence;
   check(wilderness_recognizer.observe(
             {71, MusicSignalRole::transition, SequenceNodeId{11}, true,
-             "to-loop-1"}) ==
-            MusicRecognitionAction::transitioned,
+             "to-loop-1"}) == MusicRecognitionAction::transitioned,
         "Wilderness advances to Loop 1", failures);
   for (int repetition = 0; repetition < 3; ++repetition)
     check(wilderness_recognizer.internal_loop(),
           "Wilderness accepts variable authored Loop 1 repetitions", failures);
   check(wilderness_recognizer.state().position().iteration == 3,
         "Loop 1 records each internal repetition", failures);
-  check(wilderness_recognizer.observe(
-            {72, MusicSignalRole::transition, SequenceNodeId{10}, true,
-             "to-intro"}) ==
+  check(wilderness_recognizer.observe({72, MusicSignalRole::transition,
+                                       SequenceNodeId{10}, true, "to-intro"}) ==
                 MusicRecognitionAction::transitioned &&
             wilderness_recognizer.state().position().visit == 2 &&
             wilderness_recognizer.state().position().occurrence ==
@@ -130,8 +126,7 @@ int main() {
         failures);
   check(wilderness_recognizer.observe(
             {73, MusicSignalRole::transition, SequenceNodeId{12}, true,
-             "to-loop-2"}) ==
-            MusicRecognitionAction::transitioned,
+             "to-loop-2"}) == MusicRecognitionAction::transitioned,
         "authored context selects Loop 2", failures);
   check(wilderness_recognizer.internal_loop() &&
             wilderness_recognizer.state().position().iteration == 1,
@@ -144,8 +139,7 @@ int main() {
                 MusicRecognitionAction::entered &&
             renamed_recognizer.observe(
                 {8, MusicSignalRole::transition, SequenceNodeId{2}, true,
-                 "renamed-transition"}) ==
-                MusicRecognitionAction::transitioned,
+                 "renamed-transition"}) == MusicRecognitionAction::transitioned,
         "behavior is independent of sequence and signal names", failures);
 
   return failures == 0 ? 0 : 1;

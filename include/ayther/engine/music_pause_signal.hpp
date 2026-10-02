@@ -32,15 +32,20 @@ struct GameMusicPauseDecision {
 
 [[nodiscard]] inline GameMusicPauseDecision
 evaluate_game_music_pause(const GameMusicPauseEvidence &evidence) {
-  const bool trusted_source = evidence.source == PauseSignalSource::core ||
-                              evidence.source == PauseSignalSource::authored_rule;
+  const bool trusted_source =
+      evidence.source == PauseSignalSource::core ||
+      evidence.source == PauseSignalSource::authored_rule;
   const bool verified = trusted_source && !evidence.revision.empty() &&
                         evidence.positive_control && evidence.negative_control;
   if (!verified)
-    return {false, false, true, evidence.revision,
-            "game_pause_unobservable", true};
-  return {true, evidence.music_paused, !evidence.music_paused,
-          evidence.revision, {}, false};
+    return {false, false, true, evidence.revision, "game_pause_unobservable",
+            true};
+  return {true,
+          evidence.music_paused,
+          !evidence.music_paused,
+          evidence.revision,
+          {},
+          false};
 }
 
 } // namespace ayther::engine

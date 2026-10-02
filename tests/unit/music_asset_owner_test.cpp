@@ -14,14 +14,13 @@ void check(bool value, const char *message, int &failures) {
 int main() {
   using namespace ayther::engine;
   int failures = 0;
-  const AssetAssignment general{AssetAssignmentId{1}, SequenceSegmentId{1},
-                                AssetId{10}, {100, 200}};
-  const AssetAssignment individual{AssetAssignmentId{2},
-                                   SequenceSegmentId{1}, AssetId{20},
-                                   {300, 360}};
+  const AssetAssignment general{
+      AssetAssignmentId{1}, SequenceSegmentId{1}, AssetId{10}, {100, 200}};
+  const AssetAssignment individual{
+      AssetAssignmentId{2}, SequenceSegmentId{1}, AssetId{20}, {300, 360}};
   const MusicAssetBinding binding{
-      general, {{SequenceNodeId{2}, individual},
-                {SequenceNodeId{3}, std::nullopt}}};
+      general,
+      {{SequenceNodeId{2}, individual}, {SequenceNodeId{3}, std::nullopt}}};
 
   MusicAssetOwner owner;
   const MusicVoiceOwner voice{MusicIdentityId{7}, OccurrenceId{9},

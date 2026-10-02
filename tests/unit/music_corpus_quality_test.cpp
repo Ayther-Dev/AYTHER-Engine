@@ -1,5 +1,5 @@
-#include <ayther/engine/music_corpus_quality.hpp>
 #include <ayther/engine/music_analysis_limits.hpp>
+#include <ayther/engine/music_corpus_quality.hpp>
 #include <ayther/engine/music_event_scoring.hpp>
 
 #include <algorithm>
@@ -66,8 +66,8 @@ std::uint64_t pattern_seed(const std::string &pattern) {
   return result;
 }
 
-std::vector<ayther::engine::MusicEvent>
-make_pattern(const std::string &pattern, std::size_t count) {
+std::vector<ayther::engine::MusicEvent> make_pattern(const std::string &pattern,
+                                                     std::size_t count) {
   std::vector<ayther::engine::MusicEvent> result;
   result.reserve(count);
   const auto seed = pattern_seed(pattern);
@@ -94,12 +94,13 @@ int main() {
   for (const auto &row : exact_rows) {
     const auto begin = std::stoull(row.at("start_frame"));
     const auto end = std::stoull(row.at("end_frame_inclusive")) + 1;
-    exact_oracles.push_back(
-        {row.at("interval_id"), "exact", true, row.at("pattern_id"), begin, end});
-    exact_predictions.push_back(
-        {row.at("interval_id"), row.at("pattern_id"), begin, end, false, false});
+    exact_oracles.push_back({row.at("interval_id"), "exact", true,
+                             row.at("pattern_id"), begin, end});
+    exact_predictions.push_back({row.at("interval_id"), row.at("pattern_id"),
+                                 begin, end, false, false});
   }
-  const auto exact = evaluate_corpus_quality(exact_oracles, exact_predictions, 2);
+  const auto exact =
+      evaluate_corpus_quality(exact_oracles, exact_predictions, 2);
   std::printf("exact: TP=%zu FP=%zu FN=%zu precision=%.3f recall=%.3f\n",
               exact.true_positive, exact.false_positive, exact.false_negative,
               exact.precision.value_or(0.0), exact.recall.value_or(0.0));
@@ -111,8 +112,8 @@ int main() {
   std::vector<QualityOracle> positive_oracles;
   std::vector<QualityPrediction> positive_predictions;
   for (const auto &row : positive_rows) {
-    const auto count = static_cast<std::size_t>(
-        std::stoull(row.at("reference_event_count")));
+    const auto count =
+        static_cast<std::size_t>(std::stoull(row.at("reference_event_count")));
     const auto reference = make_pattern(row.at("base_pattern_id"), count);
     auto observed = reference;
     const auto omission = std::stoi(row.at("omission_count"));
@@ -120,11 +121,11 @@ int main() {
       observed.erase(observed.begin() + std::stoi(row.at("omission_index")));
     const auto insertion = std::stoi(row.at("insertion_count"));
     if (insertion != 0) {
-      const auto index = static_cast<std::size_t>(
-          std::stoi(row.at("insertion_index")));
+      const auto index =
+          static_cast<std::size_t>(std::stoi(row.at("insertion_index")));
       const auto at = std::min(index, observed.size());
-      const auto begin = at < observed.size() ? observed[at].begin :
-                                             observed.back().begin + 2;
+      const auto begin =
+          at < observed.size() ? observed[at].begin : observed.back().begin + 2;
       observed.insert(observed.begin() + static_cast<std::ptrdiff_t>(at),
                       {EventId{9'000'000}, begin, 1, pattern_seed("noise"), 9,
                        9, EventProvenance{"noise", 9, 9'000'000}});
@@ -136,7 +137,8 @@ int main() {
           static_cast<std::int64_t>(value.begin) + delta);
       value.provenance.channel += static_cast<std::uint32_t>(rotation);
     }
-    const auto score = score_music_events(reference, observed, row.at("family"), 2);
+    const auto score =
+        score_music_events(reference, observed, row.at("family"), 2);
     positive_oracles.push_back({row.at("case_id"), row.at("family"), true,
                                 row.at("expected_identity"), std::nullopt,
                                 std::nullopt});
@@ -159,10 +161,12 @@ int main() {
   check(perturbed.precision && *perturbed.precision >= 0.99 &&
             perturbed.recall && *perturbed.recall >= 0.95,
         "perturbed corpus meets global precision and recall", failures);
-  check(std::ranges::all_of(perturbed.families, [](const auto &family) {
-          return family.precision && *family.precision >= 0.99 &&
-                 family.recall && *family.recall >= 0.95;
-        }),
+  check(std::ranges::all_of(perturbed.families,
+                            [](const auto &family) {
+                              return family.precision &&
+                                     *family.precision >= 0.99 &&
+                                     family.recall && *family.recall >= 0.95;
+                            }),
         "every perturbed family meets its thresholds", failures);
 
   std::vector<QualityOracle> negative_oracles;
@@ -183,19 +187,15 @@ int main() {
         "duplicates, partials and ambiguities are published", failures);
 
   constexpr std::uint64_t mib = 1024ULL * 1024ULL;
-  const AnalysisAdmission admitted{{900'000'000'000ULL, 54'000, 1'000'000,
-                                    4'096},
-                                   AnalysisExecutionContext::worker};
+  const AnalysisAdmission admitted{
+      {900'000'000'000ULL, 54'000, 1'000'000, 4'096},
+      AnalysisExecutionContext::worker};
   check(check_analysis_admission(admitted).status ==
             AnalysisAdmissionStatus::accepted,
         "mandatory corpus case is admitted before work", failures);
-  const AnalysisWorkMetrics exhausted{256 * mib + 1,
-                                      10'000,
-                                      120'000'000'000ULL,
-                                      2'000'000'000ULL,
-                                      900'000,
-                                      1'000'000,
-                                      true};
+  const AnalysisWorkMetrics exhausted{
+      256 * mib + 1, 10'000, 120'000'000'000ULL, 2'000'000'000ULL, 900'000,
+      1'000'000,     true};
   const auto exhausted_result = evaluate_analysis_work(exhausted);
   check(exhausted_result.status == AnalysisWorkStatus::analysis_limit &&
             exhausted_result.partial && exhausted_result.acceptance_blocked &&

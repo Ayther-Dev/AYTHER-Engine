@@ -40,7 +40,8 @@ int main() {
       candidate.evaluate(3'300'000'000ULL, false, false, 3'300'000'000ULL);
   check(ambiguous.status == CandidateDecisionStatus::pending &&
             ambiguous.keep_original && ambiguous.keep_active_traversal,
-        "ambiguous candidate leaves original and traversal unchanged", failures);
+        "ambiguous candidate leaves original and traversal unchanged",
+        failures);
   const auto authored =
       candidate.evaluate(3'400'000'000ULL, true, true, 3'400'000'000ULL);
   check(authored.status == CandidateDecisionStatus::author_selected &&

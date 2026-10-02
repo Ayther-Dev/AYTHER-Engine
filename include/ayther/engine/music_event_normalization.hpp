@@ -88,10 +88,9 @@ normalize_music_events(const std::vector<MusicEvent> &events,
     const auto event_end = event.duration
                                ? std::optional{event.begin + *event.duration}
                                : std::nullopt;
-    const bool intersects = event_end ? event.begin < range.end &&
-                                           *event_end > range.begin
-                                      : event.begin >= range.begin &&
-                                            event.begin < range.end;
+    const bool intersects =
+        event_end ? event.begin < range.end && *event_end > range.begin
+                  : event.begin >= range.begin && event.begin < range.end;
     if (!intersects)
       continue;
     result.push_back({event, event.begin < range.begin,
@@ -99,16 +98,21 @@ normalize_music_events(const std::vector<MusicEvent> &events,
   }
   std::ranges::sort(result, {}, [](const NormalizedMusicEvent &value) {
     const auto &event = value.event;
-    return std::tuple{event.begin, event.provenance.causal_order,
-                      event.signature.value_or(0), event.timbre.value_or(0),
-                      event.pitch.value_or(0), event.provenance.source,
-                      event.provenance.source_ordinal, event.id.value};
+    return std::tuple{event.begin,
+                      event.provenance.causal_order,
+                      event.signature.value_or(0),
+                      event.timbre.value_or(0),
+                      event.pitch.value_or(0),
+                      event.provenance.source,
+                      event.provenance.source_ordinal,
+                      event.id.value};
   });
   for (std::size_t index = 0; index < result.size(); ++index) {
     const bool same_previous =
         index > 0 && result[index - 1].event.begin == result[index].event.begin;
-    const bool same_next = index + 1 < result.size() &&
-                           result[index + 1].event.begin == result[index].event.begin;
+    const bool same_next =
+        index + 1 < result.size() &&
+        result[index + 1].event.begin == result[index].event.begin;
     result[index].simultaneous = same_previous || same_next;
   }
   return result;

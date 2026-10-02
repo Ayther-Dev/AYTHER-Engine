@@ -29,9 +29,9 @@ int main() {
                        ActiveAudioSignature{0x999ULL, 1U << 5U}}) ==
             SequencePresence::member_active,
         "Wilderness member keeps its HD sequence alive", failures);
-  check(ayther::sequence_presence(
-            wilderness, members, music_channels,
-            std::array{ActiveAudioSignature{0x47414d454f564552ULL, 1U << 1U}}) ==
+  check(ayther::sequence_presence(wilderness, members, music_channels,
+                                  std::array{ActiveAudioSignature{
+                                      0x47414d454f564552ULL, 1U << 1U}}) ==
             SequencePresence::replacement_active,
         "Game Over music on an owned channel replaces Wilderness", failures);
   check(ayther::sequence_presence(
@@ -39,17 +39,18 @@ int main() {
             std::array{ActiveAudioSignature{0x53574f5244ULL, 1U << 5U}}) ==
             SequencePresence::no_relevant_activity,
         "an unrelated sword effect does not end Wilderness", failures);
-  check(ayther::sequence_presence(
-            wilderness, members, music_channels,
-            std::array{ActiveAudioSignature{0x4d454e55534658ULL,
-                                            1U << 1U, false}}) ==
+  check(ayther::sequence_presence(wilderness, members, music_channels,
+                                  std::array{ActiveAudioSignature{
+                                      0x4d454e55534658ULL, 1U << 1U, false}}) ==
             SequencePresence::no_relevant_activity,
-        "a known title/menu effect on the music channel does not restart The Battle",
+        "a known title/menu effect on the music channel does not restart The "
+        "Battle",
         failures);
   check(ayther::sequence_presence(wilderness, members, music_channels,
                                   std::array<ActiveAudioSignature, 0>{}) ==
             SequencePresence::no_relevant_activity,
-        "an empty detector frame is not treated as a terminal signal", failures);
+        "an empty detector frame is not treated as a terminal signal",
+        failures);
 
   return failures == 0 ? 0 : 1;
 }

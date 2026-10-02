@@ -30,18 +30,18 @@ function(require_text relative)
   endforeach()
 endfunction()
 
-set(evidence "specs/001-AYTHER-bug-audio-qa/evidence")
+set(evidence "evidence")
 set(run "${evidence}/qa-029-capture-r2/simultaneous-ebc2d499349e2dcc0a39/observed/run.toml")
 set(trace "${evidence}/qa-029-capture-r2/simultaneous-ebc2d499349e2dcc0a39/observed/trace.toml")
 set(pcm "${evidence}/qa-029-capture-r2/simultaneous-ebc2d499349e2dcc0a39/observed/output.s16le")
 require_hash("${evidence}/qa-030-frozen-index-r2.json"
-             "d25f805903e5d2681ed45b3d541a5f337019abb7c25fbfd127de18268eeb3c06")
+             "0774ef15df20a28e0c07b9226adc587fec2d19f46b5f93a990765ecd2152669d")
 require_hash("${evidence}/qa-029-oracle-manifest-r2.json"
-             "6cf9d3198a7883ffa15415e8acdf5a8b409f2f3017d072f05dd880515771ca1f")
+             "84859157ea035eb3be9bac108142d556edc7dacb69b2109fc267993097820141")
 require_hash("${run}"
-             "db87ff79eced146b1aa10e9c204588b3e9224c17c45c3231a196db2a2e2a4bfa")
+             "6224f8b7876b8a064b2db0747b12654eac8ca6287fbf016216546fe89b589cc1")
 require_hash("${trace}"
-             "6fd873532b37d535daaec12cfae8c1a67b512093ea8d42ff3a1746a4409b0dbe")
+             "d3eb31b771aea707cdf8bd85976b4c28d548a24f27dda87028297b17d01d2f08")
 require_hash("${pcm}"
              "12a7b6b02eaebfb9c14136ee975d025439b38ce55e7b225f614d04b451b10b59")
 require_text("${run}" "voices_started = 2" "voices_final = 0"

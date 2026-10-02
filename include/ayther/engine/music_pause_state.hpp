@@ -32,9 +32,8 @@ public:
   }
 
   void advance_effect(std::uint64_t frames, EffectPausePolicy policy) noexcept {
-    if (host_pause_ ||
-        (game_music_pause_ &&
-         policy == EffectPausePolicy::follow_game_music_pause))
+    if (host_pause_ || (game_music_pause_ &&
+                        policy == EffectPausePolicy::follow_game_music_pause))
       return;
     effect_cursor_ += frames;
   }

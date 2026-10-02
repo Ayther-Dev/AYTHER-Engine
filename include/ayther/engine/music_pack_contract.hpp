@@ -34,8 +34,9 @@ struct MusicPackContract {
   std::vector<MusicPackAssignment> assignments;
 };
 
-[[nodiscard]] inline MusicPackContract read_music_pack_contract(
-    std::string_view bytes, const std::vector<std::string> &capabilities) {
+[[nodiscard]] inline MusicPackContract
+read_music_pack_contract(std::string_view bytes,
+                         const std::vector<std::string> &capabilities) {
   MusicPackContract parsed;
   std::istringstream input{std::string{bytes}};
   std::string line;
@@ -76,27 +77,24 @@ struct MusicPackContract {
       std::string region_word, assignment_word;
       malformed = !(fields >> asset >> region_word >> begin >> end >>
                     assignment_word >> assignment) ||
-                  region_word != "region" ||
-                  assignment_word != "assignment" || begin >= end ||
-                  asset == 0 || assignment == 0;
+                  region_word != "region" || assignment_word != "assignment" ||
+                  begin >= end || asset == 0 || assignment == 0;
       if (!malformed)
-        parsed.assignments.push_back({AssetAssignmentId{assignment},
-                                      AssetId{asset}, {begin, end}});
+        parsed.assignments.push_back(
+            {AssetAssignmentId{assignment}, AssetId{asset}, {begin, end}});
     } else if (kind == "node") {
       std::uint64_t node{}, segment{}, assignment{};
       std::string segment_word, assignment_word;
       malformed = !(fields >> node >> segment_word >> segment >>
                     assignment_word >> assignment) ||
-                  segment_word != "segment" ||
-                  assignment_word != "assignment";
+                  segment_word != "segment" || assignment_word != "assignment";
     } else if (kind == "accepted") {
       std::string decision;
       malformed = !(fields >> decision);
       accepted_behavior = !malformed;
     } else if (kind == "name" || kind == "bus" || kind == "entry" ||
-               kind == "point" || kind == "edge" ||
-               kind == "edge-condition" || kind == "role" ||
-               kind == "condition" || kind == "link") {
+               kind == "point" || kind == "edge" || kind == "edge-condition" ||
+               kind == "role" || kind == "condition" || kind == "link") {
       std::string value;
       malformed = !(fields >> value);
     } else {

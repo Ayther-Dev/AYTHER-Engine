@@ -16,18 +16,18 @@ int main() {
   int failures = 0;
   constexpr std::uint64_t mib = 1024ULL * 1024ULL;
 
-  const AnalysisAdmission maximum{{900'000'000'000ULL, 54'000, 1'000'000,
-                                   4'096},
-                                  AnalysisExecutionContext::worker};
+  const AnalysisAdmission maximum{
+      {900'000'000'000ULL, 54'000, 1'000'000, 4'096},
+      AnalysisExecutionContext::worker};
   check(check_analysis_admission(maximum).status ==
             AnalysisAdmissionStatus::accepted,
         "simultaneous exact P18-01 limits are accepted", failures);
 
-  for (const auto over : {
-           AnalysisInputSize{900'000'000'001ULL, 54'000, 1'000'000, 4'096},
-           AnalysisInputSize{900'000'000'000ULL, 54'001, 1'000'000, 4'096},
-           AnalysisInputSize{900'000'000'000ULL, 54'000, 1'000'001, 4'096},
-           AnalysisInputSize{900'000'000'000ULL, 54'000, 1'000'000, 4'097}}) {
+  for (const auto over :
+       {AnalysisInputSize{900'000'000'001ULL, 54'000, 1'000'000, 4'096},
+        AnalysisInputSize{900'000'000'000ULL, 54'001, 1'000'000, 4'096},
+        AnalysisInputSize{900'000'000'000ULL, 54'000, 1'000'001, 4'096},
+        AnalysisInputSize{900'000'000'000ULL, 54'000, 1'000'000, 4'097}}) {
     const auto result = check_analysis_admission(
         AnalysisAdmission{over, AnalysisExecutionContext::worker});
     check(result.status == AnalysisAdmissionStatus::input_limit &&
@@ -37,7 +37,8 @@ int main() {
   }
   check(check_analysis_admission(
             AnalysisAdmission{maximum.input, AnalysisExecutionContext::audio})
-            .status == AnalysisAdmissionStatus::wrong_execution_context &&
+                    .status ==
+                AnalysisAdmissionStatus::wrong_execution_context &&
             check_analysis_admission(
                 AnalysisAdmission{maximum.input, AnalysisExecutionContext::ui})
                     .status == AnalysisAdmissionStatus::wrong_execution_context,
@@ -51,20 +52,21 @@ int main() {
   check(gate.try_acquire(ProjectId{7}).has_value(),
         "project becomes available after release", failures);
 
-  const AnalysisWorkMetrics exact{256 * mib, 10'000, 120'000'000'000ULL,
-                                  2'000'000'000ULL, 10'000, 1'000'000, true};
+  const AnalysisWorkMetrics exact{
+      256 * mib, 10'000, 120'000'000'000ULL, 2'000'000'000ULL, 10'000,
+      1'000'000, true};
   check(evaluate_analysis_work(exact).status == AnalysisWorkStatus::complete,
         "exact P18-02 work and cancellation limits pass", failures);
 
-  for (const auto over : {
-           AnalysisWorkMetrics{256 * mib + 1, 10'000, 120'000'000'000ULL,
-                               2'000'000'000ULL, 9'000, 1'000'000, false},
-           AnalysisWorkMetrics{256 * mib, 10'001, 120'000'000'000ULL,
-                               2'000'000'000ULL, 9'000, 1'000'000, false},
-           AnalysisWorkMetrics{256 * mib, 10'000, 120'000'000'001ULL,
-                               2'000'000'000ULL, 9'000, 1'000'000, false},
-           AnalysisWorkMetrics{256 * mib, 10'000, 120'000'000'000ULL,
-                               2'000'000'001ULL, 9'000, 1'000'000, false}}) {
+  for (const auto over :
+       {AnalysisWorkMetrics{256 * mib + 1, 10'000, 120'000'000'000ULL,
+                            2'000'000'000ULL, 9'000, 1'000'000, false},
+        AnalysisWorkMetrics{256 * mib, 10'001, 120'000'000'000ULL,
+                            2'000'000'000ULL, 9'000, 1'000'000, false},
+        AnalysisWorkMetrics{256 * mib, 10'000, 120'000'000'001ULL,
+                            2'000'000'000ULL, 9'000, 1'000'000, false},
+        AnalysisWorkMetrics{256 * mib, 10'000, 120'000'000'000ULL,
+                            2'000'000'001ULL, 9'000, 1'000'000, false}}) {
     const auto result = evaluate_analysis_work(over);
     check(result.status == AnalysisWorkStatus::analysis_limit &&
               result.partial && result.covered_events == 9'000 &&

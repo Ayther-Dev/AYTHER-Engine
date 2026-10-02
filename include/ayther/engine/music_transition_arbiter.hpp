@@ -48,7 +48,7 @@ enum class MusicBoundary : std::uint8_t {
 };
 
 [[nodiscard]] constexpr bool boundary_precedes(MusicBoundary left,
-                                                MusicBoundary right) noexcept {
+                                               MusicBoundary right) noexcept {
   return static_cast<std::uint8_t>(left) < static_cast<std::uint8_t>(right);
 }
 
@@ -64,26 +64,31 @@ public:
     if (eligible.empty())
       return {requests.empty() ? TransitionChoiceStatus::none
                                : TransitionChoiceStatus::already_consumed,
-              {}, OutputAuthority::game_pattern, {}};
-    const auto highest = (*std::ranges::max_element(
-                              eligible, {}, [](const auto *request) {
-                                return request->priority;
-                              }))
-                             ->priority;
+              {},
+              OutputAuthority::game_pattern,
+              {}};
+    const auto highest =
+        (*std::ranges::max_element(eligible, {}, [](const auto *request) {
+          return request->priority;
+        }))->priority;
     const MusicTransitionRequest *winner = nullptr;
     for (const auto *request : eligible) {
       if (request->priority != highest)
         continue;
       if (winner && winner->destination != request->destination)
-        return {TransitionChoiceStatus::conflict, {},
-                OutputAuthority::game_pattern, "transition_conflict"};
+        return {TransitionChoiceStatus::conflict,
+                {},
+                OutputAuthority::game_pattern,
+                "transition_conflict"};
       winner = request;
     }
     if (!winner)
       return {};
     consumed_events_.push_back(winner->event_id);
-    return {TransitionChoiceStatus::selected, winner->destination,
-            winner->authority, {}};
+    return {TransitionChoiceStatus::selected,
+            winner->destination,
+            winner->authority,
+            {}};
   }
 
   void set_pending(MusicTransitionRequest request) {
@@ -99,7 +104,8 @@ public:
       pending_.reset();
   }
   [[nodiscard]] MusicTransitionChoice source_exhausted() const {
-    return {TransitionChoiceStatus::delegate_to_mix, {},
+    return {TransitionChoiceStatus::delegate_to_mix,
+            {},
             OutputAuthority::hd_region,
             "source_exhausted_before_transition"};
   }

@@ -1,0 +1,812 @@
+schema_version = 1
+case = "resume_voice"
+observer_enabled = true
+staging_aligned = true
+input_frames = 3168
+output_frames = 3168
+main_timeline = 96
+resume_action = "restart"
+resume_offset_seconds = 1.5
+resume_reason = "resume_at_emulated_offset"
+resume_voice_count = 1
+
+[[submissions]]
+input_begin = 0
+frames = 3072
+states_before = 6
+
+[[submissions]]
+input_begin = 3072
+frames = 96
+states_before = 8
+
+[[states]]
+kind = "frame"
+frame = 0
+mark = 0
+timeline = 0
+frames = 0
+pcm = []
+
+[[states]]
+kind = "batch"
+frame = 0
+mark = 0
+timeline = 0
+frames = 32
+pcm = [1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071]
+[[states.batches]]
+hash = "11"
+begin = 0
+frames = 32
+
+[[states]]
+kind = "batch"
+frame = 0
+mark = 0
+timeline = 0
+frames = 48
+pcm = [1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615]
+[[states.batches]]
+hash = "11"
+begin = 0
+frames = 32
+[[states.batches]]
+hash = "12"
+begin = 32
+frames = 16
+
+[[states]]
+kind = "frame"
+frame = 1
+mark = 48
+timeline = 0
+frames = 48
+pcm = [1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615]
+[[states.batches]]
+hash = "11"
+begin = 0
+frames = 32
+[[states.batches]]
+hash = "12"
+begin = 32
+frames = 16
+
+[[states]]
+kind = "batch"
+frame = 1
+mark = 48
+timeline = 0
+frames = 96
+pcm = [1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615, 1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615]
+[[states.batches]]
+hash = "11"
+begin = 0
+frames = 32
+[[states.batches]]
+hash = "12"
+begin = 32
+frames = 16
+[[states.batches]]
+hash = "22"
+begin = 48
+frames = 48
+
+[[states]]
+kind = "flush_begin"
+frame = 1
+mark = 48
+timeline = 0
+frames = 96
+pcm = [1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615, 1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615]
+[[states.batches]]
+hash = "11"
+begin = 0
+frames = 32
+[[states.batches]]
+hash = "12"
+begin = 32
+frames = 16
+[[states.batches]]
+hash = "22"
+begin = 48
+frames = 48
+
+[[states]]
+kind = "pre_mix"
+frame = 1
+mark = 48
+timeline = 0
+frames = 96
+pcm = [1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615, 1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615]
+[[states.batches]]
+hash = "11"
+begin = 0
+frames = 32
+[[states.batches]]
+hash = "12"
+begin = 32
+frames = 16
+[[states.batches]]
+hash = "22"
+begin = 48
+frames = 48
+
+[[states]]
+kind = "post_mix"
+frame = 1
+mark = 48
+timeline = 0
+frames = 96
+pcm = [1000, 1017, 1034, 1051, 1068, 1085, 1102, 1119, 1136, 1153, 1170, 1187, 1204, 1221, 1238, 1255, 1272, 1289, 1306, 1323, 1340, 1357, 1374, 1391, 1408, 1425, 1442, 1459, 1476, 1493, 1510, 1527, 1544, 1561, 1578, 1595, 1612, 1629, 1646, 1663, 1680, 1697, 1714, 1731, 1748, 1765, 1782, 1799, 1816, 1833, 1850, 1867, 1884, 1901, 1918, 1935, 1952, 1969, 1986, 2003, 2020, 2037, 2054, 2071, 2088, 2105, 2122, 2139, 2156, 2173, 2190, 2207, 2224, 2241, 2258, 2275, 2292, 2309, 2326, 2343, 2360, 2377, 2394, 2411, 2428, 2445, 2462, 2479, 2496, 2513, 2530, 2547, 2564, 2581, 2598, 2615, 180, 1734, 216, 1767, 252, 1801, 288, 1834, 324, 1868, 360, 1901, 396, 1935, 432, 1968, 468, 2002, 504, 2035, 540, 2069, 576, 2102, 612, 2136, 648, 2169, 684, 2203, 720, 2236, 756, 2270, 792, 2303, 828, 2337, 864, 2370, 900, 2404, 936, 2437, 972, 2471, 1008, 2504, 1044, 2538, 1080, 2571, 1116, 2605, 1152, 2638, 1188, 2672, 1224, 2705, 1260, 2739, 1296, 2772, 1332, 2806, 1368, 2839, 1404, 2873, 1440, 2906, 1476, 2940, 1512, 2973, 1548, 3007, 1584, 3040, 1620, 3074, 1656, 3107, 1692, 3141, 1728, 3174, 1764, 3208, 1800, 3241, 1836, 3275, 1872, 3308]
+[[states.batches]]
+hash = "11"
+begin = 0
+frames = 32
+[[states.batches]]
+hash = "12"
+begin = 32
+frames = 16
+[[states.batches]]
+hash = "22"
+begin = 48
+frames = 48
+
+[[spans]]
+input_begin = 0
+output_begin = 0
+input_frames = 512
+output_frames = 512
+phase_before_q32 = 0
+phase_after_q32 = 0
+rate_q32 = 0
+support_left = 0
+support_right = 0
+
+[[spans]]
+input_begin = 512
+output_begin = 512
+input_frames = 512
+output_frames = 512
+phase_before_q32 = 0
+phase_after_q32 = 0
+rate_q32 = 0
+support_left = 0
+support_right = 0
+
+[[spans]]
+input_begin = 1024
+output_begin = 1024
+input_frames = 512
+output_frames = 512
+phase_before_q32 = 0
+phase_after_q32 = 0
+rate_q32 = 0
+support_left = 0
+support_right = 0
+
+[[spans]]
+input_begin = 1536
+output_begin = 1536
+input_frames = 512
+output_frames = 512
+phase_before_q32 = 0
+phase_after_q32 = 0
+rate_q32 = 0
+support_left = 0
+support_right = 0
+
+[[spans]]
+input_begin = 2048
+output_begin = 2048
+input_frames = 512
+output_frames = 512
+phase_before_q32 = 0
+phase_after_q32 = 0
+rate_q32 = 0
+support_left = 0
+support_right = 0
+
+[[spans]]
+input_begin = 2560
+output_begin = 2560
+input_frames = 512
+output_frames = 512
+phase_before_q32 = 0
+phase_after_q32 = 0
+rate_q32 = 0
+support_left = 0
+support_right = 0
+
+[[spans]]
+input_begin = 3072
+output_begin = 3072
+input_frames = 96
+output_frames = 96
+phase_before_q32 = 0
+phase_after_q32 = 0
+rate_q32 = 0
+support_left = 0
+support_right = 0
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 48
+source_frame = 614
+next_source_frame = 615
+gain = 0.25
+input_frame = 3120
+output_frame = 3120
+before = [1000, 1017]
+after = [180, 1734]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 49
+source_frame = 615
+next_source_frame = 616
+gain = 0.25
+input_frame = 3121
+output_frame = 3121
+before = [1034, 1051]
+after = [216, 1767]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 50
+source_frame = 616
+next_source_frame = 617
+gain = 0.25
+input_frame = 3122
+output_frame = 3122
+before = [1068, 1085]
+after = [252, 1801]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 51
+source_frame = 617
+next_source_frame = 618
+gain = 0.25
+input_frame = 3123
+output_frame = 3123
+before = [1102, 1119]
+after = [288, 1834]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 52
+source_frame = 618
+next_source_frame = 619
+gain = 0.25
+input_frame = 3124
+output_frame = 3124
+before = [1136, 1153]
+after = [324, 1868]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 53
+source_frame = 619
+next_source_frame = 620
+gain = 0.25
+input_frame = 3125
+output_frame = 3125
+before = [1170, 1187]
+after = [360, 1901]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 54
+source_frame = 620
+next_source_frame = 621
+gain = 0.25
+input_frame = 3126
+output_frame = 3126
+before = [1204, 1221]
+after = [396, 1935]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 55
+source_frame = 621
+next_source_frame = 622
+gain = 0.25
+input_frame = 3127
+output_frame = 3127
+before = [1238, 1255]
+after = [432, 1968]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 56
+source_frame = 622
+next_source_frame = 623
+gain = 0.25
+input_frame = 3128
+output_frame = 3128
+before = [1272, 1289]
+after = [468, 2002]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 57
+source_frame = 623
+next_source_frame = 624
+gain = 0.25
+input_frame = 3129
+output_frame = 3129
+before = [1306, 1323]
+after = [504, 2035]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 58
+source_frame = 624
+next_source_frame = 625
+gain = 0.25
+input_frame = 3130
+output_frame = 3130
+before = [1340, 1357]
+after = [540, 2069]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 59
+source_frame = 625
+next_source_frame = 626
+gain = 0.25
+input_frame = 3131
+output_frame = 3131
+before = [1374, 1391]
+after = [576, 2102]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 60
+source_frame = 626
+next_source_frame = 627
+gain = 0.25
+input_frame = 3132
+output_frame = 3132
+before = [1408, 1425]
+after = [612, 2136]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 61
+source_frame = 627
+next_source_frame = 628
+gain = 0.25
+input_frame = 3133
+output_frame = 3133
+before = [1442, 1459]
+after = [648, 2169]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 62
+source_frame = 628
+next_source_frame = 629
+gain = 0.25
+input_frame = 3134
+output_frame = 3134
+before = [1476, 1493]
+after = [684, 2203]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 63
+source_frame = 629
+next_source_frame = 630
+gain = 0.25
+input_frame = 3135
+output_frame = 3135
+before = [1510, 1527]
+after = [720, 2236]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 64
+source_frame = 630
+next_source_frame = 631
+gain = 0.25
+input_frame = 3136
+output_frame = 3136
+before = [1544, 1561]
+after = [756, 2270]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 65
+source_frame = 631
+next_source_frame = 632
+gain = 0.25
+input_frame = 3137
+output_frame = 3137
+before = [1578, 1595]
+after = [792, 2303]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 66
+source_frame = 632
+next_source_frame = 633
+gain = 0.25
+input_frame = 3138
+output_frame = 3138
+before = [1612, 1629]
+after = [828, 2337]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 67
+source_frame = 633
+next_source_frame = 634
+gain = 0.25
+input_frame = 3139
+output_frame = 3139
+before = [1646, 1663]
+after = [864, 2370]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 68
+source_frame = 634
+next_source_frame = 635
+gain = 0.25
+input_frame = 3140
+output_frame = 3140
+before = [1680, 1697]
+after = [900, 2404]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 69
+source_frame = 635
+next_source_frame = 636
+gain = 0.25
+input_frame = 3141
+output_frame = 3141
+before = [1714, 1731]
+after = [936, 2437]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 70
+source_frame = 636
+next_source_frame = 637
+gain = 0.25
+input_frame = 3142
+output_frame = 3142
+before = [1748, 1765]
+after = [972, 2471]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 71
+source_frame = 637
+next_source_frame = 638
+gain = 0.25
+input_frame = 3143
+output_frame = 3143
+before = [1782, 1799]
+after = [1008, 2504]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 72
+source_frame = 638
+next_source_frame = 639
+gain = 0.25
+input_frame = 3144
+output_frame = 3144
+before = [1816, 1833]
+after = [1044, 2538]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 73
+source_frame = 639
+next_source_frame = 640
+gain = 0.25
+input_frame = 3145
+output_frame = 3145
+before = [1850, 1867]
+after = [1080, 2571]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 74
+source_frame = 640
+next_source_frame = 641
+gain = 0.25
+input_frame = 3146
+output_frame = 3146
+before = [1884, 1901]
+after = [1116, 2605]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 75
+source_frame = 641
+next_source_frame = 642
+gain = 0.25
+input_frame = 3147
+output_frame = 3147
+before = [1918, 1935]
+after = [1152, 2638]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 76
+source_frame = 642
+next_source_frame = 643
+gain = 0.25
+input_frame = 3148
+output_frame = 3148
+before = [1952, 1969]
+after = [1188, 2672]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 77
+source_frame = 643
+next_source_frame = 644
+gain = 0.25
+input_frame = 3149
+output_frame = 3149
+before = [1986, 2003]
+after = [1224, 2705]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 78
+source_frame = 644
+next_source_frame = 645
+gain = 0.25
+input_frame = 3150
+output_frame = 3150
+before = [2020, 2037]
+after = [1260, 2739]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 79
+source_frame = 645
+next_source_frame = 646
+gain = 0.25
+input_frame = 3151
+output_frame = 3151
+before = [2054, 2071]
+after = [1296, 2772]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 80
+source_frame = 646
+next_source_frame = 647
+gain = 0.25
+input_frame = 3152
+output_frame = 3152
+before = [2088, 2105]
+after = [1332, 2806]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 81
+source_frame = 647
+next_source_frame = 648
+gain = 0.25
+input_frame = 3153
+output_frame = 3153
+before = [2122, 2139]
+after = [1368, 2839]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 82
+source_frame = 648
+next_source_frame = 649
+gain = 0.25
+input_frame = 3154
+output_frame = 3154
+before = [2156, 2173]
+after = [1404, 2873]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 83
+source_frame = 649
+next_source_frame = 650
+gain = 0.25
+input_frame = 3155
+output_frame = 3155
+before = [2190, 2207]
+after = [1440, 2906]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 84
+source_frame = 650
+next_source_frame = 651
+gain = 0.25
+input_frame = 3156
+output_frame = 3156
+before = [2224, 2241]
+after = [1476, 2940]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 85
+source_frame = 651
+next_source_frame = 652
+gain = 0.25
+input_frame = 3157
+output_frame = 3157
+before = [2258, 2275]
+after = [1512, 2973]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 86
+source_frame = 652
+next_source_frame = 653
+gain = 0.25
+input_frame = 3158
+output_frame = 3158
+before = [2292, 2309]
+after = [1548, 3007]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 87
+source_frame = 653
+next_source_frame = 654
+gain = 0.25
+input_frame = 3159
+output_frame = 3159
+before = [2326, 2343]
+after = [1584, 3040]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 88
+source_frame = 654
+next_source_frame = 655
+gain = 0.25
+input_frame = 3160
+output_frame = 3160
+before = [2360, 2377]
+after = [1620, 3074]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 89
+source_frame = 655
+next_source_frame = 656
+gain = 0.25
+input_frame = 3161
+output_frame = 3161
+before = [2394, 2411]
+after = [1656, 3107]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 90
+source_frame = 656
+next_source_frame = 657
+gain = 0.25
+input_frame = 3162
+output_frame = 3162
+before = [2428, 2445]
+after = [1692, 3141]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 91
+source_frame = 657
+next_source_frame = 658
+gain = 0.25
+input_frame = 3163
+output_frame = 3163
+before = [2462, 2479]
+after = [1728, 3174]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 92
+source_frame = 658
+next_source_frame = 659
+gain = 0.25
+input_frame = 3164
+output_frame = 3164
+before = [2496, 2513]
+after = [1764, 3208]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 93
+source_frame = 659
+next_source_frame = 660
+gain = 0.25
+input_frame = 3165
+output_frame = 3165
+before = [2530, 2547]
+after = [1800, 3241]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 94
+source_frame = 660
+next_source_frame = 661
+gain = 0.25
+input_frame = 3166
+output_frame = 3166
+before = [2564, 2581]
+after = [1836, 3275]
+
+[[voice_samples]]
+key = 901
+frame = 1
+timeline = 95
+source_frame = 661
+next_source_frame = 662
+gain = 0.25
+input_frame = 3167
+output_frame = 3167
+before = [2598, 2615]
+after = [1872, 3308]
+
+[audit]
+executable_sha256 = "e7ccc60b90e2cb52a45e510a7db59832bd08ed5a4328675502cc5edd9804a48d"
+sdl_sha256 = "cca3a8395f34f6d94dff6c5aca5941a1461073063cfd06c0d87d1cab2f8557b5"
+input_sha256 = "9bd3957481848d5a846d66e7f993751e27ef3e1cb6fa6cac5a9d7502a996c7af"
+output_sha256 = "2ec6de04a8e7a12c22fe921985634b90182658d0a85094a1e4cd86adbb470cf6"

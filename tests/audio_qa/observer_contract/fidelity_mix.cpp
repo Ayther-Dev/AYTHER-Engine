@@ -78,8 +78,8 @@ bool matches_participant(const HdMixer::PositionSpan &span,
 }
 
 constexpr std::array<std::int16_t, 16> expected_pcm{
-    850, 925, 1000, 1075, 1150, 1225, 1300, 1375,
-    1000, 1050, 850, 887, 650, 675, 400, 412};
+    850,  925,  1000, 1075, 1150, 1225, 1300, 1375,
+    1000, 1050, 850,  887,  650,  675,  400,  412};
 
 } // namespace
 

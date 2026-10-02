@@ -34,8 +34,7 @@ int main() {
   pause.return_loop();
   check(!pause.paused() && pause.music_cursor() == 150 &&
             pause.envelope_cursor() == 150 &&
-            pause.candidate_music_time() == 150 &&
-            pause.loop_iterations() == 1,
+            pause.candidate_music_time() == 150 && pause.loop_iterations() == 1,
         "music resumes only after both independent causes clear", failures);
 
   pause.set_game_music_pause(true);
@@ -44,8 +43,8 @@ int main() {
         "menu effect can retain authored continue policy", failures);
   pause.set_host_pause(true);
   pause.advance_effect(25, EffectPausePolicy::continue_during_game_pause);
-  check(pause.effect_cursor() == 25,
-        "host pause still freezes effect output", failures);
+  check(pause.effect_cursor() == 25, "host pause still freezes effect output",
+        failures);
 
   MusicTransitionQueue queue;
   queue.begin_link();

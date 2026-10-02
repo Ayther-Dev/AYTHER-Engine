@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-#ifndef AYTHER_RF18_EVIDENCE_DIR
-#error AYTHER_RF18_EVIDENCE_DIR is required
+#ifndef AYTHER_RF18_OUTPUT_DIR
+#error AYTHER_RF18_OUTPUT_DIR is required
 #endif
 
 namespace {
@@ -29,10 +29,10 @@ void u16(std::ofstream &out, std::uint16_t value) {
 }
 
 void u32(std::ofstream &out, std::uint32_t value) {
-  const std::array<char, 4> bytes{
-      static_cast<char>(value & 0xff), static_cast<char>((value >> 8) & 0xff),
-      static_cast<char>((value >> 16) & 0xff),
-      static_cast<char>((value >> 24) & 0xff)};
+  const std::array<char, 4> bytes{static_cast<char>(value & 0xff),
+                                  static_cast<char>((value >> 8) & 0xff),
+                                  static_cast<char>((value >> 16) & 0xff),
+                                  static_cast<char>((value >> 24) & 0xff)};
   out.write(bytes.data(), bytes.size());
 }
 
@@ -70,7 +70,7 @@ int main() {
   double phase = 0.0;
   const double phase_step = 2.0 * 3.14159265358979323846 * 440.0 / rate;
   const std::array<const char *, 5> phases{"intro", "loop", "tail", "fade",
-                                             "loop"};
+                                           "loop"};
 
   for (std::size_t cycle = 0; cycle < phases.size(); ++cycle) {
     const auto before = state.music_cursor();
@@ -89,12 +89,11 @@ int main() {
       state.set_game_music_pause(false);
     }
 
-    const double gain_before = cycle == 3
-                                   ? linear_envelope(1.0, 0.0, before, 30'000)
-                                   : 0.8;
+    const double gain_before =
+        cycle == 3 ? linear_envelope(1.0, 0.0, before, 30'000) : 0.8;
     for (std::uint64_t frame = 0; frame < audible_frames; ++frame) {
-      const double edge = static_cast<double>(
-          std::min<std::uint64_t>({frame, audible_frames - 1 - frame, 240})) /
+      const double edge = static_cast<double>(std::min<std::uint64_t>(
+                              {frame, audible_frames - 1 - frame, 240})) /
                           240.0;
       const double sample = std::sin(phase) * gain_before * edge;
       pcm.push_back(static_cast<std::int16_t>(sample * 16'000.0));
@@ -102,12 +101,12 @@ int main() {
     }
     state.advance_music(audible_frames);
     check(state.music_cursor() - before == audible_frames,
-          "resume advances without duplicated or lost musical frames", failures);
-    std::printf("cycle=%zu phase=%s before=%llu after=%llu gain=%.6f\n",
-                cycle + 1, phases[cycle],
-                static_cast<unsigned long long>(before),
-                static_cast<unsigned long long>(state.music_cursor()),
-                gain_before);
+          "resume advances without duplicated or lost musical frames",
+          failures);
+    std::printf(
+        "cycle=%zu phase=%s before=%llu after=%llu gain=%.6f\n", cycle + 1,
+        phases[cycle], static_cast<unsigned long long>(before),
+        static_cast<unsigned long long>(state.music_cursor()), gain_before);
   }
 
   const auto missing = evaluate_game_music_pause(
@@ -119,8 +118,8 @@ int main() {
             state.envelope_cursor() == state.music_cursor() &&
             state.candidate_music_time() == state.music_cursor(),
         "five cycles keep all musical clocks sample-exact", failures);
-  const std::string path = std::string{AYTHER_RF18_EVIDENCE_DIR} +
-                           "/rf18-qa376-pause-cycles.wav";
+  const std::string path =
+      std::string{AYTHER_RF18_OUTPUT_DIR} + "/rf18-qa376-pause-cycles.wav";
   check(write_wav(path, pcm, rate), "audible pause-cycle WAV is written",
         failures);
   std::printf("wav=%s frames=%zu continuity_error_frames=0\n", path.c_str(),

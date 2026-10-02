@@ -35,7 +35,8 @@ struct AnalysisInputs {
 
 struct AnalysisToken {
   std::uint64_t value{};
-  friend constexpr bool operator==(AnalysisToken, AnalysisToken) noexcept = default;
+  friend constexpr bool operator==(AnalysisToken,
+                                   AnalysisToken) noexcept = default;
 };
 
 struct ProposalId {
@@ -94,8 +95,8 @@ public:
     return true;
   }
 
-  [[nodiscard]] PublishResult
-  publish(AnalysisToken token, std::vector<AnalysisProposal> proposals) {
+  [[nodiscard]] PublishResult publish(AnalysisToken token,
+                                      std::vector<AnalysisProposal> proposals) {
     const std::scoped_lock lock{mutex_};
     if (cancelled_token_ && *cancelled_token_ == token)
       return PublishResult::cancelled;

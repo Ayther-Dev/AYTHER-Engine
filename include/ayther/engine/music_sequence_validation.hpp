@@ -65,9 +65,9 @@ validate_sequence(const MusicSequenceDefinition &definition,
                                [&](const auto &node) { return node.id == id; });
   };
   const auto segment_exists = [&](SequenceSegmentId id) {
-    return std::ranges::any_of(
-        definition.segments,
-        [&](const auto &segment) { return segment.id == id; });
+    return std::ranges::any_of(definition.segments, [&](const auto &segment) {
+      return segment.id == id;
+    });
   };
   const auto assignment_exists = [&](AssetAssignmentId id) {
     return std::ranges::any_of(
@@ -94,8 +94,9 @@ validate_sequence(const MusicSequenceDefinition &definition,
 
   for (std::size_t index = 0; index < definition.assignments.size(); ++index) {
     const auto &assignment = definition.assignments[index];
-    const auto source = std::ranges::find_if(
-        assets, [&](const auto &asset) { return asset.first == assignment.asset; });
+    const auto source = std::ranges::find_if(assets, [&](const auto &asset) {
+      return asset.first == assignment.asset;
+    });
     const std::string location = "assignments[" + std::to_string(index) + "]";
     if (source == assets.end()) {
       detail::diagnose(result, SequenceDiagnosticCode::missing_asset, location);
@@ -114,8 +115,7 @@ validate_sequence(const MusicSequenceDefinition &definition,
     const auto &edge = definition.edges[index];
     const std::string location = "edges[" + std::to_string(index) + "]";
     if (!node_exists(edge.to))
-      detail::diagnose(result,
-                       SequenceDiagnosticCode::missing_edge_destination,
+      detail::diagnose(result, SequenceDiagnosticCode::missing_edge_destination,
                        location + ".to");
     for (auto condition = edge.conditions.begin();
          condition != edge.conditions.end(); ++condition) {
@@ -136,7 +136,8 @@ validate_sequence(const MusicSequenceDefinition &definition,
   std::vector<SequenceNodeId> visiting;
   std::vector<SequenceNodeId> done;
   for (const auto &node : definition.nodes)
-    if (detail::has_no_progress_cycle_from(definition, node.id, visiting, done)) {
+    if (detail::has_no_progress_cycle_from(definition, node.id, visiting,
+                                           done)) {
       detail::diagnose(result, SequenceDiagnosticCode::no_progress_cycle,
                        "edges");
       break;

@@ -15,9 +15,9 @@ int main() {
   using namespace ayther::engine;
   int failures = 0;
   MusicTransitionArbiter arbiter;
-  const auto winner = arbiter.choose({
-      {1, SequenceNodeId{2}, 10, OutputAuthority::game_pattern},
-      {2, SequenceNodeId{3}, 20, OutputAuthority::explicit_order}});
+  const auto winner = arbiter.choose(
+      {{1, SequenceNodeId{2}, 10, OutputAuthority::game_pattern},
+       {2, SequenceNodeId{3}, 20, OutputAuthority::explicit_order}});
   check(winner.status == TransitionChoiceStatus::selected &&
             winner.destination == SequenceNodeId{3} &&
             winner.authority == OutputAuthority::explicit_order,
@@ -28,9 +28,9 @@ int main() {
                 .status == TransitionChoiceStatus::already_consumed,
         "one observed event cannot be consumed twice", failures);
 
-  const auto conflict = arbiter.choose({
-      {3, SequenceNodeId{4}, 30, OutputAuthority::hd_region},
-      {4, SequenceNodeId{5}, 30, OutputAuthority::game_pattern}});
+  const auto conflict = arbiter.choose(
+      {{3, SequenceNodeId{4}, 30, OutputAuthority::hd_region},
+       {4, SequenceNodeId{5}, 30, OutputAuthority::game_pattern}});
   check(conflict.status == TransitionChoiceStatus::conflict &&
             conflict.diagnostic == "transition_conflict" &&
             !conflict.destination,
@@ -49,18 +49,16 @@ int main() {
                               MusicBoundary::new_entry),
         "shared boundary order is total and normative", failures);
 
-  arbiter.set_pending({5, SequenceNodeId{6}, 1,
-                       OutputAuthority::game_pattern});
+  arbiter.set_pending({5, SequenceNodeId{6}, 1, OutputAuthority::game_pattern});
   arbiter.invalidate(MusicBoundary::explicit_cancel_restart_replace);
   check(!arbiter.pending().has_value(),
         "explicit cancellation invalidates pending transition", failures);
-  arbiter.set_pending({6, SequenceNodeId{7}, 1,
-                       OutputAuthority::hd_region});
+  arbiter.set_pending({6, SequenceNodeId{7}, 1, OutputAuthority::hd_region});
   arbiter.invalidate(MusicBoundary::restore_or_session_close);
   check(!arbiter.pending().has_value(),
         "restore boundary invalidates pending transition", failures);
   check(arbiter.source_exhausted().status ==
-            TransitionChoiceStatus::delegate_to_mix &&
+                TransitionChoiceStatus::delegate_to_mix &&
             arbiter.source_exhausted().diagnostic ==
                 "source_exhausted_before_transition",
         "source exhaustion delegates to mixing policy", failures);

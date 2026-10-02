@@ -65,10 +65,10 @@ foreach(_source IN ITEMS
 endforeach()
 
 target_compile_definitions(ayther_music_corpus_quality_test PRIVATE
-    AYTHER_RF18_EVIDENCE_DIR="${CMAKE_SOURCE_DIR}/../specs/001-AYTHER-bug-audio-qa/evidence")
+    AYTHER_RF18_EVIDENCE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/rf18/evidence")
 
 target_compile_definitions(ayther_music_pause_cycles_test PRIVATE
-    AYTHER_RF18_EVIDENCE_DIR="${CMAKE_SOURCE_DIR}/../specs/001-AYTHER-bug-audio-qa/evidence")
+    AYTHER_RF18_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 
 target_compile_definitions(ayther_capabilities_test PRIVATE
     AYTHER_EXPECTED_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}

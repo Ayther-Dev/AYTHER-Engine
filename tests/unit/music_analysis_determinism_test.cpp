@@ -17,7 +17,12 @@ void check(bool value, const char *message, int &failures) {
 
 ayther::engine::MusicEvent event(std::uint64_t id, std::uint64_t begin,
                                  std::uint64_t signature) {
-  return {ayther::engine::EventId{id}, begin, 1, signature, 1, 60,
+  return {ayther::engine::EventId{id},
+          begin,
+          1,
+          signature,
+          1,
+          60,
           ayther::engine::EventProvenance{"take", 1, id}};
 }
 
@@ -39,9 +44,9 @@ std::vector<std::string> fingerprints(
 int main() {
   using namespace ayther::engine;
   int failures = 0;
-  const std::vector<MusicEvent> ordered{
-      event(1, 0, 10), event(2, 4, 11), event(3, 8, 12),
-      event(4, 20, 10), event(5, 24, 11), event(6, 28, 12)};
+  const std::vector<MusicEvent> ordered{event(1, 0, 10),  event(2, 4, 11),
+                                        event(3, 8, 12),  event(4, 20, 10),
+                                        event(5, 24, 11), event(6, 28, 12)};
   auto reversed = ordered;
   std::ranges::reverse(reversed);
   const PatternAnalysisOptions options{.minimum_events = 2,
@@ -50,7 +55,8 @@ int main() {
                                        .frame_tolerance = 2};
   check(fingerprints(find_music_patterns(ordered, options)) ==
             fingerprints(find_music_patterns(reversed, options)),
-        "same revision yields identical proposals and reasons despite storage order",
+        "same revision yields identical proposals and reasons despite storage "
+        "order",
         failures);
   check(reversed.front().id == EventId{6},
         "analysis leaves reordered source data untouched", failures);
@@ -74,15 +80,16 @@ int main() {
   for (auto &value : missing)
     value.pitch.reset();
   check(empty.empty() && find_music_patterns(missing, options).empty(),
-        "empty and attribute-missing inputs preserve an empty result", failures);
+        "empty and attribute-missing inputs preserve an empty result",
+        failures);
 
   constexpr std::uint64_t mib = 1024ULL * 1024ULL;
-  const AnalysisWorkMetrics at_limit{256 * mib, 10'000, 120'000'000'000ULL,
-                                     2'000'000'000ULL, 6, 6, true};
+  const AnalysisWorkMetrics at_limit{
+      256 * mib, 10'000, 120'000'000'000ULL, 2'000'000'000ULL, 6, 6, true};
   auto exceeded = at_limit;
   ++exceeded.intervals;
   check(evaluate_analysis_work(at_limit).status ==
-            AnalysisWorkStatus::complete &&
+                AnalysisWorkStatus::complete &&
             evaluate_analysis_work(exceeded).status ==
                 AnalysisWorkStatus::analysis_limit &&
             evaluate_analysis_work(exceeded).acceptance_blocked,

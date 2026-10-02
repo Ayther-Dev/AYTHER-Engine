@@ -52,15 +52,16 @@ struct CorpusQualityReport {
 };
 
 namespace detail {
-[[nodiscard]] constexpr std::uint64_t quality_distance(
-    std::uint64_t left, std::uint64_t right) noexcept {
+[[nodiscard]] constexpr std::uint64_t
+quality_distance(std::uint64_t left, std::uint64_t right) noexcept {
   return left > right ? left - right : right - left;
 }
 
 inline void finish_metrics(QualityFamilyMetrics &metrics) {
   const auto precision_denominator =
       metrics.true_positive + metrics.false_positive;
-  const auto recall_denominator = metrics.true_positive + metrics.false_negative;
+  const auto recall_denominator =
+      metrics.true_positive + metrics.false_negative;
   if (precision_denominator != 0)
     metrics.precision = static_cast<double>(metrics.true_positive) /
                         static_cast<double>(precision_denominator);
@@ -70,15 +71,15 @@ inline void finish_metrics(QualityFamilyMetrics &metrics) {
 }
 } // namespace detail
 
-[[nodiscard]] inline CorpusQualityReport evaluate_corpus_quality(
-    const std::vector<QualityOracle> &oracles,
-    const std::vector<QualityPrediction> &predictions,
-    std::uint64_t endpoint_tolerance) {
+[[nodiscard]] inline CorpusQualityReport
+evaluate_corpus_quality(const std::vector<QualityOracle> &oracles,
+                        const std::vector<QualityPrediction> &predictions,
+                        std::uint64_t endpoint_tolerance) {
   CorpusQualityReport report;
   for (const auto &oracle : oracles) {
-    auto family = std::ranges::find_if(
-        report.families,
-        [&](const auto &value) { return value.family == oracle.family; });
+    auto family = std::ranges::find_if(report.families, [&](const auto &value) {
+      return value.family == oracle.family;
+    });
     if (family == report.families.end()) {
       report.families.push_back(
           {oracle.family, 0, 0, 0, std::nullopt, std::nullopt});
@@ -118,8 +119,8 @@ inline void finish_metrics(QualityFamilyMetrics &metrics) {
           (prediction->end &&
            detail::quality_distance(*oracle.end, *prediction->end) <=
                endpoint_tolerance);
-      if (!matched && prediction->identity == oracle.identity && begin_matches &&
-          end_matches) {
+      if (!matched && prediction->identity == oracle.identity &&
+          begin_matches && end_matches) {
         matched = true;
         ++report.true_positive;
         ++family->true_positive;

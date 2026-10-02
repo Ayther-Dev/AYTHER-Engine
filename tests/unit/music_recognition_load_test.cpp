@@ -43,8 +43,18 @@ int main() {
         failures);
 
   const LiveRecognitionEvidence indistinguishable{
-      1.0, true, 8, true, false, false, 2'000'000'000ULL, 128, 32 * mib,
-      false, AnalysisExecutionContext::audio, false};
+      1.0,
+      true,
+      8,
+      true,
+      false,
+      false,
+      2'000'000'000ULL,
+      128,
+      32 * mib,
+      false,
+      AnalysisExecutionContext::audio,
+      false};
   check(evaluate_live_recognition(indistinguishable).status ==
             LiveRecognitionStatus::pending,
         "indistinguishable evidence cannot fabricate a resolved position",
@@ -69,16 +79,16 @@ int main() {
         "one match below the minimum remains pending", failures);
 
   boundary.match_count = 4;
-  for (const auto over : {
-           LiveRecognitionEvidence{0.90, false, 4, true, true, false,
-                                   2'000'000'001ULL, 128, 32 * mib, false,
-                                   AnalysisExecutionContext::audio, false},
-           LiveRecognitionEvidence{0.90, false, 4, true, true, false,
-                                   2'000'000'000ULL, 129, 32 * mib, false,
-                                   AnalysisExecutionContext::audio, false},
-           LiveRecognitionEvidence{0.90, false, 4, true, true, false,
-                                   2'000'000'000ULL, 128, 32 * mib + 1, false,
-                                   AnalysisExecutionContext::audio, false}}) {
+  for (const auto over :
+       {LiveRecognitionEvidence{0.90, false, 4, true, true, false,
+                                2'000'000'001ULL, 128, 32 * mib, false,
+                                AnalysisExecutionContext::audio, false},
+        LiveRecognitionEvidence{0.90, false, 4, true, true, false,
+                                2'000'000'000ULL, 129, 32 * mib, false,
+                                AnalysisExecutionContext::audio, false},
+        LiveRecognitionEvidence{0.90, false, 4, true, true, false,
+                                2'000'000'000ULL, 128, 32 * mib + 1, false,
+                                AnalysisExecutionContext::audio, false}}) {
     const auto decision = evaluate_live_recognition(over);
     check(decision.status == LiveRecognitionStatus::limit &&
               decision.diagnostic == "recognition_limit" &&

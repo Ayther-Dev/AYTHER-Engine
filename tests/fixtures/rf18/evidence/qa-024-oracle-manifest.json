@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "kind": "audio_qa_reference_oracle",
+  "reference": {
+    "engine_release": "v0.1.0-rc.9",
+    "engine_commit": "af2623d536c9b3f9a08f9c61757f0b3c1e6bbfa7",
+    "runtime_release": "v0.1.0-beta.6",
+    "runtime_commit": "cbe90d2cd1d443dc53bbc1d5fa0234197b2982a3",
+    "core_c_abi": 7,
+    "runtime": {
+      "path": ".qa-reference/audio-qa-initial-20260927/runtime-package/bin/ayther_runtime.exe",
+      "sha256": "f502a29ba820ae2c885cc11b88eff57204040f2315868eab090644c3ab5c4ac0"
+    },
+    "scope": "normalized_reference"
+  },
+  "cases": [
+    {
+      "case_id": "selection-match",
+      "revision": 1,
+      "state": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/state.toml",
+        "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+      },
+      "inputs": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/input.toml",
+        "sha256": "4ef9f3fc97e32f7a5f03db1628ca0b49cb1156aabec26fad5de6c9095808f8ac"
+      },
+      "source": [
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_match_rule.h",
+          "sha256": "5323d93783d009223a18b1e03e69b17be6e04aa02c47ba77cc686bc95b745592"
+        },
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/ayther_session_impl.inl",
+          "sha256": "f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6"
+        }
+      ],
+      "adapter": {
+        "status": "verified",
+        "sources": [
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/CMakeLists.txt",
+            "sha256": "33515f3c99d80c4a1f925587f5154f5df4a4105bed1a2ed98ecd41758c2c2542"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_match.h",
+            "sha256": "fbc3d641343b2404bcac41539ed8cfc59dd0b43d81677f9d20c9c61dd3a8a343"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_resolve.inc",
+            "sha256": "4a790b004c0e080e1978bec402773830a56d5efe69e3f7bdbc524166b2d95e93"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/reference_resolve.inc",
+            "sha256": "fec16b89230e4c6324415e46523d9edf7658845199511f563acbf0e5480e32fd"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/selection_probe.cpp",
+            "sha256": "bcba2d1d3e7c23ce31cc4b372ab21497a222291c8ee2982e6821ca34b7331a0c"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/verify.cmake",
+            "sha256": "75e765d39b30e3599f5f8d829689a4fe899de4a0314b86904b69be4500810c4f"
+          }
+        ],
+        "reference_executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_reference.exe",
+          "sha256": "33fba25eba7e1c1e5eeeba52b50f1c976256fe36044d47eb791d65ee29e34331"
+        },
+        "executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_observed.exe",
+          "sha256": "467568e290fe75b4de06a7eb24f7839f8dbeb7616e378557d7c00c3f62466c62"
+        }
+      },
+      "result": {
+        "decision": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/decision.toml",
+          "sha256": "a16f2849f31ecde7cde61cb2784a5a9e8bb3f44c0ec5a5201f9638287e612dbf"
+        },
+        "facts": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/facts.toml",
+          "sha256": "133edbf71f26c536a648a3ea79510e21544a53613b194436b21e722af5adbf13"
+        },
+        "integrity": "complete"
+      },
+      "review": {
+        "status": "adapter_verified",
+        "rules_modified": false,
+        "frozen_for_T12": false
+      }
+    },
+    {
+      "case_id": "selection-miss",
+      "revision": 1,
+      "state": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/state.toml",
+        "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+      },
+      "inputs": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/input.toml",
+        "sha256": "952d8966ee5310c5ce25a1f46ae400d80600ee8a5bf4e30af7b68ef5bc6edf72"
+      },
+      "source": [
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_match_rule.h",
+          "sha256": "5323d93783d009223a18b1e03e69b17be6e04aa02c47ba77cc686bc95b745592"
+        },
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/ayther_session_impl.inl",
+          "sha256": "f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6"
+        }
+      ],
+      "adapter": {
+        "status": "verified",
+        "sources": [
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/CMakeLists.txt",
+            "sha256": "33515f3c99d80c4a1f925587f5154f5df4a4105bed1a2ed98ecd41758c2c2542"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_match.h",
+            "sha256": "fbc3d641343b2404bcac41539ed8cfc59dd0b43d81677f9d20c9c61dd3a8a343"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_resolve.inc",
+            "sha256": "4a790b004c0e080e1978bec402773830a56d5efe69e3f7bdbc524166b2d95e93"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/reference_resolve.inc",
+            "sha256": "fec16b89230e4c6324415e46523d9edf7658845199511f563acbf0e5480e32fd"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/selection_probe.cpp",
+            "sha256": "bcba2d1d3e7c23ce31cc4b372ab21497a222291c8ee2982e6821ca34b7331a0c"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/verify.cmake",
+            "sha256": "75e765d39b30e3599f5f8d829689a4fe899de4a0314b86904b69be4500810c4f"
+          }
+        ],
+        "reference_executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_reference.exe",
+          "sha256": "33fba25eba7e1c1e5eeeba52b50f1c976256fe36044d47eb791d65ee29e34331"
+        },
+        "executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_observed.exe",
+          "sha256": "467568e290fe75b4de06a7eb24f7839f8dbeb7616e378557d7c00c3f62466c62"
+        }
+      },
+      "result": {
+        "decision": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/decision.toml",
+          "sha256": "1911e4e01e4539855453dafcbc89527006e1f6179dd252558ecddc85b03bf6e7"
+        },
+        "facts": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/facts.toml",
+          "sha256": "0d3c6ffe1db1aeb785dbd119b82f55310cafa4853aafb8ebff8671a8f405ea3a"
+        },
+        "integrity": "complete"
+      },
+      "review": {
+        "status": "adapter_verified",
+        "rules_modified": false,
+        "frozen_for_T12": false
+      }
+    },
+    {
+      "case_id": "selection-exact",
+      "revision": 1,
+      "state": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/state.toml",
+        "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+      },
+      "inputs": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/input.toml",
+        "sha256": "c7777b345b4616241b0194bc8354213f94988f789a5bb8afc9672414ab670bb7"
+      },
+      "source": [
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_match_rule.h",
+          "sha256": "5323d93783d009223a18b1e03e69b17be6e04aa02c47ba77cc686bc95b745592"
+        },
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/ayther_session_impl.inl",
+          "sha256": "f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6"
+        }
+      ],
+      "adapter": {
+        "status": "verified",
+        "sources": [
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/CMakeLists.txt",
+            "sha256": "33515f3c99d80c4a1f925587f5154f5df4a4105bed1a2ed98ecd41758c2c2542"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_match.h",
+            "sha256": "fbc3d641343b2404bcac41539ed8cfc59dd0b43d81677f9d20c9c61dd3a8a343"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_resolve.inc",
+            "sha256": "4a790b004c0e080e1978bec402773830a56d5efe69e3f7bdbc524166b2d95e93"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/reference_resolve.inc",
+            "sha256": "fec16b89230e4c6324415e46523d9edf7658845199511f563acbf0e5480e32fd"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/selection_probe.cpp",
+            "sha256": "bcba2d1d3e7c23ce31cc4b372ab21497a222291c8ee2982e6821ca34b7331a0c"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/verify.cmake",
+            "sha256": "75e765d39b30e3599f5f8d829689a4fe899de4a0314b86904b69be4500810c4f"
+          }
+        ],
+        "reference_executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_reference.exe",
+          "sha256": "33fba25eba7e1c1e5eeeba52b50f1c976256fe36044d47eb791d65ee29e34331"
+        },
+        "executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_observed.exe",
+          "sha256": "467568e290fe75b4de06a7eb24f7839f8dbeb7616e378557d7c00c3f62466c62"
+        }
+      },
+      "result": {
+        "decision": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/decision.toml",
+          "sha256": "187c5298894fd8e9df8b58edf4e10c6e828bcd6dac1770f093a6837113b6c0e4"
+        },
+        "facts": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/facts.toml",
+          "sha256": "49fb60bbee2da620a2c69fa3fed75cfab8a3747612170b4c49c599a79ecf247b"
+        },
+        "integrity": "complete"
+      },
+      "review": {
+        "status": "adapter_verified",
+        "rules_modified": false,
+        "frozen_for_T12": false
+      }
+    },
+    {
+      "case_id": "selection-lost",
+      "revision": 1,
+      "state": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/state.toml",
+        "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+      },
+      "inputs": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/input.toml",
+        "sha256": "4ef9f3fc97e32f7a5f03db1628ca0b49cb1156aabec26fad5de6c9095808f8ac"
+      },
+      "source": [
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_match_rule.h",
+          "sha256": "5323d93783d009223a18b1e03e69b17be6e04aa02c47ba77cc686bc95b745592"
+        },
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/ayther_session_impl.inl",
+          "sha256": "f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6"
+        }
+      ],
+      "adapter": {
+        "status": "verified",
+        "sources": [
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/CMakeLists.txt",
+            "sha256": "33515f3c99d80c4a1f925587f5154f5df4a4105bed1a2ed98ecd41758c2c2542"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_match.h",
+            "sha256": "fbc3d641343b2404bcac41539ed8cfc59dd0b43d81677f9d20c9c61dd3a8a343"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_resolve.inc",
+            "sha256": "4a790b004c0e080e1978bec402773830a56d5efe69e3f7bdbc524166b2d95e93"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/reference_resolve.inc",
+            "sha256": "fec16b89230e4c6324415e46523d9edf7658845199511f563acbf0e5480e32fd"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/selection_probe.cpp",
+            "sha256": "bcba2d1d3e7c23ce31cc4b372ab21497a222291c8ee2982e6821ca34b7331a0c"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/verify.cmake",
+            "sha256": "75e765d39b30e3599f5f8d829689a4fe899de4a0314b86904b69be4500810c4f"
+          }
+        ],
+        "reference_executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_reference.exe",
+          "sha256": "33fba25eba7e1c1e5eeeba52b50f1c976256fe36044d47eb791d65ee29e34331"
+        },
+        "executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_observed.exe",
+          "sha256": "467568e290fe75b4de06a7eb24f7839f8dbeb7616e378557d7c00c3f62466c62"
+        }
+      },
+      "result": {
+        "decision": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/decision.toml",
+          "sha256": "a16f2849f31ecde7cde61cb2784a5a9e8bb3f44c0ec5a5201f9638287e612dbf"
+        },
+        "facts": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/facts.toml",
+          "sha256": "a4a2a1c6b16ad3a6628ecb1302a06c34bb9b8a9a95d44e632855df83725c0964"
+        },
+        "integrity": "deliberate_record_loss"
+      },
+      "review": {
+        "status": "adapter_verified",
+        "rules_modified": false,
+        "frozen_for_T12": false
+      }
+    }
+  ],
+  "comparison": null
+}

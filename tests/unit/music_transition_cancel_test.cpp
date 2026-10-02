@@ -17,8 +17,8 @@ int main() {
   MusicTransitionQueue queue;
   queue.begin_link();
   (void)queue.submit({1, SequenceNodeId{2}, 1, 3, AppearanceId{4}, true}, 0);
-  auto result = cancel_music_transition(queue, 2, 48'000, false,
-                                        TransitionCancelCause::external_replace);
+  auto result = cancel_music_transition(
+      queue, 2, 48'000, false, TransitionCancelCause::external_replace);
   check(queue.pending_count() == 0 && result.closed_voices == 2 &&
             result.fade_frames == 240 && result.destination_deferred &&
             !result.resume_allowed,

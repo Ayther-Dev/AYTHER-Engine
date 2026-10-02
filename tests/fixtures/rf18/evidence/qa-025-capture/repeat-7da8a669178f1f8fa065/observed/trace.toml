@@ -1,0 +1,737 @@
+schema_version = 1
+trace_complete = true
+
+[[gates]]
+frame = 0
+branch = "rising_edge"
+
+[[gates]]
+frame = 1
+branch = "gate_not_entered"
+
+[[gates]]
+frame = 3
+branch = "rising_edge"
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 0
+source = 0
+next_source = 1
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 1
+source = 1
+next_source = 2
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 2
+source = 2
+next_source = 3
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 3
+source = 3
+next_source = 4
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 4
+source = 4
+next_source = 5
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 5
+source = 5
+next_source = 6
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 6
+source = 6
+next_source = 7
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 7
+source = 7
+next_source = 8
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 8
+source = 8
+next_source = 9
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 9
+source = 9
+next_source = 10
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 10
+source = 10
+next_source = 11
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 11
+source = 11
+next_source = 12
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 12
+source = 12
+next_source = 13
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 13
+source = 13
+next_source = 14
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 14
+source = 14
+next_source = 15
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 15
+source = 15
+next_source = 16
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 16
+source = 16
+next_source = 17
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 17
+source = 17
+next_source = 18
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 18
+source = 18
+next_source = 19
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 19
+source = 19
+next_source = 20
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 20
+source = 20
+next_source = 21
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 21
+source = 21
+next_source = 22
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 22
+source = 22
+next_source = 23
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 23
+source = 23
+next_source = 24
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 24
+source = 24
+next_source = 25
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 25
+source = 25
+next_source = 26
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 26
+source = 26
+next_source = 27
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 27
+source = 27
+next_source = 28
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 28
+source = 28
+next_source = 29
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 29
+source = 29
+next_source = 30
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 30
+source = 30
+next_source = 31
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 31
+source = 31
+next_source = 32
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 32
+source = 32
+next_source = 33
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 33
+source = 33
+next_source = 34
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 34
+source = 34
+next_source = 35
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 35
+source = 35
+next_source = 36
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 36
+source = 36
+next_source = 37
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 37
+source = 37
+next_source = 38
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 38
+source = 38
+next_source = 39
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 39
+source = 39
+next_source = 40
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 40
+source = 40
+next_source = 41
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 41
+source = 41
+next_source = 42
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 42
+source = 42
+next_source = 43
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 43
+source = 43
+next_source = 44
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 44
+source = 44
+next_source = 45
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 45
+source = 45
+next_source = 46
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 46
+source = 46
+next_source = 47
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 47
+source = 47
+next_source = 48
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 48
+source = 0
+next_source = 1
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 49
+source = 1
+next_source = 2
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 50
+source = 2
+next_source = 3
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 51
+source = 3
+next_source = 4
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 52
+source = 4
+next_source = 5
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 53
+source = 5
+next_source = 6
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 54
+source = 6
+next_source = 7
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 55
+source = 7
+next_source = 8
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 56
+source = 8
+next_source = 9
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 57
+source = 9
+next_source = 10
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 58
+source = 10
+next_source = 11
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 59
+source = 11
+next_source = 12
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 60
+source = 12
+next_source = 13
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 61
+source = 13
+next_source = 14
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 62
+source = 14
+next_source = 15
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 1000
+output = 63
+source = 15
+next_source = 16
+gain = 1
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 48
+source = 48
+next_source = 49
+gain = 1
+fade_left = 2645
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 49
+source = 49
+next_source = 50
+gain = 0.99962204694747925
+fade_left = 2644
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 50
+source = 50
+next_source = 51
+gain = 0.99924415349960327
+fade_left = 2643
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 51
+source = 51
+next_source = 52
+gain = 0.99886620044708252
+fade_left = 2642
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 52
+source = 52
+next_source = 53
+gain = 0.99848830699920654
+fade_left = 2641
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 53
+source = 53
+next_source = 54
+gain = 0.99811035394668579
+fade_left = 2640
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 54
+source = 54
+next_source = 55
+gain = 0.99773240089416504
+fade_left = 2639
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 55
+source = 55
+next_source = 56
+gain = 0.99735450744628906
+fade_left = 2638
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 56
+source = 56
+next_source = 57
+gain = 0.99697655439376831
+fade_left = 2637
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 57
+source = 57
+next_source = 58
+gain = 0.99659866094589233
+fade_left = 2636
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 58
+source = 58
+next_source = 59
+gain = 0.99622070789337158
+fade_left = 2635
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 59
+source = 59
+next_source = 60
+gain = 0.99584275484085083
+fade_left = 2634
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 60
+source = 60
+next_source = 61
+gain = 0.99546486139297485
+fade_left = 2633
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 61
+source = 61
+next_source = 62
+gain = 0.9950869083404541
+fade_left = 2632
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 62
+source = 62
+next_source = 63
+gain = 0.99470901489257812
+fade_left = 2631
+
+[[samples]]
+occurrence = 1
+key = 1000
+output = 63
+source = 63
+next_source = 64
+gain = 0.99433106184005737
+fade_left = 2630
+
+[audit]
+executable_sha256 = "963f780db2826c583fa92348511f4ae2f6379936a3ed55dbcf682da9debf9cbc"

@@ -53,17 +53,17 @@ evaluate_live_recognition(const LiveRecognitionEvidence &evidence) {
     return {LiveRecognitionStatus::limit, "recognition_limit", true, false,
             false};
 
-  const bool approximate_usable = evidence.score >= 0.90 &&
-                                  evidence.match_count >= 4;
-  const bool musical_match = evidence.exact_anchor_validated ||
-                             approximate_usable;
-  const bool position_usable = evidence.position_resolved ||
-                               evidence.author_selected;
+  const bool approximate_usable =
+      evidence.score >= 0.90 && evidence.match_count >= 4;
+  const bool musical_match =
+      evidence.exact_anchor_validated || approximate_usable;
+  const bool position_usable =
+      evidence.position_resolved || evidence.author_selected;
   LiveRecognitionDecision result;
   if (musical_match && evidence.entry_usable && position_usable) {
     if (evidence.author_selected)
-      result = {LiveRecognitionStatus::author_selected, {}, false, false,
-                false};
+      result = {
+          LiveRecognitionStatus::author_selected, {}, false, false, false};
     else
       result = {LiveRecognitionStatus::recognized, {}, false, true, false};
   }

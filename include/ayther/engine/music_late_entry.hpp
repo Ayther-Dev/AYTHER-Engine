@@ -45,11 +45,11 @@ calculate_late_entry(const LateEntryRequest &request) {
   auto elapsed = request.effective_start_music_ns - request.anchor_music_ns;
   if (request.pause_is_verified)
     elapsed -= std::min(elapsed, request.verified_pause_ns);
-  const auto advanced = static_cast<std::uint64_t>(std::llround(
-      static_cast<long double>(elapsed) * request.source_rate_hz /
-      1'000'000'000.0L));
-  const auto fade = static_cast<std::uint32_t>(std::llround(
-      static_cast<long double>(request.output_rate_hz) * 0.005L));
+  const auto advanced = static_cast<std::uint64_t>(
+      std::llround(static_cast<long double>(elapsed) * request.source_rate_hz /
+                   1'000'000'000.0L));
+  const auto fade = static_cast<std::uint32_t>(
+      std::llround(static_cast<long double>(request.output_rate_hz) * 0.005L));
   if (!request.membership_preserves_unrelated_effects)
     return {LateEntryStatus::membership_unconfirmed,
             request.anchor_source_frame + advanced,
@@ -57,8 +57,12 @@ calculate_late_entry(const LateEntryRequest &request) {
             false,
             true,
             "membership_unconfirmed"};
-  return {LateEntryStatus::ready, request.anchor_source_frame + advanced, fade,
-          true, true, {}};
+  return {LateEntryStatus::ready,
+          request.anchor_source_frame + advanced,
+          fade,
+          true,
+          true,
+          {}};
 }
 
 } // namespace ayther::engine

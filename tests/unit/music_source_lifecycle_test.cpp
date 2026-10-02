@@ -21,8 +21,8 @@ int main() {
         "known source deficit without loop is rejected before playback",
         failures);
 
-  decision = admit_music_source(
-      {100, 120, true, true, 240, MusicSourceFailure::none});
+  decision =
+      admit_music_source({100, 120, true, true, 240, MusicSourceFailure::none});
   check(decision.action == MusicSourceAction::repeat_authored_loop &&
             decision.fade_frames == 100,
         "explicit loop may bridge pending transition and shortens fade",

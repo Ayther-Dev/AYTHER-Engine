@@ -31,13 +31,13 @@ function(require_text relative)
   endforeach()
 endfunction()
 
-set(evidence "specs/001-AYTHER-bug-audio-qa/evidence")
+set(evidence "evidence")
 require_hash("${evidence}/qa-030-frozen-index-r2.json"
-             "d25f805903e5d2681ed45b3d541a5f337019abb7c25fbfd127de18268eeb3c06")
+             "0774ef15df20a28e0c07b9226adc587fec2d19f46b5f93a990765ecd2152669d")
 require_hash("${evidence}/qa-024-oracle-manifest.json"
-             "33f794e94b1040ebbeffe19ee1e676272c6c0744b8b82c505aa75d221ebde7b1")
+             "6f3db0035e3e8cca1a035b50904ca6aef9443fc2f5a3185d2dbac1f097696318")
 require_hash("${evidence}/qa-025-oracle-manifest.json"
-             "179e84debe5e1842b72224ddee6b1bab12691b1f79a1e3f8e462ce4f428495eb")
+             "771c4bc329dd15a1e7e6205494c4868ca42b72fa152a8d1aa0081c6ec7ccc041")
 
 set(match_decision
     "${evidence}/qa-024-capture/match-fc60ea56b66eed96ce88/observed/decision.toml")
@@ -61,25 +61,25 @@ set(repeat_trace
     "${evidence}/qa-025-capture/repeat-7da8a669178f1f8fa065/observed/trace.toml")
 
 require_hash("${match_decision}"
-             "a16f2849f31ecde7cde61cb2784a5a9e8bb3f44c0ec5a5201f9638287e612dbf")
+             "0e1d2be938c3ecfba1a48f651ca44a3059d1885ed2995cd12460e1d9f913b15d")
 require_hash("${match_facts}"
-             "133edbf71f26c536a648a3ea79510e21544a53613b194436b21e722af5adbf13")
+             "93b352d88ee2e64e5d280e29a4beed6b492269835098151c3854bf1663703ac1")
 require_hash("${miss_decision}"
-             "1911e4e01e4539855453dafcbc89527006e1f6179dd252558ecddc85b03bf6e7")
+             "d2ec02c51d5bcbecd1aa9965186d0dacbe8203d2323a55c6d871dca19b0363d8")
 require_hash("${miss_facts}"
-             "0d3c6ffe1db1aeb785dbd119b82f55310cafa4853aafb8ebff8671a8f405ea3a")
+             "2025325489c3704a45f3c2be30921288081bb91d2800ca9289335b4a279e6737")
 require_hash("${exact_decision}"
-             "187c5298894fd8e9df8b58edf4e10c6e828bcd6dac1770f093a6837113b6c0e4")
+             "37a445ff0956a8717193d3913492d59b3856229fb12a412d65218d11c2bc168f")
 require_hash("${exact_facts}"
-             "49fb60bbee2da620a2c69fa3fed75cfab8a3747612170b4c49c599a79ecf247b")
+             "9ab21d963e4d50e57f619057a8d77f347f492b9e972699adc6c68c519d7bb0a8")
 require_hash("${keep_run}"
-             "0669864df3d778789abd7199e44e2b05ce84d6e76fe4f681015566d92f33a5fb")
+             "8ebc22c6378496629f80a0c3a59f1bb835b817ae53481c9bde47ea7bfe303d75")
 require_hash("${keep_trace}"
-             "3199a82ff426ad54d42d40d2786124d1e437d6870d9da2b69c295644e0a3f262")
+             "8f6c39c042ca864cb6204f6ac5bcf08a023e1c59fe4481ea6ecf0437e98e465a")
 require_hash("${repeat_run}"
-             "112e8e7e2091040e359402a41ebad520b8deeff00474332cdcccbf753a3409ae")
+             "5f205045dd4f5b1255a5f88d266aa6cea0cb004b4c495d9157199f7e9ed3efa5")
 require_hash("${repeat_trace}"
-             "f1da825c5cb2caa4e08f7cea96affdbebbe1fb3526d41ff638542925b4495049")
+             "3c5565a40edc41549a670af0508cbae1549c9ed05189650840ed2c07fd91c6da")
 
 require_text("${match_decision}" "matched = true" "selected = \"15\"")
 require_text("${match_facts}" "kind = \"pitch_rejected\""

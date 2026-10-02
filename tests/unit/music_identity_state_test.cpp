@@ -20,15 +20,14 @@ int main() {
   sequence.entry_node = SequenceNodeId{1};
   sequence.segments = {{SequenceSegmentId{1}, "intro"},
                        {SequenceSegmentId{2}, "loop"}};
-  sequence.nodes = {{SequenceNodeId{1}, SequenceSegmentId{1},
-                     AssetAssignmentId{1}},
-                    {SequenceNodeId{2}, SequenceSegmentId{2},
-                     AssetAssignmentId{2}}};
+  sequence.nodes = {
+      {SequenceNodeId{1}, SequenceSegmentId{1}, AssetAssignmentId{1}},
+      {SequenceNodeId{2}, SequenceSegmentId{2}, AssetAssignmentId{2}}};
   sequence.edges = {{SequenceEdgeId{1}, SequenceNodeId{1}, SequenceNodeId{2}},
                     {SequenceEdgeId{2}, SequenceNodeId{2}, SequenceNodeId{1}},
                     {SequenceEdgeId{3}, SequenceNodeId{1}, SequenceNodeId{1}}};
-  sequence.points = {{SequencePointId{1}, SequenceNodeId{2}, 20,
-                      PointRole::loop_end}};
+  sequence.points = {
+      {SequencePointId{1}, SequenceNodeId{2}, 20, PointRole::loop_end}};
   sequence.assignments = {
       {AssetAssignmentId{1}, SequenceSegmentId{1}, AssetId{1}, {0, 10}},
       {AssetAssignmentId{2}, SequenceSegmentId{2}, AssetId{2}, {0, 10}}};
@@ -39,7 +38,8 @@ int main() {
             state.position().occurrence == OccurrenceId{40} &&
             state.position().node == SequenceNodeId{1} &&
             state.position().visit == 1 && state.position().iteration == 0,
-        "initial entry creates identity occurrence and first appearance", failures);
+        "initial entry creates identity occurrence and first appearance",
+        failures);
   const auto intro_appearance = state.position().appearance;
   check(state.transition(SequenceNodeId{1},
                          IdentityStateCause::authored_transition) &&

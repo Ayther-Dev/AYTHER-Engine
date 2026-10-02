@@ -1,7 +1,7 @@
 #include <ayther/engine/music_analysis_snapshot.hpp>
 
-#include <cstdio>
 #include <atomic>
+#include <cstdio>
 #include <thread>
 
 namespace {
@@ -19,8 +19,8 @@ int main() {
 
   AnalysisInputs inputs;
   inputs.take = "golden-axe-a18-part-1";
-  inputs.events = {{EventId{1}, 10, 2, 10, 1, 60,
-                    EventProvenance{"take", 2, 1}}};
+  inputs.events = {
+      {EventId{1}, 10, 2, 10, 1, 60, EventProvenance{"take", 2, 1}}};
   inputs.range = {0, 100};
   inputs.catalog_revision = 3;
   inputs.asset_revision = 4;
@@ -40,7 +40,8 @@ int main() {
             snapshot->point_revision == 5 && snapshot->format_version == 1,
         "request inputs are fixed by value", failures);
 
-  check(coordinator.cancel(*token), "cancellation invalidates the token", failures);
+  check(coordinator.cancel(*token), "cancellation invalidates the token",
+        failures);
   check(coordinator.publish(*token, {{ProposalId{1}, "loop"}}) ==
             PublishResult::cancelled,
         "a late completion cannot publish after cancellation", failures);

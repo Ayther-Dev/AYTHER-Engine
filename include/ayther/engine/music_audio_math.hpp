@@ -25,10 +25,9 @@ convert_frame_count(const std::uint64_t source_frames,
   if (whole > std::numeric_limits<std::uint64_t>::max() / output_rate)
     return std::numeric_limits<std::uint64_t>::max();
   const std::uint64_t fractional_numerator = remainder * output_rate;
-  std::uint64_t result = whole * output_rate +
-                         fractional_numerator / source_rate;
-  const std::uint64_t fractional_remainder =
-      fractional_numerator % source_rate;
+  std::uint64_t result =
+      whole * output_rate + fractional_numerator / source_rate;
+  const std::uint64_t fractional_remainder = fractional_numerator % source_rate;
   if (fractional_remainder >= (source_rate + 1ULL) / 2ULL)
     ++result;
   return std::max<std::uint64_t>(1, result);
@@ -56,10 +55,9 @@ linear_envelope(const double initial, const double final,
                 const std::uint64_t duration_frames) noexcept {
   if (duration_frames == 0)
     return final;
-  const double progress = std::clamp(
-      static_cast<double>(elapsed_frames) /
-          static_cast<double>(duration_frames),
-      0.0, 1.0);
+  const double progress = std::clamp(static_cast<double>(elapsed_frames) /
+                                         static_cast<double>(duration_frames),
+                                     0.0, 1.0);
   return initial + (final - initial) * progress;
 }
 
@@ -70,8 +68,7 @@ linear_envelope(const double initial, const double final,
     return actual == 0.0;
   if (actual == 0.0 || tolerance_db < 0.0)
     return false;
-  const double delta =
-      std::abs(20.0 * std::log10(std::abs(actual / expected)));
+  const double delta = std::abs(20.0 * std::log10(std::abs(actual / expected)));
   return delta <= tolerance_db + 1e-12;
 }
 

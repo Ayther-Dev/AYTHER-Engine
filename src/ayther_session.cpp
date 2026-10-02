@@ -25,9 +25,9 @@
 #include "audio_playback_observation.h"
 #include "audio_position_observation.h"
 #include "audio_seq_anchor.h" // : anclas de Secuencia con reclamo
+#include "audio_sequence_lifetime.h"
 #include "audio_sequence_observation.h"
 #include "audio_source_observation.h"
-#include "audio_sequence_lifetime.h"
 #include "ayther_file.h"
 #include "ayther_parse.h"
 #include "cram_palette.h" //  EM-9.4: la CRAM, con su oraculo   // : la regla de cobertura, testeable sin ROM
@@ -958,8 +958,10 @@ const FrameView &AytherSession::produce_frame() {
         //
         // audio_events NO está ordenado por frame (lección ) —
         // pasada completa, sin break por «orden».
+        // clang-format off
         constexpr uint32_t kSeqCutGraceFrames = 60; // pausa musical máx (~1 s)
         constexpr uint32_t kSeqCutLagFrames = 4;    // colchón sobre el fin real
+        // clang-format on
         if (im.transport_playing && !sq.signatures.empty() &&
             f > best_start + kSeqCutLagFrames &&
             f < best_start + sq.span_frames) {
@@ -5677,11 +5679,13 @@ void AytherSession::Impl::video_tick(const std::string &path) {
   // fuego) el ciclo es justamente lo que se busca.
   const uint32_t last = clip->frame_count() - 1;
   const int64_t n = (int64_t)clip->frame_count();
+  // clang-format off
   const uint32_t idx = vframes<0      ? 0u
                                : loop ? (uint32_t)(vframes % n)
                                       : vframes>(int64_t) last
                            ? last
                            : (uint32_t)vframes;
+  // clang-format on
 
   if (RuntimeOptions::process().video_debug())
     ayther::log::write(
@@ -7140,7 +7144,9 @@ void AytherSession::unassign_audio_event(uint64_t signature) {
   impl_->audio_event_looping.erase(signature);
   impl_->audio_event_tail.erase(signature);
   impl_->hd_oneshot_cut.erase(signature);
+  // clang-format off
   impl_->audio_live_inst.erase(signature);  // : sin asignación no hay reemplazo
+  // clang-format on
   impl_->audio_event_rule.erase(signature); //  F3: la regla vive con ella
   impl_->rebuild_match_index();
 }

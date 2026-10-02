@@ -8,13 +8,13 @@ foreach(_required IN ITEMS QA_WORKSPACE_ROOT QA_MATCH_SESSION
 endforeach()
 
 set(index
-    "${QA_WORKSPACE_ROOT}/specs/001-AYTHER-bug-audio-qa/evidence/qa-030-frozen-index-r2.json")
+    "${QA_WORKSPACE_ROOT}/evidence/qa-030-frozen-index-r2.json")
 if(NOT EXISTS "${index}")
   message(FATAL_ERROR "The independent frozen oracle index is missing")
 endif()
 file(SHA256 "${index}" index_hash)
 if(NOT index_hash STREQUAL
-   "d25f805903e5d2681ed45b3d541a5f337019abb7c25fbfd127de18268eeb3c06")
+   "0774ef15df20a28e0c07b9226adc587fec2d19f46b5f93a990765ecd2152669d")
   message(FATAL_ERROR "The independent frozen oracle index changed")
 endif()
 

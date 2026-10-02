@@ -26,7 +26,8 @@ int main() {
             state.diagnostic == "position_unconfirmed" &&
             state.position_transitions_suspended && state.hd_course_continues &&
             !state.seek_requested,
-        "position outside two-frame tolerance suspends only dependent transitions",
+        "position outside two-frame tolerance suspends only dependent "
+        "transitions",
         failures);
   state = recovery.observe(AppearanceId{9}, 100, true);
   check(state.certainty == PositionRecoveryCertainty::unconfirmed &&

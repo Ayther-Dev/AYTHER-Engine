@@ -208,17 +208,16 @@ int main() {
   const char *candidate_registry = SDL_getenv("AYTHER_RF18_TRUST_REGISTRY");
   const bool candidate_mode = candidate_pack && *candidate_pack &&
                               candidate_registry && *candidate_registry;
-  AyArchive *pack = candidate_mode
-                        ? ayther_pack_open_trusted(candidate_pack,
-                                                   candidate_registry)
-                        : fixture.open();
+  AyArchive *pack =
+      candidate_mode
+          ? ayther_pack_open_trusted(candidate_pack, candidate_registry)
+          : fixture.open();
   if (!pack) {
     std::printf("[FAIL] no abre el pack de prueba\n");
     return 1;
   }
-  const char *tone_asset = candidate_mode
-                               ? "27344701428ebe2965d69cde77ee7769.wav"
-                               : "tone.wav";
+  const char *tone_asset =
+      candidate_mode ? "27344701428ebe2965d69cde77ee7769.wav" : "tone.wav";
   AudioPlayer p;
   if (!p.init()) {
     std::printf("[FAIL] AudioPlayer::init() dummy\n");

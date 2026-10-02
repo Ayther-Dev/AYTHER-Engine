@@ -152,6 +152,7 @@ int main(int argc, char *argv[]) {
          << "\nrecord_lost = " << (record_lost ? "true" : "false") << '\n';
     for (std::size_t index = 0; index < count; ++index) {
       const auto &s = samples[index];
+      // clang-format off
       file << "\n[[samples]]\noccurrence = " << s.occurrence
            << "\nkey = " << s.key << "\noutput = " << s.output
            << "\ncursor_before = " << s.cursor_before
@@ -163,6 +164,7 @@ int main(int argc, char *argv[]) {
            << "]"
            << "\nafter_values = [" << s.after_left << ", " << s.after_right
            << "]\n";
+      // clang-format on
     }
     file.close();
     if (QA_EXPECT_OBSERVER && !intact) {

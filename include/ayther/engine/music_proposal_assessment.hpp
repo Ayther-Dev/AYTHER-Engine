@@ -62,8 +62,8 @@ struct MusicProposalAssessment {
 assess_music_proposal(const ProposalEvidence &evidence) {
   MusicProposalAssessment result;
   result.music_category = classify_music_score(evidence.music_score);
-  result.insufficient_evidence = evidence.match_count < 4 ||
-                                 evidence.distinct_starts < 2;
+  result.insufficient_evidence =
+      evidence.match_count < 4 || evidence.distinct_starts < 2;
   if (evidence.start_anchor && evidence.end_anchor &&
       evidence.unique_boundaries)
     result.boundaries = BoundaryCertainty::confirmed;

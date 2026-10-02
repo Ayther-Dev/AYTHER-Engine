@@ -22,13 +22,12 @@ ayther::engine::MusicSequenceDefinition battle_definition() {
   sequence.entry_node = SequenceNodeId{1};
   sequence.segments = {{SequenceSegmentId{1}, "Intro"},
                        {SequenceSegmentId{2}, "Loop"}};
-  sequence.nodes = {{SequenceNodeId{1}, SequenceSegmentId{1},
-                     AssetAssignmentId{1}},
-                    {SequenceNodeId{2}, SequenceSegmentId{2},
-                     AssetAssignmentId{2}}};
+  sequence.nodes = {
+      {SequenceNodeId{1}, SequenceSegmentId{1}, AssetAssignmentId{1}},
+      {SequenceNodeId{2}, SequenceSegmentId{2}, AssetAssignmentId{2}}};
   sequence.edges = {{SequenceEdgeId{1}, SequenceNodeId{1}, SequenceNodeId{2}}};
-  sequence.points = {{SequencePointId{1}, SequenceNodeId{2}, 16,
-                      PointRole::loop_end}};
+  sequence.points = {
+      {SequencePointId{1}, SequenceNodeId{2}, 16, PointRole::loop_end}};
   sequence.assignments = {
       {AssetAssignmentId{1}, SequenceSegmentId{1}, AssetId{1}, {0, 16}},
       {AssetAssignmentId{2}, SequenceSegmentId{2}, AssetId{2}, {16, 48}}};
@@ -43,7 +42,9 @@ int main() {
   CausalMusicRecognizer recognizer{battle};
 
   check(recognizer.observe({battle_shared_signature,
-                            MusicSignalRole::entry_trigger, {}, true,
+                            MusicSignalRole::entry_trigger,
+                            {},
+                            true,
                             "title-entry"}) == MusicRecognitionAction::entered,
         "the shared signature starts The Battle only while inactive", failures);
   const auto occurrence = recognizer.state().position().occurrence;
@@ -52,7 +53,9 @@ int main() {
 
   for (const char *control : {"title", "menu", "selection"})
     check(recognizer.observe({battle_shared_signature,
-                              MusicSignalRole::entry_trigger, {}, false,
+                              MusicSignalRole::entry_trigger,
+                              {},
+                              false,
                               control}) ==
                   MusicRecognitionAction::continuity_evidence &&
               recognizer.state().position().occurrence == occurrence &&
@@ -60,27 +63,29 @@ int main() {
               recognizer.state().position().visit == intro_visit,
           "title/menu/selection controls do not rearm Intro", failures);
 
-  check(recognizer.observe({0x1234, MusicSignalRole::evidence, {}, false,
-                            "sound-effect"}) ==
+  check(recognizer.observe(
+            {0x1234, MusicSignalRole::evidence, {}, false, "sound-effect"}) ==
                 MusicRecognitionAction::evidence_observed &&
             recognizer.state().position().appearance == intro_appearance,
         "effects preserve the authored traversal", failures);
 
-  check(recognizer.observe({battle_loop_discriminant,
-                            MusicSignalRole::transition, SequenceNodeId{2},
-                            false, "unverified-loop"}) ==
-                MusicRecognitionAction::transition_rejected &&
-            recognizer.state().position().appearance == intro_appearance,
-        "the Loop discriminant cannot be presumed", failures);
-  check(recognizer.observe({battle_loop_discriminant,
-                            MusicSignalRole::transition, SequenceNodeId{2},
-                            true, "verified-loop"}) ==
-            MusicRecognitionAction::transitioned,
-        "the verified discriminant advances Intro to Loop", failures);
+  check(
+      recognizer.observe({battle_loop_discriminant, MusicSignalRole::transition,
+                          SequenceNodeId{2}, false, "unverified-loop"}) ==
+              MusicRecognitionAction::transition_rejected &&
+          recognizer.state().position().appearance == intro_appearance,
+      "the Loop discriminant cannot be presumed", failures);
+  check(
+      recognizer.observe({battle_loop_discriminant, MusicSignalRole::transition,
+                          SequenceNodeId{2}, true, "verified-loop"}) ==
+          MusicRecognitionAction::transitioned,
+      "the verified discriminant advances Intro to Loop", failures);
 
   const auto loop_appearance = recognizer.state().position().appearance;
   check(recognizer.observe({battle_shared_signature,
-                            MusicSignalRole::entry_trigger, {}, false,
+                            MusicSignalRole::entry_trigger,
+                            {},
+                            false,
                             "shared-after-loop"}) ==
                 MusicRecognitionAction::continuity_evidence &&
             recognizer.state().position().appearance == loop_appearance &&

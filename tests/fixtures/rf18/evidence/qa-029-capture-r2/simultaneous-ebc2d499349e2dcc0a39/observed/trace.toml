@@ -1,0 +1,178 @@
+schema_version = 1
+trace_complete = true
+
+[[events]]
+kind = "cut_frame"
+occurrence = 2
+key = 202
+frame = 2
+output = 4
+position_before = 4
+position_after = 4
+
+[[events]]
+kind = "authored_fade_begin"
+occurrence = 1
+key = 101
+frame = 2
+output = 4
+position_before = 4
+position_after = 4
+
+[[events]]
+kind = "fade_complete"
+occurrence = 1
+key = 101
+frame = 2
+output = 8
+position_before = 8
+position_after = 8
+
+[[samples]]
+occurrence = 2
+key = 202
+output = 0
+position_before = 0
+source = 0
+position_after = 1
+gain = 0.25
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 202
+output = 1
+position_before = 1
+source = 1
+position_after = 2
+gain = 0.25
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 202
+output = 2
+position_before = 2
+source = 2
+position_after = 3
+gain = 0.25
+fade_left = 0
+
+[[samples]]
+occurrence = 2
+key = 202
+output = 3
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.25
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 0
+position_before = 0
+source = 0
+position_after = 1
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 1
+position_before = 1
+source = 1
+position_after = 2
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 2
+position_before = 2
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 3
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 4
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 3
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 5
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.375
+fade_left = 2
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 6
+position_before = 6
+source = 6
+position_after = 7
+gain = 0.25
+fade_left = 1
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 7
+position_before = 7
+source = 7
+position_after = 8
+gain = 0.125
+fade_left = 0
+
+[[tick_contexts]]
+visit_order = 0
+occurrence = 2
+key = 202
+frame = 2
+output = 4
+end_frame = "1"
+cut_frame = "1"
+fade_frames = 0
+fade_left = 0
+looping = true
+position = 4
+
+[[tick_contexts]]
+visit_order = 1
+occurrence = 1
+key = 101
+frame = 2
+output = 4
+end_frame = "1"
+cut_frame = "1"
+fade_frames = 4
+fade_left = 0
+looping = true
+position = 4
+
+[audit]
+executable_sha256 = "d7639491ffb08db44d25ff7f993597c9525dd9da73ad5d1b5a04ea6f7716f3dd"

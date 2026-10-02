@@ -46,8 +46,8 @@ public:
     link_active_ = false;
   }
 
-  [[nodiscard]] TransitionQueueResult
-  submit(QueuedMusicTransition request, std::uint64_t music_time_ns) {
+  [[nodiscard]] TransitionQueueResult submit(QueuedMusicTransition request,
+                                             std::uint64_t music_time_ns) {
     if (!link_active_)
       return {TransitionQueueStatus::ignored, {}, {}};
     if (!pending_) {
@@ -67,9 +67,10 @@ public:
     return {status, request.destination, {}};
   }
 
-  [[nodiscard]] TransitionQueueResult
-  finish_link(std::uint64_t generation, AppearanceId appearance,
-              bool condition, std::uint64_t music_time_ns) {
+  [[nodiscard]] TransitionQueueResult finish_link(std::uint64_t generation,
+                                                  AppearanceId appearance,
+                                                  bool condition,
+                                                  std::uint64_t music_time_ns) {
     if (!link_active_ || !pending_)
       return {};
     link_active_ = false;

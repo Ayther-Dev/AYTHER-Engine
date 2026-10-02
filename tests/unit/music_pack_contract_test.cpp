@@ -16,23 +16,21 @@ void check(bool value, const char *message, int &failures) {
 int main() {
   using namespace ayther::engine;
   int failures = 0;
-  const std::string packed =
-      "ayther.music-contract.v1\n"
-      "profile rf18-v1\n"
-      "requires music-sequence-v1\n"
-      "source-rate-hz 48000\n"
-      "identity 9\n"
-      "name The Battle\n"
-      "bus 1\n"
-      "entry 1\n"
-      "segment 1 intro\n"
-      "segment 2 loop\n"
-      "node 1 segment 1 assignment 7\n"
-      "asset 5 region 0 48000 assignment 7\n"
-      "role signature:entry\n"
-      "accepted accepted-proposal-7\n";
-  const auto parsed =
-      read_music_pack_contract(packed, {"music-sequence-v1"});
+  const std::string packed = "ayther.music-contract.v1\n"
+                             "profile rf18-v1\n"
+                             "requires music-sequence-v1\n"
+                             "source-rate-hz 48000\n"
+                             "identity 9\n"
+                             "name The Battle\n"
+                             "bus 1\n"
+                             "entry 1\n"
+                             "segment 1 intro\n"
+                             "segment 2 loop\n"
+                             "node 1 segment 1 assignment 7\n"
+                             "asset 5 region 0 48000 assignment 7\n"
+                             "role signature:entry\n"
+                             "accepted accepted-proposal-7\n";
+  const auto parsed = read_music_pack_contract(packed, {"music-sequence-v1"});
   check(parsed.status == MusicPackContractStatus::accepted &&
             parsed.profile == "rf18-v1" && parsed.source_rate_hz == 48'000,
         "new contract validates profile, capability and source rate", failures);
@@ -44,8 +42,7 @@ int main() {
 
   const auto unsupported =
       read_music_pack_contract(packed, {"other-capability"});
-  check(unsupported.status ==
-                MusicPackContractStatus::unsupported_capability &&
+  check(unsupported.status == MusicPackContractStatus::unsupported_capability &&
             unsupported.identities.empty(),
         "unknown mandatory capability is rejected without reinterpretation",
         failures);

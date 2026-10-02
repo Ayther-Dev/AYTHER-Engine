@@ -90,19 +90,23 @@ score_music_events(std::vector<MusicEvent> reference,
   for (std::size_t expected_index = reference_anchor;
        anchor_found && expected_index < reference.size(); ++expected_index) {
     const auto &expected = reference[expected_index];
-    for (std::size_t index = observed_cursor; index < observed.size(); ++index) {
+    for (std::size_t index = observed_cursor; index < observed.size();
+         ++index) {
       const auto &actual = observed[index];
       if (!events_equivalent(expected, actual))
         continue;
       const auto expected_relative = expected.begin - reference_origin;
       const auto actual_relative = actual.begin - observed_origin;
-      if (detail::distance(expected_relative, actual_relative) > frame_tolerance)
+      if (detail::distance(expected_relative, actual_relative) >
+          frame_tolerance)
         continue;
       if (expected.duration && actual.duration &&
-          detail::distance(*expected.duration, *actual.duration) > frame_tolerance)
+          detail::distance(*expected.duration, *actual.duration) >
+              frame_tolerance)
         continue;
       ++result.match_count;
-      if (!previous_matched_start || *previous_matched_start != expected.begin) {
+      if (!previous_matched_start ||
+          *previous_matched_start != expected.begin) {
         ++result.distinct_matched_starts;
         previous_matched_start = expected.begin;
       }
@@ -118,8 +122,8 @@ score_music_events(std::vector<MusicEvent> reference,
   result.score = (2.0 * static_cast<double>(result.match_count)) /
                  static_cast<double>(denominator);
   result.category = classify_music_score(*result.score);
-  result.insufficient_evidence = result.match_count < 4 ||
-                                 result.distinct_matched_starts < 2;
+  result.insufficient_evidence =
+      result.match_count < 4 || result.distinct_matched_starts < 2;
   return result;
 }
 

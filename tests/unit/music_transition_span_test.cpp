@@ -15,12 +15,12 @@ int main() {
   using namespace ayther::engine;
   int failures = 0;
   const MusicTransitionSpan authored{
-      100, 130, {1000, 1240}, {2000, 2240}, SequenceNodeId{2}, 240,
-      48'000, false, false, false};
+      100, 130,    {1000, 1240}, {2000, 2240}, SequenceNodeId{2},
+      240, 48'000, false,        false,        false};
   auto result = evaluate_transition_span(authored);
   check(result.valid && result.structural_boundary == 100 &&
-            result.audible_end == 130 && result.play_tail &&
-            result.play_link && result.replaced_region.begin == 2000 &&
+            result.audible_end == 130 && result.play_tail && result.play_link &&
+            result.replaced_region.begin == 2000 &&
             result.replaced_region.end == 2240,
         "structural boundary is independent from sustained audible tail",
         failures);

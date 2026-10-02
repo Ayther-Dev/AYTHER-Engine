@@ -27,13 +27,15 @@ struct MusicSemanticState {
 
 class MusicExecutionAdapter {
 public:
-  explicit MusicExecutionAdapter(const MusicSequenceDefinition &definition) noexcept
+  explicit MusicExecutionAdapter(
+      const MusicSequenceDefinition &definition) noexcept
       : definition_(&definition), traversal_(definition) {}
 
   [[nodiscard]] bool start(OccurrenceId occurrence) {
-    const bool accepted = valid_sequence_shape(*definition_) &&
-                          traversal_.enter(occurrence);
-    last_reason_ = accepted ? "entry_selected" : "invalid_sequence_or_occurrence";
+    const bool accepted =
+        valid_sequence_shape(*definition_) && traversal_.enter(occurrence);
+    last_reason_ =
+        accepted ? "entry_selected" : "invalid_sequence_or_occurrence";
     return accepted;
   }
 
@@ -66,18 +68,22 @@ public:
 
   [[nodiscard]] SampleRegion active_region() const noexcept {
     const auto assignment_id = traversal_.position().assignment;
-    const auto assignment = std::ranges::find_if(
-        definition_->assignments,
-        [&](const auto &value) { return value.id == assignment_id; });
+    const auto assignment =
+        std::ranges::find_if(definition_->assignments, [&](const auto &value) {
+          return value.id == assignment_id;
+        });
     return assignment == definition_->assignments.end() ? SampleRegion{}
-                                                         : assignment->region;
+                                                        : assignment->region;
   }
   [[nodiscard]] bool paused() const noexcept { return pause_.paused(); }
   [[nodiscard]] std::uint64_t music_cursor() const noexcept {
     return pause_.music_cursor();
   }
-  [[nodiscard]] std::uint64_t generation() const noexcept { return generation_; }
-  [[nodiscard]] constexpr std::uint64_t offline_analysis_calls() const noexcept {
+  [[nodiscard]] std::uint64_t generation() const noexcept {
+    return generation_;
+  }
+  [[nodiscard]] constexpr std::uint64_t
+  offline_analysis_calls() const noexcept {
     return 0;
   }
   [[nodiscard]] std::string_view last_reason() const noexcept {
@@ -85,13 +91,19 @@ public:
   }
   [[nodiscard]] MusicSemanticState semantic_state() const {
     const auto &position = traversal_.position();
-    const auto segment = std::ranges::find_if(
-        definition_->segments,
-        [&](const auto &value) { return value.id == position.segment; });
+    const auto segment =
+        std::ranges::find_if(definition_->segments, [&](const auto &value) {
+          return value.id == position.segment;
+        });
     return {definition_->name,
-            segment == definition_->segments.end() ? std::string{} : segment->name,
-            active_region(), position.visit, position.iteration,
-            music_cursor(), generation_, paused()};
+            segment == definition_->segments.end() ? std::string{}
+                                                   : segment->name,
+            active_region(),
+            position.visit,
+            position.iteration,
+            music_cursor(),
+            generation_,
+            paused()};
   }
 
 private:

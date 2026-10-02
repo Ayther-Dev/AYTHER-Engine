@@ -21,11 +21,13 @@ struct MusicVoiceAdmission {
 
 class MusicVoiceBudget {
 public:
-  [[nodiscard]] MusicVoiceAdmission add_music_voice(
-      MusicIdentityId identity, AudioBusId bus,
-      bool authorized_substitution) {
-    const auto identity_count = static_cast<std::size_t>(std::ranges::count_if(
-        music_voices_, [&](const auto &voice) { return voice.first == identity; }));
+  [[nodiscard]] MusicVoiceAdmission
+  add_music_voice(MusicIdentityId identity, AudioBusId bus,
+                  bool authorized_substitution) {
+    const auto identity_count = static_cast<std::size_t>(
+        std::ranges::count_if(music_voices_, [&](const auto &voice) {
+          return voice.first == identity;
+        }));
     const auto bus_count = static_cast<std::size_t>(std::ranges::count_if(
         music_voices_, [&](const auto &voice) { return voice.second == bus; }));
     if (!identity || !bus || identity_count >= max_music_voices_per_identity ||

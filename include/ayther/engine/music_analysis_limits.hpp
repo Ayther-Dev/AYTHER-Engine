@@ -15,7 +15,8 @@ inline constexpr std::uint64_t max_analysis_duration_ns = 900'000'000'000ULL;
 inline constexpr std::uint64_t max_analysis_frames = 54'000;
 inline constexpr std::uint64_t max_analysis_events = 1'000'000;
 inline constexpr std::uint64_t max_analysis_identities = 4'096;
-inline constexpr std::uint64_t max_analysis_private_bytes = 256ULL * 1024 * 1024;
+inline constexpr std::uint64_t max_analysis_private_bytes =
+    256ULL * 1024 * 1024;
 inline constexpr std::uint64_t max_analysis_intervals = 10'000;
 inline constexpr std::uint64_t max_analysis_work_ns = 120'000'000'000ULL;
 inline constexpr std::uint64_t max_analysis_cancel_ns = 2'000'000'000ULL;
@@ -132,10 +133,14 @@ evaluate_analysis_work(const AnalysisWorkMetrics &metrics) {
   else if (metrics.cancellation_latency_ns > max_analysis_cancel_ns)
     limit = "cancellation_latency";
   if (limit.empty())
-    return {AnalysisWorkStatus::complete, false, false, {},
-            metrics.covered_events, metrics.total_events};
-  return {AnalysisWorkStatus::analysis_limit, true,
-          metrics.mandatory_scenario, std::move(limit), metrics.covered_events,
+    return {
+        AnalysisWorkStatus::complete, false, false, {}, metrics.covered_events,
+        metrics.total_events};
+  return {AnalysisWorkStatus::analysis_limit,
+          true,
+          metrics.mandatory_scenario,
+          std::move(limit),
+          metrics.covered_events,
           metrics.total_events};
 }
 

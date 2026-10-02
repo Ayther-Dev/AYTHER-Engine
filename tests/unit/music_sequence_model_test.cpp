@@ -52,7 +52,8 @@ int main() {
   check(traversal.enter(OccurrenceId{42}), "entry node opens an occurrence",
         failures);
   const auto intro = traversal.position();
-  check(intro.identity == battle.identity && intro.occurrence == OccurrenceId{42},
+  check(intro.identity == battle.identity &&
+            intro.occurrence == OccurrenceId{42},
         "identity and occurrence are independent from the asset", failures);
   check(intro.node == SequenceNodeId{10} && intro.appearance.value == 1 &&
             intro.visit == 1 && intro.iteration == 0,
@@ -67,16 +68,18 @@ int main() {
   check(traversal.return_internal_loop(), "Loop can return internally",
         failures);
   const auto repeated = traversal.position();
-  check(repeated.appearance == loop.appearance && repeated.visit == loop.visit &&
-            repeated.iteration == 1,
-        "internal loop preserves appearance and increments iteration", failures);
+  check(repeated.appearance == loop.appearance &&
+            repeated.visit == loop.visit && repeated.iteration == 1,
+        "internal loop preserves appearance and increments iteration",
+        failures);
 
   check(traversal.transition_to(SequenceNodeId{20}),
         "self transition is distinct from an internal loop", failures);
   const auto revisited = traversal.position();
   check(revisited.appearance.value == 3 && revisited.visit == 2 &&
             revisited.iteration == 0,
-        "self transition creates an appearance and increments visits", failures);
+        "self transition creates an appearance and increments visits",
+        failures);
 
   check(traversal.transition_to(SequenceNodeId{10}),
         "a recurrent Intro is a valid authored transition", failures);

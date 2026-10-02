@@ -361,28 +361,24 @@ int main() {
     check(m.start(0x05d714c8e7a9ba44, wilderness, 0, 0, 1.0f, true, true,
                   UINT64_MAX, UINT64_MAX, 0, 0, 0, &wilderness_id, nullptr,
                   ayther::RepeatPolicy::continue_playback,
-                  ayther::TransitionPolicy::cut,
-                  ayther::AudioCategory::music),
+                  ayther::TransitionPolicy::cut, ayther::AudioCategory::music),
           "A07 bus musical: Wilderness arranca como voz exclusiva");
     check(m.start(0x93031940bd4e23ee, battle, 4, 0, 1.0f, true, true,
-                  UINT64_MAX, UINT64_MAX, 0, 0, 0, &battle_id,
-                  &battle_result, ayther::RepeatPolicy::continue_playback,
-                  ayther::TransitionPolicy::cut,
-                  ayther::AudioCategory::music),
+                  UINT64_MAX, UINT64_MAX, 0, 0, 0, &battle_id, &battle_result,
+                  ayther::RepeatPolicy::continue_playback,
+                  ayther::TransitionPolicy::cut, ayther::AudioCategory::music),
           "A07 bus musical: The Battle sustituye a Wilderness");
     check(battle_result.action == HdMixer::StartAction::replace &&
-              battle_result.previous_occurrence == 611 &&
-              m.voice_count() == 1,
+              battle_result.previous_occurrence == 611 && m.voice_count() == 1,
           "A07 bus musical: dos claves musicales no se superponen");
-    check(m.start(0xb001, bonus, 8, 0, 1.0f, true, true, UINT64_MAX,
-                  UINT64_MAX, 0, 0, 0, &bonus_id, &bonus_result,
+    check(m.start(0xb001, bonus, 8, 0, 1.0f, true, true, UINT64_MAX, UINT64_MAX,
+                  0, 0, 0, &bonus_id, &bonus_result,
                   ayther::RepeatPolicy::continue_playback,
-                  ayther::TransitionPolicy::cut,
-                  ayther::AudioCategory::music),
+                  ayther::TransitionPolicy::cut, ayther::AudioCategory::music),
           "A07 bus musical: bonus sustituye a The Battle");
     check(bonus_result.action == HdMixer::StartAction::replace &&
-              bonus_result.previous_occurrence == 612 &&
-              m.voice_count() == 1 && m.started() == 3,
+              bonus_result.previous_occurrence == 612 && m.voice_count() == 1 &&
+              m.started() == 3,
           "A07 bus musical: tres pistas distintas dejan una sola voz");
   }
 

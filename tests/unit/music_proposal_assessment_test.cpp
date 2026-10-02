@@ -64,7 +64,8 @@ int main() {
   const auto authored = assess_music_proposal(chosen);
   check(authored.position == PositionCertainty::ambiguous &&
             authored.author_selected && !authored.automatically_accepted,
-        "author choice is recorded without pretending identification", failures);
+        "author choice is recorded without pretending identification",
+        failures);
 
   ProposalEvidence insufficient = partial;
   insufficient.music_score = 1.0;
@@ -73,7 +74,8 @@ int main() {
   const auto short_pattern = assess_music_proposal(insufficient);
   check(short_pattern.insufficient_evidence &&
             short_pattern.music_category == MusicScoreCategory::high,
-        "musical category and evidence sufficiency remain independent", failures);
+        "musical category and evidence sufficiency remain independent",
+        failures);
 
   return failures == 0 ? 0 : 1;
 }

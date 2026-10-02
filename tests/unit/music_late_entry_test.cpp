@@ -27,8 +27,7 @@ int main() {
   const auto direct = calculate_late_entry(request);
   check(direct.status == LateEntryStatus::ready &&
             direct.source_offset == 48'100 &&
-            direct.delivery_crossfade_frames == 221 &&
-            direct.suppress_original,
+            direct.delivery_crossfade_frames == 221 && direct.suppress_original,
         "late entry uses rounded source time and a five-ms delivery", failures);
 
   auto paused = request;

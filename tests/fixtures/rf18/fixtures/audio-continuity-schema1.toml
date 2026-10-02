@@ -1,0 +1,19 @@
+[[event]]
+signature = "0x00000000aabbccdd"
+asset = "audio/ambient.wav"
+continuity_schema = 1
+category = "ambient"
+repeat_policy = "restart"
+transition_policy = "fade"
+loop = true
+loop_begin = 44100
+loop_end = 88200
+entry_point = 6000
+fade_in_duration_ns = 500000000
+fade_out_duration_ns = 750000000
+gain_linear = 0.375
+sequence_priority = -3
+bus_priority = 9
+max_voices = 4
+exclusive_bus = false
+bus = "cave_ambience"

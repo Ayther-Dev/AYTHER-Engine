@@ -53,8 +53,8 @@ evaluate_transition_span(const MusicTransitionSpan &span) {
   }
   result.valid = true;
   result.play_tail = span.tail_region.valid() && !span.foreign_effect;
-  result.play_link = span.link_duration_frames != 0 &&
-                     !span.transition_included_in_asset;
+  result.play_link =
+      span.link_duration_frames != 0 && !span.transition_included_in_asset;
   return result;
 }
 

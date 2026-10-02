@@ -692,7 +692,9 @@ struct AytherSpriteHasher; // opaque — do not dereference
 
 /// Pass as `sat_base` to auto-detect the SAT base from VRAM (recommended).
 /// A fixed address (e.g. 0xD800) only matches a subset of games/modes.
+// clang-format off
 #define AYTHER_SAT_AUTODETECT ((size_t)-1)
+// clang-format on
 
 /// Allocate a new SpriteHasher.  Free with ayther_sprite_hasher_free().
 AytherSpriteHasher *ayther_sprite_hasher_new();
@@ -1487,8 +1489,10 @@ struct AytherEventSub {
   /// F3: match rule — both sides of this struct live in this repo, and its
   /// layout is pinned by `event_sub_layout_tests` on the Rust side.
   uint64_t match_instrument; ///< timbre identity of the rule (0 = no rule)
+  // clang-format off
   uint8_t match_rule;        ///< 0 exact (legacy) · 1 instrument · 2 instr+note
   uint8_t match_pitch;       ///< MIDI note of rule 2 (255 = no pitch)
+  // clang-format on
   /// The sound's bus — 0 unclassified · 1 music · 2 effects · 3 voices.
   ///
   /// It comes out of one of the padding bytes that were already there, so the

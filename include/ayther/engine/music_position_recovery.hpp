@@ -37,9 +37,9 @@ public:
       return state();
 
     const bool same_appearance = appearance == expected_appearance_;
-    const bool within_tolerance = observed_position &&
-                                  distance(*observed_position,
-                                           expected_position_) <= tolerance_;
+    const bool within_tolerance =
+        observed_position &&
+        distance(*observed_position, expected_position_) <= tolerance_;
     certainty_ = same_appearance && within_tolerance
                      ? PositionRecoveryCertainty::confirmed
                      : PositionRecoveryCertainty::unconfirmed;

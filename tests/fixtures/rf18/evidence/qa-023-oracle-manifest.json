@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "kind": "audio_qa_reference_oracle",
+  "reference": {
+    "engine_release": "v0.1.0-rc.9",
+    "engine_commit": "af2623d536c9b3f9a08f9c61757f0b3c1e6bbfa7",
+    "runtime_release": "v0.1.0-beta.6",
+    "runtime_commit": "cbe90d2cd1d443dc53bbc1d5fa0234197b2982a3",
+    "core_c_abi": 7,
+    "runtime": {
+      "path": ".qa-reference/audio-qa-initial-20260927/runtime-package/bin/ayther_runtime.exe",
+      "sha256": "f502a29ba820ae2c885cc11b88eff57204040f2315868eab090644c3ab5c4ac0"
+    },
+    "scope": "normalized_reference",
+    "toolchain": {
+      "compiler": "MSVC 19.51.36256.0",
+      "toolset": "v145",
+      "generator": "Visual Studio 18 2026",
+      "configuration": "Release",
+      "language": "C++20"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "live-resume-loop-within-window",
+      "revision": 2,
+      "state": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition/state.json",
+        "sha256": "9cc37a5159590cfdbb1c14daadd4c7b82dc8ca9b3e61b5382d8a765f455cd0ab",
+        "schema_version": 1
+      },
+      "inputs": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition/inputs.json",
+        "sha256": "06f937332fcfd4782fd8f9f48029f26aae311226ffc1b481f60e22f866403bc5",
+        "schema_version": 1
+      },
+      "source": [
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_live_resume.h",
+          "sha256": "60c64ed5f4cecfb1119206c942f3590f9e3dd1aaabb2312f04b8126667d3ad26"
+        },
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/ayther_session_impl.inl",
+          "sha256": "f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6"
+        },
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/audio_player.cpp",
+          "sha256": "cc071e307e76c670b62c79e5fcfcc4e9258f80abdc36fa0f88abc1c28f84ba97"
+        },
+        {
+          "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_hd_mixer.h",
+          "sha256": "f47f24ca73632799da944f2ec5b8425221c2deda475291f1c9263fd02448dae8"
+        }
+      ],
+      "adapter": {
+        "status": "verified",
+        "sources": [
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/staging_probe.cpp",
+            "sha256": "cf53ebd80c28f86f374650c1f60622844af18712585ca62546e24e56ced85a36"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/CMakeLists.txt",
+            "sha256": "86f2f5621e1552e5012919d3f65346f2baa6554866141e17821b8b747fb3ca57"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/verify.cmake",
+            "sha256": "69d4b86efca3abca126fb42db054c3ca3b469650cc9339a0c9bed9d259208455"
+          }
+        ],
+        "generated": [
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/stage_resume.h",
+            "sha256": "e8d5a7aa04d1745da81994174bda56d367a2d333386e5ae2e65b2f1747bfba30"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/stage_mixer.h",
+            "sha256": "c59f7f91bd985efcae57c361e0f20f5b28be74d91ba5b2b53a75b1b3e88492ff"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/stage_player.h",
+            "sha256": "4676d11ae76e448efa711a60985aee43cbdc118d6321d4acc12fa6e91c62e9e0"
+          },
+          {
+            "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/observed_methods.inc",
+            "sha256": "e60da551a0b48cbfc6a358d71b7fc0161e4c47fb88ff230ab13a1f6695f86899"
+          }
+        ],
+        "executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-binaries/observed/audio_qa_staging_observed.exe",
+          "sha256": "e7ccc60b90e2cb52a45e510a7db59832bd08ed5a4328675502cc5edd9804a48d"
+        },
+        "reference_executable": {
+          "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-binaries/reference/audio_qa_staging_reference.exe",
+          "sha256": "b9700dfa827b9d04f34f6a298ac9e8ba96a15aece1dffb716cbca165a2a2f8b7"
+        }
+      },
+      "result": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-capture/resume_voice-c49e23985b44ae4ec40a/observed/staging.toml",
+        "sha256": "b8592cbe7cd1fa59efd0a9e25cb2fdccbd61ba6310c0484385ff1d8ba9b27d7a",
+        "schema_version": 1,
+        "observed_fields": [
+          "resume_action",
+          "resume_offset_seconds",
+          "resume_reason",
+          "resume_voice_count",
+          "voice_samples",
+          "spans"
+        ],
+        "integrity": "complete_for_QA_023",
+        "reason_observed": true,
+        "player_effect_observed": true
+      },
+      "review": {
+        "status": "adapter_verified",
+        "rules_modified": false,
+        "frozen_for_T12": false,
+        "reason_source": "hook_at_original_restart_return",
+        "remaining": [
+          "case_matrix",
+          "full_session_integration",
+          "QA-030-review"
+        ]
+      },
+      "player_context": {
+        "pack": {
+          "path": "AYTHER-Engine/tests/audio_qa/conversion_probe/data/common-mix.ay",
+          "sha256": "f9677125e2f7ec0d35efae5ec25bc967bab125721a6aeee685e8bd7cfcbd3691"
+        },
+        "trust": {
+          "path": "AYTHER-Engine/tests/audio_qa/conversion_probe/data/trust.toml",
+          "sha256": "4714e9022cd40807c55f7ca1821e39db6c45389b0f15c3f9264c99b1e0d315fa"
+        },
+        "asset": "fixture.wav",
+        "voice_key": 901,
+        "gain": 0.25,
+        "staging_frame": 1,
+        "staging_mark": 48,
+        "frame_domain": "controlled_harness_not_session_frame_120",
+        "end_frame": 180,
+        "cut_frame": "18446744073709551615"
+      }
+    }
+  ],
+  "comparison": null,
+  "definition": {
+    "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition/manifest.json",
+    "sha256": "e596fa3d30983d4f1f32b78c10d5754bec61e2f611459d2c5cab2b240c0fb456"
+  },
+  "previous_capture": {
+    "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-022-oracle/manifest.json",
+    "sha256": "532ca40f1e58933d960ac1c5bcde9073386d57c0887e605c35b9d74ea198aee5"
+  }
+}
