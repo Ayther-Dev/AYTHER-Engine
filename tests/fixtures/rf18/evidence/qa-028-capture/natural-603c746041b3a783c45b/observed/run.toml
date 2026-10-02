@@ -1,0 +1,22 @@
+schema_version = 1
+key = 101
+asset_frames = 8
+asset_sample_base = 1000
+asset_sample_step = 100
+original_sample = 100
+sample_rate = 44100
+channels = 2
+looping = false
+end_frame = "18446744073709551615"
+cut_frame = "18446744073709551615"
+voices_started = 1
+voices_final = 0
+[[operations]]
+kind = "start"
+frame = 0
+output = 4
+offset = 0
+gain = 0.5
+[[operations]]
+kind = "mix"
+frames = 16

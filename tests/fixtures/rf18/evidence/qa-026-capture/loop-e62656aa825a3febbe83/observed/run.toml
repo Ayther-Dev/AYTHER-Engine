@@ -1,0 +1,38 @@
+schema_version = 1
+key = 101
+asset_frames = 8
+asset_sample_base = 1000
+asset_sample_step = 100
+original_sample = 100
+loop_begin = 2
+loop_end = 6
+offset = 4
+gain = 0.5
+end_frame = "18446744073709551615"
+cut_frame = "18446744073709551615"
+sample_rate = 44100
+channels = 2
+
+[[frames]]
+frame = 0
+output_begin = 0
+output_frames = 8
+voices_after_tick = 1
+
+[[frames]]
+frame = 1
+output_begin = 8
+output_frames = 8
+voices_after_tick = 1
+
+[[frames]]
+frame = 2
+output_begin = 16
+output_frames = 4
+voices_after_tick = 1
+
+[[frames]]
+frame = 3
+output_begin = 20
+output_frames = 4
+voices_after_tick = 1

@@ -1,0 +1,121 @@
+cmake_minimum_required(VERSION 3.25)
+project(AytherContinuityOracle LANGUAGES CXX)
+enable_testing()
+set(reference "${QA_ENGINE_REFERENCE_SOURCE}")
+foreach(entry IN ITEMS
+    "src/ayther_session.cpp|6abeca0e46213d6a04db1d1ce8e67b08454c4a4af468e4f7dc48ed0a11e50d99"
+    "src/ayther_session_impl.inl|f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6"
+    "src/audio_player.cpp|cc071e307e76c670b62c79e5fcfcc4e9258f80abdc36fa0f88abc1c28f84ba97"
+    "include/ayther/audio_hd_mixer.h|f47f24ca73632799da944f2ec5b8425221c2deda475291f1c9263fd02448dae8")
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 path)
+    list(GET parts 1 expected)
+    file(SHA256 "${reference}/${path}" actual)
+    if(NOT actual STREQUAL expected)
+        message(FATAL_ERROR "Continuity reference changed: ${path}: ${actual}")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${reference}/${path}")
+endforeach()
+function(section file begin_anchor end_anchor output)
+    file(READ "${reference}/${file}" source)
+    string(REPLACE "\r\n" "\n" source "${source}")
+    string(FIND "${source}" "${begin_anchor}" begin)
+    if(begin LESS 0)
+        message(FATAL_ERROR "Missing start anchor: ${begin_anchor}")
+    endif()
+    string(SUBSTRING "${source}" ${begin} -1 tail)
+    string(FIND "${tail}" "${end_anchor}" end)
+    if(end LESS_EQUAL 0)
+        message(FATAL_ERROR "Missing end anchor: ${end_anchor}")
+    endif()
+    string(SUBSTRING "${tail}" 0 ${end} result)
+    set(${output} "${result}" PARENT_SCOPE)
+endfunction()
+section("src/ayther_session.cpp" "            if (im.audio_enabled && !im.audio_live_prev.count(sig)) {"
+    "\n        }\n        // : anclajes por CABEZA" gate)
+section("src/ayther_session_impl.inl" "    struct LiveInstance {"
+    "    std::unordered_map<uint64_t, LiveInstance>" instance)
+section("src/ayther_session_impl.inl" "    bool hd_fired(uint64_t key, bool played) {"
+    "\n    /// : re-armar" fired)
+section("src/audio_player.cpp" "bool AudioPlayer::play_oneshot_asset_file("
+    "    // Dos ocurrencias" player)
+string(REPLACE "AudioPlayer::" "TestPlayer::" player "${player}")
+string(APPEND player "    throw std::runtime_error(\"preview_outside_fixture\");\n}\n")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/player.inc" "${player}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/instance.inc" "${instance}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/fired.inc" "${fired}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/reference_gate.inc" "${gate}")
+set(current_gate "${gate}")
+set(defective_route
+    "                if (dur > 0 && can && !anchor_now.count(asig)) ++im.hd_claimed;")
+string(CONCAT corrected_route
+    "                const auto route = sequence_routes.find(asig);\n"
+    "                const bool rejected_sequence = route != sequence_routes.end() &&\n"
+    "                    ayther::seq_trigger_is_rejected(route->second.disposition);\n"
+    "                if (dur > 0 && can && rejected_sequence) {\n"
+    "                    ++im.hd_claimed;\n"
+    "                    return;\n"
+    "                }")
+string(FIND "${current_gate}" "${defective_route}" corrected_at)
+if(corrected_at LESS 0)
+    message(FATAL_ERROR "Missing fixed rejection insertion point")
+endif()
+string(REPLACE "${defective_route}" "${corrected_route}" current_gate "${current_gate}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/current_gate.inc" "${current_gate}")
+function(observe variable anchor replacement)
+    string(FIND "${${variable}}" "${anchor}" found)
+    if(found LESS 0)
+        message(FATAL_ERROR "Continuity observation anchor missing: ${anchor}")
+    endif()
+    string(REPLACE "${anchor}" "${replacement}" changed "${${variable}}")
+    set(${variable} "${changed}" PARENT_SCOPE)
+endfunction()
+observe(gate "            if (im.audio_enabled && !im.audio_live_prev.count(sig)) {"
+    "            if (im.audio_enabled && !im.audio_live_prev.count(sig)) {\n                qa_continuity::gate(\"rising_edge\", im.frame_index);")
+string(APPEND gate " else { qa_continuity::gate(\"gate_not_entered\", im.frame_index); }\n")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/observed_gate.inc" "${gate}")
+file(READ "${reference}/include/ayther/audio_hd_mixer.h" mixer)
+string(REPLACE "\r\n" "\n" mixer "${mixer}")
+observe(mixer "    struct Voice {" "    struct Voice {\n        uint64_t qa_occurrence = 0;")
+observe(mixer "        voices_.push_back(std::move(v));" "        v.qa_occurrence = started_ + 1;\n        voices_.push_back(std::move(v));")
+observe(mixer "                ++v.pos;"
+    "                ++v.pos;\n                qa_continuity::sample({v.qa_occurrence, v.key, block_start + f, s / 2, v.pos, g, v.fade_left});")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/observed_mixer.h" "// AYTHER QA observation copy.\n${mixer}")
+foreach(kind IN ITEMS reference observed)
+    add_executable(audio_qa_continuity_${kind} continuity_probe.cpp)
+    target_compile_features(audio_qa_continuity_${kind} PRIVATE cxx_std_20)
+    target_compile_options(audio_qa_continuity_${kind} PRIVATE /W4 /WX /permissive- /EHsc)
+    set_target_properties(audio_qa_continuity_${kind} PROPERTIES CXX_EXTENSIONS OFF)
+    target_include_directories(audio_qa_continuity_${kind} SYSTEM PRIVATE "${reference}/include/ayther" "${CMAKE_CURRENT_BINARY_DIR}")
+    if(kind STREQUAL "observed")
+        target_compile_definitions(audio_qa_continuity_${kind} PRIVATE QA_CONTINUITY_OBSERVER=1)
+    else()
+        target_compile_definitions(audio_qa_continuity_${kind} PRIVATE QA_CONTINUITY_OBSERVER=0)
+    endif()
+endforeach()
+add_executable(audio_qa_continuity_current continuity_probe.cpp)
+target_compile_features(audio_qa_continuity_current PRIVATE cxx_std_20)
+target_compile_options(audio_qa_continuity_current PRIVATE /W4 /WX /permissive- /EHsc)
+set_target_properties(audio_qa_continuity_current PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(audio_qa_continuity_current SYSTEM PRIVATE
+    "${reference}/include/ayther" "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(audio_qa_continuity_current PRIVATE
+    QA_CONTINUITY_CURRENT=1 QA_CONTINUITY_OBSERVER=0)
+add_executable(audio_qa_continuity_current_observed continuity_probe.cpp)
+target_compile_features(audio_qa_continuity_current_observed PRIVATE cxx_std_20)
+target_compile_options(audio_qa_continuity_current_observed PRIVATE /W4 /WX /permissive- /EHsc)
+set_target_properties(audio_qa_continuity_current_observed PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(audio_qa_continuity_current_observed SYSTEM PRIVATE
+    "${reference}/include/ayther" "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(audio_qa_continuity_current_observed PRIVATE
+    QA_CONTINUITY_CURRENT=1 QA_CONTINUITY_OBSERVER=1)
+foreach(mode IN ITEMS keep repeat lost internal claimed internal_repeat claimed_repeat)
+    add_test(NAME audio_qa_continuity_${mode}
+        COMMAND ${CMAKE_COMMAND} "-DREFERENCE=$<TARGET_FILE:audio_qa_continuity_reference>"
+            "-DOBSERVED=$<TARGET_FILE:audio_qa_continuity_observed>" "-DMODE=${mode}"
+            "-DCURRENT=$<TARGET_FILE:audio_qa_continuity_current>"
+            "-DCURRENT_OBSERVED=$<TARGET_FILE:audio_qa_continuity_current_observed>"
+            "-DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/results/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/verify.cmake")
+    set_tests_properties(audio_qa_continuity_${mode} PROPERTIES TIMEOUT 10 LABELS "audio_qa;reference")
+endforeach()

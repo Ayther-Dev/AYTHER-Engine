@@ -90,7 +90,7 @@ $engineHeaders = @(
     'ayther_audio_events.h', 'ayther_layers.h', 'ayther_mode3.h',
     'ayther_renderer.h', 'ayther_result.h', 'ayther_sdk.h',
     'ayther_sdk_version.h', 'ayther_session.h', 'log.h',
-    'engine/capabilities.hpp', 'engine/core_probe.hpp', 'engine/engine.hpp',
+    'engine/audio_observer.hpp', 'engine/capabilities.hpp', 'engine/core_probe.hpp', 'engine/engine.hpp',
     'engine/input.hpp', 'engine/pack.hpp', 'engine/vulkan_interop.hpp')
 
 $engineShaders = @(

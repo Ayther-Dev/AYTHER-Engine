@@ -1,0 +1,39 @@
+schema_version = 1
+asset_frames = 16
+asset_sample_base = 1000
+asset_sample_step = 100
+original_sample = 100
+sample_rate = 44100
+channels = 2
+voices_started = 2
+voices_final = 0
+[[operations]]
+kind = "start"
+key = 101
+output = 0
+offset = 0
+gain = 0.5
+looping = true
+end_frame = 1
+cut_frame = 1
+fade_frames = 4
+[[operations]]
+kind = "start"
+key = 202
+output = 0
+offset = 0
+gain = 0.25
+looping = true
+end_frame = 1
+cut_frame = 1
+fade_frames = 0
+[[operations]]
+kind = "mix"
+frames = 4
+[[operations]]
+kind = "tick"
+frame = 2
+output = 4
+[[operations]]
+kind = "mix"
+frames = 4

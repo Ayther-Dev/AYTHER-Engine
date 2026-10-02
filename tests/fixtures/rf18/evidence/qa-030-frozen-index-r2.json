@@ -1,0 +1,764 @@
+{
+  "schema_version": 1,
+  "kind": "audio_qa_frozen_oracle_index",
+  "revision": 2,
+  "date": "2026-09-27",
+  "scope": "controlled_initial_component_rules",
+  "automatic_rebaseline": false,
+  "full_T12_passed": false,
+  "entries": [
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-oracle-manifest.json",
+        "sha256": "025efd3557f572dd30ee27054d259cd1a74760758cf4e82f575ee44f09f183b3"
+      },
+      "cases": [
+        {
+          "case_id": "live-resume-loop-within-window",
+          "revision": 2,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        }
+      ]
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-oracle-manifest.json",
+        "sha256": "33f794e94b1040ebbeffe19ee1e676272c6c0744b8b82c505aa75d221ebde7b1"
+      },
+      "cases": [
+        {
+          "case_id": "selection-match",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "selection-miss",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "selection-exact",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "selection-lost",
+          "revision": 1,
+          "role": "integrity_negative_control",
+          "review": "accepted_for_controlled_T12_comparison"
+        }
+      ]
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-oracle-manifest.json",
+        "sha256": "179e84debe5e1842b72224ddee6b1bab12691b1f79a1e3f8e462ce4f428495eb"
+      },
+      "cases": [
+        {
+          "case_id": "live-continuity-keep",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "live-continuity-repeat",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "live-continuity-lost",
+          "revision": 1,
+          "role": "integrity_negative_control",
+          "review": "accepted_for_controlled_T12_comparison"
+        }
+      ]
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-oracle-manifest.json",
+        "sha256": "bd2132a3b6e26c1afac92c72d46ecf6cf8c37d981e2e70b587baa04f093a8a32"
+      },
+      "cases": [
+        {
+          "case_id": "lifecycle-loop",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "lifecycle-window",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "lifecycle-lost",
+          "revision": 1,
+          "role": "integrity_negative_control",
+          "review": "accepted_for_controlled_T12_comparison"
+        }
+      ]
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-oracle-manifest.json",
+        "sha256": "8493230f604f30b426cf39c972a80ac300457f41b89a4007c24145a3677d08fa"
+      },
+      "cases": [
+        {
+          "case_id": "lifecycle-replacement",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "lifecycle-replacement_lost",
+          "revision": 1,
+          "role": "integrity_negative_control",
+          "review": "accepted_for_controlled_T12_comparison"
+        }
+      ]
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-oracle-manifest.json",
+        "sha256": "655ed825919c5c086c772b593c6765763f0336036da1237d725a01c71570a9c7"
+      },
+      "cases": [
+        {
+          "case_id": "lifecycle-natural",
+          "revision": 1,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "lifecycle-natural_lost",
+          "revision": 1,
+          "role": "integrity_negative_control",
+          "review": "accepted_for_controlled_T12_comparison"
+        }
+      ]
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-oracle-manifest-r2.json",
+        "sha256": "6cf9d3198a7883ffa15415e8acdf5a8b409f2f3017d072f05dd880515771ca1f"
+      },
+      "cases": [
+        {
+          "case_id": "lifecycle-simultaneous",
+          "revision": 2,
+          "role": "initial_rule_oracle",
+          "review": "accepted_for_controlled_T12_comparison"
+        },
+        {
+          "case_id": "lifecycle-simultaneous_lost",
+          "revision": 2,
+          "role": "integrity_negative_control",
+          "review": "accepted_for_controlled_T12_comparison"
+        }
+      ]
+    }
+  ],
+  "source_snapshots": [
+    {
+      "original": {
+        "path": "AYTHER-Engine/tests/audio_qa/reference_oracle/reference_decision.cpp",
+        "sha256": "6150ae9bd36775e1f948b7ec91e388da109028dbd2a9c2e061f9ae8e1680eaab"
+      },
+      "snapshot": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-source-snapshots/reference_decision.cpp",
+        "sha256": "6150ae9bd36775e1f948b7ec91e388da109028dbd2a9c2e061f9ae8e1680eaab"
+      }
+    },
+    {
+      "original": {
+        "path": "AYTHER-Engine/tests/audio_qa/reference_oracle/CMakeLists.txt",
+        "sha256": "d00c21640af9f751edd5ba3efffa3d256aaef0e1f08711444cbad705092ff5db"
+      },
+      "snapshot": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-source-snapshots/CMakeLists.txt",
+        "sha256": "d00c21640af9f751edd5ba3efffa3d256aaef0e1f08711444cbad705092ff5db"
+      }
+    },
+    {
+      "original": {
+        "path": "AYTHER-Engine/tests/audio_qa/reference_oracle/verify.cmake",
+        "sha256": "514ed3409fb9c192a94e3fbb4eea6d324ee950b22e37b0b34961331a6d30cc16"
+      },
+      "snapshot": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-source-snapshots/verify.cmake",
+        "sha256": "514ed3409fb9c192a94e3fbb4eea6d324ee950b22e37b0b34961331a6d30cc16"
+      }
+    },
+    {
+      "original": {
+        "path": "AYTHER-Engine/tests/audio_qa/conversion_probe/CMakeLists.txt",
+        "sha256": "fb71c365e15c8feb4a9783c83ef83c9e941fd8984f8885bbfe1fbf1663b43846"
+      },
+      "snapshot": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-source-snapshots/conversion-CMakeLists.txt",
+        "sha256": "fb71c365e15c8feb4a9783c83ef83c9e941fd8984f8885bbfe1fbf1663b43846"
+      }
+    },
+    {
+      "original": {
+        "path": "AYTHER-Engine/tests/audio_qa/conversion_probe/observer.h",
+        "sha256": "c82da7d83af13be6c9b39ba54ebb1e63aba6284826efecf8b15be944cd4ecc93"
+      },
+      "snapshot": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-source-snapshots/conversion-observer.h",
+        "sha256": "c82da7d83af13be6c9b39ba54ebb1e63aba6284826efecf8b15be944cd4ecc93"
+      }
+    },
+    {
+      "original": {
+        "path": "AYTHER-Engine/tests/audio_qa/conversion_probe/observer_impl.h",
+        "sha256": "dcc718720bbfb424cf8d84d9504953c30fef44a2f5521f7158349ac9be6d1c01"
+      },
+      "snapshot": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-source-snapshots/conversion-observer_impl.h",
+        "sha256": "dcc718720bbfb424cf8d84d9504953c30fef44a2f5521f7158349ac9be6d1c01"
+      }
+    }
+  ],
+  "supplemental_runtime_dependencies": [
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-binaries/observed/SDL3.dll",
+      "sha256": "cca3a8395f34f6d94dff6c5aca5941a1461073063cfd06c0d87d1cab2f8557b5"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-binaries/reference/SDL3.dll",
+      "sha256": "cca3a8395f34f6d94dff6c5aca5941a1461073063cfd06c0d87d1cab2f8557b5"
+    }
+  ],
+  "verified_content": [
+    {
+      "path": ".qa-reference/audio-qa-initial-20260927/runtime-package/bin/ayther_runtime.exe",
+      "sha256": "f502a29ba820ae2c885cc11b88eff57204040f2315868eab090644c3ab5c4ac0"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition/state.json",
+      "sha256": "9cc37a5159590cfdbb1c14daadd4c7b82dc8ca9b3e61b5382d8a765f455cd0ab"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition/inputs.json",
+      "sha256": "06f937332fcfd4782fd8f9f48029f26aae311226ffc1b481f60e22f866403bc5"
+    },
+    {
+      "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_live_resume.h",
+      "sha256": "60c64ed5f4cecfb1119206c942f3590f9e3dd1aaabb2312f04b8126667d3ad26"
+    },
+    {
+      "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/ayther_session_impl.inl",
+      "sha256": "f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6"
+    },
+    {
+      "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/audio_player.cpp",
+      "sha256": "cc071e307e76c670b62c79e5fcfcc4e9258f80abdc36fa0f88abc1c28f84ba97"
+    },
+    {
+      "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_hd_mixer.h",
+      "sha256": "f47f24ca73632799da944f2ec5b8425221c2deda475291f1c9263fd02448dae8"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/staging_probe.cpp",
+      "sha256": "cf53ebd80c28f86f374650c1f60622844af18712585ca62546e24e56ced85a36"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/CMakeLists.txt",
+      "sha256": "86f2f5621e1552e5012919d3f65346f2baa6554866141e17821b8b747fb3ca57"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/verify.cmake",
+      "sha256": "69d4b86efca3abca126fb42db054c3ca3b469650cc9339a0c9bed9d259208455"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/stage_resume.h",
+      "sha256": "e8d5a7aa04d1745da81994174bda56d367a2d333386e5ae2e65b2f1747bfba30"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/stage_mixer.h",
+      "sha256": "c59f7f91bd985efcae57c361e0f20f5b28be74d91ba5b2b53a75b1b3e88492ff"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/stage_player.h",
+      "sha256": "4676d11ae76e448efa711a60985aee43cbdc118d6321d4acc12fa6e91c62e9e0"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-sources/observed_methods.inc",
+      "sha256": "e60da551a0b48cbfc6a358d71b7fc0161e4c47fb88ff230ab13a1f6695f86899"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-binaries/observed/audio_qa_staging_observed.exe",
+      "sha256": "e7ccc60b90e2cb52a45e510a7db59832bd08ed5a4328675502cc5edd9804a48d"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-binaries/reference/audio_qa_staging_reference.exe",
+      "sha256": "b9700dfa827b9d04f34f6a298ac9e8ba96a15aece1dffb716cbca165a2a2f8b7"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-023-capture/resume_voice-c49e23985b44ae4ec40a/observed/staging.toml",
+      "sha256": "b8592cbe7cd1fa59efd0a9e25cb2fdccbd61ba6310c0484385ff1d8ba9b27d7a"
+    },
+    {
+      "path": "AYTHER-Engine/tests/audio_qa/conversion_probe/data/common-mix.ay",
+      "sha256": "f9677125e2f7ec0d35efae5ec25bc967bab125721a6aeee685e8bd7cfcbd3691"
+    },
+    {
+      "path": "AYTHER-Engine/tests/audio_qa/conversion_probe/data/trust.toml",
+      "sha256": "4714e9022cd40807c55f7ca1821e39db6c45389b0f15c3f9264c99b1e0d315fa"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition/manifest.json",
+      "sha256": "e596fa3d30983d4f1f32b78c10d5754bec61e2f611459d2c5cab2b240c0fb456"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-022-oracle/manifest.json",
+      "sha256": "532ca40f1e58933d960ac1c5bcde9073386d57c0887e605c35b9d74ea198aee5"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/state.toml",
+      "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/input.toml",
+      "sha256": "4ef9f3fc97e32f7a5f03db1628ca0b49cb1156aabec26fad5de6c9095808f8ac"
+    },
+    {
+      "path": ".qa-reference/audio-qa-initial-20260927/engine-source/include/ayther/audio_match_rule.h",
+      "sha256": "5323d93783d009223a18b1e03e69b17be6e04aa02c47ba77cc686bc95b745592"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/CMakeLists.txt",
+      "sha256": "33515f3c99d80c4a1f925587f5154f5df4a4105bed1a2ed98ecd41758c2c2542"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_match.h",
+      "sha256": "fbc3d641343b2404bcac41539ed8cfc59dd0b43d81677f9d20c9c61dd3a8a343"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/observed_resolve.inc",
+      "sha256": "4a790b004c0e080e1978bec402773830a56d5efe69e3f7bdbc524166b2d95e93"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/reference_resolve.inc",
+      "sha256": "fec16b89230e4c6324415e46523d9edf7658845199511f563acbf0e5480e32fd"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/selection_probe.cpp",
+      "sha256": "bcba2d1d3e7c23ce31cc4b372ab21497a222291c8ee2982e6821ca34b7331a0c"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-sources/verify.cmake",
+      "sha256": "75e765d39b30e3599f5f8d829689a4fe899de4a0314b86904b69be4500810c4f"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_reference.exe",
+      "sha256": "33fba25eba7e1c1e5eeeba52b50f1c976256fe36044d47eb791d65ee29e34331"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-binaries/audio_qa_selection_observed.exe",
+      "sha256": "467568e290fe75b4de06a7eb24f7839f8dbeb7616e378557d7c00c3f62466c62"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/decision.toml",
+      "sha256": "a16f2849f31ecde7cde61cb2784a5a9e8bb3f44c0ec5a5201f9638287e612dbf"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/match-fc60ea56b66eed96ce88/observed/facts.toml",
+      "sha256": "133edbf71f26c536a648a3ea79510e21544a53613b194436b21e722af5adbf13"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/state.toml",
+      "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/input.toml",
+      "sha256": "952d8966ee5310c5ce25a1f46ae400d80600ee8a5bf4e30af7b68ef5bc6edf72"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/decision.toml",
+      "sha256": "1911e4e01e4539855453dafcbc89527006e1f6179dd252558ecddc85b03bf6e7"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/miss-0c1cbaa08f58c23e7b29/observed/facts.toml",
+      "sha256": "0d3c6ffe1db1aeb785dbd119b82f55310cafa4853aafb8ebff8671a8f405ea3a"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/state.toml",
+      "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/input.toml",
+      "sha256": "c7777b345b4616241b0194bc8354213f94988f789a5bb8afc9672414ab670bb7"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/decision.toml",
+      "sha256": "187c5298894fd8e9df8b58edf4e10c6e828bcd6dac1770f093a6837113b6c0e4"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/exact-657cc205d20f643008a1/observed/facts.toml",
+      "sha256": "49fb60bbee2da620a2c69fa3fed75cfab8a3747612170b4c49c599a79ecf247b"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/state.toml",
+      "sha256": "6227215d20048331e3910f8aaea83f51a2b9306055f1b4515e21ed15f2aeb5fc"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/input.toml",
+      "sha256": "4ef9f3fc97e32f7a5f03db1628ca0b49cb1156aabec26fad5de6c9095808f8ac"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/decision.toml",
+      "sha256": "a16f2849f31ecde7cde61cb2784a5a9e8bb3f44c0ec5a5201f9638287e612dbf"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-024-capture/lost-bb91a928e1d4fb77bf59/observed/facts.toml",
+      "sha256": "a4a2a1c6b16ad3a6628ecb1302a06c34bb9b8a9a95d44e632855df83725c0964"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/keep-95d11e041ecbfb3b8073/observed/run.toml",
+      "sha256": "0669864df3d778789abd7199e44e2b05ce84d6e76fe4f681015566d92f33a5fb"
+    },
+    {
+      "path": ".qa-reference/audio-qa-initial-20260927/engine-source/src/ayther_session.cpp",
+      "sha256": "6abeca0e46213d6a04db1d1ce8e67b08454c4a4af468e4f7dc48ed0a11e50d99"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/CMakeLists.txt",
+      "sha256": "16c58712b79dc82bf9574479faf684d2f31142260920c2e4ad156a01a47dfce0"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/continuity_probe.cpp",
+      "sha256": "d35e0e2d2934a2255787a2b8b191e95acac07257f752f68cbb8aa942d5416092"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/fired.inc",
+      "sha256": "00e183a337b2049a28c0fbcbf0d7cc433e3eabcdc89a6e1d87d0915313f1fb0f"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/instance.inc",
+      "sha256": "84951ee6dc9e03753a16314de1d411c4bbc515b1f8c0432b6b5062b0cad003a8"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/observed_gate.inc",
+      "sha256": "2be8083096d5c2e629625639e4f7d3e36246d11bbdcb1491d8428e920dc93086"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/observed_mixer.h",
+      "sha256": "e4fb26dfde3f0b1a6700e6cf5318b7705f0068b976da78eb1f6a05f1c471cc1a"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/player.inc",
+      "sha256": "c69bf9225d096c87ba4d298827c72d9fd1bfde7a354b4b38cce08ee31bdf12a9"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/reference_gate.inc",
+      "sha256": "c90794fd1eab894fca71b833e35d51c55b6dd194850b7f76323eb9d0827d7a2c"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-sources/verify.cmake",
+      "sha256": "faff26d10f185b1db72b6ac90e6acde34c66e485d7044b5307c6da54bd7ea6f8"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-binaries/audio_qa_continuity_observed.exe",
+      "sha256": "963f780db2826c583fa92348511f4ae2f6379936a3ed55dbcf682da9debf9cbc"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-binaries/audio_qa_continuity_reference.exe",
+      "sha256": "73fd063b7c0423c6d3327947ba5b8ba571fbb57cebe9dfecb7fb911dbefb9c2c"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/keep-95d11e041ecbfb3b8073/observed/trace.toml",
+      "sha256": "3199a82ff426ad54d42d40d2786124d1e437d6870d9da2b69c295644e0a3f262"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/keep-95d11e041ecbfb3b8073/observed/output.s16le",
+      "sha256": "749e8010ee048434c7876178bcd58e8f0b4bc331c828337fa6d29eb22366f115"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/repeat-7da8a669178f1f8fa065/observed/run.toml",
+      "sha256": "112e8e7e2091040e359402a41ebad520b8deeff00474332cdcccbf753a3409ae"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/repeat-7da8a669178f1f8fa065/observed/trace.toml",
+      "sha256": "f1da825c5cb2caa4e08f7cea96affdbebbe1fb3526d41ff638542925b4495049"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/repeat-7da8a669178f1f8fa065/observed/output.s16le",
+      "sha256": "2742f4713b27c4c6c0402fe8b386adb09fc4f452e4c4d4334cb22b88887b147b"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/lost-9f333a8fa27bfebdd42b/observed/run.toml",
+      "sha256": "112e8e7e2091040e359402a41ebad520b8deeff00474332cdcccbf753a3409ae"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/lost-9f333a8fa27bfebdd42b/observed/trace.toml",
+      "sha256": "292593722a8f61e01afd0bf17b7b4724f2601d67b3c9541021fb713e0f88f157"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-025-capture/lost-9f333a8fa27bfebdd42b/observed/output.s16le",
+      "sha256": "2742f4713b27c4c6c0402fe8b386adb09fc4f452e4c4d4334cb22b88887b147b"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/loop-e62656aa825a3febbe83/observed/run.toml",
+      "sha256": "771d5a3a979c8a040b60f297854ad8fc548482bc710c7a379c3b073a206a5ccd"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-sources/CMakeLists.txt",
+      "sha256": "73b81ed2364c1feb25837ec8db1c694712aade044947d640eebe3c516a82ae14"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-sources/lifecycle_probe.cpp",
+      "sha256": "c40cf626f58819d0fdb8f6d6fc44ebe739dc25090e9a716eeb375ba731d4de90"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-sources/observed_mixer.h",
+      "sha256": "1e36b595941f8758bf9ada50252628af9925253c2e989dab3e2d3adf4180c5ee"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-sources/verify.cmake",
+      "sha256": "711a70af739216ee2b69ca13a6bac2dbef5ac566cf26e7343b7aebcfe6f4a546"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-binaries/audio_qa_lifecycle_observed.exe",
+      "sha256": "92c24342e614ae3329f096a628d51f09278c306ad2010fbff452105e9dc8829b"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-binaries/audio_qa_lifecycle_reference.exe",
+      "sha256": "2d4075db352a1d9884c5bbf10801ac7102615ccd83ddfc8251766fdd9d17d951"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/loop-e62656aa825a3febbe83/observed/trace.toml",
+      "sha256": "8827ed088796a2fd7f828a7595068483971857f7f5be194bf30adab5f7db5657"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/loop-e62656aa825a3febbe83/observed/output.s16le",
+      "sha256": "2493b4f883543d50a227f11394a5549bcd3a119f8c6da6b5d99a7631d80bfc93"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/window-b20c0b67dee1b8a95e84/observed/run.toml",
+      "sha256": "5e16450640e9e3d85b53b90d4f757f8f667cca805dff08d2f202c1105476f3df"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/window-b20c0b67dee1b8a95e84/observed/trace.toml",
+      "sha256": "4e32917cf902a40fdada1ef9495123b3398c4accf89d76ba70b942dcfbd19b72"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/window-b20c0b67dee1b8a95e84/observed/output.s16le",
+      "sha256": "fb5cb73b52b72a3effb440cbcbf2afe77eed8747e7bc55771c89806d0beb01b6"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/lost-7d8713a0ffeafd4522c7/observed/run.toml",
+      "sha256": "771d5a3a979c8a040b60f297854ad8fc548482bc710c7a379c3b073a206a5ccd"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/lost-7d8713a0ffeafd4522c7/observed/trace.toml",
+      "sha256": "8714308223a6a48f628b7063d025481b1797fab9c3329b461023cfa690156f60"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-026-capture/lost-7d8713a0ffeafd4522c7/observed/output.s16le",
+      "sha256": "2493b4f883543d50a227f11394a5549bcd3a119f8c6da6b5d99a7631d80bfc93"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-capture/replacement-e31cf2b27ab7f72cc8d4/observed/run.toml",
+      "sha256": "23a259cd4ade76b895398b5fcf6213d55c49ca3f8053ce84f96a58285326f632"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-sources/CMakeLists.txt",
+      "sha256": "420ddd339933832c469ada4c6504333c13c7d46eec783a266ec14df21bdf92f7"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-sources/lifecycle_probe.cpp",
+      "sha256": "c29ae0d09c7a34e66db43100dd61fb16b19ba48ce7b4138c8f74903dc1158ff0"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-sources/observed_mixer.h",
+      "sha256": "60ab3e4eb0923e176d13a9b6aeade5c9d44720adb9a5eb9dddbc99b9e7c55aeb"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-sources/verify.cmake",
+      "sha256": "02205d16355c500c12d787a8bf94df6900ab81ebb7347cfd3893adf6a9419fd4"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-binaries/audio_qa_lifecycle_observed.exe",
+      "sha256": "8f83d184e054a31cbfccbe1e5b19f82f032ad04a9cd83823f9616a6044b8c49d"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-binaries/audio_qa_lifecycle_reference.exe",
+      "sha256": "833ea548411a3c527d1ce4cf1012b47da04239e76ae9d76ca2f3bde781cf7e47"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-capture/replacement-e31cf2b27ab7f72cc8d4/observed/trace.toml",
+      "sha256": "5475190211a0cfe5e3653e4477e7850fefa4e299ce60cd4b859bbee5a1fcf2f6"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-capture/replacement-e31cf2b27ab7f72cc8d4/observed/output.s16le",
+      "sha256": "1a6a3c07fd0de7d80249dee6a76c304cd419ca31dc926d1f1b923b6bd8c1d60d"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-capture/replacement_lost-bcb08fddddbf923a817d/observed/run.toml",
+      "sha256": "23a259cd4ade76b895398b5fcf6213d55c49ca3f8053ce84f96a58285326f632"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-capture/replacement_lost-bcb08fddddbf923a817d/observed/trace.toml",
+      "sha256": "0597ada48e12687311388473ae3ab0c6a03c50df690dedf114fd796fdadeda01"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-027-capture/replacement_lost-bcb08fddddbf923a817d/observed/output.s16le",
+      "sha256": "1a6a3c07fd0de7d80249dee6a76c304cd419ca31dc926d1f1b923b6bd8c1d60d"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-capture/natural-603c746041b3a783c45b/observed/run.toml",
+      "sha256": "808ce1a2465d536947bdff3020e5ae5fdda2bc8dec6f9af4c9afe122e1329fab"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-sources/CMakeLists.txt",
+      "sha256": "0ae81671eae1abef6ef7691d135e021a4269f49028204a7211aef54f33a7c560"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-sources/lifecycle_probe.cpp",
+      "sha256": "6224d9fe77f092040fc2ba9935bdf2cd0617fa09b18807f47e564d6b48a40d96"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-sources/observed_mixer.h",
+      "sha256": "60ab3e4eb0923e176d13a9b6aeade5c9d44720adb9a5eb9dddbc99b9e7c55aeb"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-sources/verify.cmake",
+      "sha256": "b27cffbaed684ac2d88d0dbbe7e8e22d8adaa1101949d711775d922f537d4741"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-binaries/audio_qa_lifecycle_observed.exe",
+      "sha256": "f86581922c52cca006ff69b29839f68cb15a8acc414726981a3b4ee8ca26886b"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-binaries/audio_qa_lifecycle_reference.exe",
+      "sha256": "9e34bd6fd218a63e381c6a84676002abe7ec31c55ac9be0bdc6a7f808653b477"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-capture/natural-603c746041b3a783c45b/observed/trace.toml",
+      "sha256": "493a9ae34c4f03e751e9e9f1a124d37e7d109c6f71970190d4403268fddea79c"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-capture/natural-603c746041b3a783c45b/observed/output.s16le",
+      "sha256": "0d5351e2fbe15645f8ca3ec14b4842df24d15e5db3dd5562dba72562f9389d9c"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-capture/natural_lost-de532624acb539f48adc/observed/run.toml",
+      "sha256": "808ce1a2465d536947bdff3020e5ae5fdda2bc8dec6f9af4c9afe122e1329fab"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-capture/natural_lost-de532624acb539f48adc/observed/trace.toml",
+      "sha256": "5cd3e271754aa8a4d9d6b1466cc7847cc9c11d7b18aa9406797d2f3e2e5bb15a"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-028-capture/natural_lost-de532624acb539f48adc/observed/output.s16le",
+      "sha256": "0d5351e2fbe15645f8ca3ec14b4842df24d15e5db3dd5562dba72562f9389d9c"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-capture-r2/simultaneous-ebc2d499349e2dcc0a39/observed/run.toml",
+      "sha256": "db87ff79eced146b1aa10e9c204588b3e9224c17c45c3231a196db2a2e2a4bfa"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-sources-r2/CMakeLists.txt",
+      "sha256": "8bad4689e2b83a258b2d2de2f534785fea43fbb34c629969a4a201c8a34d4660"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-sources-r2/lifecycle_probe.cpp",
+      "sha256": "209023199c3bc45cd389e816d872258c933a68d3130097f4536311d53bc9fcd3"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-sources-r2/observed_mixer.h",
+      "sha256": "b72502ffc0aab41e3ae0159c25ad7fa4bedd08baf8649b98b60566c0159c5ec3"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-sources-r2/verify.cmake",
+      "sha256": "b27cffbaed684ac2d88d0dbbe7e8e22d8adaa1101949d711775d922f537d4741"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-binaries-r2/audio_qa_lifecycle_observed.exe",
+      "sha256": "d7639491ffb08db44d25ff7f993597c9525dd9da73ad5d1b5a04ea6f7716f3dd"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-binaries-r2/audio_qa_lifecycle_reference.exe",
+      "sha256": "322d29e17bab0a38a682944cd5897dd37953278c1b227205eb5fa945b1b9bb7f"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-capture-r2/simultaneous-ebc2d499349e2dcc0a39/observed/trace.toml",
+      "sha256": "6fd873532b37d535daaec12cfae8c1a67b512093ea8d42ff3a1746a4409b0dbe"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-capture-r2/simultaneous-ebc2d499349e2dcc0a39/observed/output.s16le",
+      "sha256": "12a7b6b02eaebfb9c14136ee975d025439b38ce55e7b225f614d04b451b10b59"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-capture-r2/simultaneous_lost-3e7a86b487a70b47c77b/observed/run.toml",
+      "sha256": "db87ff79eced146b1aa10e9c204588b3e9224c17c45c3231a196db2a2e2a4bfa"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-capture-r2/simultaneous_lost-3e7a86b487a70b47c77b/observed/trace.toml",
+      "sha256": "087b0967496c9cada3327d32efb444f21b2576375444f0d14bfd15571f0ea6cb"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-capture-r2/simultaneous_lost-3e7a86b487a70b47c77b/observed/output.s16le",
+      "sha256": "12a7b6b02eaebfb9c14136ee975d025439b38ce55e7b225f614d04b451b10b59"
+    },
+    {
+      "path": "AYTHER-Engine/tests/audio_qa/reference_oracle/reference_decision.cpp",
+      "sha256": "6150ae9bd36775e1f948b7ec91e388da109028dbd2a9c2e061f9ae8e1680eaab"
+    },
+    {
+      "path": "AYTHER-Engine/tests/audio_qa/reference_oracle/CMakeLists.txt",
+      "sha256": "d00c21640af9f751edd5ba3efffa3d256aaef0e1f08711444cbad705092ff5db"
+    },
+    {
+      "path": "AYTHER-Engine/tests/audio_qa/reference_oracle/verify.cmake",
+      "sha256": "514ed3409fb9c192a94e3fbb4eea6d324ee950b22e37b0b34961331a6d30cc16"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-022-oracle/audio_qa_reference_decision.exe",
+      "sha256": "7814890ef74c3c38adc10d518f012cf25df6f288c1233cb70ed575ab18760b49"
+    },
+    {
+      "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-022-oracle/decision.toml",
+      "sha256": "0bf1a97c1f7bf0e352f06762ddc3a3d05b43cbda08d9a48fd71334144373b2c7"
+    }
+  ],
+  "excluded": [
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition/manifest.json",
+        "sha256": "e596fa3d30983d4f1f32b78c10d5754bec61e2f611459d2c5cab2b240c0fb456"
+      },
+      "reason": "definition_without_result"
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-022-oracle/manifest.json",
+        "sha256": "532ca40f1e58933d960ac1c5bcde9073386d57c0887e605c35b9d74ea198aee5"
+      },
+      "reason": "superseded_by_QA_023_reason_and_effect"
+    },
+    {
+      "manifest": {
+        "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-029-oracle-manifest.json",
+        "sha256": "0797965350917b1e55e875da63c5a750662244771e93424122b4ecd6b0e207f3"
+      },
+      "reason": "superseded_by_revision_2_static_analysis_correction"
+    }
+  ],
+  "review_document": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-oracle-review.md",
+  "supersedes": {
+    "path": "specs/001-AYTHER-bug-audio-qa/evidence/qa-030-frozen-index.json",
+    "sha256": "4e3accdd568cb9d3829453ed5bd0a4b33bc86a2629a14d9e42c2b68e60e063c2"
+  },
+  "revision_reason": "include_conversion_observer_implementation_in_build_dependencies"
+}

@@ -34,6 +34,7 @@ CMakeLists.txt text eol=lf
 *.jpeg    binary
 *.webp    binary
 *.ogg     binary
+*.s16le   binary
 *.wav     binary
 *.flac    binary
 *.ttf     binary

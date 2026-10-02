@@ -8,6 +8,8 @@ foreach(_source IN ITEMS
         capabilities_test.cpp
         audio_fade_test.cpp
         audio_match_rule_test.cpp
+        audio_playback_policy_test.cpp
+        audio_sequence_lifetime_test.cpp
         audio_seq_anchor_test.cpp
         cram_palette_test.cpp
         core_path_test.cpp
@@ -15,6 +17,37 @@ foreach(_source IN ITEMS
         failure_escalation_test.cpp
         log_test.cpp
         loop_region_test.cpp
+        music_sequence_model_test.cpp
+        music_sequence_validation_test.cpp
+        music_event_normalization_test.cpp
+        music_event_scoring_test.cpp
+        music_pattern_analysis_test.cpp
+        music_proposal_assessment_test.cpp
+        music_analysis_snapshot_test.cpp
+        music_analysis_limits_test.cpp
+        music_analysis_determinism_test.cpp
+        music_corpus_quality_test.cpp
+        music_pack_contract_test.cpp
+        music_identity_state_test.cpp
+        music_causal_recognizer_test.cpp
+        music_recognition_candidate_test.cpp
+        music_late_entry_test.cpp
+        music_transition_arbiter_test.cpp
+        music_live_recognition_test.cpp
+        music_position_recovery_test.cpp
+        music_golden_axe_battle_authorization_test.cpp
+        music_golden_axe_traversal_test.cpp
+        music_recognition_load_test.cpp
+        music_asset_owner_test.cpp
+        music_audio_math_test.cpp
+        music_transition_span_test.cpp
+        music_source_lifecycle_test.cpp
+        music_transition_queue_test.cpp
+        music_transition_cancel_test.cpp
+        music_pause_signal_test.cpp
+        music_pause_state_test.cpp
+        music_pause_cycles_test.cpp
+        music_voice_budget_test.cpp
         output_profile_test.cpp
         pack_api_test.cpp
         pack_runtime_test.cpp
@@ -30,6 +63,12 @@ foreach(_source IN ITEMS
         widescreen_test.cpp)
     ayther_add_native_test("${_source}" unit)
 endforeach()
+
+target_compile_definitions(ayther_music_corpus_quality_test PRIVATE
+    AYTHER_RF18_EVIDENCE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/rf18/evidence")
+
+target_compile_definitions(ayther_music_pause_cycles_test PRIVATE
+    AYTHER_RF18_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 
 target_compile_definitions(ayther_capabilities_test PRIVATE
     AYTHER_EXPECTED_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}

@@ -35,6 +35,8 @@
 
 pub mod animation;
 pub mod archive_vfs;
+#[cfg(test)]
+mod audio_catalog_tests;
 pub mod audio_event;
 pub mod audio_hasher;
 pub mod background;
@@ -5204,6 +5206,81 @@ pub unsafe extern "C" fn ayther_audio_event_reset(ptr: *mut audio_event::AudioEv
     }
 }
 
+/// Returns the serialized detector-state size, or zero on failure.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live detector for the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_audio_event_state_size(
+    ptr: *const audio_event::AudioEventDetector,
+) -> usize {
+    // SAFETY: The caller upholds the pointer and lifetime contract.
+    unsafe { ptr.as_ref() }
+        .and_then(audio_event::AudioEventDetector::save_state)
+        .map_or(0, |state| state.len())
+}
+
+/// Writes the complete serialized detector state when `cap` is sufficient.
+///
+/// # Safety
+///
+/// `ptr` must name a live detector and `out` must name `cap` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_audio_event_state_write(
+    ptr: *const audio_event::AudioEventDetector,
+    out: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: The caller upholds the pointer, capacity, and lifetime contract.
+    let Some(detector) = (unsafe { ptr.as_ref() }) else {
+        return 0;
+    };
+    let Some(state) = detector.save_state() else {
+        return 0;
+    };
+    if out.is_null() || cap < state.len() {
+        return 0;
+    }
+    // SAFETY: `out` names at least `cap` writable bytes and state fits.
+    unsafe { std::ptr::copy_nonoverlapping(state.as_ptr(), out, state.len()) };
+    state.len()
+}
+
+/// Atomically replaces detector state after validating the whole payload.
+///
+/// # Safety
+///
+/// `ptr` must provide exclusive access to a live detector and `data` must name
+/// `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_audio_event_state_restore(
+    ptr: *mut audio_event::AudioEventDetector,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    if data.is_null() || len == 0 || len > audio_event::AudioEventDetector::STATE_SIZE_LIMIT {
+        return false;
+    }
+    // SAFETY: The caller promises `data` names `len` readable bytes.
+    let payload = unsafe { std::slice::from_raw_parts(data, len) };
+    // SAFETY: The caller upholds exclusive access to the detector.
+    unsafe { ptr.as_mut() }.is_some_and(|detector| detector.restore_state(payload))
+}
+
+/// Returns the last emulation frame represented by the detector state.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live detector for the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_audio_event_state_frame(
+    ptr: *const audio_event::AudioEventDetector,
+) -> u32 {
+    // SAFETY: The caller upholds the pointer and lifetime contract.
+    unsafe { ptr.as_ref() }.map_or(0, audio_event::AudioEventDetector::frame)
+}
+
 /// Ingest one frame's raw chip-write log. `writes` points to `n`
 /// `audio_event::AudioWrite` (== AytherAudioWrite) records in bus order.
 #[unsafe(no_mangle)]
@@ -5723,7 +5800,7 @@ pub unsafe extern "C" fn ayther_audio_events_format(
 }
 
 /// Parses `audio_events.toml` into at most `cap` entries in `out` and returns the
-/// number written.
+/// total accepted count, including entries beyond `cap`.
 #[unsafe(no_mangle)]
 /// # Safety
 ///
@@ -5734,14 +5811,158 @@ pub unsafe extern "C" fn ayther_audio_events_parse(
     out: *mut AytherEventSub,
     cap: u32,
 ) -> u32 {
+    // SAFETY: This function forwards the same caller-owned buffers; no callback
+    // is registered, so the ordinary API retains its parsing behavior.
+    unsafe { ayther_audio_events_parse_observed(text, out, cap, None, std::ptr::null_mut()) }
+}
+
+/// Borrowed catalog observation, version 1.0; layout matches the C header.
+/// Text is UTF-8 with explicit byte lengths, not nul terminated. It expires
+/// when the callback returns. Kind: begin=1, declared=2, accepted=3,
+/// rejected=4, end=5, unavailable=6. Reason=0 means no rejection.
+#[repr(C)]
+pub struct AytherAudioCatalogObservation {
+    /// Observation kind, as documented on this type.
+    pub kind: u32,
+    /// Zero, a CatalogReason discriminant, or 5 for a null input pointer.
+    pub reason: u32,
+    /// Zero-based source ordinal for entry observations.
+    pub ordinal: u64,
+    /// Declared count at begin or accepted count at end.
+    pub count: u64,
+    /// Parsed signature when signature_known is one.
+    pub signature: u64,
+    /// One when the canonical signature is available, otherwise zero.
+    pub signature_known: u8,
+    /// One when signature_text was a string, even if empty or invalid.
+    pub signature_declared: u8,
+    /// One when asset was a string, including empty text.
+    pub asset_declared: u8,
+    /// Always zero; reserved for a future explicit contract revision.
+    pub reserved: [u8; 5],
+    /// Borrowed signature UTF-8 bytes, null when not declared as text.
+    pub signature_text: *const u8,
+    /// Number of signature bytes, without a terminator.
+    pub signature_bytes: usize,
+    /// Borrowed asset UTF-8 bytes, null when not declared as text.
+    pub asset: *const u8,
+    /// Number of asset bytes, without a terminator.
+    pub asset_bytes: usize,
+}
+
+/// Optional synchronous, non-retaining observation callback. The callback must
+/// not unwind, reenter Engine, perform I/O, or wait. `context` remains caller-owned.
+pub type AytherAudioCatalogCallback =
+    Option<unsafe extern "C" fn(*mut std::ffi::c_void, *const AytherAudioCatalogObservation)>;
+
+fn catalog_observation_view(
+    event: audio_event::CatalogObservation<'_>,
+) -> AytherAudioCatalogObservation {
+    use audio_event::CatalogObservation as Event;
+    let mut view = AytherAudioCatalogObservation {
+        kind: 0,
+        reason: 0,
+        ordinal: 0,
+        count: 0,
+        signature: 0,
+        signature_known: 0,
+        signature_declared: 0,
+        asset_declared: 0,
+        reserved: [0; 5],
+        signature_text: std::ptr::null(),
+        signature_bytes: 0,
+        asset: std::ptr::null(),
+        asset_bytes: 0,
+    };
+    match event {
+        Event::Begin { entries } => {
+            view.kind = 1;
+            view.count = entries as u64;
+        }
+        Event::Declared {
+            ordinal,
+            signature_text,
+            signature,
+            asset,
+        } => {
+            view.kind = 2;
+            view.ordinal = ordinal as u64;
+            if let Some(text) = signature_text {
+                view.signature_declared = 1;
+                view.signature_text = text.as_ptr();
+                view.signature_bytes = text.len();
+            }
+            if let Some(value) = signature {
+                view.signature_known = 1;
+                view.signature = value;
+            }
+            if let Some(text) = asset {
+                view.asset_declared = 1;
+                view.asset = text.as_ptr();
+                view.asset_bytes = text.len();
+            }
+        }
+        Event::Accepted { ordinal, signature } => {
+            view.kind = 3;
+            view.ordinal = ordinal as u64;
+            view.signature_known = 1;
+            view.signature = signature;
+        }
+        Event::Rejected { ordinal, reason } => {
+            view.kind = 4;
+            view.ordinal = ordinal as u64;
+            view.reason = reason as u32;
+        }
+        Event::End { accepted } => {
+            view.kind = 5;
+            view.count = accepted as u64;
+        }
+        Event::Unavailable { reason } => {
+            view.kind = 6;
+            view.reason = reason as u32;
+        }
+    }
+    view
+}
+
+/// Parses through the same rules as `ayther_audio_events_parse`, observing each
+/// declared entry before filtering. Returns the TOTAL accepted count, including
+/// entries beyond `cap`. Observations are emitted once per invocation, even for
+/// a sizing call. Callers must observe only one pass if they size then fill.
+///
+/// # Safety
+/// The ordinary parser's pointer contract applies. Callback and context must
+/// remain valid for this call; callbacks may not retain view pointers, unwind,
+/// or mutate any input/output buffer used by the parser.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_audio_events_parse_observed(
+    text: *const std::os::raw::c_char,
+    out: *mut AytherEventSub,
+    cap: u32,
+    callback: AytherAudioCatalogCallback,
+    context: *mut std::ffi::c_void,
+) -> u32 {
     // SAFETY: The caller upholds the pointer, lifetime, and ownership invariants
     // documented for this FFI function.
     unsafe {
         if text.is_null() {
+            if let Some(callback) = callback {
+                let mut view =
+                    catalog_observation_view(audio_event::CatalogObservation::Unavailable {
+                        reason: audio_event::CatalogReason::InvalidSyntax,
+                    });
+                view.reason = 5; // Null input, distinct from malformed TOML.
+                callback(context, &view);
+            }
             return 0;
         }
         let s = std::ffi::CStr::from_ptr(text).to_string_lossy();
-        let subs = audio_event::events_from_toml(&s);
+        let subs = audio_event::events_from_toml_observed(&s, |event| {
+            if let Some(callback) = callback {
+                let view = catalog_observation_view(event);
+                callback(context, &view);
+            }
+        });
         // Write at most `cap` entries but return the total available, allowing a
         // first call with `cap == 0` to size the destination buffer.
         let k = subs.len().min(cap as usize);
@@ -6267,6 +6488,143 @@ mod audio_evdet_ffi_tests {
 
             ayther_audio_evdet_free(d);
         }
+    }
+}
+
+#[cfg(test)]
+mod audio_event_state_and_catalog_ffi_tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Observations {
+        kinds: Vec<u32>,
+        reasons: Vec<u32>,
+        ordinals: Vec<u64>,
+        counts: Vec<u64>,
+        signatures: Vec<u64>,
+        texts: Vec<String>,
+        assets: Vec<String>,
+    }
+
+    unsafe extern "C" fn observe(
+        context: *mut std::ffi::c_void,
+        value: *const AytherAudioCatalogObservation,
+    ) {
+        // SAFETY: The test passes a live Observations and the callback receives
+        // one borrowed view for this invocation only.
+        let (capture, value) = unsafe { (&mut *context.cast::<Observations>(), &*value) };
+        capture.kinds.push(value.kind);
+        capture.reasons.push(value.reason);
+        capture.ordinals.push(value.ordinal);
+        capture.counts.push(value.count);
+        capture.signatures.push(value.signature);
+        if !value.signature_text.is_null() {
+            // SAFETY: The observation contract supplies this borrowed span.
+            let bytes =
+                unsafe { std::slice::from_raw_parts(value.signature_text, value.signature_bytes) };
+            capture
+                .texts
+                .push(String::from_utf8(bytes.to_vec()).unwrap());
+        }
+        if !value.asset.is_null() {
+            // SAFETY: The observation contract supplies this borrowed span.
+            let bytes = unsafe { std::slice::from_raw_parts(value.asset, value.asset_bytes) };
+            capture
+                .assets
+                .push(String::from_utf8(bytes.to_vec()).unwrap());
+        }
+    }
+
+    #[test]
+    fn detector_state_ffi_round_trips_and_rejects_invalid_buffers() {
+        // SAFETY: All pointers below come from live owned values with exact
+        // capacities, and the detector is freed once at the end.
+        unsafe {
+            let detector = ayther_audio_event_new();
+            assert_eq!(ayther_audio_event_state_size(std::ptr::null()), 0);
+            let size = ayther_audio_event_state_size(detector);
+            assert!(size > 0);
+            let mut state = vec![0; size];
+            assert_eq!(
+                ayther_audio_event_state_write(detector, state.as_mut_ptr(), size - 1),
+                0
+            );
+            assert_eq!(
+                ayther_audio_event_state_write(detector, state.as_mut_ptr(), size),
+                size
+            );
+            assert_eq!(ayther_audio_event_state_frame(detector), 0);
+            assert!(!ayther_audio_event_state_restore(
+                detector,
+                std::ptr::null(),
+                state.len()
+            ));
+            assert!(!ayther_audio_event_state_restore(
+                detector,
+                state.as_ptr(),
+                0
+            ));
+            assert!(ayther_audio_event_state_restore(
+                detector,
+                state.as_ptr(),
+                state.len()
+            ));
+            assert_eq!(ayther_audio_event_state_frame(std::ptr::null()), 0);
+            ayther_audio_event_free(detector);
+        }
+    }
+
+    #[test]
+    fn catalog_observation_ffi_covers_all_parser_outcomes() {
+        let text = std::ffi::CString::new(
+            "event=[{signature='1',asset='ok'},{signature='oops',asset='x'},{signature='2'}]",
+        )
+        .unwrap();
+        let mut capture = Observations::default();
+        // SAFETY: text and capture remain live throughout the synchronous call;
+        // a sizing call writes no output entries.
+        let count = unsafe {
+            ayther_audio_events_parse_observed(
+                text.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                Some(observe),
+                std::ptr::from_mut(&mut capture).cast(),
+            )
+        };
+        assert_eq!(count, 1);
+        assert_eq!(capture.kinds, [1, 2, 3, 2, 4, 2, 4, 5]);
+        assert_eq!(capture.reasons, [0, 0, 0, 0, 3, 0, 4, 0]);
+        assert_eq!(capture.texts, ["1", "oops", "2"]);
+        assert_eq!(capture.assets, ["ok", "x"]);
+        assert_eq!(capture.signatures[2], 1);
+        assert_eq!(capture.counts[0], 3);
+        assert_eq!(capture.counts[7], 1);
+
+        let mut unavailable = Observations::default();
+        // SAFETY: The callback context is valid and null input is explicitly
+        // accepted as an unavailable-inventory observation.
+        assert_eq!(
+            unsafe {
+                ayther_audio_events_parse_observed(
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    0,
+                    Some(observe),
+                    std::ptr::from_mut(&mut unavailable).cast(),
+                )
+            },
+            0
+        );
+        assert_eq!(unavailable.kinds, [6]);
+        assert_eq!(unavailable.reasons, [5]);
+
+        // The compatibility entry point follows the same parser and returns
+        // the total accepted count on a sizing pass.
+        assert_eq!(
+            unsafe { ayther_audio_events_parse(text.as_ptr(), std::ptr::null_mut(), 0) },
+            1
+        );
     }
 }
 

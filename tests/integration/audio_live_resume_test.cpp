@@ -32,9 +32,10 @@ namespace {
 
 int g_fail = 0;
 
-void check(bool ok, const std::string& what) {
-    std::printf("%s %s\n", ok ? "[ok]  " : "[FAIL]", what.c_str());
-    if (!ok) ++g_fail;
+void check(bool ok, const std::string &what) {
+  std::printf("%s %s\n", ok ? "[ok]  " : "[FAIL]", what.c_str());
+  if (!ok)
+    ++g_fail;
 }
 
 bool near(double a, double b) { return std::fabs(a - b) < 1e-9; }
@@ -43,201 +44,382 @@ bool near(double a, double b) { return std::fabs(a - b) < 1e-9; }
 // La señal varía para que el fixture no parezca una bomba ZIP ante el límite
 // de relación de compresión del pack.
 std::vector<uint8_t> fixture_wav_bytes(uint32_t frames) {
-    const uint32_t data_sz = frames * 4;
-    const uint32_t riff_sz = 36u + data_sz;
-    uint8_t hdr[44] = {
-        'R','I','F','F', 0,0,0,0, 'W','A','V','E',
-        'f','m','t',' ', 16,0,0,0, 1,0, 2,0,
-        0x44,0xAC,0,0, 0x10,0xB1,0x02,0, 4,0, 16,0,
-        'd','a','t','a', 0,0,0,0 };
-    std::memcpy(hdr + 4,  &riff_sz, 4);
-    std::memcpy(hdr + 40, &data_sz, 4);
-    std::vector<uint8_t> out(sizeof(hdr) + data_sz);
-    std::memcpy(out.data(), hdr, sizeof(hdr));
-    std::vector<int16_t> pcm(frames * 2);
-    uint32_t state = 0x6d2b79f5u;
-    for (uint32_t frame = 0; frame < frames; ++frame) {
-        state = state * 1664525u + 1013904223u;
-        const auto sample = static_cast<int16_t>(
-            static_cast<int32_t>(state >> 17) - 16384);
-        pcm[frame * 2] = sample;
-        pcm[frame * 2 + 1] = sample;
-    }
-    std::memcpy(out.data() + sizeof(hdr), pcm.data(), data_sz);
-    return out;
+  const uint32_t data_sz = frames * 4;
+  const uint32_t riff_sz = 36u + data_sz;
+  uint8_t hdr[44] = {'R', 'I', 'F',  'F',  0,   0,   0,    0,    'W',  'A', 'V',
+                     'E', 'f', 'm',  't',  ' ', 16,  0,    0,    0,    1,   0,
+                     2,   0,   0x44, 0xAC, 0,   0,   0x10, 0xB1, 0x02, 0,   4,
+                     0,   16,  0,    'd',  'a', 't', 'a',  0,    0,    0,   0};
+  std::memcpy(hdr + 4, &riff_sz, 4);
+  std::memcpy(hdr + 40, &data_sz, 4);
+  std::vector<uint8_t> out(sizeof(hdr) + data_sz);
+  std::memcpy(out.data(), hdr, sizeof(hdr));
+  std::vector<int16_t> pcm(frames * 2);
+  uint32_t state = 0x6d2b79f5u;
+  for (uint32_t frame = 0; frame < frames; ++frame) {
+    state = state * 1664525u + 1013904223u;
+    const auto sample =
+        static_cast<int16_t>(static_cast<int32_t>(state >> 17) - 16384);
+    pcm[frame * 2] = sample;
+    pcm[frame * 2 + 1] = sample;
+  }
+  std::memcpy(out.data() + sizeof(hdr), pcm.data(), data_sz);
+  return out;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
-    std::printf("=== audio_live_resume_test — reanudar continúa (#385) ===\n");
+  std::printf("=== audio_live_resume_test — reanudar continúa (#385) ===\n");
 
-    using ayther::LiveResumeAction;
-    using ayther::live_resume_decide;
-    using ayther::live_instance_over;
-    using ayther::live_resume_offset_bytes;
-    constexpr uint64_t NOCUT = ayther::kLiveNoCut;
+  using ayther::live_instance_over;
+  using ayther::live_resume_decide;
+  using ayther::live_resume_offset_bytes;
+  using ayther::LiveResumeAction;
+  constexpr uint64_t NOCUT = ayther::kLiveNoCut;
 
-    // ---- One-shot de 5 s pausado en 1,25 s: mismo punto, no el comienzo ----
-    {
-        // Ventana [100, 400], sin tail autorado (legacy). El reloj emulado
-        // quedó en 175 = 75 frames adentro = 1,25 s a 60 fps.
-        const auto d = live_resume_decide(175, 100, 400, NOCUT,
-                                          /*loop=*/false, 60.0, 5.0);
-        check(d.action == LiveResumeAction::Restart,
-              "one-shot pausado a mitad se reanuda");
-        check(near(d.offset_seconds, 1.25),
-              "el offset es el del reloj emulado (1,25 s), no cero");
-        // El anclaje mismo (pausa en el frame del disparo) entra desde 0.
-        const auto d0 = live_resume_decide(100, 100, 400, NOCUT, false, 60.0, 5.0);
-        check(d0.action == LiveResumeAction::Restart && near(d0.offset_seconds, 0.0),
-              "pausa en el frame del disparo reanuda desde 0");
+  // ---- One-shot de 5 s pausado en 1,25 s: mismo punto, no el comienzo ----
+  {
+    // Ventana [100, 400], sin tail autorado (legacy). El reloj emulado
+    // quedó en 175 = 75 frames adentro = 1,25 s a 60 fps.
+    const auto d = live_resume_decide(175, 100, 400, NOCUT,
+                                      /*loop=*/false, 60.0, 5.0);
+    check(d.action == LiveResumeAction::Restart,
+          "one-shot pausado a mitad se reanuda");
+    check(near(d.offset_seconds, 1.25),
+          "el offset es el del reloj emulado (1,25 s), no cero");
+    // El anclaje mismo (pausa en el frame del disparo) entra desde 0.
+    const auto d0 = live_resume_decide(100, 100, 400, NOCUT, false, 60.0, 5.0);
+    check(d0.action == LiveResumeAction::Restart &&
+              near(d0.offset_seconds, 0.0),
+          "pausa en el frame del disparo reanuda desde 0");
+  }
+
+  // ---- Evento sostenido: la ventana abierta basta, sin key-on nuevo ------
+  {
+    const auto d = live_resume_decide(390, 100, 400, NOCUT, false, 60.0, 6.0);
+    check(d.action == LiveResumeAction::Restart,
+          "ventana todavía abierta = se reanuda sin flanco nuevo");
+  }
+
+  // ---- Instancia vencida: descartar, no reiniciar ------------------------
+  {
+    // El asset (5 s = 300 frames) ya drenó entero: nada que reanudar.
+    const auto d = live_resume_decide(430, 100, 400, NOCUT, false, 60.0, 5.0);
+    check(d.action == LiveResumeAction::Finished,
+          "one-shot ya drenado (offset >= duración) se descarta");
+    // Ventana con tail: pasado cut_frame la instancia quedó atrás.
+    const auto dt =
+        live_resume_decide(431, 100, 400, /*cut=*/430, false, 60.0, 30.0);
+    check(dt.action == LiveResumeAction::Finished,
+          "pasado end+tail (#386) se descarta aunque el asset sea largo");
+    const auto din = live_resume_decide(430, 100, 400, 430, false, 60.0, 30.0);
+    check(din.action == LiveResumeAction::Restart,
+          "en el límite exacto del cut todavía se reanuda");
+  }
+
+  // ---- Loop: fase conservada tras tres ciclos de pausa -------------------
+  {
+    // Asset de 2 s (352 800 bytes S16 estéreo @44100). Tres reanudaciones
+    // en 1,0 s / 2,5 s / 7,7 s de reloj emulado: el offset físico es
+    // SIEMPRE el módulo del asset — misma fase que si nunca hubiera
+    // pausado.
+    const uint64_t pcm = 2ull * 44100ull * 4ull;
+    const double elapsed[3] = {1.0, 2.5, 7.7};
+    bool phase_ok = true;
+    for (const double t : elapsed) {
+      const auto d = live_resume_decide(1000 + static_cast<uint64_t>(t * 60.0),
+                                        1000, 2000, NOCUT,
+                                        /*loop=*/true, 60.0, 0.0);
+      if (d.action != LiveResumeAction::Restart) {
+        phase_ok = false;
+        break;
+      }
+      const uint64_t off =
+          live_resume_offset_bytes(d.offset_seconds, 44100, 4, pcm, true);
+      const uint64_t want =
+          static_cast<uint64_t>(std::fmod(d.offset_seconds, 2.0) * 44100.0) *
+          4ull;
+      if (off != want || off >= pcm || off % 4 != 0) {
+        phase_ok = false;
+        break;
+      }
     }
+    check(phase_ok, "loop: 3 reanudaciones caen en fase (módulo del asset)");
+    // Un loop nunca queda libre: pasado end_frame (sin tail) muere.
+    const auto d = live_resume_decide(2001, 1000, 2000, NOCUT, true, 60.0, 0.0);
+    check(d.action == LiveResumeAction::Finished,
+          "loop pasado su end_frame no se reanuda (contrato tick_events)");
+    // Con tail (#386) drena hasta cut y ahí sí muere.
+    check(live_resume_decide(2030, 1000, 2000, 2060, true, 60.0, 0.0).action ==
+                  LiveResumeAction::Restart &&
+              live_resume_decide(2061, 1000, 2000, 2060, true, 60.0, 0.0)
+                      .action == LiveResumeAction::Finished,
+          "loop con tail: vive hasta cut_frame y ni un frame más");
+  }
 
-    // ---- Evento sostenido: la ventana abierta basta, sin key-on nuevo ------
-    {
-        const auto d = live_resume_decide(390, 100, 400, NOCUT, false, 60.0, 6.0);
-        check(d.action == LiveResumeAction::Restart,
-              "ventana todavía abierta = se reanuda sin flanco nuevo");
-    }
-
-    // ---- Instancia vencida: descartar, no reiniciar ------------------------
-    {
-        // El asset (5 s = 300 frames) ya drenó entero: nada que reanudar.
-        const auto d = live_resume_decide(430, 100, 400, NOCUT, false, 60.0, 5.0);
-        check(d.action == LiveResumeAction::Finished,
-              "one-shot ya drenado (offset >= duración) se descarta");
-        // Ventana con tail: pasado cut_frame la instancia quedó atrás.
-        const auto dt = live_resume_decide(431, 100, 400, /*cut=*/430,
-                                           false, 60.0, 30.0);
-        check(dt.action == LiveResumeAction::Finished,
-              "pasado end+tail (#386) se descarta aunque el asset sea largo");
-        const auto din = live_resume_decide(430, 100, 400, 430, false, 60.0, 30.0);
-        check(din.action == LiveResumeAction::Restart,
-              "en el límite exacto del cut todavía se reanuda");
-    }
-
-    // ---- Loop: fase conservada tras tres ciclos de pausa -------------------
-    {
-        // Asset de 2 s (352 800 bytes S16 estéreo @44100). Tres reanudaciones
-        // en 1,0 s / 2,5 s / 7,7 s de reloj emulado: el offset físico es
-        // SIEMPRE el módulo del asset — misma fase que si nunca hubiera
-        // pausado.
-        const uint64_t pcm = 2ull * 44100ull * 4ull;
-        const double elapsed[3] = {1.0, 2.5, 7.7};
-        bool phase_ok = true;
-        for (const double t : elapsed) {
-            const auto d = live_resume_decide(
-                1000 + static_cast<uint64_t>(t * 60.0), 1000, 2000, NOCUT,
-                /*loop=*/true, 60.0, 0.0);
-            if (d.action != LiveResumeAction::Restart) { phase_ok = false; break; }
-            const uint64_t off = live_resume_offset_bytes(
-                d.offset_seconds, 44100, 4, pcm, true);
-            const uint64_t want = static_cast<uint64_t>(
-                std::fmod(d.offset_seconds, 2.0) * 44100.0) * 4ull;
-            if (off != want || off >= pcm || off % 4 != 0) { phase_ok = false; break; }
-        }
-        check(phase_ok, "loop: 3 reanudaciones caen en fase (módulo del asset)");
-        // Un loop nunca queda libre: pasado end_frame (sin tail) muere.
-        const auto d = live_resume_decide(2001, 1000, 2000, NOCUT, true, 60.0, 0.0);
-        check(d.action == LiveResumeAction::Finished,
-              "loop pasado su end_frame no se reanuda (contrato tick_events)");
-        // Con tail (#386) drena hasta cut y ahí sí muere.
-        check(live_resume_decide(2030, 1000, 2000, 2060, true, 60.0, 0.0).action
-                  == LiveResumeAction::Restart &&
-              live_resume_decide(2061, 1000, 2000, 2060, true, 60.0, 0.0).action
-                  == LiveResumeAction::Finished,
-              "loop con tail: vive hasta cut_frame y ni un frame más");
-    }
-
-    // ---- El offset respeta el timing real (PAL) y la alineación ------------
-    {
-        const auto d = live_resume_decide(575, 500, 900, NOCUT, false, 50.0, 9.0);
-        check(near(d.offset_seconds, 1.5), "a 50 fps (PAL) 75 frames = 1,5 s");
-        const uint64_t off = live_resume_offset_bytes(0.333, 44100, 4,
-                                                      44100ull * 4ull, false);
-        check(off % 4 == 0, "el offset físico cae en cuadro completo");
-        check(live_resume_offset_bytes(0.0, 44100, 4, 1000, true) == 0 &&
+  // ---- El offset respeta el timing real (PAL) y la alineación ------------
+  {
+    const auto d = live_resume_decide(575, 500, 900, NOCUT, false, 50.0, 9.0);
+    check(near(d.offset_seconds, 1.5), "a 50 fps (PAL) 75 frames = 1,5 s");
+    const uint64_t off =
+        live_resume_offset_bytes(0.333, 44100, 4, 44100ull * 4ull, false);
+    check(off % 4 == 0, "el offset físico cae en cuadro completo");
+    check(live_resume_offset_bytes(0.0, 44100, 4, 1000, true) == 0 &&
               live_resume_offset_bytes(1.0, 0, 4, 1000, true) == 0,
-              "offset 0 / spec rota = arranque desde el comienzo");
+          "offset 0 / spec rota = arranque desde el comienzo");
+  }
+
+  // ---- One-shot LIBRE (sin ventana): sólo lo poda su duración ------------
+  {
+    check(!live_instance_over(1u << 20, 0xFFFFFFFFFFFFFFFFull,
+                              0xFFFFFFFFFFFFFFFFull, false),
+          "instancia libre no vence por frames (la poda su asset)");
+    const auto d =
+        live_resume_decide(100 + 240, 100, NOCUT, NOCUT, false, 60.0, 3.0);
+    check(d.action == LiveResumeAction::Finished,
+          "one-shot libre de 3 s con 4 s de reloj encima = vencido");
+  }
+
+  // ---- Player real: el offset crea/omite streams según el contrato -------
+  SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+  if (!SDL_Init(SDL_INIT_AUDIO)) {
+    std::printf("[FAIL] SDL_Init(AUDIO) dummy: %s\n", SDL_GetError());
+    return 1;
+  }
+  const auto wav = fixture_wav_bytes(44100); // 1 s de audio
+  char err[256] = "";
+  ayther::test::TrustedPackFixture fixture{"audio_resume"};
+  const std::string manifest =
+      "[pack]\nname = \"resume_test\"\nversion = \"0.0.1\"\n"
+      "game_id = \"crc32:00000000\"\nayther_min = \"0.8.0\"\n"
+      "\n[regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n";
+  const bool staged =
+      fixture.add_bytes("manifest.toml",
+                        reinterpret_cast<const uint8_t *>(manifest.data()),
+                        manifest.size()) &&
+      fixture.add_bytes("tone.wav", wav.data(), wav.size());
+  const bool baked = staged && fixture.finish(err, sizeof(err));
+  if (!baked) {
+    std::printf("[FAIL] pack builder: %s\n", err);
+    return 1;
+  }
+  const char *candidate_pack = SDL_getenv("AYTHER_RF18_CANDIDATE_PACK");
+  const char *candidate_registry = SDL_getenv("AYTHER_RF18_TRUST_REGISTRY");
+  const bool candidate_mode = candidate_pack && *candidate_pack &&
+                              candidate_registry && *candidate_registry;
+  AyArchive *pack =
+      candidate_mode
+          ? ayther_pack_open_trusted(candidate_pack, candidate_registry)
+          : fixture.open();
+  if (!pack) {
+    std::printf("[FAIL] no abre el pack de prueba\n");
+    return 1;
+  }
+  const char *tone_asset =
+      candidate_mode ? "27344701428ebe2965d69cde77ee7769.wav" : "tone.wav";
+  AudioPlayer p;
+  if (!p.init()) {
+    std::printf("[FAIL] AudioPlayer::init() dummy\n");
+    return 1;
+  }
+
+  // Reanudar a mitad del asset del pack: stream vivo.
+  check(p.play_event_hd(pack, tone_asset, false, 0x10, /*end=*/600,
+                        /*cut=*/NOCUT, /*offset=*/0.5),
+        "reanudación del pack a mitad del asset arranca");
+  check(p.event_count() == 1, "stream del evento vivo tras reanudar");
+  p.stop_all_events();
+
+  const HdMixer::VoiceIdentity observed_identity{77, 5, 9};
+  HdMixer::StartResult observed_transition;
+  check(p.play_event_hd(pack, tone_asset, false, 0x20, /*end=*/600,
+                        /*cut=*/NOCUT, /*offset=*/0.0, /*fade=*/0,
+                        /*gain=*/1.0F, /*loop_begin=*/0, /*loop_end=*/0,
+                        &observed_identity, &observed_transition),
+        "inicio observado del asset del pack arranca");
+  check(observed_transition.action == HdMixer::StartAction::start &&
+            observed_transition.voice_created &&
+            observed_transition.new_occurrence == observed_identity.occurrence,
+        "inicio observado conserva identidad y transición");
+  p.stop_all_events();
+
+  // Non-loop con el offset pasado el final: éxito SIN stream (#388 — el
+  // original de esa ventana también pasó; no es un fallo del asset).
+  check(p.play_event_hd(pack, tone_asset, false, 0x11, 600, NOCUT, 2.0),
+        "offset pasado el final devuelve éxito (no es fallo)");
+  check(p.event_count() == (candidate_mode ? 1U : 0U),
+        candidate_mode ? "asset candidato largo conserva stream a 2 s"
+                       : "…pero no crea stream (nada que sonar)");
+  p.stop_all_events();
+
+  // Loop con offset mayor que el asset: entra por el módulo (fase).
+  check(p.play_event_hd(pack, tone_asset, true, 0x12, 600, NOCUT, 2.5),
+        "loop reanudado con 2,5 s sobre un asset de 1 s arranca");
+  check(p.event_count() == 1, "…con stream vivo (offset = módulo)");
+  p.stop_all_events();
+
+  // RF-17.5 / QA-263: la pausa física no reconstruye el loop a partir del
+  // reloj emulado. Conserva el cursor exacto y su región autorada, y resume
+  // esa misma ocurrencia sin repetir la introducción del asset.
+  const HdMixer::VoiceIdentity paused_identity{91, 7, 13};
+  check(p.play_event_hd(pack, tone_asset, true, 0x15, /*end=*/777,
+                        /*cut=*/888,
+                        /*offset=*/0.625, /*fade=*/2048, /*gain=*/0.375F,
+                        /*loop_begin=*/11025, /*loop_end=*/33075,
+                        &paused_identity, /*start_result=*/nullptr,
+                        ayther::RepeatPolicy::continue_playback,
+                        ayther::AudioCategory::music),
+        "loop con introducción y región autorada arranca antes de pausar");
+  check(p.stop_sfx_by_key(0x15),
+        "precondición QA-264: el fundido está activo antes de pausar");
+  const auto before_pause = p.hd_voices_state();
+  check(before_pause.voices.size() == 1 &&
+            before_pause.voices.front().source_position == 27562 &&
+            before_pause.voices.front().loop_begin == 11025 &&
+            before_pause.voices.front().loop_end == 33075 &&
+            before_pause.voices.front().gain == 0.375F &&
+            before_pause.voices.front().category ==
+                ayther::AudioCategory::music &&
+            before_pause.voices.front().fade_remaining != 0 &&
+            before_pause.voices.front().end_frame == 777 &&
+            before_pause.voices.front().cut_frame == 888,
+        "precondición: cursor y región de loop son exactos");
+  p.cut_transport_audio();
+  check(p.hd_voice_count() == 0, "pausa silencia físicamente el loop");
+  check(p.resume_transport_audio(), "reanudar restaura el snapshot de pausa");
+  const auto after_resume = p.hd_voices_state();
+  check(after_resume == before_pause,
+        "resume conserva ocurrencia, cursor, fase y loop muestra a muestra");
+  check(!p.resume_transport_audio(),
+        "repetir resume no duplica ni reinicia la voz restaurada");
+  p.stop_all_events();
+
+  // RF-17.5 / QA-265: decisiones tomadas durante la pausa dominan al
+  // snapshot. Una cancelación no resucita y un reemplazo no es sobrescrito
+  // por la generación anterior al reanudar.
+  check(p.play_event_hd(pack, tone_asset, true, 0x16, 900, NOCUT, 0.25),
+        "voz a cancelar arranca");
+  p.cut_transport_audio();
+  check(p.stop_sfx_by_key(0x16),
+        "cancelar durante pausa invalida la voz retenida");
+  check(!p.resume_transport_audio() && p.hd_voice_count() == 0,
+        "cancelación durante pausa no resucita el snapshot obsoleto");
+
+  const HdMixer::VoiceIdentity old_generation{101, 8, 1};
+  const HdMixer::VoiceIdentity new_generation{102, 8, 2};
+  check(p.play_event_hd(pack, tone_asset, true, 0x17, 900, NOCUT, 0.25, 0, 1.0F,
+                        0, 0, &old_generation, nullptr),
+        "generación anterior arranca antes de pausa");
+  p.cut_transport_audio();
+  check(p.play_event_hd(pack, tone_asset, true, 0x17, 900, NOCUT, 0.75, 0, 1.0F,
+                        0, 0, &new_generation, nullptr),
+        "reemplazo durante pausa crea la generación nueva");
+  const auto replacement = p.hd_voices_state();
+  check(!p.resume_transport_audio() && p.hd_voices_state() == replacement &&
+            replacement.voices.size() == 1 &&
+            replacement.voices.front().occurrence == 102,
+        "resume conserva el reemplazo y descarta la generación obsoleta");
+  p.stop_all_events();
+
+  // RF-17.5 / QA-267: cinco pausas en la MISMA sesión y ocurrencia. El PCM
+  // avanza entre ciclos para cubrir intro, entrada/cuerpo del loop, frontera
+  // de retorno, fundido parcial y final, sin reiniciar Engine/player.
+  const HdMixer::VoiceIdentity five_cycle_identity{120, 9, 1};
+  check(p.play_event_hd(pack, tone_asset, true, 0x18, 1200, NOCUT,
+                        /*offset=*/0.1, /*fade=*/0, /*gain=*/0.625F,
+                        /*loop_begin=*/11025, /*loop_end=*/33075,
+                        &five_cycle_identity, nullptr),
+        "A09: ocurrencia única preparada para cinco pausas");
+  std::vector<int16_t> advance_pcm(8000 * 2, 0);
+  bool five_exact = true;
+  bool saw_intro = false;
+  bool saw_loop = false;
+  bool saw_boundary = false;
+  bool saw_fade = false;
+  uint64_t previous_position = 0;
+  for (int cycle = 0; cycle < 5; ++cycle) {
+    if (cycle == 4)
+      saw_fade = p.stop_sfx_by_key(0x18);
+    const auto frozen = p.hd_voices_state();
+    if (frozen.voices.size() != 1) {
+      five_exact = false;
+      break;
     }
-
-    // ---- One-shot LIBRE (sin ventana): sólo lo poda su duración ------------
-    {
-        check(!live_instance_over(1u << 20, 0xFFFFFFFFFFFFFFFFull,
-                                  0xFFFFFFFFFFFFFFFFull, false),
-              "instancia libre no vence por frames (la poda su asset)");
-        const auto d = live_resume_decide(100 + 240, 100, NOCUT, NOCUT,
-                                          false, 60.0, 3.0);
-        check(d.action == LiveResumeAction::Finished,
-              "one-shot libre de 3 s con 4 s de reloj encima = vencido");
+    const auto position = frozen.voices.front().source_position;
+    saw_intro = saw_intro || position < 11025;
+    saw_loop = saw_loop || (position >= 11025 && position < 33075);
+    saw_boundary = saw_boundary || (cycle > 0 && position < previous_position);
+    previous_position = position;
+    p.cut_transport_audio();
+    if (!p.resume_transport_audio() || p.hd_voices_state() != frozen) {
+      five_exact = false;
+      break;
     }
+    const size_t frames = cycle == 4 ? 3000u : 8000u;
+    p.buffer_emulator(0xAAAA, advance_pcm.data(), frames);
+    p.flush_emulator();
+  }
+  check(five_exact && saw_intro && saw_loop && saw_boundary && saw_fade,
+        "A09: 5 ciclos conservan estado exacto en intro/loop/frontera/fade");
+  check(p.hd_voice_count() == 0,
+        "A09: el fundido termina después del quinto ciclo sin resurrección");
 
-    // ---- Player real: el offset crea/omite streams según el contrato -------
-    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
-    if (!SDL_Init(SDL_INIT_AUDIO)) {
-        std::printf("[FAIL] SDL_Init(AUDIO) dummy: %s\n", SDL_GetError());
-        return 1;
+  // RF-17.5 / QA-268 (A19): el snapshot puede poseer una copia PCM mientras
+  // está pausado, pero debe tener una cota estable de una generación y quedar
+  // lógicamente vacío tras cada resume.
+  const HdMixer::VoiceIdentity memory_identity{130, 10, 1};
+  check(p.play_event_hd(pack, tone_asset, true, 0x19, 1400, NOCUT, 0.2, 0, 1.0F,
+                        0, 0, &memory_identity, nullptr),
+        "A19: voz preparada para medir retención");
+  bool bounded_memory = true;
+  uint64_t retained_bytes = 0;
+  uint64_t stable_peak = 0;
+  for (int cycle = 0; cycle < 20; ++cycle) {
+    p.cut_transport_audio();
+    const uint64_t current = p.pause_snapshot_bytes();
+    if (cycle == 0) {
+      retained_bytes = current;
+      stable_peak = p.pause_snapshot_peak_bytes();
     }
-    const auto wav = fixture_wav_bytes(44100);   // 1 s de audio
-    char err[256] = "";
-    ayther::test::TrustedPackFixture fixture{"audio_resume"};
-    const std::string manifest =
-        "[pack]\nname = \"resume_test\"\nversion = \"0.0.1\"\n"
-        "game_id = \"crc32:00000000\"\nayther_min = \"0.8.0\"\n"
-        "\n[regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n";
-    const bool staged = fixture.add_bytes(
-                            "manifest.toml",
-                            reinterpret_cast<const uint8_t*>(manifest.data()),
-                            manifest.size()) &&
-                        fixture.add_bytes("tone.wav", wav.data(), wav.size());
-    const bool baked = staged && fixture.finish(err, sizeof(err));
-    if (!baked) { std::printf("[FAIL] pack builder: %s\n", err); return 1; }
-    AyArchive* pack = fixture.open();
-    if (!pack) { std::printf("[FAIL] no abre el pack de prueba\n"); return 1; }
-    AudioPlayer p;
-    if (!p.init()) { std::printf("[FAIL] AudioPlayer::init() dummy\n"); return 1; }
-
-    // Reanudar a mitad del asset del pack: stream vivo.
-    check(p.play_event_hd(pack, "tone.wav", false, 0x10, /*end=*/600,
-                          /*cut=*/NOCUT, /*offset=*/0.5),
-          "reanudación del pack a mitad del asset arranca");
-    check(p.event_count() == 1, "stream del evento vivo tras reanudar");
-    p.stop_all_events();
-
-    // Non-loop con el offset pasado el final: éxito SIN stream (#388 — el
-    // original de esa ventana también pasó; no es un fallo del asset).
-    check(p.play_event_hd(pack, "tone.wav", false, 0x11, 600, NOCUT, 2.0),
-          "offset pasado el final devuelve éxito (no es fallo)");
-    check(p.event_count() == 0, "…pero no crea stream (nada que sonar)");
-
-    // Loop con offset mayor que el asset: entra por el módulo (fase).
-    check(p.play_event_hd(pack, "tone.wav", true, 0x12, 600, NOCUT, 2.5),
-          "loop reanudado con 2,5 s sobre un asset de 1 s arranca");
-    check(p.event_count() == 1, "…con stream vivo (offset = módulo)");
-    p.stop_all_events();
-
-    // El one-shot de DISCO ya tenía offset (#220/#388): pasado el final es
-    // éxito sin stream — mismo contrato que el pack.
-    {
-        FILE* f = ayther::file_open("resume_tone.wav", "wb");
-        check(f && std::fwrite(wav.data(), 1, wav.size(), f) == wav.size(),
-              "tono suelto de disco escrito");
-        if (f) std::fclose(f);
-        check(p.play_oneshot_asset_file("resume_tone.wav", 0x13, 5.0),
-              "one-shot de disco pasado el final = éxito");
-        check(p.hd_voice_count() == 0, "…sin voz");
-        check(p.play_oneshot_asset_file("resume_tone.wav", 0x14, 0.25) &&
-                  p.hd_voice_count() == 1,
-              "one-shot de disco a mitad = voz viva");
-        p.stop_all_sfx();
+    bounded_memory = bounded_memory && p.pause_snapshot_voice_count() == 1 &&
+                     current == retained_bytes && current != 0 &&
+                     p.pause_snapshot_peak_bytes() == stable_peak;
+    if (!p.resume_transport_audio() || p.pause_snapshot_voice_count() != 0 ||
+        p.pause_snapshot_bytes() != 0 || p.hd_voice_count() != 1) {
+      bounded_memory = false;
+      break;
     }
+  }
+  check(bounded_memory,
+        "A19: 20 pausas mantienen bytes/voces acotados y sin acumulación");
+  p.stop_all_events();
 
-    p.shutdown();
-    SDL_Quit();
-    std::remove("resume_tone.wav");
+  // El one-shot de DISCO ya tenía offset (#220/#388): pasado el final es
+  // éxito sin stream — mismo contrato que el pack.
+  {
+    FILE *f = ayther::file_open("resume_tone.wav", "wb");
+    check(f && std::fwrite(wav.data(), 1, wav.size(), f) == wav.size(),
+          "tono suelto de disco escrito");
+    if (f)
+      std::fclose(f);
+    check(p.play_oneshot_asset_file("resume_tone.wav", 0x13, 5.0),
+          "one-shot de disco pasado el final = éxito");
+    check(p.hd_voice_count() == 0, "…sin voz");
+    check(p.play_oneshot_asset_file("resume_tone.wav", 0x14, 0.25) &&
+              p.hd_voice_count() == 1,
+          "one-shot de disco a mitad = voz viva");
+    p.stop_all_sfx();
+  }
 
-    if (g_fail) { std::printf("--- %d FALLAS ---\n", g_fail); return 1; }
-    std::printf("--- todo ok ---\n");
-    return 0;
+  p.shutdown();
+  SDL_Quit();
+  std::remove("resume_tone.wav");
+
+  if (g_fail) {
+    std::printf("--- %d FALLAS ---\n", g_fail);
+    return 1;
+  }
+  std::printf("--- todo ok ---\n");
+  return 0;
 }

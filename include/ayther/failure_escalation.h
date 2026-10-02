@@ -34,46 +34,61 @@ namespace ayther {
 
 class FailureEscalation {
 public:
-    /// Twelve distinct files. A couple of broken assets is not a disaster and
-    /// the fallback covers them unnoticed; a dozen is already a pack that came
-    /// out wrong, and continuing to retry them costs more than it yields.
-    static constexpr size_t kDefaultThreshold = 12;
+  /// Twelve distinct files. A couple of broken assets is not a disaster and
+  /// the fallback covers them unnoticed; a dozen is already a pack that came
+  /// out wrong, and continuing to retry them costs more than it yields.
+  static constexpr size_t kDefaultThreshold = 12;
 
-    explicit FailureEscalation(size_t threshold = kDefaultThreshold)
-        : threshold_(threshold ? threshold : 1) {}
+  explicit FailureEscalation(size_t threshold = kDefaultThreshold)
+      : threshold_(threshold ? threshold : 1) {}
 
-    /// Records that `asset` failed in `subsystem`.
-    ///
-    /// Returns true ONLY on the failure that crosses the threshold — once, not
-    /// on every subsequent call. If it always returned true, the caller would
-    /// shut down an already-shut-down subsystem every frame and the log would
-    /// grow without saying anything new.
-    bool note(uint32_t subsystem, const std::string& asset) {
-        if (asset.empty()) return false;
-        auto& seen = failed_[subsystem];
-        if (!seen.insert(asset).second) return false;   // already counted
-        return seen.size() == threshold_;
+  /// Records that `asset` failed in `subsystem`.
+  ///
+  /// Returns true ONLY on the failure that crosses the threshold — once, not
+  /// on every subsequent call. If it always returned true, the caller would
+  /// shut down an already-shut-down subsystem every frame and the log would
+  /// grow without saying anything new.
+  bool note(uint32_t subsystem, const std::string &asset) {
+    if (asset.empty())
+      return false;
+    auto &seen = failed_[subsystem];
+    if (!seen.insert(asset).second)
+      return false; // already counted
+    return seen.size() == threshold_;
+  }
+
+  /// How many distinct assets failed in that subsystem.
+  size_t count(uint32_t subsystem) const {
+    const auto it = failed_.find(subsystem);
+    return it == failed_.end() ? 0 : it->second.size();
+  }
+
+  /// The total, for the message shown to the user.
+  size_t total() const {
+    size_t n = 0;
+    for (const auto &[s, set] : failed_) {
+      (void)s;
+      n += set.size();
     }
+    return n;
+  }
 
-    /// How many distinct assets failed in that subsystem.
-    size_t count(uint32_t subsystem) const {
-        const auto it = failed_.find(subsystem);
-        return it == failed_.end() ? 0 : it->second.size();
+  /// Unique files across subsystems, for an accurate user-facing diagnosis.
+  std::unordered_set<std::string> failed_assets() const {
+    std::unordered_set<std::string> result;
+    for (const auto &[subsystem, assets] : failed_) {
+      (void)subsystem;
+      result.insert(assets.begin(), assets.end());
     }
+    return result;
+  }
 
-    /// The total, for the message shown to the user.
-    size_t total() const {
-        size_t n = 0;
-        for (const auto& [s, set] : failed_) { (void)s; n += set.size(); }
-        return n;
-    }
-
-    size_t threshold() const { return threshold_; }
-    void   clear() { failed_.clear(); }
+  size_t threshold() const { return threshold_; }
+  void clear() { failed_.clear(); }
 
 private:
-    size_t threshold_;
-    std::unordered_map<uint32_t, std::unordered_set<std::string>> failed_;
+  size_t threshold_;
+  std::unordered_map<uint32_t, std::unordered_set<std::string>> failed_;
 };
 
-}  // namespace ayther
+} // namespace ayther

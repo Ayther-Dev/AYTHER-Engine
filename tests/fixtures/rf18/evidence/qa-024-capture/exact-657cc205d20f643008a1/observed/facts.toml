@@ -1,0 +1,14 @@
+schema_version = 1
+observer_enabled = true
+trace_complete = true
+
+[[facts]]
+event_id = 1
+sequence = 0
+kind = "exact_selected"
+signature = 99
+best_signature = 99
+rank = -1
+
+[audit]
+executable_sha256 = "467568e290fe75b4de06a7eb24f7839f8dbeb7616e378557d7c00c3f62466c62"

@@ -1,0 +1,299 @@
+schema_version = 1
+trace_complete = true
+
+[[events]]
+kind = "loop_wrap"
+occurrence = 1
+key = 101
+frame = 0
+output = 2
+position_before = 6
+position_after = 2
+
+[[events]]
+kind = "loop_wrap"
+occurrence = 1
+key = 101
+frame = 0
+output = 6
+position_before = 6
+position_after = 2
+
+[[events]]
+kind = "loop_wrap"
+occurrence = 1
+key = 101
+frame = 1
+output = 10
+position_before = 6
+position_after = 2
+
+[[events]]
+kind = "loop_wrap"
+occurrence = 1
+key = 101
+frame = 1
+output = 14
+position_before = 6
+position_after = 2
+
+[[events]]
+kind = "loop_wrap"
+occurrence = 1
+key = 101
+frame = 2
+output = 18
+position_before = 6
+position_after = 2
+
+[[events]]
+kind = "loop_wrap"
+occurrence = 1
+key = 101
+frame = 3
+output = 22
+position_before = 6
+position_after = 2
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 0
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 1
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 2
+position_before = 6
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 3
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 4
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 5
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 6
+position_before = 6
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 7
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 8
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 9
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 10
+position_before = 6
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 11
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 12
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 13
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 14
+position_before = 6
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 15
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 16
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 17
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 18
+position_before = 6
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 19
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 20
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 21
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 22
+position_before = 6
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 23
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[audit]
+executable_sha256 = "92c24342e614ae3329f096a628d51f09278c306ad2010fbff452105e9dc8829b"

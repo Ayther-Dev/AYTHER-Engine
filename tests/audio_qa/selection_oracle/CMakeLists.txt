@@ -1,0 +1,71 @@
+cmake_minimum_required(VERSION 3.25)
+project(AytherSelectionOracle LANGUAGES CXX)
+enable_testing()
+set(reference "${QA_ENGINE_REFERENCE_SOURCE}")
+foreach(entry IN ITEMS
+    "include/ayther/audio_match_rule.h|5323d93783d009223a18b1e03e69b17be6e04aa02c47ba77cc686bc95b745592"
+    "src/ayther_session_impl.inl|f63f1412b8274433beb2ee536980f4a4448f1eab00b55e672ed4ac5020dfb8c6")
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 path)
+    list(GET parts 1 expected)
+    file(SHA256 "${reference}/${path}" actual)
+    if(NOT actual STREQUAL expected)
+        message(FATAL_ERROR "Selection reference changed: ${path}")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${reference}/${path}")
+endforeach()
+file(READ "${reference}/include/ayther/audio_match_rule.h" header)
+file(READ "${reference}/src/ayther_session_impl.inl" session)
+string(REPLACE "\r\n" "\n" header "${header}")
+string(REPLACE "\r\n" "\n" session "${session}")
+string(FIND "${session}" "    bool resolve_event_sig(" begin)
+string(FIND "${session}" "    struct SeqWindow" end)
+if(begin LESS 0 OR end LESS_EQUAL begin)
+    message(FATAL_ERROR "Selection wrapper anchors missing")
+endif()
+math(EXPR size "${end} - ${begin}")
+string(SUBSTRING "${session}" ${begin} ${size} wrapper)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/reference_resolve.inc" "${wrapper}")
+function(observe variable anchor replacement)
+    string(FIND "${${variable}}" "${anchor}" position)
+    if(position LESS 0)
+        message(FATAL_ERROR "Selection observation anchor missing: ${anchor}")
+    endif()
+    string(REPLACE "${anchor}" "${replacement}" changed "${${variable}}")
+    set(${variable} "${changed}" PARENT_SCOPE)
+endfunction()
+observe(header "            const Entry& e = it->second;"
+    "            const Entry& e = it->second;\n            qa_selection::record(\"candidate\", e.sig, best_sig, best_rank);")
+observe(header "                if (pitch == kAudioNoPitch || pitch != e.pitch) continue;"
+    "                if (pitch == kAudioNoPitch || pitch != e.pitch) { qa_selection::record(\"pitch_rejected\", e.sig, best_sig, best_rank); continue; }")
+observe(header "                best_sig  = e.sig;\n            }"
+    "                best_sig  = e.sig;\n                qa_selection::record(\"winner_updated\", e.sig, best_sig, best_rank);\n            } else { qa_selection::record(\"lower_priority\", e.sig, best_sig, best_rank); }")
+observe(header "        if (best_rank < 0) return false;"
+    "        if (best_rank < 0) { qa_selection::record(\"no_match\", 0, best_sig, best_rank); return false; }")
+observe(header "        if (out) *out = best_sig;"
+    "        qa_selection::record(\"selected\", best_sig, best_sig, best_rank);\n        if (out) *out = best_sig;")
+observe(wrapper "            if (out) *out = sig;"
+    "            qa_selection::record(\"exact_selected\", sig, sig, -1);\n            if (out) *out = sig;")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/observed_match.h" "// AYTHER QA observation copy.\n${header}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/observed_resolve.inc" "${wrapper}")
+foreach(kind IN ITEMS reference observed)
+    add_executable(audio_qa_selection_${kind} selection_probe.cpp)
+    target_compile_features(audio_qa_selection_${kind} PRIVATE cxx_std_20)
+    target_compile_options(audio_qa_selection_${kind} PRIVATE /W4 /WX /permissive- /EHsc)
+    set_target_properties(audio_qa_selection_${kind} PROPERTIES CXX_EXTENSIONS OFF)
+    target_include_directories(audio_qa_selection_${kind} SYSTEM PRIVATE
+        "${reference}/include/ayther" "${CMAKE_CURRENT_BINARY_DIR}")
+    if(kind STREQUAL "observed")
+        target_compile_definitions(audio_qa_selection_${kind} PRIVATE QA_SELECTION_OBSERVER=1)
+    else()
+        target_compile_definitions(audio_qa_selection_${kind} PRIVATE QA_SELECTION_OBSERVER=0)
+    endif()
+endforeach()
+foreach(mode IN ITEMS match miss exact lost)
+    add_test(NAME audio_qa_selection_${mode}
+        COMMAND ${CMAKE_COMMAND} "-DREFERENCE=$<TARGET_FILE:audio_qa_selection_reference>"
+            "-DOBSERVED=$<TARGET_FILE:audio_qa_selection_observed>" "-DMODE=${mode}"
+            "-DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/results/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/verify.cmake")
+    set_tests_properties(audio_qa_selection_${mode} PROPERTIES TIMEOUT 10 LABELS "audio_qa;reference")
+endforeach()

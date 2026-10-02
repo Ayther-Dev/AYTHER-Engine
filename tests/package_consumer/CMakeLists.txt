@@ -106,6 +106,7 @@ set(_ayther_required_public_headers
     ayther/ayther_core_ffi.h
     ayther/ayther_renderer.h
     ayther/engine/engine.hpp
+    ayther/engine/audio_observer.hpp
     ayther/engine/capabilities.hpp
     ayther/engine/core_probe.hpp
     ayther/engine/input.hpp

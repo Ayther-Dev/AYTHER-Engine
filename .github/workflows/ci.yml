@@ -489,6 +489,17 @@ jobs:
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
 
+      - name: Verify required audio QA CTest families
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & cmake `
+              "-DQA_BUILD_DIRECTORY=$($PWD.Path)/build/${{ matrix.preset }}" `
+              "-DQA_CTEST_COMMAND=$((Get-Command ctest -ErrorAction Stop).Source)" `
+              '-DQA_REQUIRED_FAMILIES=audio_qa,unit,contract,integration,limits,fidelity,performance' `
+              -P tools/check_ctest_families.cmake
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build
         run: >-
           cmake --build --preset ${{ matrix.preset }}
@@ -498,13 +509,16 @@ jobs:
         if: matrix.preset == 'linux-native'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes "clang-tidy-${CLANG_TIDY_VERSION}"
+          sudo apt-get install --yes \
+            "clang-format-${CLANG_TIDY_VERSION}" \
+            "clang-tidy-${CLANG_TIDY_VERSION}"
 
-      - name: Run high-severity clang-tidy checks on modified sources
+      - name: Check format and static analysis on modified C++ sources
         if: matrix.preset == 'linux-native'
         shell: bash
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CLANG_FORMAT: clang-format-${{ env.CLANG_TIDY_VERSION }}
           CLANG_TIDY: clang-tidy-${{ env.CLANG_TIDY_VERSION }}
         run: |
           base_revision="${BASE_REVISION}"

@@ -1,0 +1,94 @@
+schema_version = 1
+trace_complete = true
+
+[[events]]
+kind = "asset_end"
+occurrence = 1
+key = 101
+frame = 0
+output = 12
+position_before = 8
+position_after = 8
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 4
+position_before = 0
+source = 0
+position_after = 1
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 5
+position_before = 1
+source = 1
+position_after = 2
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 6
+position_before = 2
+source = 2
+position_after = 3
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 7
+position_before = 3
+source = 3
+position_after = 4
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 8
+position_before = 4
+source = 4
+position_after = 5
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 9
+position_before = 5
+source = 5
+position_after = 6
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 10
+position_before = 6
+source = 6
+position_after = 7
+gain = 0.5
+fade_left = 0
+
+[[samples]]
+occurrence = 1
+key = 101
+output = 11
+position_before = 7
+source = 7
+position_after = 8
+gain = 0.5
+fade_left = 0
+
+[audit]
+executable_sha256 = "f86581922c52cca006ff69b29839f68cb15a8acc414726981a3b4ee8ca26886b"

@@ -1,0 +1,8 @@
+version=1
+[[keys]]
+id="qa-common-mix-fixture"
+algorithm="ed25519"
+public_key="d06f5c60acd7c97b10fc837cdea439ebc9f4d57d160553b0dd711f0ba5b09624"
+not_before_unix=0
+not_after_unix=4102444800
+games=["qa-common-mix"]
