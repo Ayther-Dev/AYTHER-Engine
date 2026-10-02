@@ -648,8 +648,7 @@ int main() {
           "continuidad: ganancia fuera de rango informa valor y rango");
 
     const auto fixture_path =
-        std::filesystem::path(__FILE__).parent_path().parent_path() /
-        "fixtures" / "rf18" / "fixtures" / "audio-continuity-schema1.toml";
+        std::filesystem::path(AYTHER_RF18_SCHEMA1_FIXTURE);
     std::ifstream fixture_file(fixture_path, std::ios::binary);
     const std::string fixture((std::istreambuf_iterator<char>(fixture_file)),
                               std::istreambuf_iterator<char>());
