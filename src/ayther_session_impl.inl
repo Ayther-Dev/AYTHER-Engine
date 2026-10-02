@@ -1094,6 +1094,11 @@ struct AytherSession::Impl {
                    // produce)
   std::vector<AytherAudioEvent>
       audio_events; // eventos detectados por el último analyze_audio_events
+  void audio_events_changed() {
+    seq_anchor_for_n = SIZE_MAX;
+    synth_oneshot_for_n = SIZE_MAX;
+    synth_oneshot_cache.clear();
+  }
   // : el otro camino del audio. El chip PCM de Sega CD no tiene bus
   // expuesto — llega ya tipificado por poll_audio_events — así que no puede
   // viajar en `chip_writes`. Se desempaqueta una vez por frame y entra al

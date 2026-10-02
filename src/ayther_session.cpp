@@ -7080,7 +7080,21 @@ uint32_t AytherSession::analyze_audio_events(const AytherRecording &rec) {
     im.qa_analysis_outputs = output.batch;
     im.qa_analysis_output_count = (std::min)(k, returned_events);
   }
+  im.audio_events_changed();
   return k;
+}
+
+void AytherSession::set_audio_events(const AytherAudioEvent *events,
+                                     uint32_t count) {
+  Impl &im = *impl_;
+  const uint8_t pal = timing_fps() > 1.0 && timing_fps() < 55.0 ? 1 : 0;
+  if (im.audio_live_det)
+    ayther_audio_event_set_pal(im.audio_live_det.get(), pal);
+  if (events && count)
+    im.audio_events.assign(events, events + count);
+  else
+    im.audio_events.clear();
+  im.audio_events_changed();
 }
 
 const AytherAudioEvent *AytherSession::audio_events() const noexcept {
@@ -7093,6 +7107,7 @@ void AytherSession::clear_audio_events() noexcept {
   impl_->audio_events.clear();
   impl_->qa_analysis_outputs.reset();
   impl_->qa_analysis_output_count = 0;
+  impl_->audio_events_changed();
 }
 
 // -- Sustitución de audio por evento (C-A3b) --------------------------------

@@ -969,6 +969,12 @@ public:
   const AytherAudioEvent *audio_events() const noexcept;
   uint32_t audio_event_count() const noexcept;
   void clear_audio_events() noexcept;
+  /// Restores events cached from an earlier analysis of the same take without
+  /// replaying it. The caller keys that cache by the take content and
+  /// kAudioEventAlgo. A null pointer or zero count clears the events.
+  void set_audio_events(const AytherAudioEvent *events, uint32_t count);
+  /// Detector-output revision used to invalidate frontend event caches.
+  static constexpr uint32_t kAudioEventAlgo = 1;
 
   // -- Per-event audio substitution (C-A3b) ---------------------------------
   // It assigns an HD asset to an event SIGNATURE: ALL events with that
