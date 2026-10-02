@@ -220,6 +220,16 @@ set_tests_properties(ayther.quality.documentation_language PROPERTIES
     TIMEOUT 30
     LABELS  "engine;native;quality")
 
+add_test(
+    NAME ayther.quality.release_fixture_paths
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSOURCE_FILE=${PROJECT_SOURCE_DIR}/tests/integration/elements_toml_test.cpp"
+        "-DCMAKE_FILE=${PROJECT_SOURCE_DIR}/tests/integration/CMakeLists.txt"
+        -P "${PROJECT_SOURCE_DIR}/tests/release_fixture_path_contract.cmake")
+set_tests_properties(ayther.quality.release_fixture_paths PROPERTIES
+    TIMEOUT 30
+    LABELS  "audio_qa;quality;release")
+
 add_subdirectory(unit)
 add_subdirectory(integration)
 add_subdirectory(audio_qa)
