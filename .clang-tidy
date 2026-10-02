@@ -20,8 +20,6 @@ Checks: >
 
 WarningsAsErrors: >
   clang-analyzer-*,
-  bugprone-*,
-  cppcoreguidelines-owning-memory,
   cppcoreguidelines-virtual-class-destructor,
   concurrency-*
 

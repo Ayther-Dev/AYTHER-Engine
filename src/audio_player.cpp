@@ -2342,6 +2342,8 @@ bool AudioPlayer::decode_audio_bytes(WavEntry &entry,
                          "stb_vorbis_decode_memory failed");
       return false;
     }
+    const std::unique_ptr<short, decltype(&std::free)> decoded_owner(
+        decoded, &std::free);
     entry.spec.format = SDL_AUDIO_S16;
     entry.spec.channels = channels;
     entry.spec.freq = sample_rate;
@@ -2356,12 +2358,11 @@ bool AudioPlayer::decode_audio_bytes(WavEntry &entry,
           "decoded_audio_too_large_ogg",
           "refusing %zu decoded bytes; the ceiling is %lld", total_bytes,
           static_cast<long long>(ayther::limits::kMaxDecodedAudioBytes));
-      free(decoded);
       return false;
     }
-    entry.pcm.assign(reinterpret_cast<uint8_t *>(decoded),
-                     reinterpret_cast<uint8_t *>(decoded) + total_bytes);
-    free(decoded); // stb_vorbis allocates with malloc
+    entry.pcm.assign(reinterpret_cast<const uint8_t *>(decoded_owner.get()),
+                     reinterpret_cast<const uint8_t *>(decoded_owner.get()) +
+                         total_bytes);
   }
   // ---- FLAC decode (dr_flac) ------------------------------------------
   else if (ext == "flac") {
@@ -2375,6 +2376,8 @@ bool AudioPlayer::decode_audio_bytes(WavEntry &entry,
                          "drflac_decode_failed", "drflac decode failed");
       return false;
     }
+    const std::unique_ptr<drflac_int16, void (*)(void *)> decoded_owner(
+        decoded, [](void *buffer) { drflac_free(buffer, nullptr); });
     entry.spec.format = SDL_AUDIO_S16;
     entry.spec.channels = static_cast<int>(channels);
     entry.spec.freq = static_cast<int>(sample_rate);
@@ -2387,12 +2390,11 @@ bool AudioPlayer::decode_audio_bytes(WavEntry &entry,
           "decoded_audio_too_large_flac",
           "refusing %zu decoded bytes; the ceiling is %lld", total_bytes,
           static_cast<long long>(ayther::limits::kMaxDecodedAudioBytes));
-      drflac_free(decoded, nullptr);
       return false;
     }
-    entry.pcm.assign(reinterpret_cast<uint8_t *>(decoded),
-                     reinterpret_cast<uint8_t *>(decoded) + total_bytes);
-    drflac_free(decoded, nullptr);
+    entry.pcm.assign(reinterpret_cast<const uint8_t *>(decoded_owner.get()),
+                     reinterpret_cast<const uint8_t *>(decoded_owner.get()) +
+                         total_bytes);
   } else {
     ayther::log::write(ayther::log::Severity::Warning, "audio.player",
                        "formato_soportado", "formato no soportado: '%s'",
