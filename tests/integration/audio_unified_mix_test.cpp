@@ -19,6 +19,8 @@
 #include "ayther_file.h"
 #include <ayther/audio_playback_policy.h>
 
+#include <algorithm>
+
 #include <SDL3/SDL.h>
 
 #include <cstdint>
