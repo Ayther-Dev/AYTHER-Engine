@@ -1,26 +1,26 @@
 # Current release gate: go / no-go decision
 
-**Pre-release decision: GO for `v0.1.0-rc.11`.**
+**Pre-release decision: GO for `v0.1.0-rc.12`.**
 
 **Stable-release decision: NO-GO for `v0.1.0`.**
 
-**Decision date:** 2026-10-01
+**Decision date:** 2026-10-02
 
-**Evidence cutoff:** 2026-10-01T19:40:00-03:00
+**Evidence cutoff:** 2026-10-02T12:30:00-03:00
 
 **Candidate identity:** the commit targeted by the annotated tag
-`v0.1.0-rc.11`. The tag object records the exact candidate SHA and is the
+`v0.1.0-rc.12`. The tag object records the exact candidate SHA and is the
 authoritative binding between this decision and the immutable source revision.
 
 **Evidence baseline before the decision record:**
-`a56dd2f` (`main` after merging pull request #22), which is the last
-published candidate `v0.1.0-rc.10` (`47d93d97`) plus the commits `624a0fc` and
-`1918fbf` on `feat/audio-events-cache`.
+`6b2087755f9cc8a28ab9ebe2e74dd5fca4c55e99` (`main` after merging pull
+request #24), which is the published candidate `v0.1.0-rc.11` plus RF-18's
+observable audio QA pipeline and music-continuity implementation.
 
 **Decider:** the sole maintainer, operating under
 [GOV-2026-001](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review)
 
-This record supersedes the operational GO for `v0.1.0-rc.10`, which was
+This record supersedes the operational GO for `v0.1.0-rc.11`, which was
 published successfully as a pre-release. The `rc.10`, `rc.8`, `rc.7` and
 `rc.6` decisions, the earlier `v0.1.0-rc.4` publication and the
 [2026-08-30 decision](RELEASE_GO_NO_GO.md) remain immutable historical
@@ -28,25 +28,22 @@ snapshots.
 
 ## Why a new candidate
 
-Every consumer that substitutes audio by event has to analyse the take first
-(`analyze_audio_events`), which replays the whole take: about 44 s for the
-13 206-frame Golden Axe take the Lab reported on 2026-10-01, on every open,
-because the result lived only in the session. `rc.11` adds
-`AytherSession::set_audio_events`, which restores the events of an earlier
-analysis of the same take without replaying it, and
-`AytherSession::kAudioEventAlgo`, which versions the detector output so a
-frontend cache can be invalidated. It also fixes the caches derived from the
-events (sequence anchors, one-shot timbres), which were keyed by the event
-count alone and could survive the analysis of another take with the same
-count. The change is additive: no existing function, struct or C ABI entry
-changes.
+RF-18 adds observable, deterministic music recognition and continuity to the
+Engine. It separates intro and loop identities, preserves the active sequence
+across title, menu and selection transitions, arbitrates real-time music
+transitions, restores positions after pauses, and constrains simultaneous
+voices. The implementation includes frozen Golden Axe regression evidence and
+contract, unit, integration, package-consumer and corpus-quality oracles. The
+maintainer's QA-309 listening pass confirmed that the earlier intro restart at
+approximately 0:14 no longer occurs and that the remainder of the replay is
+correct.
 
 ## Decision scope
 
-The GO authorizes publishing `v0.1.0-rc.11` as a **pre-release candidate** so
-that AYTHER Lab can pin a package that restores cached audio events, and so
-that the release pipeline, artifact verification and external consumption
-are exercised again on a fix-forward candidate. It does not authorize
+The GO authorizes publishing `v0.1.0-rc.12` as a **pre-release candidate** so
+that AYTHER Lab and Runtime can consume and validate RF-18, and so that the
+release pipeline, artifact verification and external consumption are exercised
+again on a fix-forward candidate. It does not authorize
 publishing the stable `v0.1.0` release.
 
 Stable remains NO-GO because supported-release blockers and the required
@@ -56,16 +53,16 @@ rollback rehearsal are not yet closed.
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.11` passes for prerelease `rc.11` of `0.1.0` |
-| Required CI on the change | **Pass** | [Pull request #22](https://github.com/Ayther-Dev/AYTHER-Engine/pull/22): 22 checks green, including the [Required CI gate](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/36921305429), coverage gates, ASan/UBSan, fuzz smokes and CodeQL; the opt-in GPU job was skipped. The first run failed on clang-tidy findings in the new test, fixed by `1918fbf` |
-| Required CI on the merged baseline | **Pending at the cutoff** | CI and CodeQL on `a56dd2f` were queued; required CI must be green on the merge commit that adds this record before the tag |
+| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.12` passes for prerelease `rc.12` of `0.1.0` |
+| Required CI on the change | **Pass** | [Pull request #24](https://github.com/Ayther-Dev/AYTHER-Engine/pull/24): all 22 required checks green, including the [Required CI gate](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/37020458925), coverage gates, ASan/UBSan, fuzz smokes and CodeQL; the opt-in GPU job was explicitly skipped |
+| Required CI on the merged baseline | **Pending at the cutoff** | CI and CodeQL on `6b2087755f9cc8a28ab9ebe2e74dd5fca4c55e99` were in progress; required CI must be green on the merge commit that adds this record before the tag |
 | Open code-scanning findings | **Pass** | GitHub returned no open code-scanning alerts at the evidence cutoff |
-| The change has tests | **Pass** | New `ayther.integration.audio_events_restore_test` (test core and synthetic ROM): restored events read back unchanged, a same-count restore replaces the previous one, null or zero clears, clearing still works and stepping keeps the events |
-| Local suites on the candidate | **Pass** | `windows-native` full build and non-GPU CTest 61/61; `gen_api_reference -Check`, `check_doc_references` (2026-10-01, maintainer's machine) |
-| ABI and package surface | **Pass** | Additive C++ API only: one new non-virtual member and one constant on `AytherSession`; core C ABI revision 7 and package `0.1.0` unchanged |
-| Consumer verification | **Pending the Lab pin** | AYTHER Lab caches the events next to each take (`.audioevents`) and restores them on open; verified on Golden Axe once it pins `rc.11` |
-| `rc.10` release outcome | **Pass** | Published 2026-10-01 as [pre-release `v0.1.0-rc.10`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.10); pinned by AYTHER Runtime `v0.1.0-beta.7` and by AYTHER Lab |
-| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.11` did not exist at the evidence cutoff |
+| The change has tests | **Pass** | RF-18 adds deterministic contract, unit, integration, conversion, continuity, lifecycle, selection, staging, routing, voice, reference and corpus-quality oracles, plus frozen Golden Axe evidence |
+| Local and PR suites on the candidate | **Pass** | The task-by-task RF-18 suites and final requirement audit passed; PR CI repeated the complete Windows/Linux mandatory matrix successfully |
+| ABI and package surface | **Pass** | Public Engine audio observation and music-continuity contracts are installable and exercised by the external package consumer; core C ABI revision 7 and package `0.1.0` remain unchanged |
+| Human audio verification | **Pass** | QA-309 was accepted by the maintainer: the Golden Axe title/menu/selection intro no longer restarts and the remainder of the replay sounds correct |
+| `rc.11` release outcome | **Pass** | Published 2026-10-01 as [pre-release `v0.1.0-rc.11`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.11) |
+| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.12` did not exist at the evidence cutoff |
 | Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment requires the maintainer's approval |
 
 The final candidate commit is the merge result containing this record. Before
@@ -119,12 +116,12 @@ before re-evaluating the stable `v0.1.0` gate.
 
 ```text
 git rev-parse main
-pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.11
+pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.12
 gh run list --branch main --limit 12
 gh api 'repos/Ayther-Dev/AYTHER-Engine/code-scanning/alerts?state=open'
 gh api repos/Ayther-Dev/AYTHER-Engine/environments/release
 gh api repos/Ayther-Dev/AYTHER-Engine/rulesets
-gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.11
+gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.12
 ```
 
 Ruleset identifiers are not treated as stable evidence. Enumerate the active
