@@ -145,6 +145,97 @@ struct SeqAnchorResolutionView {
   size_t selected_count = 0;
 };
 
+/// Terminal routing result for one authored sequence key on one anchor frame.
+/// `individual` means that no applicable sequence visited that key and is the
+/// only disposition that permits the playback consumer to use its ordinary
+/// one-shot fallback. Every rejected disposition is terminal for that route.
+enum class SeqTriggerDisposition : uint8_t {
+  individual,
+  selected,
+  rejected_internal,
+  rejected_quorum,
+  rejected_claimed,
+};
+
+struct SeqTriggerResolution {
+  SeqTriggerDisposition disposition = SeqTriggerDisposition::individual;
+  uint64_t key = 0;
+  uint64_t candidate_signature = 0;
+  uint64_t owner_key = 0;
+  size_t input_index = 0;
+};
+
+[[nodiscard]] inline bool
+seq_trigger_is_rejected(SeqTriggerDisposition disposition) noexcept {
+  return disposition == SeqTriggerDisposition::rejected_internal ||
+         disposition == SeqTriggerDisposition::rejected_quorum ||
+         disposition == SeqTriggerDisposition::rejected_claimed;
+}
+
+/// Allocation is completed by the constructor; the synchronous callbacks are
+/// noexcept and only replace fixed result slots. This collector can therefore
+/// be composed with observation callbacks on the resolver's real traversal.
+class SeqAnchorRoutes {
+public:
+  explicit SeqAnchorRoutes(std::span<const SeqAnchorSub> substitutions)
+      : substitutions_(substitutions), routes_(substitutions.size()),
+        seen_(substitutions.size(), false) {}
+
+  void operator()(const SeqAnchorCandidateView &value) noexcept {
+    if (value.sub_index >= routes_.size() ||
+        value.stage != SeqAnchorCandidateStage::internal)
+      return;
+    set(value.sub_index, SeqTriggerDisposition::rejected_internal,
+        value.signature, value.input_index, 0);
+  }
+
+  void operator()(const SeqAnchorDecisionView &value) noexcept {
+    if (value.sub_index >= routes_.size())
+      return;
+    switch (value.result) {
+    case SeqAnchorDecisionResult::selected:
+      set(value.sub_index, SeqTriggerDisposition::selected,
+          value.candidate_signature, value.input_index, 0);
+      break;
+    case SeqAnchorDecisionResult::quorum_rejected:
+      set(value.sub_index, SeqTriggerDisposition::rejected_quorum,
+          value.candidate_signature, value.input_index, 0);
+      break;
+    case SeqAnchorDecisionResult::claimed_by_open_sequence: {
+      const uint64_t owner = value.related_sub_index < substitutions_.size()
+                                 ? substitutions_[value.related_sub_index].key
+                                 : 0;
+      set(value.sub_index, SeqTriggerDisposition::rejected_claimed,
+          value.candidate_signature, value.input_index, owner);
+      break;
+    }
+    }
+  }
+
+  [[nodiscard]] SeqTriggerResolution for_key(uint64_t key) const noexcept {
+    for (size_t i = 0; i < substitutions_.size(); ++i) {
+      if (substitutions_[i].key == key)
+        return seen_[i] ? routes_[i]
+                        : SeqTriggerResolution{
+                              SeqTriggerDisposition::individual, key};
+    }
+    return {SeqTriggerDisposition::individual, key};
+  }
+
+private:
+  void set(size_t index, SeqTriggerDisposition disposition,
+           uint64_t candidate_signature, size_t input_index,
+           uint64_t owner_key) noexcept {
+    routes_[index] = {disposition, substitutions_[index].key,
+                      candidate_signature, owner_key, input_index};
+    seen_[index] = true;
+  }
+
+  std::span<const SeqAnchorSub> substitutions_;
+  std::vector<SeqTriggerResolution> routes_;
+  std::vector<bool> seen_;
+};
+
 /// Borrowed inputs of one actual anchor frame. source_indices, when supplied,
 /// map the sorted signatures to the original detector-event array. Callbacks
 /// must copy needed data before returning and must not mutate any input/state.

@@ -30,9 +30,13 @@ int main() { // NOLINT(bugprone-exception-escape) -- Test allocation failure is
     return 9;
 
   auto invalid = complete;
-  invalid.version.minor = 1;
+  invalid.version.minor = 0;
   if (!rejected(invalid, obs::AudioHdStateValidationCode::unsupported_version))
     return 2;
+  invalid = complete;
+  invalid.version.minor = 2;
+  if (!rejected(invalid, obs::AudioHdStateValidationCode::unsupported_version))
+    return 10;
 
   invalid = complete;
   invalid.game_state_identity.clear();

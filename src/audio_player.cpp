@@ -160,6 +160,18 @@ bool AudioPlayer::init(const ayther::RuntimeOptions &options) {
     device_ = 0;
     return false;
   }
+  if (dev_spec.freq > 0) {
+    main_mix_output_sample_rate_ = static_cast<uint32_t>(dev_spec.freq);
+    main_mix_resample_rate_q32_ =
+        ((uint64_t{44100} << 32) + main_mix_output_sample_rate_ - 1) /
+        main_mix_output_sample_rate_;
+    if (main_mix_output_sample_rate_ != 44100) {
+      main_mix_filter_support_left_ = 5;
+      main_mix_filter_support_right_ = 6;
+      main_mix_conversion_mapping_supported_ =
+          SDL_GetVersion() == SDL_VERSIONNUM(3, 4, 8);
+    }
+  }
 
   // Stream del SINTETIZADOR SoundFont (). Va POR SEPARADO del emulador y
   // no mezclado en `pending_pcm_`, y el motivo es la mute: `flush_emulator`
@@ -603,6 +615,9 @@ bool AudioPlayer::prepare_fresh_session() noexcept {
   pending_pcm_.clear();
   pending_batches_.clear();
   production_limit_ = {};
+  paused_hd_voices_ = {};
+  transport_pause_snapshot_ = false;
+  pause_snapshot_peak_bytes_ = 0;
   pending_original_count_ = 0;
   pending_original_overflow_ = false;
   mute_hashes_.clear();
@@ -821,13 +836,28 @@ bool AudioPlayer::set_main_output_observer(
     const bool get_detached =
         !synth_stream_ ||
         SDL_SetAudioStreamGetCallback(synth_stream_, nullptr, nullptr);
+    const bool main_put_detached =
+        !emu_stream_ ||
+        SDL_SetAudioStreamPutCallback(emu_stream_, nullptr, nullptr);
+    const bool main_get_detached =
+        !emu_stream_ ||
+        SDL_SetAudioStreamGetCallback(emu_stream_, nullptr, nullptr);
     main_output_context_ = nullptr;
     main_output_callback_ = nullptr;
-    return postmix_detached && put_detached && get_detached;
+    return postmix_detached && put_detached && get_detached &&
+           main_put_detached && main_get_detached;
   }
   main_output_context_ = context;
   main_output_callback_ = callback;
   main_output_samples_.store(0, std::memory_order_relaxed);
+  main_mix_write_.store(0, std::memory_order_relaxed);
+  main_mix_read_.store(0, std::memory_order_relaxed);
+  prepared_main_mix_count_ = 0;
+  prepared_main_mix_frames_ = 0;
+  main_mix_resample_phase_q32_ = 0;
+  main_mix_consumed_input_.store(0, std::memory_order_relaxed);
+  main_mix_mapping_complete_.store(main_mix_conversion_mapping_supported_,
+                                   std::memory_order_release);
   auxiliary_write_.store(0, std::memory_order_relaxed);
   auxiliary_read_.store(0, std::memory_order_relaxed);
   active_auxiliary_ = {};
@@ -845,12 +875,22 @@ bool AudioPlayer::set_main_output_observer(
            synth_stream_, &AudioPlayer::observe_auxiliary_put, this) &&
        SDL_SetAudioStreamGetCallback(
            synth_stream_, &AudioPlayer::observe_auxiliary_get, this));
+  const bool main_mix_callbacks =
+      !emu_stream_ ||
+      (SDL_SetAudioStreamPutCallback(
+           emu_stream_, &AudioPlayer::observe_main_mix_put, this) &&
+       SDL_SetAudioStreamGetCallback(emu_stream_,
+                                     &AudioPlayer::observe_main_mix_get, this));
   if (!SDL_SetAudioPostmixCallback(device_, &AudioPlayer::observe_main_output,
                                    this) ||
-      !auxiliary_callbacks) {
+      !auxiliary_callbacks || !main_mix_callbacks) {
     if (synth_stream_) {
       (void)SDL_SetAudioStreamPutCallback(synth_stream_, nullptr, nullptr);
       (void)SDL_SetAudioStreamGetCallback(synth_stream_, nullptr, nullptr);
+    }
+    if (emu_stream_) {
+      (void)SDL_SetAudioStreamPutCallback(emu_stream_, nullptr, nullptr);
+      (void)SDL_SetAudioStreamGetCallback(emu_stream_, nullptr, nullptr);
     }
     (void)SDL_SetAudioPostmixCallback(device_, nullptr, nullptr);
     main_output_context_ = nullptr;
@@ -858,6 +898,138 @@ bool AudioPlayer::set_main_output_observer(
     return false;
   }
   return true;
+}
+
+void SDLCALL AudioPlayer::observe_main_mix_put(void *context, SDL_AudioStream *,
+                                               int, int) noexcept {
+  auto &player = *static_cast<AudioPlayer *>(context);
+  if (player.pending_main_mix_frames_ == 0)
+    return;
+  uint64_t observation_sequence = 0;
+  if (player.main_mix_submission_callback_) {
+    observation_sequence = player.main_mix_submission_callback_(
+        player.main_mix_submission_context_,
+        MainMixSubmission{
+            player.pending_main_mix_submission_, player.pending_main_mix_begin_,
+            player.pending_main_mix_begin_ + player.pending_main_mix_frames_,
+            player.pending_main_mix_silence_});
+  }
+  const auto write = player.main_mix_write_.load(std::memory_order_relaxed);
+  const auto read = player.main_mix_read_.load(std::memory_order_acquire);
+  if (write - read == kMainMixSegmentCapacity) {
+    player.main_mix_mapping_complete_.store(false, std::memory_order_release);
+  } else {
+    player.main_mix_segments_[write % kMainMixSegmentCapacity] =
+        PendingMainMixSegment{
+            observation_sequence, player.pending_main_mix_submission_,
+            player.pending_main_mix_begin_, player.pending_main_mix_frames_,
+            player.pending_main_mix_silence_};
+    player.main_mix_write_.store(write + 1, std::memory_order_release);
+  }
+  player.pending_main_mix_frames_ = 0;
+}
+
+void SDLCALL AudioPlayer::observe_main_mix_get(void *context,
+                                               SDL_AudioStream *stream, int,
+                                               int total_amount) noexcept {
+  auto &player = *static_cast<AudioPlayer *>(context);
+  if (total_amount < 0) {
+    player.main_mix_mapping_complete_.store(false, std::memory_order_release);
+    return;
+  }
+  SDL_AudioSpec source{};
+  SDL_AudioSpec destination{};
+  const auto available = SDL_GetAudioStreamAvailable(stream);
+  if (available < 0 ||
+      !SDL_GetAudioStreamFormat(stream, &source, &destination) ||
+      source.format != SDL_AUDIO_S16 || source.channels != 2 ||
+      source.freq != 44100 || destination.channels == 0 ||
+      destination.freq !=
+          static_cast<int>(player.main_mix_output_sample_rate_)) {
+    player.main_mix_mapping_complete_.store(false, std::memory_order_release);
+    return;
+  }
+  const auto bytes_per_output_frame =
+      SDL_AUDIO_BYTESIZE(destination.format) * destination.channels;
+  if (bytes_per_output_frame == 0 || available % bytes_per_output_frame != 0) {
+    player.main_mix_mapping_complete_.store(false, std::memory_order_release);
+    return;
+  }
+  player.prepared_main_mix_frames_ =
+      static_cast<uint64_t>(available / bytes_per_output_frame);
+}
+
+void AudioPlayer::prepare_main_mix_spans(uint64_t output_frames) noexcept {
+  prepared_main_mix_count_ = 0;
+  if (output_frames == 0)
+    return;
+  const auto input_base =
+      main_mix_consumed_input_.load(std::memory_order_acquire);
+  const auto phase = main_mix_resample_phase_q32_;
+  const auto rate = main_mix_resample_rate_q32_;
+  const auto center = [input_base, phase, rate](uint64_t output) noexcept {
+    return input_base + ((phase + output * rate) >> 32);
+  };
+  auto read = main_mix_read_.load(std::memory_order_relaxed);
+  const auto write = main_mix_write_.load(std::memory_order_acquire);
+  for (auto cursor = read; cursor != write; ++cursor) {
+    const auto &segment = main_mix_segments_[cursor % kMainMixSegmentCapacity];
+    const auto segment_end = segment.input_begin + segment.frames;
+    uint64_t output_begin = output_frames;
+    uint64_t output_end = 0;
+    for (uint64_t output = 0; output < output_frames; ++output) {
+      const auto sample = center(output);
+      const auto support_begin = sample > main_mix_filter_support_left_
+                                     ? sample - main_mix_filter_support_left_
+                                     : 0;
+      const auto support_end = sample + main_mix_filter_support_right_ + 1;
+      if (support_begin < segment_end && support_end > segment.input_begin) {
+        output_begin = (std::min)(output_begin, output);
+        output_end = output + 1;
+      }
+    }
+    if (output_begin >= output_end)
+      continue;
+    if (prepared_main_mix_count_ == kMainMixSpansPerBlock) {
+      main_mix_mapping_complete_.store(false, std::memory_order_release);
+      break;
+    }
+    const auto first_center = center(output_begin);
+    const auto last_center = center(output_end - 1);
+    const auto support_begin =
+        first_center > main_mix_filter_support_left_
+            ? first_center - main_mix_filter_support_left_
+            : 0;
+    const auto support_end = last_center + main_mix_filter_support_right_ + 1;
+    prepared_main_mix_spans_[prepared_main_mix_count_++] =
+        MainMixOutputSpan{segment.observation_sequence,
+                          segment.submission,
+                          (std::max)(segment.input_begin, support_begin),
+                          (std::min)(segment_end, support_end),
+                          output_begin,
+                          output_end,
+                          44100,
+                          main_mix_output_sample_rate_,
+                          rate,
+                          (phase + output_begin * rate) & 0xFFFF'FFFFULL,
+                          main_mix_filter_support_left_,
+                          main_mix_filter_support_right_,
+                          segment.inserted_silence};
+  }
+  const auto advanced = phase + output_frames * rate;
+  const auto consumed = input_base + (advanced >> 32);
+  main_mix_resample_phase_q32_ = advanced & 0xFFFF'FFFFULL;
+  main_mix_consumed_input_.store(consumed, std::memory_order_release);
+  const auto retire_before = consumed > main_mix_filter_support_left_
+                                 ? consumed - main_mix_filter_support_left_
+                                 : 0;
+  while (read != write) {
+    const auto &segment = main_mix_segments_[read % kMainMixSegmentCapacity];
+    if (segment.input_begin + segment.frames > retire_before)
+      break;
+    ++read;
+  }
+  main_mix_read_.store(read, std::memory_order_release);
 }
 
 void AudioPlayer::observe_auxiliary_loss(uint64_t input_begin,
@@ -1023,13 +1195,28 @@ void SDLCALL AudioPlayer::observe_main_output(void *context,
   if (byte_count % bytes_per_frame != 0)
     return;
   const auto frames = byte_count / bytes_per_frame;
+  const auto main_mix_frames = (std::min)(player.prepared_main_mix_frames_,
+                                          static_cast<uint64_t>(frames));
   const auto auxiliary_frames = (std::min)(player.prepared_auxiliary_frames_,
                                            static_cast<uint64_t>(frames));
+  player.prepare_main_mix_spans(main_mix_frames);
   player.prepare_auxiliary_spans(auxiliary_frames);
   const auto begin =
       player.main_output_samples_.fetch_add(frames, std::memory_order_acq_rel);
   const auto end = begin + frames;
+  std::array<MainMixOutputSpan, kMainMixSpansPerBlock> main_mix_spans{};
   std::array<AuxiliaryOutputSpan, kAuxiliarySpansPerBlock> auxiliary_spans{};
+  const auto main_mix_count = player.prepared_main_mix_count_;
+  bool main_mix_complete =
+      player.main_mix_mapping_complete_.load(std::memory_order_acquire);
+  if (spec->freq != static_cast<int>(player.main_mix_output_sample_rate_) ||
+      spec->channels != 2)
+    main_mix_complete = false;
+  for (size_t index = 0; index < main_mix_count; ++index) {
+    main_mix_spans[index] = player.prepared_main_mix_spans_[index];
+    main_mix_spans[index].output_begin += begin;
+    main_mix_spans[index].output_end += begin;
+  }
   const auto auxiliary_count = player.prepared_auxiliary_count_;
   bool auxiliary_complete =
       player.auxiliary_mapping_complete_.load(std::memory_order_acquire);
@@ -1043,6 +1230,8 @@ void SDLCALL AudioPlayer::observe_main_output(void *context,
   }
   player.prepared_auxiliary_count_ = 0;
   player.prepared_auxiliary_frames_ = 0;
+  player.prepared_main_mix_count_ = 0;
+  player.prepared_main_mix_frames_ = 0;
   player.main_output_callback_(
       player.main_output_context_,
       MainOutputBlock{reinterpret_cast<const std::byte *>(buffer),
@@ -1051,6 +1240,8 @@ void SDLCALL AudioPlayer::observe_main_output(void *context,
                       end,
                       static_cast<uint32_t>(spec->freq),
                       static_cast<uint16_t>(spec->channels),
+                      {main_mix_spans.data(), main_mix_count},
+                      main_mix_complete,
                       {auxiliary_spans.data(), auxiliary_count},
                       auxiliary_complete});
 }
@@ -1165,8 +1356,16 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
           const int prime = static_cast<int>(kDrcTargetFrames) - queued;
           static std::vector<int16_t> zeros;
           zeros.assign(static_cast<size_t>(prime) * 2, 0);
-          SDL_PutAudioStreamData(emu_stream_, zeros.data(),
-                                 prime * 2 * static_cast<int>(sizeof(int16_t)));
+          pending_main_mix_begin_ = timeline_samples_;
+          pending_main_mix_frames_ = static_cast<uint64_t>(prime);
+          pending_main_mix_submission_ = ++main_mix_submission_;
+          pending_main_mix_silence_ = true;
+          if (!SDL_PutAudioStreamData(emu_stream_, zeros.data(),
+                                      prime * 2 *
+                                          static_cast<int>(sizeof(int16_t)))) {
+            pending_main_mix_frames_ = 0;
+            main_mix_mapping_complete_.store(false, std::memory_order_release);
+          }
           drc_queue_avg_ = kDrcTargetFrames; // no arrastrar el EMA viejo
           ayther::log::write(ayther::log::Severity::Warning, "audio.player",
                              "stall_ms_prime_frames",
@@ -1237,8 +1436,16 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
       if (frames > 0) {
         hd_mixer_.mix_into(pending_pcm_.data(), frames, timeline_samples_);
         const int byte_len = static_cast<int>(frames * 2 * sizeof(int16_t));
+        pending_main_mix_begin_ = timeline_samples_;
+        pending_main_mix_frames_ = frames;
+        pending_main_mix_submission_ = ++main_mix_submission_;
+        pending_main_mix_silence_ = false;
         delivery_complete =
             SDL_PutAudioStreamData(emu_stream_, pending_pcm_.data(), byte_len);
+        if (!delivery_complete) {
+          pending_main_mix_frames_ = 0;
+          main_mix_mapping_complete_.store(false, std::memory_order_release);
+        }
         if (delivery_complete && dump_) { // : tee — la MEZCLA final encolada
           std::fwrite(pending_pcm_.data(), 1, static_cast<size_t>(byte_len),
                       static_cast<FILE *>(dump_));
@@ -1425,6 +1632,7 @@ bool AudioPlayer::play_oneshot_asset_file(
     const HdMixPcm mix = get_mix_pcm(wav, path);
     if (!mix)
       return false;
+    supersede_pause_snapshot();
     const uint64_t off = offset_seconds > 0.0
                              ? static_cast<uint64_t>(offset_seconds * 44100.0)
                              : 0u;
@@ -1524,6 +1732,8 @@ bool AudioPlayer::stop_sfx_by_key(uint64_t key) {
     }
   if (hd_mixer_.stop(key))
     cut = true; // : la voz del mixer también
+  if (discard_paused_voice(key))
+    cut = true;
   return cut;
 }
 
@@ -1813,6 +2023,14 @@ void AudioPlayer::stop_all_events() {
 // ---------------------------------------------------------------------------
 
 uint64_t AudioPlayer::cut_transport_audio() {
+  // Capture before the hard physical cut. Repeated pause calls keep the first
+  // snapshot: replacing it with the empty mixer would lose cursor and phase.
+  if (!transport_pause_snapshot_) {
+    paused_hd_voices_ = hd_mixer_.voice_state();
+    transport_pause_snapshot_ = true;
+    pause_snapshot_peak_bytes_ =
+        std::max(pause_snapshot_peak_bytes_, pause_snapshot_bytes());
+  }
   // SFX one-shot del GAMEPLAY — los previews explícitos de autoría no son
   // del transporte y siguen sonando (criterio de : pausar Capturar no
   // corta el Reproducir de Mezclar).
@@ -1868,29 +2086,88 @@ uint64_t AudioPlayer::cut_transport_audio() {
   return frames;
 }
 
+bool AudioPlayer::resume_transport_audio() noexcept {
+  if (!transport_pause_snapshot_)
+    return false;
+  transport_pause_snapshot_ = false;
+  const bool had_voices = !paused_hd_voices_.voices.empty();
+  const auto code = hd_mixer_.restore_voice_state(paused_hd_voices_);
+  paused_hd_voices_ = {};
+  return code ==
+             ayther::engine::audio_observation::AudioHdRestoreCode::restored &&
+         had_voices;
+}
+
+uint64_t AudioPlayer::pause_snapshot_bytes() const noexcept {
+  if (!transport_pause_snapshot_)
+    return 0;
+  uint64_t bytes = static_cast<uint64_t>(paused_hd_voices_.voices.size()) *
+                   sizeof(ayther::engine::audio_observation::AudioHdVoiceState);
+  bytes += static_cast<uint64_t>(paused_hd_voices_.pcm_assets.size()) *
+           sizeof(ayther::engine::audio_observation::AudioHdPcmAssetState);
+  for (const auto &asset : paused_hd_voices_.pcm_assets)
+    bytes += static_cast<uint64_t>(asset.samples.size()) * sizeof(int16_t);
+  return bytes;
+}
+
+bool AudioPlayer::discard_paused_voice(uint64_t key) noexcept {
+  if (!transport_pause_snapshot_)
+    return false;
+  const auto old_size = paused_hd_voices_.voices.size();
+  paused_hd_voices_.voices.erase(
+      std::remove_if(
+          paused_hd_voices_.voices.begin(), paused_hd_voices_.voices.end(),
+          [key](const auto &voice) { return voice.business_key == key; }),
+      paused_hd_voices_.voices.end());
+  if (old_size == paused_hd_voices_.voices.size())
+    return false;
+  paused_hd_voices_.pcm_assets.erase(
+      std::remove_if(paused_hd_voices_.pcm_assets.begin(),
+                     paused_hd_voices_.pcm_assets.end(),
+                     [this](const auto &asset) {
+                       return std::none_of(paused_hd_voices_.voices.begin(),
+                                           paused_hd_voices_.voices.end(),
+                                           [&asset](const auto &voice) {
+                                             return voice.pcm_identity ==
+                                                    asset.identity;
+                                           });
+                     }),
+      paused_hd_voices_.pcm_assets.end());
+  if (paused_hd_voices_.voices.empty()) {
+    paused_hd_voices_ = {};
+    transport_pause_snapshot_ = false;
+  }
+  return true;
+}
+
+void AudioPlayer::supersede_pause_snapshot() noexcept {
+  if (!transport_pause_snapshot_)
+    return;
+  paused_hd_voices_ = {};
+  transport_pause_snapshot_ = false;
+}
+
 // ---------------------------------------------------------------------------
 // AudioPlayer — HD por EVENTO (C-A2, Componentes)
 // ---------------------------------------------------------------------------
 
-bool AudioPlayer::play_event_hd(AyArchive *pack, const char *asset_path,
-                                bool looping, uint64_t signature,
-                                uint64_t end_frame, uint64_t cut_frame,
-                                double start_offset_seconds,
-                                uint32_t fade_frames, float gain,
-                                size_t loop_begin, size_t loop_end) {
+bool AudioPlayer::play_event_hd(
+    AyArchive *pack, const char *asset_path, bool looping, uint64_t signature,
+    uint64_t end_frame, uint64_t cut_frame, double start_offset_seconds,
+    uint32_t fade_frames, float gain, size_t loop_begin, size_t loop_end,
+    ayther::RepeatPolicy repeat_policy, ayther::AudioCategory category) {
   return play_event_hd(pack, asset_path, looping, signature, end_frame,
                        cut_frame, start_offset_seconds, fade_frames, gain,
-                       loop_begin, loop_end, nullptr, nullptr);
+                       loop_begin, loop_end, nullptr, nullptr, repeat_policy,
+                       category);
 }
 
-bool AudioPlayer::play_event_hd(AyArchive *pack, const char *asset_path,
-                                bool looping, uint64_t signature,
-                                uint64_t end_frame, uint64_t cut_frame,
-                                double start_offset_seconds,
-                                uint32_t fade_frames, float gain,
-                                size_t loop_begin, size_t loop_end,
-                                const HdMixer::VoiceIdentity *identity,
-                                HdMixer::StartResult *start_result) {
+bool AudioPlayer::play_event_hd(
+    AyArchive *pack, const char *asset_path, bool looping, uint64_t signature,
+    uint64_t end_frame, uint64_t cut_frame, double start_offset_seconds,
+    uint32_t fade_frames, float gain, size_t loop_begin, size_t loop_end,
+    const HdMixer::VoiceIdentity *identity, HdMixer::StartResult *start_result,
+    ayther::RepeatPolicy repeat_policy, ayther::AudioCategory category) {
   if (production_limit_.frozen || !device_ || !asset_path ||
       asset_path[0] == '\0')
     return false;
@@ -1910,6 +2187,7 @@ bool AudioPlayer::play_event_hd(AyArchive *pack, const char *asset_path,
   const HdMixPcm mix = get_mix_pcm(wav, asset_path);
   if (!mix)
     return false;
+  supersede_pause_snapshot();
   const uint64_t off =
       start_offset_seconds > 0.0
           ? static_cast<uint64_t>(start_offset_seconds * 44100.0)
@@ -1917,7 +2195,8 @@ bool AudioPlayer::play_event_hd(AyArchive *pack, const char *asset_path,
   return hd_mixer_.start(signature, mix, timeline_samples_ + frame_mark_, off,
                          gain > 0.0f ? gain : 1.0f, looping, /*event=*/true,
                          end_frame, cut_frame, fade_frames, loop_begin,
-                         loop_end, identity, start_result);
+                         loop_end, identity, start_result, repeat_policy,
+                         ayther::TransitionPolicy::cut, category);
 }
 
 void AudioPlayer::tick_events(uint64_t frame) {

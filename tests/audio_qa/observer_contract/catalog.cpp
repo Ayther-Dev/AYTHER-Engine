@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -345,8 +346,17 @@ bool assignment_load_stages() {
   (*session)->load_audio_events_from_pack();
   if (sink.accepted != 5 || sink.assignment_updates != 5 ||
       sink.distinct_assignments != 4 || !sink.load_complete ||
-      (*session)->audio_event_assignment_count() != 4)
+      (*session)->audio_event_assignment_count() != 4) {
+    std::fprintf(stderr,
+                 "stages summary: accepted=%llu updates=%llu distinct=%llu "
+                 "complete=%d map=%u\n",
+                 static_cast<unsigned long long>(sink.accepted),
+                 static_cast<unsigned long long>(sink.assignment_updates),
+                 static_cast<unsigned long long>(sink.distinct_assignments),
+                 sink.load_complete,
+                 (*session)->audio_event_assignment_count());
     return false;
+  }
   for (const auto ordinal : {0u, 1u, 2u, 4u, 5u}) {
     const auto *loaded = find_record(sink, "pack_assignment_loaded", ordinal);
     const auto *parsed =
@@ -367,8 +377,10 @@ bool assignment_load_stages() {
   const auto *replacement = find_record(sink, "pack_assignment_loaded", 4);
   const auto *first = find_record(sink, "pack_assignment_loaded", 0);
   if (!ready || !missing || !broken || !reused || !empty || !replacement ||
-      !first)
+      !first) {
+    std::fprintf(stderr, "stages records missing\n");
     return false;
+  }
   if (!ready->ready || !ready->attempted_now ||
       std::string_view{ready->source.data()} != "pack" || missing->ready ||
       missing->ready_availability != obs::Availability::known ||
@@ -380,8 +392,17 @@ bool assignment_load_stages() {
       empty->ready_availability != obs::Availability::unknown ||
       std::string_view{empty->attempt_reason.data()} != "empty_asset" ||
       replacement->cause_count != 2 || replacement->causes[1] != first->id ||
-      find_record(sink, "pack_assignment_loaded", 3) != nullptr)
+      find_record(sink, "pack_assignment_loaded", 3) != nullptr) {
+    std::fprintf(
+        stderr,
+        "stages detail: ready=%d attempt=%d missing=%s broken=%s "
+        "reused=%d reused_attempt=%d empty_avail=%u replacement_causes=%zu\n",
+        ready->ready, ready->attempted_now, missing->reason.data(),
+        broken->reason.data(), reused->ready, reused->attempted_now,
+        static_cast<unsigned>(empty->ready_availability),
+        replacement->cause_count);
     return false;
+  }
 
   // Zero accepted entries still clear the map and publish its actual size.
   sink = Collector{};
@@ -389,18 +410,28 @@ bool assignment_load_stages() {
       "event=[{signature='invalid',asset='x'},{signature='1'}]");
   if (sink.accepted != 0 || sink.assignment_updates != 0 ||
       sink.distinct_assignments != 0 || !sink.load_complete ||
-      (*session)->audio_event_assignment_count() != 0)
+      (*session)->audio_event_assignment_count() != 0) {
+    std::fprintf(stderr, "stages zero-accepted contract failed\n");
     return false;
+  }
   const auto *rejected0 = find_record(sink, "pack_assignment_parse_result", 0);
   const auto *rejected1 = find_record(sink, "pack_assignment_parse_result", 1);
   if (!rejected0 || !rejected1 ||
       std::string_view{rejected0->reason.data()} != "invalid_signature" ||
-      std::string_view{rejected1->reason.data()} != "missing_asset")
+      std::string_view{rejected1->reason.data()} != "missing_asset") {
+    std::fprintf(stderr, "stages rejection reasons failed\n");
     return false;
+  }
   sink = Collector{};
   (*session)->load_audio_events_toml("[[event");
-  return sink.distinct_assignments == 0 && !sink.complete &&
-         !sink.load_complete;
+  const bool malformed = sink.distinct_assignments == absent &&
+                         !sink.complete && !sink.load_complete;
+  if (!malformed)
+    std::fprintf(stderr,
+                 "stages malformed: distinct=%llu complete=%d load=%d\n",
+                 static_cast<unsigned long long>(sink.distinct_assignments),
+                 sink.complete, sink.load_complete);
+  return malformed;
 }
 
 bool actual_session() {
@@ -460,10 +491,20 @@ bool actual_session() {
 
 int main() {
   try {
-    bool passed = actual_parser_inventory() && empty_and_unavailable() &&
-                  bounded_tracking() && bounded_load_links();
+    const bool parser = actual_parser_inventory();
+    const bool empty = empty_and_unavailable();
+    const bool tracking = bounded_tracking();
+    const bool links = bounded_load_links();
+    bool passed = parser && empty && tracking && links;
 #if defined(QA_CATALOG_SESSION)
-    passed = actual_session() && assignment_load_stages() && passed;
+    const bool session = actual_session();
+    const bool stages = assignment_load_stages();
+    passed = session && stages && passed;
+    if (!passed)
+      std::fprintf(stderr,
+                   "catalog checks: parser=%d empty=%d tracking=%d links=%d "
+                   "session=%d stages=%d\n",
+                   parser, empty, tracking, links, session, stages);
 #endif
     return passed ? 0 : 1;
   } catch (...) {

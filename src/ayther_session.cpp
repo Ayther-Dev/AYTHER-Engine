@@ -27,6 +27,7 @@
 #include "audio_seq_anchor.h" // : anclas de Secuencia con reclamo
 #include "audio_sequence_observation.h"
 #include "audio_source_observation.h"
+#include "audio_sequence_lifetime.h"
 #include "ayther_file.h"
 #include "ayther_parse.h"
 #include "cram_palette.h" //  EM-9.4: la CRAM, con su oraculo   // : la regla de cobertura, testeable sin ROM
@@ -254,6 +255,8 @@ AytherSession::create(const Config &cfg) {
       im.audio.set_hd_effect_observer(&im, &Impl::observe_hd_effect);
       im.audio.set_original_audio_observer(&im, &Impl::observe_original_audio);
       im.audio.set_frame_sample_observer(&im, &Impl::observe_frame_sample);
+      im.audio.set_main_mix_submission_observer(
+          &im, &Impl::observe_main_mix_submission);
       im.audio.set_auxiliary_submission_observer(
           &im, &Impl::observe_auxiliary_submission);
       im.audio.set_auxiliary_loss_observer(&im, &Impl::observe_auxiliary_loss);
@@ -783,8 +786,16 @@ const FrameView &AytherSession::produce_frame() {
             case HdMixer::StartAction::start:
               playback.decision("start", "recorded_event_entry");
               break;
+            case HdMixer::StartAction::continue_playback:
+              playback.decision("continue", "same_identity_continuity",
+                                previous, previous_request);
+              break;
             case HdMixer::StartAction::restart:
               playback.decision("restart", "same_key_same_asset", previous,
+                                previous_request);
+              break;
+            case HdMixer::StartAction::overlap:
+              playback.decision("overlap", "configured_overlap", previous,
                                 previous_request);
               break;
             case HdMixer::StartAction::replace:
@@ -1310,6 +1321,20 @@ const FrameView &AytherSession::produce_frame() {
     // frame (cada uno por su propio span); sin members (packs viejos)
     // cae al range-mute de la máscara de canales.
     uint32_t win_mask = 0;
+    std::array<ActiveAudioSignature, 64> active_signatures{};
+    for (uint32_t i = 0; i < na; ++i) {
+      const auto assigned = im.audio_event_assign.find(act[i].signature);
+      bool replacement_candidate = true;
+      if (assigned != im.audio_event_assign.end()) {
+        const auto active_category =
+            im.playback_policy_of(act[i].signature).category;
+        replacement_candidate = active_category == AudioCategory::music ||
+                                active_category == AudioCategory::ambient;
+      }
+      active_signatures[i] = ActiveAudioSignature{
+          act[i].signature, chan_bit(act[i].chip, act[i].channel),
+          replacement_candidate};
+    }
     for (size_t k = 0; k < im.audio_seq_windows.size();) {
       if (im.frame_index > im.audio_seq_windows[k].end) {
         im.audio_seq_windows.erase(im.audio_seq_windows.begin() +
@@ -1326,6 +1351,28 @@ const FrameView &AytherSession::produce_frame() {
           continue;
         }
         const auto mit = im.audio_event_members.find(w.sig);
+        const std::span<const uint64_t> members =
+            mit != im.audio_event_members.end()
+                ? std::span<const uint64_t>{mit->second}
+                : std::span<const uint64_t>{};
+        const auto category = im.playback_policy_of(w.sig).category;
+        const bool exclusive = category == AudioCategory::music ||
+                               category == AudioCategory::ambient;
+        if (exclusive &&
+            sequence_presence(w.sig, members, w.mask,
+                              std::span{active_signatures}.first(na)) ==
+                SequencePresence::replacement_active) {
+          // An original, non-member event has taken over a channel owned by
+          // this exclusive sequence. It is an observable replacement, not a
+          // silence heuristic: stop the HD voice and re-arm the next anchor.
+          if (im.audio.stop_sfx_by_key(w.sig))
+            ++im.hd_cut;
+          im.audio_event_seq_next[w.sig] = 0;
+          im.audio_live_inst.erase(w.sig);
+          im.audio_seq_windows.erase(im.audio_seq_windows.begin() +
+                                     static_cast<std::ptrdiff_t>(k));
+          continue;
+        }
         if (mit != im.audio_event_members.end() && !mit->second.empty()) {
           for (uint32_t i = 0; i < na; ++i) {
             const uint64_t asig = act[i].signature;
@@ -1350,6 +1397,9 @@ const FrameView &AytherSession::produce_frame() {
     // disparador, su cabeza, o una variante resuelta por regla → vale
     // como el disparador). Lo que no anclá acá no abre ventana abajo.
     std::unordered_set<uint64_t> anchor_now;
+    std::unordered_map<uint64_t, engine::audio_observation::FactId>
+        anchor_selections;
+    std::unordered_map<uint64_t, SeqTriggerResolution> sequence_routes;
     {
       const std::vector<SeqAnchorSub> view = im.audio_event_seq_view();
       if (!view.empty()) {
@@ -1406,11 +1456,32 @@ const FrameView &AytherSession::produce_frame() {
              im.qa_live_outputs.batch, im.sequence_origin_status()});
         trace.begin({static_cast<uint32_t>(im.frame_index), sigs, view, st, {}},
                     im.sequence_origins());
+        SeqAnchorRoutes routes{view};
+        const auto visit = [&](const SeqAnchorCandidateView &value) noexcept {
+          trace(value);
+          routes(value);
+        };
+        const auto decide = [&](const SeqAnchorDecisionView &value) noexcept {
+          trace(value);
+          routes(value);
+        };
+        std::optional<engine::audio_observation::FactId> sequence_selection;
+        const auto finish = [&](const SeqAnchorResolutionView &value) noexcept {
+          sequence_selection = trace(value);
+        };
         for (const size_t k :
              seq_anchor_frame_decided(static_cast<uint32_t>(im.frame_index),
-                                      sigs, view, st, trace, trace, trace)) {
+                                      sigs, view, st, visit, decide, finish)) {
           anchor_now.insert(view[k].key);
           im.audio_event_seq_next[view[k].key] = st[k].next_free;
+          if (sequence_selection)
+            anchor_selections.insert_or_assign(view[k].key,
+                                               *sequence_selection);
+        }
+        for (const auto &sub : view) {
+          const auto route = routes.for_key(sub.key);
+          if (route.disposition != SeqTriggerDisposition::individual)
+            sequence_routes.insert_or_assign(sub.key, route);
         }
         im.qa_sequence_complete = im.qa_sequence_complete && trace.complete();
       }
@@ -1487,7 +1558,9 @@ const FrameView &AytherSession::produce_frame() {
                   im.pack.get(), asset.c_str(), loop, sig, wend, cut, 0.0,
                   im.fade_of(sig), //
                   im.gain_of(sig) * im.bus_gain_of(im.bus_of_signature(sig)),
-                  lp.first, lp.second, &identity, &transition);
+                  lp.first, lp.second, &identity, &transition,
+                  im.playback_policy_of(asig).repeat,
+                  im.playback_policy_of(asig).category);
             } else {
               played = im.audio.play_oneshot_asset_file(
                   asset, sig, 0.0, 1.0f, false, &identity, &transition);
@@ -1508,8 +1581,16 @@ const FrameView &AytherSession::produce_frame() {
             case HdMixer::StartAction::start:
               playback.decision("start", "rising_edge");
               break;
+            case HdMixer::StartAction::continue_playback:
+              playback.decision("continue", "same_identity_continuity",
+                                previous, previous_request);
+              break;
             case HdMixer::StartAction::restart:
               playback.decision("restart", "same_key_same_asset", previous,
+                                previous_request);
+              break;
+            case HdMixer::StartAction::overlap:
+              playback.decision("overlap", "configured_overlap", previous,
                                 previous_request);
               break;
             case HdMixer::StartAction::replace:
@@ -1581,12 +1662,18 @@ const FrameView &AytherSession::produce_frame() {
         const auto d = im.audio_event_duration.find(asig);
         const uint32_t dur =
             d == im.audio_event_duration.end() ? 0u : d->second;
+        const auto route = sequence_routes.find(asig);
+        const bool rejected_sequence =
+            route != sequence_routes.end() &&
+            seq_trigger_is_rejected(route->second.disposition);
         // : la ventana la abre sólo quien ANCLÓ en la pre-pasada
         // (reclamada por otra Secuencia, interna al paso o sin
         // quórum = no); el original calla como miembro de la ventana
         // que la reclamó.
-        if (dur > 0 && can && !anchor_now.count(asig))
+        if (dur > 0 && can && rejected_sequence) {
           ++im.hd_claimed;
+          continue;
+        }
         if (dur > 0 && can && anchor_now.count(asig) &&
             !opened_now.count(asig)) {
           open_seq_window(asig, sig, ev_bit, it->second, dur, selection);
@@ -1624,8 +1711,16 @@ const FrameView &AytherSession::produce_frame() {
             case HdMixer::StartAction::start:
               playback.decision("start", "rising_edge");
               break;
+            case HdMixer::StartAction::continue_playback:
+              playback.decision("continue", "same_identity_continuity",
+                                previous, previous_request);
+              break;
             case HdMixer::StartAction::restart:
               playback.decision("restart", "same_key_same_asset", previous,
+                                previous_request);
+              break;
+            case HdMixer::StartAction::overlap:
+              playback.decision("overlap", "configured_overlap", previous,
                                 previous_request);
               break;
             case HdMixer::StartAction::replace:
@@ -1672,7 +1767,11 @@ const FrameView &AytherSession::produce_frame() {
         continue;
       if (!im.hd_can_sound(asig, it->second))
         continue;
-      open_seq_window(asig, asig, 0u, it->second, d->second, std::nullopt);
+      std::optional<engine::audio_observation::FactId> selection;
+      if (const auto found = anchor_selections.find(asig);
+          found != anchor_selections.end())
+        selection = found->second;
+      open_seq_window(asig, asig, 0u, it->second, d->second, selection);
     }
     // SECUENCIAS de autoría EN VIVO (Capturar): las subs de
     // set_audio_sequence_subs disparan acá por el flanco de subida de su
@@ -1755,9 +1854,12 @@ const FrameView &AytherSession::produce_frame() {
            im.qa_live_outputs.batch, im.sequence_origin_status()});
       trace.begin({static_cast<uint32_t>(im.frame_index), sigs, view, st, {}},
                   im.sequence_origins());
+      const auto finish = [&](const SeqAnchorResolutionView &value) noexcept {
+        (void)trace(value);
+      };
       const auto anchors =
           seq_anchor_frame_decided(static_cast<uint32_t>(im.frame_index), sigs,
-                                   view, st, trace, trace, trace);
+                                   view, st, trace, trace, finish);
       im.qa_sequence_complete = im.qa_sequence_complete && trace.complete();
       for (const size_t i : anchors) {
         const AudioSeqSub &sq = im.audio_seq_subs[i];
@@ -4284,20 +4386,21 @@ const FrameView &AytherSession::produce_frame() {
         selection = found->second;
       const auto occurrence = im.qa_identities.next_occurrence().value_or(
           engine::audio_observation::OccurrenceId{});
-      audio_qa::PlaybackObservation playback(
-          im.qa_observer, im.qa_identities,
-          {im.frame_index, trg[i].signature, trg[i].signature, selection,
-           occurrence});
+      audio_qa::PlaybackObservation playback(im.qa_observer, im.qa_identities,
+                                             {im.frame_index, trg[i].signature,
+                                              trg[i].signature, selection,
+                                              occurrence});
       const auto request = playback.request_id();
-      const HdMixer::VoiceIdentity identity{
-          occurrence.value, request ? request->producer : 0,
-          request ? request->sequence : 0};
+      const HdMixer::VoiceIdentity identity{occurrence.value,
+                                            request ? request->producer : 0,
+                                            request ? request->sequence : 0};
       HdMixer::StartResult transition;
       const bool played = im.audio.play_event_hd(
           im.pack.get(), trg[i].asset, trg[i].looping, trg[i].signature,
-          trg[i].end_frame,
-          im.cut_frame_of(trg[i].signature, trg[i].end_frame), 0.0,
-          im.fade_of(trg[i].signature), 1.0f, 0, 0, &identity, &transition);
+          trg[i].end_frame, im.cut_frame_of(trg[i].signature, trg[i].end_frame),
+          0.0, im.fade_of(trg[i].signature), 1.0f, 0, 0, &identity, &transition,
+          im.playback_policy_of(trg[i].signature).repeat,
+          im.playback_policy_of(trg[i].signature).category);
       std::optional<engine::audio_observation::OccurrenceId> previous;
       if (transition.previous_occurrence)
         previous = engine::audio_observation::OccurrenceId{
@@ -4312,8 +4415,16 @@ const FrameView &AytherSession::produce_frame() {
       case HdMixer::StartAction::start:
         playback.decision("start", "recorded_event_start");
         break;
+      case HdMixer::StartAction::continue_playback:
+        playback.decision("continue", "same_identity_continuity", previous,
+                          previous_request);
+        break;
       case HdMixer::StartAction::restart:
         playback.decision("restart", "same_key_same_asset", previous,
+                          previous_request);
+        break;
+      case HdMixer::StartAction::overlap:
+        playback.decision("overlap", "configured_overlap", previous,
                           previous_request);
         break;
       case HdMixer::StartAction::replace:
@@ -7272,7 +7383,8 @@ void AytherSession::set_transport_playing(bool playing) noexcept {
     // desde el offset del reloj emulado. audio_live_prev NO se limpia:
     // re-disparar desde cero corrige el silencio pero mete desfase.
     im.transport_playing = true; // resume_live_instances lo consulta
-    im.resume_live_instances();
+    if (!im.audio.resume_transport_audio())
+      im.resume_live_instances();
   }
   im.transport_playing = playing;
 }
@@ -7374,9 +7486,9 @@ bool AytherSession::set_audio_pcm_observer(
     return callback == nullptr || im.audio_enabled;
   if (!im.audio_enabled)
     return callback == nullptr;
-  if (!im.audio.set_main_output_observer(
-          callback ? &im : nullptr,
-          callback ? &Impl::observe_main_output : nullptr)) {
+  if (!im.audio.set_main_output_observer(callback ? &im : nullptr,
+                                         callback ? &Impl::observe_main_output
+                                                  : nullptr)) {
     im.qa_main_output_complete.store(false, std::memory_order_relaxed);
     return false;
   }
@@ -7877,6 +7989,13 @@ void AytherSession::load_audio_events_toml_impl(const char *text,
       impl_->qa_catalog_complete = false;
     return;
   }
+  const AudioContinuityCatalog continuity = parse_audio_continuity_toml(text);
+  if (!continuity.ok) {
+    ayther::log::write(ayther::log::Severity::Error, "session",
+                       "audio_continuity_schema", "%s",
+                       continuity.diagnostic.c_str());
+    return;
+  }
   const uint32_t n = ayther_audio_events_parse(text, nullptr, 0);
   std::vector<AytherEventSub> subs(n);
   std::unique_ptr<audio_qa::CatalogRecorder> recorder;
@@ -7919,6 +8038,7 @@ void AytherSession::load_audio_events_toml_impl(const char *text,
   impl_->audio_event_gain = parse_audio_event_gains(text);
   // : region de loop por firma — ausente = el asset entero.
   impl_->audio_event_loop = parse_audio_event_loops(text);
+  impl_->audio_event_continuity = continuity.values;
   // : y el gate de condiciones. Lo compila el CORE (camino A): tener un
   // segundo evaluador del dialecto de condiciones es la clase de duplicacion
   // que ya se pago cara con los tres consumidores del addr de audio.

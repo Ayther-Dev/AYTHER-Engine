@@ -28,6 +28,34 @@ struct AytherSession::Impl {
   bool qa_position_complete = true;
   bool qa_mix_complete = true;
   std::atomic<bool> qa_main_output_complete{true};
+  struct MixParticipantLink {
+    uint64_t begin = 0;
+    uint64_t end = 0;
+    engine::audio_observation::FactId fact;
+    bool occupied = false;
+  };
+  static constexpr size_t qa_mix_participant_capacity = 256;
+  std::array<MixParticipantLink, qa_mix_participant_capacity>
+      qa_mix_participants{};
+  uint64_t qa_mix_participant_count = 0;
+  static uint64_t observe_main_mix_submission(
+      void *context,
+      const AudioPlayer::MainMixSubmission &submission) noexcept {
+    auto &self = *static_cast<Impl *>(context);
+    size_t cause_count = 0;
+    const auto available = static_cast<size_t>(
+        (std::min)(self.qa_mix_participant_count,
+                   static_cast<uint64_t>(qa_mix_participant_capacity)));
+    for (size_t age = 0; age < available; ++age) {
+      const auto sequence = self.qa_mix_participant_count - 1 - age;
+      const auto &candidate =
+          self.qa_mix_participants[sequence % qa_mix_participant_capacity];
+      if (candidate.occupied && candidate.begin < submission.input_end &&
+          candidate.end > submission.input_begin)
+        ++cause_count;
+    }
+    return cause_count == 0 ? 0 : submission.submission;
+  }
   static uint64_t observe_auxiliary_submission(
       void *context,
       const AudioPlayer::AuxiliarySubmission &submission) noexcept {
@@ -55,8 +83,36 @@ struct AytherSession::Impl {
     auto &self = *static_cast<Impl *>(context);
     const auto output = audio_qa::MainOutputObservation::emit_with_id(
         self.qa_observer, self.qa_identities, block);
-    bool complete = output.complete && block.auxiliary_mapping_complete;
+    bool complete = output.complete && block.main_mix_mapping_complete &&
+                    block.auxiliary_mapping_complete;
     if (output.id) {
+      for (const auto &span : block.main_mix_spans) {
+        if (span.observation_sequence == 0)
+          continue;
+        std::array<engine::audio_observation::Cause,
+                   qa_mix_participant_capacity>
+            causes{};
+        size_t cause_count = 0;
+        const auto available = static_cast<size_t>(
+            (std::min)(self.qa_mix_participant_count,
+                       static_cast<uint64_t>(qa_mix_participant_capacity)));
+        for (size_t age = 0; age < available; ++age) {
+          const auto sequence = self.qa_mix_participant_count - 1 - age;
+          const auto &candidate =
+              self.qa_mix_participants[sequence % qa_mix_participant_capacity];
+          if (candidate.occupied && candidate.begin < span.input_end &&
+              candidate.end > span.input_begin)
+            causes[cause_count++] = candidate.fact;
+        }
+        if (cause_count == 0) {
+          complete = false;
+          continue;
+        }
+        complete = audio_qa::MainMixObservation::emit_output(
+                       self.qa_observer, self.qa_identities, span,
+                       std::span{causes}.first(cause_count), *output.id) &&
+                   complete;
+      }
       for (const auto &span : block.auxiliary_spans) {
         if (span.observation_sequence == 0)
           continue;
@@ -98,11 +154,16 @@ struct AytherSession::Impl {
     auto &self = *static_cast<Impl *>(context);
     const bool position_complete = audio_qa::PositionObservation::emit(
         self.qa_observer, self.qa_identities, span);
-    const bool participant_complete =
-        audio_qa::MixObservation::emit_participant(self.qa_observer,
-                                                   self.qa_identities, span);
+    const auto participant = audio_qa::MixObservation::emit_participant_with_id(
+        self.qa_observer, self.qa_identities, span);
+    if (participant.id) {
+      auto &slot = self.qa_mix_participants[self.qa_mix_participant_count %
+                                            qa_mix_participant_capacity];
+      slot = {span.output_begin, span.output_end, *participant.id, true};
+      ++self.qa_mix_participant_count;
+    }
     self.qa_position_complete =
-        self.qa_position_complete && position_complete && participant_complete;
+        self.qa_position_complete && position_complete && participant.complete;
   }
   static void observe_hd_loop(void *context,
                               const HdMixer::LoopCrossing &crossing) noexcept {
@@ -926,6 +987,29 @@ struct AytherSession::Impl {
       return it->second;
     return AudioBus::Sfx;
   }
+  AudioPlaybackPolicy playback_policy_of(uint64_t sig) const {
+    if (const auto it = audio_event_continuity.find(sig);
+        it != audio_event_continuity.end()) {
+      const auto &value = it->second;
+      return {value.category, value.repeat, value.transition,
+              value.max_voices, value.exclusive_bus};
+    }
+    switch (bus_of_signature(sig)) {
+    case AudioBus::Music:
+      return default_audio_playback_policy(AudioCategory::music);
+    case AudioBus::Voice:
+      return default_audio_playback_policy(AudioCategory::voice);
+    case AudioBus::Sfx:
+      return default_audio_playback_policy(AudioCategory::effect);
+    case AudioBus::Unclassified:
+      // An authored sequence without a bus is continuous by legacy-safe
+      // default; isolated unclassified events already fall through as Sfx.
+      return default_audio_playback_policy(AudioCategory::ambient);
+    case AudioBus::Count:
+      break;
+    }
+    return default_audio_playback_policy(AudioCategory::effect);
+  }
   float bus_gain_of(AudioBus b) const {
     return bus_gain[static_cast<uint32_t>(b) % kAudioBusCount];
   }
@@ -1052,9 +1136,15 @@ struct AytherSession::Impl {
   /// aplicaba ese valor fijo, asi que un pack sin el dato suena igual.
   std::unordered_map<uint64_t, float> audio_event_gain;
   float gain_of(uint64_t sig) const {
+    if (const auto it = audio_event_continuity.find(sig);
+        it != audio_event_continuity.end())
+      return it->second.gain_linear;
     const auto it = audio_event_gain.find(sig);
     return it == audio_event_gain.end() ? 1.0f : it->second;
   }
+  /// RF-17.7 schema 1. Preserva el objeto completo aunque algunos campos se
+  /// consuman en fases posteriores (fundidos, prioridades y entry point).
+  std::unordered_map<uint64_t, AudioContinuityConfig> audio_event_continuity;
   /// : gate de condiciones — vive en el CORE (el mismo evaluador que
   /// usan los tiles). NULL cuando el pack no trae ninguna condicion, que es
   /// el caso normal: asi no se consulta nada por frame.
@@ -3343,12 +3433,15 @@ struct AytherSession::Impl {
                                           {frame_index,
                                            audio_qa::SequenceUse::replay_table,
                                            qa_analysis_outputs});
+      const auto finish = [&](const SeqAnchorResolutionView &value) noexcept {
+        (void)trace(value);
+      };
       seq_anchor_cache = seq_anchor_table_decided(
           audio_events.size(),
           [&](size_t i) { return audio_events[i].signature; },
           [&](size_t i) { return audio_events[i].start_frame; }, subs,
           [&](const SeqAnchorFrameView &frame) noexcept { trace.begin(frame); },
-          trace, trace, trace);
+          trace, trace, finish);
       qa_sequence_complete = qa_sequence_complete && trace.complete();
     }
     static const std::vector<uint32_t> kNone;

@@ -4,7 +4,7 @@ RF-5, RF-6 y RF-15. Se extraen de rc.9 la puerta de flanco del evento live, Live
 
 Límite del adaptador: evento ya seleccionado con asset listo, sin ventana, audio/transport activos y sin bypass. Un proveedor de datos entrega PCM ya decodificado e inmutable: 128 frames S16 estéreo/44100, valor de cada sample 1000+37×índice. No se ejecuta la decodificación ni el detector. La rama de preview y la apertura de ventanas rechazan su uso en este fixture en lugar de simularlas.
 
-keep mantiene el evento durante cuatro cuadros de 16 frames: un solo disparo y cursor continuo 0→64. repeat usa actividad [sí,sí,no,sí]: el flanco del cuadro 3 crea una nueva ocurrencia con la misma clave, posición 0→16; la anterior continúa 48→64 bajo el fade original. lost pierde exclusivamente el registro de la puerta del cuadro 3 y devuelve 2, conservando estado y audio.
+keep mantiene el evento durante cuatro cuadros de 16 frames: un solo disparo y cursor continuo 0→64. repeat usa actividad [sí,sí,no,sí]: el flanco del cuadro 3 crea una nueva ocurrencia con la misma clave, posición 0→16; la anterior continúa 48→64 bajo el fade original. lost pierde exclusivamente el registro de la puerta del cuadro 3 y devuelve 2, conservando estado y audio. internal es A03: entrega a la rama histórica una asignación de secuencia con duración, asset listo y resultado de anclaje vacío; exige que el rechazo interno no cree `LiveInstance` ni voz. La referencia defectuosa falla antes de cualquier adaptación posterior.
 
 Desde Engine:
 

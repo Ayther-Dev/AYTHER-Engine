@@ -6,16 +6,28 @@
 
 #include <array>
 #include <cmath>
+#include <optional>
 
 namespace ayther::audio_qa {
+
+struct MixObservationResult {
+  std::optional<observation::FactId> id;
+  bool complete = true;
+};
 
 class MixObservation final {
 public:
   [[nodiscard]] static bool
   emit_participant(observation::Observer observer, IdentitySource &ids,
                    const HdMixer::PositionSpan &span) noexcept {
+    return emit_participant_with_id(observer, ids, span).complete;
+  }
+
+  [[nodiscard]] static MixObservationResult
+  emit_participant_with_id(observation::Observer observer, IdentitySource &ids,
+                           const HdMixer::PositionSpan &span) noexcept {
     if (!observer.on_fact)
-      return true;
+      return {};
     const auto id = ids.next_fact(Producer::mixer);
     const bool linked =
         span.identity.cause_producer != 0 && span.identity.cause_sequence != 0;
@@ -32,7 +44,7 @@ public:
          (!span.nonzero_contribution && span.effective_gain_begin == 0.0F &&
           span.effective_gain_end == 0.0F));
     if (!id)
-      return false;
+      return {{}, false};
     const std::array fields{
         known("occurrence",
               observation::OccurrenceId{span.identity.occurrence}),
@@ -62,7 +74,7 @@ public:
         std::span{causes}.first(linked ? 1 : 0),
         {},
         fields});
-    return valid;
+    return {id, valid};
   }
 
 private:

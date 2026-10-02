@@ -24,6 +24,7 @@ owned by AYTHER Runtime, SDK, Play, Hub, or Lab.
 | [C++ API and implementation contracts](CPP_API_REFERENCE.md) | C++ maintainers and integrators | Ownership, lifetime, threading, failure, and subsystem contracts |
 | [C++ engineering review](CPP_ENGINE_REVIEW.md) | Maintainers | Critical findings, hardcoding, design patterns, corrections, and performance opportunities |
 | [Component model](COMPONENT_MODEL.md) | Engine and tooling developers | Grouping, contextual resolution, animation, audio events, backgrounds, and RAM anchoring |
+| [Audio continuity pack format](AUDIO_CONTINUITY_FORMAT.md) | Pack authors and Engine consumers | `audio_events.toml` schema 1, units, validation, legacy defaults, and rejection policy |
 | [Pack identity specification](IDENTITY_SPECIFICATION.md) | Pack tooling authors and integrators | Bit-exact identity algorithms, KATs, compatibility risks, and reimplementation hazards |
 | [Emulator extension ABI](EMULATOR_EXTENSION_ABI.md) | Emulator-core and Engine integrators | ABI 1.10 negotiation, capabilities, regions, snapshots, subscriptions, and fallback |
 | [Cinematic plane composition](CINEMATIC_PLANE_COMPOSITION.md) | Renderer maintainers | Plane masks, VDP priority, opaque-video policy, and GPU oracle |

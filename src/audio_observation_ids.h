@@ -12,7 +12,7 @@ namespace ayther::audio_qa {
 
 namespace observation = engine::audio_observation;
 
-// Numeric producer identities are part of observation API 1.0. Each lane has
+// Numeric producer identities are part of observation API 1.1. Each lane has
 // one or more non-blocking writers; distinct lanes may be advanced
 // concurrently. These IDs identify emission sites, not arrival order or an
 // inferred causal relation.

@@ -38,6 +38,7 @@ obs::AudioHdVoicesState one_voice_state() {
   voice.loop_begin = 4;
   voice.loop_end = 12;
   voice.late_samples = 9;
+  voice.category = ayther::AudioCategory::music;
   state.voices.push_back(voice);
   state.started = 4;
   state.mixed_samples = 1234;
@@ -86,7 +87,9 @@ bool restores_one_voice_without_output(const std::filesystem::path &rom_path) {
       voice.output_start != 1000 || std::fabs(voice.gain - 0.35F) > 0.0001F ||
       !voice.looping || !voice.event || voice.end_frame != 50 ||
       voice.cut_frame != 55 || voice.loop_begin != 4 || voice.loop_end != 12 ||
-      voice.fade_remaining != 0)
+      voice.fade_remaining != 0 ||
+      session.audio_hd_voices_state().voices.front().category !=
+          ayther::AudioCategory::music)
     return false;
 
   const auto captured = session.audio_hd_voices_state();
@@ -103,8 +106,25 @@ bool restores_one_voice_without_output(const std::filesystem::path &rom_path) {
   if (session.restore_audio_hd_voices(header, "voice-state-1", invalid).code !=
       obs::AudioHdRestoreCode::invalid_voice)
     return false;
-  return session.audio_hd_voices_state() == captured &&
-         session.audio_initial_snapshot().emulation_frame == frame;
+  if (session.audio_hd_voices_state() != captured ||
+      session.audio_initial_snapshot().emulation_frame != frame)
+    return false;
+
+  // QA-266: category/bus changes the serialized voice capability. A 1.0
+  // producer cannot express it and must be rejected transactionally, never
+  // accepted as a fresh start or partial restore.
+  if (obs::kAudioHdStateVersion != obs::AudioHdStateVersion{1, 1})
+    return false;
+  auto legacy_header = header;
+  legacy_header.version = {1, 0};
+  auto legacy_payload = expected;
+  legacy_payload.voices.front().category = ayther::AudioCategory::effect;
+  const auto legacy = session.restore_audio_hd_voices(
+      legacy_header, "voice-state-1", legacy_payload);
+  return legacy.code == obs::AudioHdRestoreCode::incompatible_header &&
+         legacy.header.code ==
+             obs::AudioHdStateValidationCode::unsupported_version &&
+         session.audio_hd_voices_state() == captured;
 }
 
 } // namespace

@@ -204,11 +204,21 @@ int main() {
     std::printf("[FAIL] pack builder: %s\n", err);
     return 1;
   }
-  AyArchive *pack = fixture.open();
+  const char *candidate_pack = SDL_getenv("AYTHER_RF18_CANDIDATE_PACK");
+  const char *candidate_registry = SDL_getenv("AYTHER_RF18_TRUST_REGISTRY");
+  const bool candidate_mode = candidate_pack && *candidate_pack &&
+                              candidate_registry && *candidate_registry;
+  AyArchive *pack = candidate_mode
+                        ? ayther_pack_open_trusted(candidate_pack,
+                                                   candidate_registry)
+                        : fixture.open();
   if (!pack) {
     std::printf("[FAIL] no abre el pack de prueba\n");
     return 1;
   }
+  const char *tone_asset = candidate_mode
+                               ? "27344701428ebe2965d69cde77ee7769.wav"
+                               : "tone.wav";
   AudioPlayer p;
   if (!p.init()) {
     std::printf("[FAIL] AudioPlayer::init() dummy\n");
@@ -216,7 +226,7 @@ int main() {
   }
 
   // Reanudar a mitad del asset del pack: stream vivo.
-  check(p.play_event_hd(pack, "tone.wav", false, 0x10, /*end=*/600,
+  check(p.play_event_hd(pack, tone_asset, false, 0x10, /*end=*/600,
                         /*cut=*/NOCUT, /*offset=*/0.5),
         "reanudación del pack a mitad del asset arranca");
   check(p.event_count() == 1, "stream del evento vivo tras reanudar");
@@ -224,7 +234,7 @@ int main() {
 
   const HdMixer::VoiceIdentity observed_identity{77, 5, 9};
   HdMixer::StartResult observed_transition;
-  check(p.play_event_hd(pack, "tone.wav", false, 0x20, /*end=*/600,
+  check(p.play_event_hd(pack, tone_asset, false, 0x20, /*end=*/600,
                         /*cut=*/NOCUT, /*offset=*/0.0, /*fade=*/0,
                         /*gain=*/1.0F, /*loop_begin=*/0, /*loop_end=*/0,
                         &observed_identity, &observed_transition),
@@ -237,14 +247,153 @@ int main() {
 
   // Non-loop con el offset pasado el final: éxito SIN stream (#388 — el
   // original de esa ventana también pasó; no es un fallo del asset).
-  check(p.play_event_hd(pack, "tone.wav", false, 0x11, 600, NOCUT, 2.0),
+  check(p.play_event_hd(pack, tone_asset, false, 0x11, 600, NOCUT, 2.0),
         "offset pasado el final devuelve éxito (no es fallo)");
-  check(p.event_count() == 0, "…pero no crea stream (nada que sonar)");
+  check(p.event_count() == (candidate_mode ? 1U : 0U),
+        candidate_mode ? "asset candidato largo conserva stream a 2 s"
+                       : "…pero no crea stream (nada que sonar)");
+  p.stop_all_events();
 
   // Loop con offset mayor que el asset: entra por el módulo (fase).
-  check(p.play_event_hd(pack, "tone.wav", true, 0x12, 600, NOCUT, 2.5),
+  check(p.play_event_hd(pack, tone_asset, true, 0x12, 600, NOCUT, 2.5),
         "loop reanudado con 2,5 s sobre un asset de 1 s arranca");
   check(p.event_count() == 1, "…con stream vivo (offset = módulo)");
+  p.stop_all_events();
+
+  // RF-17.5 / QA-263: la pausa física no reconstruye el loop a partir del
+  // reloj emulado. Conserva el cursor exacto y su región autorada, y resume
+  // esa misma ocurrencia sin repetir la introducción del asset.
+  const HdMixer::VoiceIdentity paused_identity{91, 7, 13};
+  check(p.play_event_hd(pack, tone_asset, true, 0x15, /*end=*/777,
+                        /*cut=*/888,
+                        /*offset=*/0.625, /*fade=*/2048, /*gain=*/0.375F,
+                        /*loop_begin=*/11025, /*loop_end=*/33075,
+                        &paused_identity, /*start_result=*/nullptr,
+                        ayther::RepeatPolicy::continue_playback,
+                        ayther::AudioCategory::music),
+        "loop con introducción y región autorada arranca antes de pausar");
+  check(p.stop_sfx_by_key(0x15),
+        "precondición QA-264: el fundido está activo antes de pausar");
+  const auto before_pause = p.hd_voices_state();
+  check(before_pause.voices.size() == 1 &&
+            before_pause.voices.front().source_position == 27562 &&
+            before_pause.voices.front().loop_begin == 11025 &&
+            before_pause.voices.front().loop_end == 33075 &&
+            before_pause.voices.front().gain == 0.375F &&
+            before_pause.voices.front().category ==
+                ayther::AudioCategory::music &&
+            before_pause.voices.front().fade_remaining != 0 &&
+            before_pause.voices.front().end_frame == 777 &&
+            before_pause.voices.front().cut_frame == 888,
+        "precondición: cursor y región de loop son exactos");
+  p.cut_transport_audio();
+  check(p.hd_voice_count() == 0, "pausa silencia físicamente el loop");
+  check(p.resume_transport_audio(), "reanudar restaura el snapshot de pausa");
+  const auto after_resume = p.hd_voices_state();
+  check(after_resume == before_pause,
+        "resume conserva ocurrencia, cursor, fase y loop muestra a muestra");
+  check(!p.resume_transport_audio(),
+        "repetir resume no duplica ni reinicia la voz restaurada");
+  p.stop_all_events();
+
+  // RF-17.5 / QA-265: decisiones tomadas durante la pausa dominan al
+  // snapshot. Una cancelación no resucita y un reemplazo no es sobrescrito
+  // por la generación anterior al reanudar.
+  check(p.play_event_hd(pack, tone_asset, true, 0x16, 900, NOCUT, 0.25),
+        "voz a cancelar arranca");
+  p.cut_transport_audio();
+  check(p.stop_sfx_by_key(0x16),
+        "cancelar durante pausa invalida la voz retenida");
+  check(!p.resume_transport_audio() && p.hd_voice_count() == 0,
+        "cancelación durante pausa no resucita el snapshot obsoleto");
+
+  const HdMixer::VoiceIdentity old_generation{101, 8, 1};
+  const HdMixer::VoiceIdentity new_generation{102, 8, 2};
+  check(p.play_event_hd(pack, tone_asset, true, 0x17, 900, NOCUT, 0.25, 0, 1.0F,
+                        0, 0, &old_generation, nullptr),
+        "generación anterior arranca antes de pausa");
+  p.cut_transport_audio();
+  check(p.play_event_hd(pack, tone_asset, true, 0x17, 900, NOCUT, 0.75, 0, 1.0F,
+                        0, 0, &new_generation, nullptr),
+        "reemplazo durante pausa crea la generación nueva");
+  const auto replacement = p.hd_voices_state();
+  check(!p.resume_transport_audio() && p.hd_voices_state() == replacement &&
+            replacement.voices.size() == 1 &&
+            replacement.voices.front().occurrence == 102,
+        "resume conserva el reemplazo y descarta la generación obsoleta");
+  p.stop_all_events();
+
+  // RF-17.5 / QA-267: cinco pausas en la MISMA sesión y ocurrencia. El PCM
+  // avanza entre ciclos para cubrir intro, entrada/cuerpo del loop, frontera
+  // de retorno, fundido parcial y final, sin reiniciar Engine/player.
+  const HdMixer::VoiceIdentity five_cycle_identity{120, 9, 1};
+  check(p.play_event_hd(pack, tone_asset, true, 0x18, 1200, NOCUT,
+                        /*offset=*/0.1, /*fade=*/0, /*gain=*/0.625F,
+                        /*loop_begin=*/11025, /*loop_end=*/33075,
+                        &five_cycle_identity, nullptr),
+        "A09: ocurrencia única preparada para cinco pausas");
+  std::vector<int16_t> advance_pcm(8000 * 2, 0);
+  bool five_exact = true;
+  bool saw_intro = false;
+  bool saw_loop = false;
+  bool saw_boundary = false;
+  bool saw_fade = false;
+  uint64_t previous_position = 0;
+  for (int cycle = 0; cycle < 5; ++cycle) {
+    if (cycle == 4)
+      saw_fade = p.stop_sfx_by_key(0x18);
+    const auto frozen = p.hd_voices_state();
+    if (frozen.voices.size() != 1) {
+      five_exact = false;
+      break;
+    }
+    const auto position = frozen.voices.front().source_position;
+    saw_intro = saw_intro || position < 11025;
+    saw_loop = saw_loop || (position >= 11025 && position < 33075);
+    saw_boundary = saw_boundary || (cycle > 0 && position < previous_position);
+    previous_position = position;
+    p.cut_transport_audio();
+    if (!p.resume_transport_audio() || p.hd_voices_state() != frozen) {
+      five_exact = false;
+      break;
+    }
+    const size_t frames = cycle == 4 ? 3000u : 8000u;
+    p.buffer_emulator(0xAAAA, advance_pcm.data(), frames);
+    p.flush_emulator();
+  }
+  check(five_exact && saw_intro && saw_loop && saw_boundary && saw_fade,
+        "A09: 5 ciclos conservan estado exacto en intro/loop/frontera/fade");
+  check(p.hd_voice_count() == 0,
+        "A09: el fundido termina después del quinto ciclo sin resurrección");
+
+  // RF-17.5 / QA-268 (A19): el snapshot puede poseer una copia PCM mientras
+  // está pausado, pero debe tener una cota estable de una generación y quedar
+  // lógicamente vacío tras cada resume.
+  const HdMixer::VoiceIdentity memory_identity{130, 10, 1};
+  check(p.play_event_hd(pack, tone_asset, true, 0x19, 1400, NOCUT, 0.2, 0, 1.0F,
+                        0, 0, &memory_identity, nullptr),
+        "A19: voz preparada para medir retención");
+  bool bounded_memory = true;
+  uint64_t retained_bytes = 0;
+  uint64_t stable_peak = 0;
+  for (int cycle = 0; cycle < 20; ++cycle) {
+    p.cut_transport_audio();
+    const uint64_t current = p.pause_snapshot_bytes();
+    if (cycle == 0) {
+      retained_bytes = current;
+      stable_peak = p.pause_snapshot_peak_bytes();
+    }
+    bounded_memory = bounded_memory && p.pause_snapshot_voice_count() == 1 &&
+                     current == retained_bytes && current != 0 &&
+                     p.pause_snapshot_peak_bytes() == stable_peak;
+    if (!p.resume_transport_audio() || p.pause_snapshot_voice_count() != 0 ||
+        p.pause_snapshot_bytes() != 0 || p.hd_voice_count() != 1) {
+      bounded_memory = false;
+      break;
+    }
+  }
+  check(bounded_memory,
+        "A19: 20 pausas mantienen bytes/voces acotados y sin acumulación");
   p.stop_all_events();
 
   // El one-shot de DISCO ya tenía offset (#220/#388): pasado el final es

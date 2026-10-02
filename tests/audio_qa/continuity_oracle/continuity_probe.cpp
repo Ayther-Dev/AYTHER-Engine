@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "../../../include/ayther/audio_seq_anchor.h"
+
 namespace qa_continuity {
 struct Sample {
   std::uint64_t occurrence{};
@@ -32,6 +34,8 @@ std::array<Gate, 8> gates{};
 std::size_t gate_count{};
 bool overflow{};
 bool lose{};
+ayther::SeqTriggerDisposition route = ayther::SeqTriggerDisposition::individual;
+std::uint64_t owner_key{};
 void sample(Sample value) noexcept {
   if (sample_count == samples.size()) {
     overflow = true;
@@ -125,11 +129,20 @@ void process(Impl &im) {
       {asig, "fixture.wav"}};
   const auto it = catalog.find(asig);
   const std::unordered_set<std::uint64_t> anchor_now, opened_now;
+  std::unordered_map<std::uint64_t, ayther::SeqTriggerResolution>
+      sequence_routes;
+  if (qa_continuity::route != ayther::SeqTriggerDisposition::individual) {
+    sequence_routes.emplace(
+        asig, ayther::SeqTriggerResolution{qa_continuity::route, asig, asig,
+                                           qa_continuity::owner_key, 0});
+  }
   const auto open_seq_window = [](std::uint64_t, std::uint64_t, std::uint32_t,
                                   const std::string &, std::uint32_t) {
     throw std::runtime_error("sequence_window_outside_fixture");
   };
-#if QA_CONTINUITY_OBSERVER
+#if QA_CONTINUITY_CURRENT
+#include <current_gate.inc>
+#elif QA_CONTINUITY_OBSERVER
 #include <observed_gate.inc>
 #else
 #include <reference_gate.inc>
@@ -142,7 +155,9 @@ int main(int argc, char *argv[]) {
     require(argc == 3, "invalid_arguments");
     const std::filesystem::path directory{argv[1]};
     const std::string_view mode{argv[2]};
-    require(mode == "keep" || mode == "repeat" || mode == "lost",
+    require(mode == "keep" || mode == "repeat" || mode == "lost" ||
+                mode == "internal" || mode == "claimed" ||
+                mode == "internal_repeat" || mode == "claimed_repeat",
             "invalid_case");
     for (const char *name : {"output.s16le", "run.toml", "trace.toml"}) {
       require(!std::filesystem::exists(directory / name), "output_exists");
@@ -150,6 +165,88 @@ int main(int argc, char *argv[]) {
     const bool repeated = mode != "keep";
     qa_continuity::lose = mode == "lost";
     Impl im;
+    if (mode == "internal" || mode == "claimed" || mode == "internal_repeat" ||
+        mode == "claimed_repeat") {
+      // A03: the sequence resolver rejected this trigger as internal to an
+      // already-open step. The unchanged historical consumer receives the
+      // real duration/catalogue state and an empty anchor set. It must stop
+      // the rejected route instead of treating it as a free one-shot.
+      std::uint64_t owner_key = 0;
+      const bool claimed_mode = mode == "claimed" || mode == "claimed_repeat";
+      const std::size_t attempts = mode.ends_with("_repeat") ? 8U : 1U;
+      if (claimed_mode) {
+        ayther::SeqAnchorSub owner;
+        owner.key = 2000;
+        owner.trigger_signature = 2000;
+        owner.duration_frames = 100;
+        owner.signatures = {2000, 1000};
+        ayther::SeqAnchorSub candidate;
+        candidate.key = 1000;
+        candidate.trigger_signature = 1000;
+        candidate.duration_frames = 64;
+        candidate.signatures = {1000};
+        const std::vector<ayther::SeqAnchorSub> subs{owner, candidate};
+        std::vector<ayther::SeqAnchorState> states(subs.size());
+        states[0].next_free = 100;
+        states[0].win_start = 0;
+        states[0].win_end = 100;
+        states[0].open = true;
+        ayther::SeqAnchorDecisionView verdict;
+        bool decided = false;
+        const auto selected = ayther::seq_anchor_frame_decided(
+            10, {1000}, subs, states,
+            [](const ayther::SeqAnchorCandidateView &) noexcept {},
+            [&](const ayther::SeqAnchorDecisionView &value) noexcept {
+              verdict = value;
+              decided = true;
+            },
+            [](const ayther::SeqAnchorResolutionView &) noexcept {});
+        require(
+            selected.empty() && decided && verdict.sub_index == 1 &&
+                verdict.result ==
+                    ayther::SeqAnchorDecisionResult::claimed_by_open_sequence &&
+                verdict.related_sub_index == 0,
+            "claimed_fixture_not_rejected");
+        owner_key = subs[verdict.related_sub_index].key;
+      }
+      qa_continuity::route =
+          claimed_mode ? ayther::SeqTriggerDisposition::rejected_claimed
+                       : ayther::SeqTriggerDisposition::rejected_internal;
+      qa_continuity::owner_key = owner_key;
+      im.audio_event_duration.emplace(1000, 64);
+      for (std::size_t attempt = 0; attempt < attempts; ++attempt) {
+        im.frame_index = attempt;
+        process(im);
+      }
+      const auto instance = im.audio_live_inst.find(1000);
+      std::fprintf(
+          stderr,
+          "%s input_signature=1000 duration=64 anchor_count=0 "
+          "owner_key=%llu "
+          "claimed=%llu instances=%zu voices_started=%llu "
+          "voices_active=%zu instance_key=%llu cursor_frame=%llu\n",
+          claimed_mode ? "A04" : "A03",
+          static_cast<unsigned long long>(owner_key),
+          static_cast<unsigned long long>(im.hd_claimed),
+          im.audio_live_inst.size(),
+          static_cast<unsigned long long>(im.audio.hd_mixer_.started()),
+          im.audio.hd_mixer_.voice_count(),
+          static_cast<unsigned long long>(
+              instance == im.audio_live_inst.end() ? 0 : instance->first),
+          static_cast<unsigned long long>(instance == im.audio_live_inst.end()
+                                              ? 0
+                                              : instance->second.start_frame));
+      require(im.hd_claimed == attempts,
+              claimed_mode ? "claimed_rejection_not_observed"
+                           : "internal_rejection_not_observed");
+      require(im.audio_live_inst.empty(),
+              claimed_mode ? "claimed_rejection_created_instance"
+                           : "internal_rejection_created_instance");
+      require(im.audio.hd_mixer_.started() == 0,
+              claimed_mode ? "claimed_rejection_created_voice"
+                           : "internal_rejection_created_voice");
+      return 0;
+    }
     std::array<std::int16_t, 128> output{};
     output.fill(200);
     struct Frame {

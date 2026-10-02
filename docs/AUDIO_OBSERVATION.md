@@ -1125,7 +1125,9 @@ corresponde a QA-077.
 
 ## Validación de estado HD aportado — QA-077; RF-3 y RF-14
 
-`audio_hd_state.hpp` define el encabezado de estado HD 1.0. Su identidad opaca
+`audio_hd_state.hpp` define el encabezado de estado HD 1.1. La revisión 1.1
+añade la categoría/bus de cada voz para restaurar pausas sin recalcular rutas;
+los estados 1.0 se rechazan sin alterar el estado activo. Su identidad opaca
 debe nombrar el estado exacto del juego restaurado, no solo el título o la
 ejecución. También conserva el cuadro de emulación y declara explícitamente la
 presencia de detector, ventanas, voces, solicitudes y audio pendiente; una

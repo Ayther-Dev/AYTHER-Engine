@@ -32,6 +32,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <ayther/audio_playback_policy.h>
 #include <ayther/engine/audio_hd_state.hpp>
 #include <ayther/engine/audio_initial_snapshot.hpp>
 
@@ -47,7 +48,13 @@ public:
   /// the stop_sfx_by_key fade in the stream path).
   static constexpr uint32_t kFadeFrames = 2646;
 
-  enum class StartAction : uint8_t { start, restart, replace };
+  enum class StartAction : uint8_t {
+    start,
+    continue_playback,
+    restart,
+    overlap,
+    replace
+  };
 
   struct StartResult {
     StartAction action = StartAction::start;
@@ -195,6 +202,7 @@ public:
     size_t loop_end = 0;
     /// Telemetry: how many samples late the start arrived (0 = in phase).
     uint64_t late_samples = 0;
+    ayther::AudioCategory category = ayther::AudioCategory::effect;
   };
 
   /// Starts (or retriggers) a voice. `start_sample` = ABSOLUTE position on
@@ -211,7 +219,11 @@ public:
              // loop region in FRAMES (0,0 = the whole asset).
              size_t loop_begin = 0, size_t loop_end = 0,
              const VoiceIdentity *identity = nullptr,
-             StartResult *result = nullptr) {
+             StartResult *result = nullptr,
+             ayther::RepeatPolicy repeat_policy = ayther::RepeatPolicy::restart,
+             ayther::TransitionPolicy transition_policy =
+                 ayther::TransitionPolicy::cut,
+             ayther::AudioCategory category = ayther::AudioCategory::effect) {
     const VoiceIdentity observed =
         identity ? *identity : VoiceIdentity{0, 0, 0};
     if (result)
@@ -222,18 +234,66 @@ public:
     // Read the effective predecessor before stop() changes its fade state.
     // Reverse order selects the newest voice when an older retrigger is
     // still draining its fade.
+    bool stop_predecessor = true;
+    bool replace_predecessor = false;
+    bool matched_key = false;
+    uint64_t predecessor_key = key;
     for (auto it = voices_.rbegin(); it != voices_.rend(); ++it)
       if (it->key == key) {
+        matched_key = true;
         if (result) {
           result->action =
-              it->pcm == pcm ? StartAction::restart : StartAction::replace;
+              it->pcm == pcm
+                  ? repeat_policy == ayther::RepeatPolicy::continue_playback
+                        ? StartAction::continue_playback
+                    : repeat_policy == ayther::RepeatPolicy::overlap
+                        ? StartAction::overlap
+                        : StartAction::restart
+                  : StartAction::replace;
           result->previous_occurrence = it->occurrence;
           result->previous_cause_producer = it->cause_producer;
           result->previous_cause_sequence = it->cause_sequence;
         }
+        if (it->pcm == pcm &&
+            repeat_policy == ayther::RepeatPolicy::continue_playback) {
+          if (result)
+            result->new_occurrence = it->occurrence;
+          return true;
+        }
+        stop_predecessor =
+            it->pcm != pcm || repeat_policy != ayther::RepeatPolicy::overlap;
+        replace_predecessor = it->pcm != pcm;
         break;
       }
-    stop(key); // retrigger: the previous one fades out, not overlapped
+    // Music and ambience are exclusive buses. Their logical identity is the
+    // authored signature (`key`), so a transition normally arrives with a
+    // different key. Key-only replacement would leave every previous track
+    // alive and mix Wilderness, Battle and bonus together.
+    const bool exclusive_category = category == ayther::AudioCategory::music ||
+                                    category == ayther::AudioCategory::ambient;
+    if (!matched_key && exclusive_category) {
+      for (auto it = voices_.rbegin(); it != voices_.rend(); ++it)
+        if (it->category == category) {
+          replace_predecessor = true;
+          predecessor_key = it->key;
+          if (result) {
+            result->action = StartAction::replace;
+            result->previous_occurrence = it->occurrence;
+            result->previous_cause_producer = it->cause_producer;
+            result->previous_cause_sequence = it->cause_sequence;
+          }
+          break;
+        }
+    }
+    if (replace_predecessor) {
+      if (transition_policy == ayther::TransitionPolicy::fade)
+        stop_with_fade(predecessor_key,
+                       fade_frames ? fade_frames : kFadeFrames);
+      else
+        stop_hard(predecessor_key);
+    } else if (stop_predecessor) {
+      stop(key); // configured restart/replace: predecessor fades out
+    }
     Voice v;
     v.key = key;
     v.occurrence = observed.occurrence;
@@ -246,6 +306,7 @@ public:
     v.end_frame = end_frame;
     v.cut_frame = cut_frame;
     v.fade_frames = fade_frames;
+    v.category = category;
     const size_t frames = pcm->size() / 2;
     // The region is SANITISED here and not while mixing: a `loop_end`
     // larger than the asset or inverted would read past the buffer, and
@@ -284,12 +345,16 @@ public:
   /// was not already fading — the same observable contract as
   /// stop_sfx_by_key (telling "I cut it short" apart from "there was
   /// nothing").
-  bool stop(uint64_t key) {
+  bool stop(uint64_t key) { return stop_with_fade(key, kFadeFrames); }
+
+  bool stop_with_fade(uint64_t key, uint32_t frames) {
+    if (frames == 0)
+      return stop_hard(key);
     bool cut = false;
     for (Voice &v : voices_)
       if (v.key == key && v.fade_left == 0) {
-        v.fade_left = kFadeFrames;
-        v.fade_span = kFadeFrames; // the cut one, not the authored one
+        v.fade_left = frames;
+        v.fade_span = frames;
         cut = true;
       }
     return cut;
@@ -644,6 +709,7 @@ public:
           static_cast<uint64_t>(voice.loop_begin),
           static_cast<uint64_t>(voice.loop_end),
           voice.late_samples,
+          voice.category,
       });
     }
     return state;
@@ -706,6 +772,8 @@ public:
              (saved.fade_span == 0 ||
               saved.fade_remaining > saved.fade_span)) ||
             (saved.tail_active && saved.fade_effect_active) ||
+            static_cast<std::uint8_t>(saved.category) >
+                static_cast<std::uint8_t>(ayther::AudioCategory::voice) ||
             (saved.loop_end != 0 &&
              (saved.loop_begin >= saved.loop_end || saved.loop_end > frames)))
           return obs::AudioHdRestoreCode::invalid_voice;
@@ -733,6 +801,7 @@ public:
         voice.loop_begin = static_cast<size_t>(saved.loop_begin);
         voice.loop_end = static_cast<size_t>(saved.loop_end);
         voice.late_samples = saved.late_samples;
+        voice.category = saved.category;
         voices.push_back(std::move(voice));
       }
 

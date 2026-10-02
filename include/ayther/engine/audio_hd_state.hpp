@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "ayther/audio_playback_policy.h"
+
 namespace ayther::engine::audio_observation {
 
 struct AudioHdStateVersion {
@@ -17,7 +19,10 @@ struct AudioHdStateVersion {
                                    AudioHdStateVersion) = default;
 };
 
-inline constexpr AudioHdStateVersion kAudioHdStateVersion{1, 0};
+// 1.1 adds AudioHdVoiceState::category so a paused/restored voice keeps its
+// logical bus. A 1.0 payload is rejected transactionally: silently defaulting
+// it would route music/ambient as effects after resume.
+inline constexpr AudioHdStateVersion kAudioHdStateVersion{1, 1};
 inline constexpr std::size_t kAudioHdStateIdentityLimit = 256;
 inline constexpr std::size_t kAudioHdDetectorStateLimit = 1024 * 1024;
 inline constexpr std::size_t kAudioHdStateCollectionLimit = 4096;
@@ -145,6 +150,9 @@ struct AudioHdVoiceState {
   std::uint64_t loop_begin = 0;
   std::uint64_t loop_end = 0;
   std::uint64_t late_samples = 0;
+  /// Logical mix bus. It is part of the resumable voice identity/policy, not
+  /// recomputed from a mutable assignment after a pause.
+  ayther::AudioCategory category = ayther::AudioCategory::effect;
 
   friend bool operator==(const AudioHdVoiceState &,
                          const AudioHdVoiceState &) = default;

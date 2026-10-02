@@ -130,6 +130,29 @@ public:
   };
   using AuxiliaryLossCallback = void (*)(void *,
                                          const AuxiliaryLoss &) noexcept;
+  struct MainMixSubmission {
+    uint64_t submission = 0;
+    uint64_t input_begin = 0;
+    uint64_t input_end = 0;
+    bool inserted_silence = false;
+  };
+  using MainMixSubmissionCallback =
+      uint64_t (*)(void *, const MainMixSubmission &) noexcept;
+  struct MainMixOutputSpan {
+    uint64_t observation_sequence = 0;
+    uint64_t submission = 0;
+    uint64_t input_begin = 0;
+    uint64_t input_end = 0;
+    uint64_t output_begin = 0;
+    uint64_t output_end = 0;
+    uint32_t input_sample_rate = 44100;
+    uint32_t output_sample_rate = 44100;
+    uint64_t resample_rate_q32 = uint64_t{1} << 32;
+    uint64_t resample_phase_begin_q32 = 0;
+    uint32_t filter_support_left = 0;
+    uint32_t filter_support_right = 0;
+    bool inserted_silence = false;
+  };
   struct AuxiliaryOutputSpan {
     uint64_t observation_sequence = 0;
     uint64_t submission = 0;
@@ -152,6 +175,8 @@ public:
     uint64_t sample_end = 0;
     uint32_t sample_rate = 0;
     uint16_t channels = 0;
+    std::span<const MainMixOutputSpan> main_mix_spans;
+    bool main_mix_mapping_complete = true;
     std::span<const AuxiliaryOutputSpan> auxiliary_spans;
     bool auxiliary_mapping_complete = true;
   };
@@ -285,10 +310,23 @@ public:
   /// and accumulates them in pause_cut_frames() — pause telemetry.
   uint64_t cut_transport_audio();
 
+  /// Restores the exact HD mixer snapshot captured by the matching transport
+  /// pause. The snapshot is consumed once, so repeated resume calls cannot
+  /// duplicate voices. Returns true when at least one physical voice was
+  /// restored; false lets the session use its logical fallback.
+  bool resume_transport_audio() noexcept;
+
   /// Telemetry: frames discarded by pause cuts (accumulated) and how many
   /// effective cuts there were (calls that discarded something).
   uint64_t pause_cut_frames() const { return pause_cut_frames_; }
   uint64_t pause_cuts() const { return pause_cuts_; }
+  size_t pause_snapshot_voice_count() const noexcept {
+    return transport_pause_snapshot_ ? paused_hd_voices_.voices.size() : 0;
+  }
+  uint64_t pause_snapshot_bytes() const noexcept;
+  uint64_t pause_snapshot_peak_bytes() const noexcept {
+    return pause_snapshot_peak_bytes_;
+  }
 
   // ---- Per-EVENT HD (C-A2, Components) ------------------------------------
 
@@ -313,30 +351,33 @@ public:
   /// over those frames (44100/s) and dies in silence, instead of being cut
   /// dead. It is an ALTERNATIVE to tail, not cumulative: with a fade,
   /// `cut_frame` does not interrupt the ramp. 0 = the previous behaviour.
-  bool play_event_hd(AyArchive *pack, const char *asset_path, bool looping,
-                     uint64_t signature, uint64_t end_frame,
-                     uint64_t cut_frame = UINT64_MAX,
-                     double start_offset_seconds = 0.0,
-                     uint32_t fade_frames = 0,
-                     // The AUTHORED gain of the Sequence. It goes last and
-                     // with a neutral default so no caller has to change:
-                     // the absence of the value is 1.0, just as in the TOML.
-                     float gain = 1.0f,
-                     // Loop region in asset FRAMES. (0,0) = the whole asset,
-                     // which is what was always done. The mixer already knows
-                     // how to cycle it with a modulo over the span; what was
-                     // missing was for the value to reach here.
-                     size_t loop_begin = 0, size_t loop_end = 0);
+  bool play_event_hd(
+      AyArchive *pack, const char *asset_path, bool looping, uint64_t signature,
+      uint64_t end_frame, uint64_t cut_frame = UINT64_MAX,
+      double start_offset_seconds = 0.0, uint32_t fade_frames = 0,
+      // The AUTHORED gain of the Sequence. It goes last and
+      // with a neutral default so no caller has to change:
+      // the absence of the value is 1.0, just as in the TOML.
+      float gain = 1.0f,
+      // Loop region in asset FRAMES. (0,0) = the whole asset,
+      // which is what was always done. The mixer already knows
+      // how to cycle it with a modulo over the span; what was
+      // missing was for the value to reach here.
+      size_t loop_begin = 0, size_t loop_end = 0,
+      ayther::RepeatPolicy repeat_policy = ayther::RepeatPolicy::restart,
+      ayther::AudioCategory category = ayther::AudioCategory::effect);
 
   /// Observed variant of play_event_hd. It preserves the playback behavior
   /// while attaching the request identity used by the QA observation stream
   /// and returning the same start/restart/replace transition as the mixer.
-  bool play_event_hd(AyArchive *pack, const char *asset_path, bool looping,
-                     uint64_t signature, uint64_t end_frame, uint64_t cut_frame,
-                     double start_offset_seconds, uint32_t fade_frames,
-                     float gain, size_t loop_begin, size_t loop_end,
-                     const HdMixer::VoiceIdentity *identity,
-                     HdMixer::StartResult *start_result);
+  bool play_event_hd(
+      AyArchive *pack, const char *asset_path, bool looping, uint64_t signature,
+      uint64_t end_frame, uint64_t cut_frame, double start_offset_seconds,
+      uint32_t fade_frames, float gain, size_t loop_begin, size_t loop_end,
+      const HdMixer::VoiceIdentity *identity,
+      HdMixer::StartResult *start_result,
+      ayther::RepeatPolicy repeat_policy = ayther::RepeatPolicy::restart,
+      ayther::AudioCategory category = ayther::AudioCategory::effect);
 
   /// Per-frame maintenance of the event streams: cuts the loops that passed
   /// their end_frame, re-feeds the active ones running out of data, and reaps
@@ -472,6 +513,11 @@ public:
       void *context, AuxiliarySubmissionCallback callback) noexcept {
     auxiliary_submission_context_ = context;
     auxiliary_submission_callback_ = callback;
+  }
+  void set_main_mix_submission_observer(
+      void *context, MainMixSubmissionCallback callback) noexcept {
+    main_mix_submission_context_ = context;
+    main_mix_submission_callback_ = callback;
   }
   void set_auxiliary_loss_observer(void *context,
                                    AuxiliaryLossCallback callback) noexcept {
@@ -713,6 +759,9 @@ public:
   float drc_queue_avg() const { return drc_queue_avg_; }
 
 private:
+  bool discard_paused_voice(uint64_t key) noexcept;
+  void supersede_pause_snapshot() noexcept;
+
   // ---- Injected configuration ---------------------------------------------
 
   /// Held by value: the player outlives whatever expression produced it, and
@@ -752,6 +801,9 @@ private:
   // + synth) and how many cuts discarded something.
   uint64_t pause_cut_frames_ = 0;
   uint64_t pause_cuts_ = 0;
+  ayther::engine::audio_observation::AudioHdVoicesState paused_hd_voices_{};
+  bool transport_pause_snapshot_ = false;
+  uint64_t pause_snapshot_peak_bytes_ = 0;
   uint64_t last_flush_ms_ = 0; // stall detector (re-priming)
   // Tee of the emulator PCM to a WAV (env AYTHER_AUDIO_DUMP=<path>) — what is
   // QUEUED to the device (post-mute, pre-DRC). An objective discriminator: a
@@ -811,6 +863,38 @@ private:
   void *main_output_context_ = nullptr;
   MainOutputCallback main_output_callback_ = nullptr;
   std::atomic<uint64_t> main_output_samples_{0};
+  struct PendingMainMixSegment {
+    uint64_t observation_sequence = 0;
+    uint64_t submission = 0;
+    uint64_t input_begin = 0;
+    uint64_t frames = 0;
+    bool inserted_silence = false;
+  };
+  static constexpr uint32_t kMainMixSegmentCapacity = 256;
+  std::array<PendingMainMixSegment, kMainMixSegmentCapacity>
+      main_mix_segments_{};
+  std::atomic<uint32_t> main_mix_write_{0};
+  std::atomic<uint32_t> main_mix_read_{0};
+  static constexpr size_t kMainMixSpansPerBlock = 32;
+  std::array<MainMixOutputSpan, kMainMixSpansPerBlock>
+      prepared_main_mix_spans_{};
+  size_t prepared_main_mix_count_ = 0;
+  uint64_t prepared_main_mix_frames_ = 0;
+  uint32_t main_mix_output_sample_rate_ = 44100;
+  uint64_t main_mix_resample_rate_q32_ = uint64_t{1} << 32;
+  uint64_t main_mix_resample_phase_q32_ = 0;
+  uint32_t main_mix_filter_support_left_ = 0;
+  uint32_t main_mix_filter_support_right_ = 0;
+  bool main_mix_conversion_mapping_supported_ = true;
+  std::atomic<uint64_t> main_mix_consumed_input_{0};
+  uint64_t main_mix_submission_ = 0;
+  uint64_t pending_main_mix_begin_ = 0;
+  uint64_t pending_main_mix_frames_ = 0;
+  uint64_t pending_main_mix_submission_ = 0;
+  bool pending_main_mix_silence_ = false;
+  std::atomic<bool> main_mix_mapping_complete_{true};
+  void *main_mix_submission_context_ = nullptr;
+  MainMixSubmissionCallback main_mix_submission_callback_ = nullptr;
   struct PendingAuxiliarySegment {
     uint64_t observation_sequence = 0;
     uint64_t submission = 0;
@@ -852,6 +936,15 @@ private:
   void observe_auxiliary_loss(uint64_t input_begin, uint64_t input_end,
                               AuxiliaryLossReason reason) noexcept;
   void prepare_auxiliary_spans(uint64_t output_frames) noexcept;
+  void prepare_main_mix_spans(uint64_t output_frames) noexcept;
+  static void SDLCALL observe_main_mix_put(void *context,
+                                           SDL_AudioStream *stream,
+                                           int additional_amount,
+                                           int total_amount) noexcept;
+  static void SDLCALL observe_main_mix_get(void *context,
+                                           SDL_AudioStream *stream,
+                                           int additional_amount,
+                                           int total_amount) noexcept;
   static void SDLCALL observe_auxiliary_put(void *context,
                                             SDL_AudioStream *stream,
                                             int additional_amount,

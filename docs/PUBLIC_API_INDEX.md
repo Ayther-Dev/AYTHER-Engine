@@ -10,14 +10,16 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 29 headers
+## The 57 headers
 
 | header | what it provides |
 |---|---|
 | [`audio_asset_level.h`](#audio_asset_levelh) | Installed public header. |
 | [`audio_match_rule.h`](#audio_match_ruleh) | Installed public header. |
+| [`audio_playback_policy.h`](#audio_playback_policyh) | Installed public header. |
 | [`ayther_animation.h`](#ayther_animationh) | Installed public header. |
 | [`ayther_audio_events.h`](#ayther_audio_eventsh) | Installed public header. |
+| [`ayther_components_toml.h`](#ayther_components_tomlh) | Installed public header. |
 | [`ayther_core_ffi.h`](#ayther_core_ffih) | Installed public header. |
 | [`ayther_layers.h`](#ayther_layersh) | Installed public header. |
 | [`ayther_mode3.h`](#ayther_mode3h) | Installed public header. |
@@ -40,6 +42,32 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`engine/core_probe.hpp`](#enginecore_probehpp) | Installed public header. |
 | [`engine/engine.hpp`](#engineenginehpp) | Installed public header. |
 | [`engine/input.hpp`](#engineinputhpp) | Installed public header. |
+| [`engine/music_analysis_limits.hpp`](#enginemusic_analysis_limitshpp) | Installed public header. |
+| [`engine/music_analysis_snapshot.hpp`](#enginemusic_analysis_snapshothpp) | Installed public header. |
+| [`engine/music_asset_owner.hpp`](#enginemusic_asset_ownerhpp) | Installed public header. |
+| [`engine/music_audio_math.hpp`](#enginemusic_audio_mathhpp) | Installed public header. |
+| [`engine/music_causal_recognizer.hpp`](#enginemusic_causal_recognizerhpp) | Installed public header. |
+| [`engine/music_corpus_quality.hpp`](#enginemusic_corpus_qualityhpp) | Installed public header. |
+| [`engine/music_event_normalization.hpp`](#enginemusic_event_normalizationhpp) | Installed public header. |
+| [`engine/music_event_scoring.hpp`](#enginemusic_event_scoringhpp) | Installed public header. |
+| [`engine/music_identity_state.hpp`](#enginemusic_identity_statehpp) | Installed public header. |
+| [`engine/music_late_entry.hpp`](#enginemusic_late_entryhpp) | Installed public header. |
+| [`engine/music_live_recognition.hpp`](#enginemusic_live_recognitionhpp) | Installed public header. |
+| [`engine/music_pack_contract.hpp`](#enginemusic_pack_contracthpp) | Installed public header. |
+| [`engine/music_pattern_analysis.hpp`](#enginemusic_pattern_analysishpp) | Installed public header. |
+| [`engine/music_pause_signal.hpp`](#enginemusic_pause_signalhpp) | Installed public header. |
+| [`engine/music_pause_state.hpp`](#enginemusic_pause_statehpp) | Installed public header. |
+| [`engine/music_position_recovery.hpp`](#enginemusic_position_recoveryhpp) | Installed public header. |
+| [`engine/music_proposal_assessment.hpp`](#enginemusic_proposal_assessmenthpp) | Installed public header. |
+| [`engine/music_recognition_candidate.hpp`](#enginemusic_recognition_candidatehpp) | Installed public header. |
+| [`engine/music_sequence_validation.hpp`](#enginemusic_sequence_validationhpp) | Installed public header. |
+| [`engine/music_sequence.hpp`](#enginemusic_sequencehpp) | Installed public header. |
+| [`engine/music_source_lifecycle.hpp`](#enginemusic_source_lifecyclehpp) | Installed public header. |
+| [`engine/music_transition_arbiter.hpp`](#enginemusic_transition_arbiterhpp) | Installed public header. |
+| [`engine/music_transition_cancel.hpp`](#enginemusic_transition_cancelhpp) | Installed public header. |
+| [`engine/music_transition_queue.hpp`](#enginemusic_transition_queuehpp) | Installed public header. |
+| [`engine/music_transition_span.hpp`](#enginemusic_transition_spanhpp) | Installed public header. |
+| [`engine/music_voice_budget.hpp`](#enginemusic_voice_budgethpp) | Installed public header. |
 | [`engine/pack.hpp`](#enginepackhpp) | Installed public header. |
 | [`engine/vulkan_interop.hpp`](#enginevulkan_interophpp) | Installed public header. |
 | [`log.h`](#logh) | Installed public header. |
@@ -83,6 +111,16 @@ by tests/audio_match_rule_test.cpp.
 **Declares:** `AudioMatchIndex`, `AudioMatchRuleInfo`, `ayther`, `uint8_t`
 
 _The installed header (`include/ayther/audio_match_rule.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="audio_playback_policyh"></a>
+
+## audio_playback_policy.h
+
+**Declares:** `AudioPlaybackPolicy`, `ayther`, `NormalizedPlayback`, `PlaybackAdapterInput`, `PlaybackDecision`, `PlaybackInput`
+
+_The installed header (`include/ayther/audio_playback_policy.h`) carries the full documentation of every symbol._
 
 ---
 
@@ -190,6 +228,66 @@ the persisted assignments but retain distinct scheduling policies.
 **Declares:** `AudioEventAssignment`, `AudioEventSubstitution`, `AudioEventTrigger`, `ayther`
 
 _The installed header (`include/ayther/ayther_audio_events.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="ayther_components_tomlh"></a>
+
+## ayther_components_toml.h
+
+ayther_components_toml.h — TOML round-trip of the Components layer:
+`animations.toml` (C-S4) and `audio_events.toml` (C-A4).
+
+Baking (bake_*) is called by the Lab's Deliver step while building the pack;
+parsing (parse_*) is called by AytherSession when loading a pack
+(load_pack_into), repopulating the AnimationPlayer / the per-event assignment
+mirror. Both sides live in the ENGINE (free functions, no UI and no Vulkan)
+so the round-trip is testable headless with strings.
+
+Formats:
+  animations.toml (engine-owned):
+    [[animation]]
+    clip  = "0x<16hex>"          # authoring handle (clip id)
+    sheet = "sheets/run.png"
+    tween = 1                     # 0 Pop · 1 geometric tween
+    [[animation.pose]]
+    pose   = "0x<16hex>"          # pose hash (stable identity)
+    src    = [x, y, w, h]         # sub-rect of the sheet (px)
+    anchor = [x, y, w, h]         # keyframe dst (Level 1)
+    ticks  = 6
+
+  audio_events.toml — the SAME schema the Rust core parses
+  (AudioSubstitutor::parse_events_toml, loaded by load_from_pack):
+    [[event]]
+    signature = "0x<16hex>"
+    asset     = "audio/music/zone1.ogg"
+    loop      = true              # optional (default false)
+
+  plane_sets.toml — Props (CU002) and Glyphs (CU005): HD substitution per
+  multi-tile plane ELEMENT. Until now the Paint catalogue existed only in the
+  authoring session (injected through the API), so the delivered `.ay` did
+  NOT reproduce any multi-tile substitution; this file closes that gap.
+    [[font]]
+    id = "0x<16hex>" · name = "HUD" · cell_w = 1 · cell_h = 2
+    [[set]]
+    id      = "0x<16hex>"        # pintar_element_id (deterministic per
+    capture) name    = "Chest"            # informational (overlay/debug)
+    type    = "utileria"         # utileria | glifo
+    plane   = 0                   # 0=A · 1=B · 2=Window
+    w_cells = 3 · h_cells = 2     # bbox
+    asset   = "cofre.png"         # basename (the bake routes it to the tier)
+    tiles   = "0x<hash>:cx,cy|…"  # members with a RELATIVE offset in cells
+    font    = "0x<16hex>" · ch = "A"    # type="glifo" only
+
+  The FLIPS observed at capture time are deliberately NOT baked: the plane
+  tile hash is flip-invariant and the matcher does not require them (a
+  mirrored prop matches all the same). They live only in
+  pintar_elements.toml, which uses them for the faithful export of the base
+  PNG.
+
+**Declares:** `AudioContinuityCatalog`, `AudioContinuityConfig`, `ayther`, `bake_animations_toml`, `bake_elements_toml`, `bake_enhance_toml`, `bake_kinematics_toml`, `bake_panoramas_toml`, `bake_plane_sets_toml`, `bake_screens_toml`, `PackEnhance`, `PackInstrument`, `PackKinematic`, `PackKinematicStep`, `PackPanorama`, `PackPanoramaCell`, `PackPlaneFont`, `PackPlaneSeqStep`, `PackPlaneSequence`, `PackPlaneSet`, `PackPlaneSetMember`, `PackScreen`, `PackScreenCell`, `parse_animations_toml`, `parse_audio_continuity_toml`, `parse_audio_events_toml`, `parse_elements_toml`, `parse_enhance_toml`, `parse_instruments_toml`, `parse_kinematics_toml`, `parse_panoramas_toml`, `parse_plane_sequences_toml`, `parse_plane_sets_toml`, `parse_screens_toml`, `plane_sequence_step_at`, `plane_sequence_total`
+
+_The installed header (`include/ayther/ayther_components_toml.h`) carries the full documentation of every symbol._
 
 ---
 
@@ -560,6 +658,264 @@ _The installed header (`include/ayther/engine/engine.hpp`) carries the full docu
 **Declares:** `final`
 
 _The installed header (`include/ayther/engine/input.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_analysis_limitshpp"></a>
+
+## engine/music_analysis_limits.hpp
+
+**Declares:** `AnalysisAdmission`, `AnalysisAdmissionResult`, `AnalysisInputSize`, `AnalysisLease`, `AnalysisProjectGate`, `AnalysisWorkMetrics`, `AnalysisWorkResult`, `ProjectId`
+
+_The installed header (`include/ayther/engine/music_analysis_limits.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_analysis_snapshothpp"></a>
+
+## engine/music_analysis_snapshot.hpp
+
+**Declares:** `AnalysisCoordinator`, `AnalysisInputs`, `AnalysisParameters`, `AnalysisProposal`, `AnalysisQuery`, `AnalysisToken`, `AuthorDecision`, `ProposalId`
+
+_The installed header (`include/ayther/engine/music_analysis_snapshot.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_asset_ownerhpp"></a>
+
+## engine/music_asset_owner.hpp
+
+**Declares:** `MusicAssetBinding`, `MusicAssetOwner`, `MusicAssetResult`, `MusicVoiceOwner`
+
+_The installed header (`include/ayther/engine/music_asset_owner.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_audio_mathhpp"></a>
+
+## engine/music_audio_math.hpp
+
+_The installed header (`include/ayther/engine/music_audio_math.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_causal_recognizerhpp"></a>
+
+## engine/music_causal_recognizer.hpp
+
+**Declares:** `CausalMusicRecognizer`, `ObservedMusicSignal`
+
+_The installed header (`include/ayther/engine/music_causal_recognizer.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_corpus_qualityhpp"></a>
+
+## engine/music_corpus_quality.hpp
+
+**Declares:** `CorpusQualityReport`, `detail`, `finish_metrics`, `QualityFamilyMetrics`, `QualityOracle`, `QualityPrediction`
+
+_The installed header (`include/ayther/engine/music_corpus_quality.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_event_normalizationhpp"></a>
+
+## engine/music_event_normalization.hpp
+
+**Declares:** `EventId`, `EventProvenance`, `EventRange`, `MusicalIdentityKey`, `MusicEvent`, `NormalizedMusicEvent`
+
+_The installed header (`include/ayther/engine/music_event_normalization.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_event_scoringhpp"></a>
+
+## engine/music_event_scoring.hpp
+
+**Declares:** `detail`, `MusicAlignmentScore`
+
+_The installed header (`include/ayther/engine/music_event_scoring.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_identity_statehpp"></a>
+
+## engine/music_identity_state.hpp
+
+**Declares:** `MusicIdentityState`
+
+_The installed header (`include/ayther/engine/music_identity_state.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_late_entryhpp"></a>
+
+## engine/music_late_entry.hpp
+
+**Declares:** `LateEntryRequest`, `LateEntryResult`
+
+_The installed header (`include/ayther/engine/music_late_entry.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_live_recognitionhpp"></a>
+
+## engine/music_live_recognition.hpp
+
+**Declares:** `LiveRecognitionDecision`, `LiveRecognitionEvidence`
+
+_The installed header (`include/ayther/engine/music_live_recognition.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_pack_contracthpp"></a>
+
+## engine/music_pack_contract.hpp
+
+**Declares:** `MusicPackAssignment`, `MusicPackContract`
+
+_The installed header (`include/ayther/engine/music_pack_contract.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_pattern_analysishpp"></a>
+
+## engine/music_pattern_analysis.hpp
+
+**Declares:** `detail`, `MusicPatternProposal`, `NamedMusicPattern`, `PatternAnalysisOptions`, `PatternId`, `PatternRelation`
+
+_The installed header (`include/ayther/engine/music_pattern_analysis.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_pause_signalhpp"></a>
+
+## engine/music_pause_signal.hpp
+
+**Declares:** `GameMusicPauseDecision`, `GameMusicPauseEvidence`
+
+_The installed header (`include/ayther/engine/music_pause_signal.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_pause_statehpp"></a>
+
+## engine/music_pause_state.hpp
+
+**Declares:** `MusicPauseState`
+
+_The installed header (`include/ayther/engine/music_pause_state.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_position_recoveryhpp"></a>
+
+## engine/music_position_recovery.hpp
+
+**Declares:** `MusicPositionRecovery`, `MusicPositionRecoveryState`
+
+_The installed header (`include/ayther/engine/music_position_recovery.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_proposal_assessmenthpp"></a>
+
+## engine/music_proposal_assessment.hpp
+
+**Declares:** `MusicProposalAssessment`, `ProposalEvidence`
+
+_The installed header (`include/ayther/engine/music_proposal_assessment.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_recognition_candidatehpp"></a>
+
+## engine/music_recognition_candidate.hpp
+
+**Declares:** `CandidateDecision`, `MusicRecognitionCandidate`
+
+_The installed header (`include/ayther/engine/music_recognition_candidate.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_sequence_validationhpp"></a>
+
+## engine/music_sequence_validation.hpp
+
+**Declares:** `detail`, `diagnose`, `SequenceDiagnostic`, `SequenceValidationResult`
+
+_The installed header (`include/ayther/engine/music_sequence_validation.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_sequencehpp"></a>
+
+## engine/music_sequence.hpp
+
+**Declares:** `AssetAssignment`, `detail`, `MusicSequenceDefinition`, `SampleRegion`, `SequenceCondition`, `SequenceEdge`, `SequenceNode`, `SequencePoint`, `SequencePosition`, `SequenceSegment`, `SequenceTraversal`, `StrongId`
+
+_The installed header (`include/ayther/engine/music_sequence.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_source_lifecyclehpp"></a>
+
+## engine/music_source_lifecycle.hpp
+
+**Declares:** `MusicSourceDecision`, `MusicSourceSituation`
+
+_The installed header (`include/ayther/engine/music_source_lifecycle.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_transition_arbiterhpp"></a>
+
+## engine/music_transition_arbiter.hpp
+
+**Declares:** `MusicTransitionArbiter`, `MusicTransitionChoice`, `MusicTransitionRequest`
+
+_The installed header (`include/ayther/engine/music_transition_arbiter.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_transition_cancelhpp"></a>
+
+## engine/music_transition_cancel.hpp
+
+**Declares:** `MusicTransitionCancelDecision`
+
+_The installed header (`include/ayther/engine/music_transition_cancel.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_transition_queuehpp"></a>
+
+## engine/music_transition_queue.hpp
+
+**Declares:** `MusicTransitionQueue`, `QueuedMusicTransition`, `TransitionQueueResult`
+
+_The installed header (`include/ayther/engine/music_transition_queue.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_transition_spanhpp"></a>
+
+## engine/music_transition_span.hpp
+
+**Declares:** `MusicTransitionSpan`, `MusicTransitionSpanDecision`
+
+_The installed header (`include/ayther/engine/music_transition_span.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginemusic_voice_budgethpp"></a>
+
+## engine/music_voice_budget.hpp
+
+**Declares:** `MusicVoiceAdmission`, `MusicVoiceBudget`
+
+_The installed header (`include/ayther/engine/music_voice_budget.hpp`) carries the full documentation of every symbol._
 
 ---
 

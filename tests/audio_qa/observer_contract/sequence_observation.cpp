@@ -248,10 +248,15 @@ bool decisions_and_terminal() {
   const std::array<qa::SequenceInputSource, 1> origins{
       {{obs::FactId{4, 2}, {}, 0, 7, "detector_signature"}}};
   trace.begin({5, inputs, subs, states, {}}, origins);
+  std::optional<obs::FactId> terminal;
+  const auto finish =
+      [&](const ayther::SeqAnchorResolutionView &view) noexcept {
+        terminal = trace(view);
+      };
   const auto selected = ayther::seq_anchor_frame_decided(
-      5, inputs, subs, states, trace, trace, trace);
+      5, inputs, subs, states, trace, trace, finish);
   if (selected != std::vector<std::size_t>{1} || !trace.complete() ||
-      !sink.valid)
+      !sink.valid || !terminal.has_value())
     return false;
   std::size_t decisions = 0;
   std::size_t terminals = 0;
@@ -268,6 +273,8 @@ bool decisions_and_terminal() {
     }
     if (row.kind == "sequence_selection") {
       ++terminals;
+      if (*terminal != row.id)
+        return false;
       if (row.result != "selected" || row.count != 1 ||
           row.causes[0] != sink.rows[0].id)
         return false;

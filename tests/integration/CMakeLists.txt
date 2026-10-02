@@ -19,3 +19,7 @@ foreach(_source IN ITEMS
         plane_hash_variants_test.cpp)
     ayther_add_native_test("${_source}" integration)
 endforeach()
+
+add_executable(ayther_repeat_recording_fixture repeat_recording_fixture.cpp)
+target_compile_features(ayther_repeat_recording_fixture PRIVATE cxx_std_20)
+target_link_libraries(ayther_repeat_recording_fixture PRIVATE Ayther::engine)

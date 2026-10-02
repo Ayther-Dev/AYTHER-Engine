@@ -415,10 +415,11 @@ public:
     const std::array causes{query_, sub, state};
     (void)emit("sequence_candidate_decision", fields, causes);
   }
-  void operator()(const SeqAnchorResolutionView &view) noexcept {
+  std::optional<observation::FactId>
+  operator()(const SeqAnchorResolutionView &view) noexcept {
     using namespace sequence_detail;
     if (!observer_.on_fact)
-      return;
+      return {};
     const bool current = view.frame == frame_ && query_.has_value();
     complete_ = complete_ && current;
     const std::array fields{
@@ -429,7 +430,7 @@ public:
               observation::Unit::count),
         known("query_linked", current)};
     const std::array causes{query_};
-    (void)emit("sequence_selection", fields, causes);
+    return emit("sequence_selection", fields, causes);
   }
   [[nodiscard]] bool complete() const noexcept { return complete_; }
 

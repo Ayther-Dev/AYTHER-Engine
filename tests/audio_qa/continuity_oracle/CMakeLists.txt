@@ -45,6 +45,23 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/player.inc" "${player}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/instance.inc" "${instance}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/fired.inc" "${fired}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/reference_gate.inc" "${gate}")
+set(current_gate "${gate}")
+set(defective_route
+    "                if (dur > 0 && can && !anchor_now.count(asig)) ++im.hd_claimed;")
+string(CONCAT corrected_route
+    "                const auto route = sequence_routes.find(asig);\n"
+    "                const bool rejected_sequence = route != sequence_routes.end() &&\n"
+    "                    ayther::seq_trigger_is_rejected(route->second.disposition);\n"
+    "                if (dur > 0 && can && rejected_sequence) {\n"
+    "                    ++im.hd_claimed;\n"
+    "                    return;\n"
+    "                }")
+string(FIND "${current_gate}" "${defective_route}" corrected_at)
+if(corrected_at LESS 0)
+    message(FATAL_ERROR "Missing fixed rejection insertion point")
+endif()
+string(REPLACE "${defective_route}" "${corrected_route}" current_gate "${current_gate}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/current_gate.inc" "${current_gate}")
 function(observe variable anchor replacement)
     string(FIND "${${variable}}" "${anchor}" found)
     if(found LESS 0)
@@ -76,10 +93,28 @@ foreach(kind IN ITEMS reference observed)
         target_compile_definitions(audio_qa_continuity_${kind} PRIVATE QA_CONTINUITY_OBSERVER=0)
     endif()
 endforeach()
-foreach(mode IN ITEMS keep repeat lost)
+add_executable(audio_qa_continuity_current continuity_probe.cpp)
+target_compile_features(audio_qa_continuity_current PRIVATE cxx_std_20)
+target_compile_options(audio_qa_continuity_current PRIVATE /W4 /WX /permissive- /EHsc)
+set_target_properties(audio_qa_continuity_current PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(audio_qa_continuity_current SYSTEM PRIVATE
+    "${reference}/include/ayther" "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(audio_qa_continuity_current PRIVATE
+    QA_CONTINUITY_CURRENT=1 QA_CONTINUITY_OBSERVER=0)
+add_executable(audio_qa_continuity_current_observed continuity_probe.cpp)
+target_compile_features(audio_qa_continuity_current_observed PRIVATE cxx_std_20)
+target_compile_options(audio_qa_continuity_current_observed PRIVATE /W4 /WX /permissive- /EHsc)
+set_target_properties(audio_qa_continuity_current_observed PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(audio_qa_continuity_current_observed SYSTEM PRIVATE
+    "${reference}/include/ayther" "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(audio_qa_continuity_current_observed PRIVATE
+    QA_CONTINUITY_CURRENT=1 QA_CONTINUITY_OBSERVER=1)
+foreach(mode IN ITEMS keep repeat lost internal claimed internal_repeat claimed_repeat)
     add_test(NAME audio_qa_continuity_${mode}
         COMMAND ${CMAKE_COMMAND} "-DREFERENCE=$<TARGET_FILE:audio_qa_continuity_reference>"
             "-DOBSERVED=$<TARGET_FILE:audio_qa_continuity_observed>" "-DMODE=${mode}"
+            "-DCURRENT=$<TARGET_FILE:audio_qa_continuity_current>"
+            "-DCURRENT_OBSERVED=$<TARGET_FILE:audio_qa_continuity_current_observed>"
             "-DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/results/$<CONFIG>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/verify.cmake")
     set_tests_properties(audio_qa_continuity_${mode} PROPERTIES TIMEOUT 10 LABELS "audio_qa;reference")

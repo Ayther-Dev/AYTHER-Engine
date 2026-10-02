@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <string_view>
@@ -53,12 +54,26 @@ struct Capture {
   std::atomic<std::size_t> input_count{0};
   std::atomic<std::size_t> output_count{0};
   std::atomic<std::size_t> auxiliary_facts{0};
+  std::atomic<std::size_t> main_output_count{0};
 
   obs::Observer observer() noexcept { return {this, receive_fact, receive}; }
 
   static void receive_fact(void *value, const obs::FactView &fact) noexcept {
     auto &capture = *static_cast<Capture *>(value);
-    if (fact.kind == "auxiliary_submission") {
+    if (fact.kind == "main_mix_output_span") {
+      const auto *participant = fact.causes.size() == 2
+                                    ? std::get_if<obs::FactId>(&fact.causes[0])
+                                    : nullptr;
+      const auto *output = fact.causes.size() == 2
+                               ? std::get_if<obs::FactId>(&fact.causes[1])
+                               : nullptr;
+      if (!participant || *participant != obs::FactId{6, 41} || !output ||
+          *output != capture.last_pcm ||
+          number(fact, "input_begin") >= number(fact, "input_end") ||
+          number(fact, "output_begin") >= number(fact, "output_end"))
+        capture.valid.store(false, std::memory_order_relaxed);
+      capture.main_output_count.fetch_add(1, std::memory_order_release);
+    } else if (fact.kind == "auxiliary_submission") {
       const auto submission = number(fact, "submission");
       const auto input_begin = number(fact, "input_begin");
       const auto input_end = number(fact, "input_end");
@@ -129,7 +144,8 @@ struct Capture {
     } else {
       capture.valid.store(false, std::memory_order_relaxed);
     }
-    capture.auxiliary_facts.fetch_add(1, std::memory_order_release);
+    if (fact.kind.starts_with("auxiliary_"))
+      capture.auxiliary_facts.fetch_add(1, std::memory_order_release);
   }
 
   static void receive(void *value, const obs::PcmView &pcm) noexcept {
@@ -143,7 +159,7 @@ struct Capture {
     }
     const auto frames = pcm.range.end - pcm.range.begin;
     const auto expected_bytes = frames * 2 * sizeof(float);
-    if (pcm.id.producer != 7 || pcm.id.sequence != capture.blocks + 1 ||
+    if (pcm.id.producer != 7 || pcm.id.sequence <= capture.last_pcm.sequence ||
         pcm.capture_point != "sdl_logical_device_postmix" ||
         pcm.range.timeline != "engine_main_output" ||
         pcm.range.sample_rate != 44100 || pcm.range.begin != capture.frames ||
@@ -170,6 +186,13 @@ struct Bridge {
   std::atomic<bool> complete{true};
 
   static uint64_t
+  main_submission(void *value,
+                  const AudioPlayer::MainMixSubmission &submission) noexcept {
+    static_cast<void>(value);
+    return submission.inserted_silence ? 0 : submission.submission;
+  }
+
+  static uint64_t
   submission(void *value,
              const AudioPlayer::AuxiliarySubmission &submission) noexcept {
     auto &bridge = *static_cast<Bridge *>(value);
@@ -185,13 +208,22 @@ struct Bridge {
     auto &bridge = *static_cast<Bridge *>(value);
     const auto output = qa::MainOutputObservation::emit_with_id(
         bridge.capture.observer(), bridge.ids, block);
-    bool complete = output.complete && block.auxiliary_mapping_complete;
-    if (output.id)
+    bool complete = output.complete && block.main_mix_mapping_complete &&
+                    block.auxiliary_mapping_complete;
+    if (output.id) {
+      for (const auto &span : block.main_mix_spans) {
+        const std::array<obs::Cause, 1> participants{obs::FactId{6, 41}};
+        complete = qa::MainMixObservation::emit_output(
+                       bridge.capture.observer(), bridge.ids, span,
+                       participants, *output.id) &&
+                   complete;
+      }
       for (const auto &span : block.auxiliary_spans)
         complete =
             qa::AuxiliaryObservation::emit_output(
                 bridge.capture.observer(), bridge.ids, span, *output.id) &&
             complete;
+    }
     if (!complete) {
       bridge.complete.store(false, std::memory_order_relaxed);
       bridge.capture.done.store(true, std::memory_order_release);
@@ -208,6 +240,12 @@ int main() try {
       !player.set_main_output_observer(&bridge, Bridge::output))
     return 2;
   player.set_auxiliary_submission_observer(&bridge, Bridge::submission);
+  player.set_main_mix_submission_observer(&bridge, Bridge::main_submission);
+
+  std::array<int16_t, capture_target * 2> emulator_signal{};
+  player.buffer_emulator(0x5141323335ULL, emulator_signal.data(),
+                         capture_target);
+  player.flush_emulator();
 
   std::array<float, signal_frames * 2> first_signal{};
   std::array<float, signal_frames * 2> second_signal{};
@@ -260,18 +298,28 @@ int main() try {
           std::equal(second_signal.begin(), second_signal.end(), sample_begin);
   }
 
-  return bridge.capture.done.load(std::memory_order_acquire) &&
-                 bridge.capture.valid.load(std::memory_order_acquire) &&
-                 bridge.complete.load(std::memory_order_relaxed) &&
-                 bridge.capture.blocks > 0 && samples_match &&
-                 bridge.capture.auxiliary_facts.load(
-                     std::memory_order_acquire) == 6 &&
-                 bridge.capture.input_count.load(std::memory_order_acquire) ==
-                     submission_count &&
-                 bridge.capture.output_count.load(std::memory_order_acquire) ==
-                     submission_count
-             ? 0
-             : 1;
+  const bool passed =
+      bridge.capture.done.load(std::memory_order_acquire) &&
+      bridge.capture.valid.load(std::memory_order_acquire) &&
+      bridge.complete.load(std::memory_order_relaxed) &&
+      bridge.capture.blocks > 0 && samples_match &&
+      bridge.capture.auxiliary_facts.load(std::memory_order_acquire) == 6 &&
+      bridge.capture.input_count.load(std::memory_order_acquire) ==
+          submission_count &&
+      bridge.capture.output_count.load(std::memory_order_acquire) ==
+          submission_count &&
+      bridge.capture.main_output_count.load(std::memory_order_acquire) > 0;
+  if (!passed)
+    std::fprintf(stderr,
+                 "done=%d valid=%d complete=%d blocks=%zu samples=%d aux=%zu "
+                 "inputs=%zu outputs=%zu main_outputs=%zu\n",
+                 bridge.capture.done.load(), bridge.capture.valid.load(),
+                 bridge.complete.load(), bridge.capture.blocks, samples_match,
+                 bridge.capture.auxiliary_facts.load(),
+                 bridge.capture.input_count.load(),
+                 bridge.capture.output_count.load(),
+                 bridge.capture.main_output_count.load());
+  return passed ? 0 : 1;
 } catch (...) {
   return 4;
 }
