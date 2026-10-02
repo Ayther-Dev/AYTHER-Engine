@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace ayther {
 
@@ -88,7 +89,7 @@ public:
       return;
     if (rule == AudioMatchRule::kInstrumentPitch && pitch == kAudioNoPitch)
       return;
-    by_instr_.emplace(instrument, Entry{authored_sig, pitch, rule});
+    by_instr_[instrument].push_back(Entry{authored_sig, pitch, rule});
   }
 
   /// Resolves one instrument/pitch pair. Unknown instruments never match.
@@ -146,13 +147,12 @@ public:
     }
     int best_rank = -1;
     uint64_t best_sig = 0;
-    const auto range = by_instr_.equal_range(instrument);
-    if (range.first == range.second) {
+    const auto found = by_instr_.find(instrument);
+    if (found == by_instr_.end()) {
       finish({ResolutionResult::unknown_instrument});
       return false;
     }
-    for (auto it = range.first; it != range.second; ++it) {
-      const Entry &e = it->second;
+    for (const Entry &e : found->second) {
       const CandidateView candidate{e.sig, e.rule, e.pitch};
       visit(candidate);
       int rank = 0;
@@ -190,7 +190,10 @@ private:
     uint8_t pitch;
     AudioMatchRule rule;
   };
-  std::unordered_multimap<uint64_t, Entry> by_instr_;
+  // Keep candidate observation deterministic across standard-library
+  // implementations. Selection was already deterministic, but the evidence
+  // stream must preserve authored insertion order too.
+  std::unordered_map<uint64_t, std::vector<Entry>> by_instr_;
 };
 
 } // namespace ayther

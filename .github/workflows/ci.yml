@@ -496,7 +496,7 @@ jobs:
           & cmake `
               "-DQA_BUILD_DIRECTORY=$($PWD.Path)/build/${{ matrix.preset }}" `
               "-DQA_CTEST_COMMAND=$((Get-Command ctest -ErrorAction Stop).Source)" `
-              -DQA_REQUIRED_FAMILIES=audio_qa,unit,contract,integration,limits,fidelity,performance `
+              '-DQA_REQUIRED_FAMILIES=audio_qa,unit,contract,integration,limits,fidelity,performance' `
               -P tools/check_ctest_families.cmake
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

@@ -5,7 +5,10 @@ enable_testing()
 endif()
 
 set(audio_qa_required_ctest_families
-    "audio_qa,unit,contract,integration,limits,fidelity,performance")
+    "audio_qa,unit,contract,integration,limits,fidelity")
+if(AYTHER_BUILD_ENGINE)
+    string(APPEND audio_qa_required_ctest_families ",performance")
+endif()
 add_test(NAME audio_qa_required_ctest_families
     COMMAND ${CMAKE_COMMAND}
         "-DQA_BUILD_DIRECTORY=${CMAKE_BINARY_DIR}"
@@ -77,8 +80,7 @@ target_include_directories(audio_qa_fidelity_mix PRIVATE ../../../include)
 if (COMMAND ayther_instrument_target)
 ayther_instrument_target( audio_qa_fidelity_mix)
 endif()
-set(_qa_frozen_mix_pcm "${PROJECT_SOURCE_DIR}/../specs/001-AYTHER-bug-audio-qa/evidence/qa-029-capture-r2/simultaneous-ebc2d499349e2dcc0a39/observed/output.s16le")
-add_test( NAME audio_qa_fidelity_mix_probe COMMAND audio_qa_fidelity_mix "${_qa_frozen_mix_pcm}")
+add_test(NAME audio_qa_fidelity_mix_probe COMMAND audio_qa_fidelity_mix)
 set_tests_properties(audio_qa_fidelity_mix_probe PROPERTIES TIMEOUT 10 LABELS "audio_qa;unit;fidelity")
 add_executable( audio_qa_loop_position_observation loop_position_observation.cpp)
 target_compile_features(audio_qa_loop_position_observation PRIVATE cxx_std_20)

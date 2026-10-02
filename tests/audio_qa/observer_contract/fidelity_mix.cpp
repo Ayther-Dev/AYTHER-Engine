@@ -2,9 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -80,23 +77,13 @@ bool matches_participant(const HdMixer::PositionSpan &span,
          span.nonzero_contribution;
 }
 
-bool expected_pcm(const std::filesystem::path &path,
-                  const std::array<std::int16_t, 16> &actual) {
-  std::ifstream input(path, std::ios::binary);
-  if (!input)
-    return false;
-  const std::vector<char> expected{std::istreambuf_iterator<char>{input}, {}};
-  if (expected.size() != actual.size() * sizeof(actual[0]))
-    return false;
-  return std::equal(expected.begin(), expected.end(),
-                    reinterpret_cast<const char *>(actual.data()));
-}
+constexpr std::array<std::int16_t, 16> expected_pcm{
+    850, 925, 1000, 1075, 1150, 1225, 1300, 1375,
+    1000, 1050, 850, 887, 650, 675, 400, 412};
 
 } // namespace
 
-int main(int argc, char **argv) try {
-  if (argc != 2)
-    return 2;
+int main() try {
   Capture capture;
   HdMixer mixer;
   mixer.set_position_observer(&capture, Capture::participant);
@@ -121,7 +108,7 @@ int main(int argc, char **argv) try {
 
   if (!capture.valid || mixer.started() != 2 || mixer.voice_count() != 0 ||
       capture.participant_count != 3 || capture.effect_count != 3 ||
-      capture.end_count != 2 || !expected_pcm(argv[1], output))
+      capture.end_count != 2 || output != expected_pcm)
     return 5;
 
   const std::array expected_participants{

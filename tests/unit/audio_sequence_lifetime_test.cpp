@@ -18,7 +18,8 @@ int main() {
   using ayther::ActiveAudioSignature;
   using ayther::SequencePresence;
   constexpr std::uint64_t wilderness = 0x05d714c8e7a9ba44ULL;
-  constexpr std::array members{wilderness, 0x111ULL, 0x222ULL};
+  constexpr std::array<std::uint64_t, 3> members{wilderness, 0x111ULL,
+                                                 0x222ULL};
   constexpr std::uint32_t music_channels = (1U << 1U) | (1U << 2U);
   int failures = 0;
 

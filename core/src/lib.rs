@@ -6491,6 +6491,143 @@ mod audio_evdet_ffi_tests {
     }
 }
 
+#[cfg(test)]
+mod audio_event_state_and_catalog_ffi_tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Observations {
+        kinds: Vec<u32>,
+        reasons: Vec<u32>,
+        ordinals: Vec<u64>,
+        counts: Vec<u64>,
+        signatures: Vec<u64>,
+        texts: Vec<String>,
+        assets: Vec<String>,
+    }
+
+    unsafe extern "C" fn observe(
+        context: *mut std::ffi::c_void,
+        value: *const AytherAudioCatalogObservation,
+    ) {
+        // SAFETY: The test passes a live Observations and the callback receives
+        // one borrowed view for this invocation only.
+        let (capture, value) = unsafe { (&mut *context.cast::<Observations>(), &*value) };
+        capture.kinds.push(value.kind);
+        capture.reasons.push(value.reason);
+        capture.ordinals.push(value.ordinal);
+        capture.counts.push(value.count);
+        capture.signatures.push(value.signature);
+        if !value.signature_text.is_null() {
+            // SAFETY: The observation contract supplies this borrowed span.
+            let bytes =
+                unsafe { std::slice::from_raw_parts(value.signature_text, value.signature_bytes) };
+            capture
+                .texts
+                .push(String::from_utf8(bytes.to_vec()).unwrap());
+        }
+        if !value.asset.is_null() {
+            // SAFETY: The observation contract supplies this borrowed span.
+            let bytes = unsafe { std::slice::from_raw_parts(value.asset, value.asset_bytes) };
+            capture
+                .assets
+                .push(String::from_utf8(bytes.to_vec()).unwrap());
+        }
+    }
+
+    #[test]
+    fn detector_state_ffi_round_trips_and_rejects_invalid_buffers() {
+        // SAFETY: All pointers below come from live owned values with exact
+        // capacities, and the detector is freed once at the end.
+        unsafe {
+            let detector = ayther_audio_event_new();
+            assert_eq!(ayther_audio_event_state_size(std::ptr::null()), 0);
+            let size = ayther_audio_event_state_size(detector);
+            assert!(size > 0);
+            let mut state = vec![0; size];
+            assert_eq!(
+                ayther_audio_event_state_write(detector, state.as_mut_ptr(), size - 1),
+                0
+            );
+            assert_eq!(
+                ayther_audio_event_state_write(detector, state.as_mut_ptr(), size),
+                size
+            );
+            assert_eq!(ayther_audio_event_state_frame(detector), 0);
+            assert!(!ayther_audio_event_state_restore(
+                detector,
+                std::ptr::null(),
+                state.len()
+            ));
+            assert!(!ayther_audio_event_state_restore(
+                detector,
+                state.as_ptr(),
+                0
+            ));
+            assert!(ayther_audio_event_state_restore(
+                detector,
+                state.as_ptr(),
+                state.len()
+            ));
+            assert_eq!(ayther_audio_event_state_frame(std::ptr::null()), 0);
+            ayther_audio_event_free(detector);
+        }
+    }
+
+    #[test]
+    fn catalog_observation_ffi_covers_all_parser_outcomes() {
+        let text = std::ffi::CString::new(
+            "event=[{signature='1',asset='ok'},{signature='oops',asset='x'},{signature='2'}]",
+        )
+        .unwrap();
+        let mut capture = Observations::default();
+        // SAFETY: text and capture remain live throughout the synchronous call;
+        // a sizing call writes no output entries.
+        let count = unsafe {
+            ayther_audio_events_parse_observed(
+                text.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                Some(observe),
+                std::ptr::from_mut(&mut capture).cast(),
+            )
+        };
+        assert_eq!(count, 1);
+        assert_eq!(capture.kinds, [1, 2, 3, 2, 4, 2, 4, 5]);
+        assert_eq!(capture.reasons, [0, 0, 0, 0, 3, 0, 4, 0]);
+        assert_eq!(capture.texts, ["1", "oops", "2"]);
+        assert_eq!(capture.assets, ["ok", "x"]);
+        assert_eq!(capture.signatures[2], 1);
+        assert_eq!(capture.counts[0], 3);
+        assert_eq!(capture.counts[7], 1);
+
+        let mut unavailable = Observations::default();
+        // SAFETY: The callback context is valid and null input is explicitly
+        // accepted as an unavailable-inventory observation.
+        assert_eq!(
+            unsafe {
+                ayther_audio_events_parse_observed(
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    0,
+                    Some(observe),
+                    std::ptr::from_mut(&mut unavailable).cast(),
+                )
+            },
+            0
+        );
+        assert_eq!(unavailable.kinds, [6]);
+        assert_eq!(unavailable.reasons, [5]);
+
+        // The compatibility entry point follows the same parser and returns
+        // the total accepted count on a sizing pass.
+        assert_eq!(
+            unsafe { ayther_audio_events_parse(text.as_ptr(), std::ptr::null_mut(), 0) },
+            1
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Audio-event substitution FFI round-trip.
 // ---------------------------------------------------------------------------
