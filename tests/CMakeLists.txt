@@ -380,6 +380,18 @@ add_dependencies(ayther_silent_production_test ayther_test_core)
 set_tests_properties(ayther.integration.silent_production_test PROPERTIES
     ENVIRONMENT "SDL_AUDIO_DRIVER=dummy")
 
+# Spec 002 (P-9, DI-12): every audible frame reports its start on the device
+# line; silent production reports none.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/frame_output_boundary_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_frame_output_boundary_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_frame_output_boundary_session_test ayther_test_core)
+target_link_libraries(ayther_frame_output_boundary_session_test PRIVATE SDL3::SDL3)
+set_tests_properties(ayther.integration.frame_output_boundary_session_test
+    PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy")
+
 # Spec 002 (contracts.md C4, BR-033b): the pending HD audio exported in the
 # middle of a take is complete and restores to the linear state.
 ayther_add_native_test(
