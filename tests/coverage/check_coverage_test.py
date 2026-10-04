@@ -110,6 +110,8 @@ class CoverageGateTest(unittest.TestCase):
         self.assertIn("xvfb", coverage_job)
         self.assertIn("linux-native-coverage-gpu", coverage_job)
         self.assertIn("tools/check_gpu_matrix.ps1", coverage_job)
+        self.assertIn("xvfb-run --auto-servernum pwsh -File", coverage_job)
+        self.assertNotIn("-Launcher 'xvfb-run --auto-servernum'", coverage_job)
         self.assertGreaterEqual(coverage_job.count("LLVM_PROFILE_FILE"), 2)
 
 

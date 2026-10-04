@@ -140,9 +140,8 @@ mkdir -p build/linux-native-coverage/coverage-profiles
 LLVM_PROFILE_FILE="$PWD/build/linux-native-coverage/coverage-profiles/%m-%p.profraw" \
   ctest --preset linux-native-coverage
 LLVM_PROFILE_FILE="$PWD/build/linux-native-coverage/coverage-profiles/%m-%p.profraw" \
-  pwsh ./tools/check_gpu_matrix.ps1 \
+  xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
     -Preset linux-native-coverage-gpu \
-    -Launcher 'xvfb-run --auto-servernum' \
     -ReportFile coverage-gpu-report.md
 bash tools/collect_cpp_coverage.sh build/linux-native-coverage coverage/cpp
 python3 tools/check_coverage.py --component cpp \

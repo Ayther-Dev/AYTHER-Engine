@@ -350,7 +350,7 @@ jobs:
       - name: Install LLVM coverage tools and software Vulkan runtime
         run: |
           sudo apt-get update
-          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}" mesa-vulkan-drivers xvfb
+          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}" mesa-vulkan-drivers xauth xvfb
 
       - name: Run CPU CTests with LLVM profiles
         shell: bash
@@ -360,14 +360,13 @@ jobs:
             ctest --preset linux-native-coverage
 
       - name: Run GPU CTests with LLVM profiles
-        shell: pwsh
+        shell: bash
         env:
           LLVM_PROFILE_FILE: ${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw
-        run: >-
-          ./tools/check_gpu_matrix.ps1
-          -Preset linux-native-coverage-gpu
-          -Launcher 'xvfb-run --auto-servernum'
-          -ReportFile coverage-gpu-report.md
+        run: |
+          xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
+            -Preset linux-native-coverage-gpu \
+            -ReportFile coverage-gpu-report.md
 
       - name: Generate C++ coverage
         shell: bash
@@ -396,7 +395,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-cpp
-          path: coverage/cpp
+          path: |
+            coverage/cpp
+            coverage-gpu-report.md
           if-no-files-found: error
           retention-days: 14
 
@@ -700,12 +701,11 @@ jobs:
 
       - name: Test GPU targets on Linux
         if: runner.os == 'Linux'
-        shell: pwsh
-        run: >-
-          ./tools/check_gpu_matrix.ps1
-          -Preset ${{ matrix.preset }}
-          -Launcher 'xvfb-run --auto-servernum'
-          -ReportFile gpu-report-${{ matrix.preset }}.md
+        shell: bash
+        run: |
+          xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
+            -Preset ${{ matrix.preset }} \
+            -ReportFile gpu-report-${{ matrix.preset }}.md
 
       # Uploaded whether the job passed or failed: the device, the driver, and
       # the list of anything omitted are the record this matrix exists to keep,
