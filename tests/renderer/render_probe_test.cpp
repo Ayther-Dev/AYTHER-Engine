@@ -60,8 +60,13 @@ bool record_take(const std::string &rom, const fs::path &out, int frames) {
 }
 
 int run_probe(const std::string &args) {
+#ifdef _WIN32
   const std::string command =
       std::string("\"\"") + RENDER_PROBE_PATH + "\" " + args + "\"";
+#else
+  const std::string command =
+      std::string("\"") + RENDER_PROBE_PATH + "\" " + args;
+#endif
   // The probe is a separate executable by design (it is what QA runs); the
   // test is single-threaded and builds the command from its own paths.
   // NOLINTNEXTLINE(bugprone-command-processor,concurrency-mt-unsafe)

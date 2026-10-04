@@ -146,6 +146,16 @@ class CoverageGateTest(unittest.TestCase):
         self.assertIn("enable_extensions", vulkan_context)
         self.assertIn("set_headless", vulkan_context)
 
+    def test_render_probe_subprocess_quoting_is_platform_specific(self):
+        root = Path(__file__).resolve().parents[2]
+        render_probe_test = (
+            root / "tests/renderer/render_probe_test.cpp"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("#ifdef _WIN32", render_probe_test)
+        self.assertIn("#else", render_probe_test)
+        self.assertIn('std::string("\\\"") + RENDER_PROBE_PATH', render_probe_test)
+
 
 if __name__ == "__main__":
     unittest.main()
