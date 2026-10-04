@@ -62,6 +62,7 @@ pub mod sf3; // Convert SF3 Vorbis samples to SF2 at the boundary.
 pub mod sfz; // Convert loose SFZ text and samples to SF2 at the boundary.
 pub mod shape_hash; // Brightness-independent tile-shape families.
 pub mod sprite_hasher;
+mod state_codec; // Visual state sections (spec 002, contracts.md C4).
 pub mod tile_substitutor;
 pub mod vram_sprite;
 pub mod widescreen_gate; // Map game timbres to presets from instruments.toml.
@@ -2501,6 +2502,20 @@ pub unsafe extern "C" fn ayther_script_load_string(
     }
 }
 
+/// Number of callbacks the pack's scripts registered with `ayther.on_frame`
+/// (0 for a null environment). Spec 002 (contracts.md C4): a pack whose
+/// scripts run every frame carries Lua state that the visual state cannot
+/// export.
+///
+/// # Safety
+///
+/// `env` must be null or point to a live script environment.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_script_on_frame_count(env: *const ScriptEnv) -> u32 {
+    // SAFETY: The caller upholds the pointer and lifetime contract.
+    unsafe { env.as_ref() }.map_or(0, ScriptEnv::on_frame_count)
+}
+
 /// Snapshot `ram_size` bytes from `ram`, then fire all `ayther.on_frame` callbacks.
 ///
 /// Returns the number of callbacks that completed without error (0 if env is null
@@ -3767,6 +3782,95 @@ pub unsafe extern "C" fn ayther_sprite_sub_load_pack(
     }
 }
 
+/// Copies `asset` NUL-terminated into `buf` (truncated to `cap - 1` bytes)
+/// and returns its full length; 0 when `buf` is null or `cap` is 0.
+/// # Safety
+///
+/// `buf` is null or points to `cap` writable bytes.
+unsafe fn copy_asset_name(asset: &str, buf: *mut std::os::raw::c_char, cap: usize) -> usize {
+    if buf.is_null() || cap == 0 {
+        return 0;
+    }
+    let bytes = asset.as_bytes();
+    let n = bytes.len().min(cap - 1);
+    // SAFETY: `buf` holds `cap` bytes and `n < cap`.
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr() as *const std::os::raw::c_char, buf, n);
+        *buf.add(n) = 0;
+    }
+    bytes.len()
+}
+
+#[unsafe(no_mangle)]
+/// Number of textures the per-sprite catalog can draw (spec 002, BR-091).
+/// # Safety
+///
+/// `ptr` is null or a live substitutor from `ayther_sprite_sub_new`.
+pub unsafe extern "C" fn ayther_sprite_sub_catalog_asset_count(
+    ptr: *const SpriteSubstitutor,
+) -> u32 {
+    // SAFETY: Forwarded from the caller's contract.
+    unsafe { ptr.as_ref() }.map_or(0, |s| s.catalog_assets().len() as u32)
+}
+
+#[unsafe(no_mangle)]
+/// Copies texture `index` of the per-sprite catalog into `buf`; returns its
+/// length, or 0 when `index` is out of range.
+/// # Safety
+///
+/// `ptr` is null or a live substitutor; `buf` is null or holds `cap` bytes.
+pub unsafe extern "C" fn ayther_sprite_sub_catalog_asset(
+    ptr: *const SpriteSubstitutor,
+    index: u32,
+    buf: *mut std::os::raw::c_char,
+    cap: usize,
+) -> usize {
+    // SAFETY: Forwarded from the caller's contract.
+    let Some(s) = (unsafe { ptr.as_ref() }) else {
+        return 0;
+    };
+    match s.catalog_assets().get(index as usize) {
+        // SAFETY: Forwarded from the caller's contract.
+        Some(asset) => unsafe { copy_asset_name(asset, buf, cap) },
+        None => 0,
+    }
+}
+
+#[unsafe(no_mangle)]
+/// Number of textures the pose catalog can draw (spec 002, BR-091).
+/// # Safety
+///
+/// `ptr` is null or a live substitutor from `ayther_pose_sub_new`.
+pub unsafe extern "C" fn ayther_pose_sub_catalog_asset_count(
+    ptr: *const PoseSetSubstitutor,
+) -> u32 {
+    // SAFETY: Forwarded from the caller's contract.
+    unsafe { ptr.as_ref() }.map_or(0, |p| p.catalog_assets().len() as u32)
+}
+
+#[unsafe(no_mangle)]
+/// Copies texture `index` of the pose catalog into `buf`; returns its length,
+/// or 0 when `index` is out of range.
+/// # Safety
+///
+/// `ptr` is null or a live substitutor; `buf` is null or holds `cap` bytes.
+pub unsafe extern "C" fn ayther_pose_sub_catalog_asset(
+    ptr: *const PoseSetSubstitutor,
+    index: u32,
+    buf: *mut std::os::raw::c_char,
+    cap: usize,
+) -> usize {
+    // SAFETY: Forwarded from the caller's contract.
+    let Some(p) = (unsafe { ptr.as_ref() }) else {
+        return 0;
+    };
+    match p.catalog_assets().get(index as usize) {
+        // SAFETY: Forwarded from the caller's contract.
+        Some(asset) => unsafe { copy_asset_name(asset, buf, cap) },
+        None => 0,
+    }
+}
+
 /// Add a runtime override (e.g. from a Lua script).
 #[unsafe(no_mangle)]
 /// # Safety
@@ -4309,6 +4413,54 @@ pub unsafe extern "C" fn ayther_pose_sub_resolve(
     out_buf: *mut AytherSpriteSub,
     buf_cap: u32,
 ) -> u32 {
+    // SAFETY: Same contract as `pose_sub_resolve_impl`; no owners are written.
+    unsafe {
+        pose_sub_resolve_impl(
+            ptr,
+            occs,
+            occ_count,
+            claimed,
+            out_buf,
+            buf_cap,
+            std::ptr::null_mut(),
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+/// Like [`ayther_pose_sub_resolve`], also writing which written substitution
+/// claimed each occurrence (spec 002, RF-7.3).
+/// # Safety
+///
+/// Same contract as [`ayther_pose_sub_resolve`]. `owners` is null or points to
+/// `occ_count` writable `u32`; each receives the index of the claiming entry of
+/// `out_buf`, or `u32::MAX` when no written substitution claimed it.
+pub unsafe extern "C" fn ayther_pose_sub_resolve_owned(
+    ptr: *const PoseSetSubstitutor,
+    occs: *const AytherSpriteOccurrence,
+    occ_count: u32,
+    claimed: *mut u8, // In/out claim map; pose substitution marks its members.
+    out_buf: *mut AytherSpriteSub,
+    buf_cap: u32,
+    owners: *mut u32,
+) -> u32 {
+    // SAFETY: Forwarded unchanged to the shared implementation.
+    unsafe { pose_sub_resolve_impl(ptr, occs, occ_count, claimed, out_buf, buf_cap, owners) }
+}
+
+/// Shared body of the pose resolve entry points.
+/// # Safety
+///
+/// The caller upholds the contract of [`ayther_pose_sub_resolve_owned`].
+unsafe fn pose_sub_resolve_impl(
+    ptr: *const PoseSetSubstitutor,
+    occs: *const AytherSpriteOccurrence,
+    occ_count: u32,
+    claimed: *mut u8, // In/out claim map; pose substitution marks its members.
+    out_buf: *mut AytherSpriteSub,
+    buf_cap: u32,
+    owners: *mut u32,
+) -> u32 {
     // SAFETY: The caller upholds the pointer, lifetime, and ownership invariants
     // documented for this FFI function.
     unsafe {
@@ -4342,7 +4494,7 @@ pub unsafe extern "C" fn ayther_pose_sub_resolve(
         } else {
             (0..occ_vec.len()).map(|i| *claimed.add(i) != 0).collect()
         };
-        let subs = (*ptr).resolve(&occ_vec, &mut claimed_vec);
+        let (subs, owner_vec) = (*ptr).resolve_with_owners(&occ_vec, &mut claimed_vec);
         if !claimed.is_null() {
             for (i, &c) in claimed_vec.iter().enumerate() {
                 *claimed.add(i) = c as u8;
@@ -4382,6 +4534,18 @@ pub unsafe extern "C" fn ayther_pose_sub_resolve(
                 entry.mask_path.as_mut_ptr(),
                 mlen,
             );
+        }
+        if !owners.is_null() {
+            // Owners point into the written subs only: a sub dropped by
+            // `buf_cap` leaves its members claimed but without an owner.
+            for (i, &o) in owner_vec.iter().enumerate() {
+                let o = if (o as usize) < n {
+                    o
+                } else {
+                    vram_sprite::NO_OWNER
+                };
+                *owners.add(i) = o;
+            }
         }
         n as u32
     }
@@ -4578,6 +4742,276 @@ pub unsafe extern "C" fn ayther_tween_clear_overrides(ptr: *mut TweenPlayer) {
             (*ptr).clear_overrides();
         }
     }
+}
+
+// ===========================================================================
+// Visual state sections (spec 002, contracts.md C4).
+// ===========================================================================
+//
+// Each stateful object exports its section as an opaque, versioned payload:
+// `*_state_size` + `*_state_write` export it, `*_state_validate` checks a
+// payload without touching anything, and `*_state_restore` replaces the state
+// only when the whole payload is valid (false = unchanged).
+
+/// Largest section payload accepted from the host.
+const VISUAL_STATE_SECTION_LIMIT: usize = 16 * 1024 * 1024;
+
+/// Copies `state` into `out` when `cap` is enough; returns the bytes written,
+/// or 0 when `out` is null or too small.
+///
+/// # Safety
+///
+/// `out` must be null or name `cap` writable bytes.
+unsafe fn write_state_payload(state: &[u8], out: *mut u8, cap: usize) -> usize {
+    if out.is_null() || cap < state.len() {
+        return 0;
+    }
+    // SAFETY: `out` names at least `cap` writable bytes and the state fits.
+    unsafe { std::ptr::copy_nonoverlapping(state.as_ptr(), out, state.len()) };
+    state.len()
+}
+
+/// Borrows a host payload, rejecting null, empty and oversized ones.
+///
+/// # Safety
+///
+/// `data` must be null or name `len` readable bytes that outlive the borrow.
+unsafe fn state_payload<'a>(data: *const u8, len: usize) -> Option<&'a [u8]> {
+    if data.is_null() || len == 0 || len > VISUAL_STATE_SECTION_LIMIT {
+        return None;
+    }
+    // SAFETY: The caller promises `data` names `len` readable bytes.
+    Some(unsafe { std::slice::from_raw_parts(data, len) })
+}
+
+/// Size of the `sprite_tweens` section of `ptr` (0 for a null player).
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live player.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_tween_state_size(ptr: *const TweenPlayer) -> usize {
+    // SAFETY: The caller upholds the pointer and lifetime contract.
+    unsafe { ptr.as_ref() }.map_or(0, |p| p.save_state().len())
+}
+
+/// Writes the `sprite_tweens` section when `cap` is enough; returns its size
+/// or 0.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live player; `out` must name `cap`
+/// writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_tween_state_write(
+    ptr: *const TweenPlayer,
+    out: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: The caller upholds the pointer, capacity, and lifetime contract.
+    unsafe { ptr.as_ref() }.map_or(0, |p| unsafe {
+        write_state_payload(&p.save_state(), out, cap)
+    })
+}
+
+/// Whether `data` is a complete `sprite_tweens` section this version accepts.
+///
+/// # Safety
+///
+/// `data` must be null or name `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_tween_state_validate(data: *const u8, len: usize) -> bool {
+    // SAFETY: The caller upholds the buffer contract.
+    unsafe { state_payload(data, len) }.is_some_and(TweenPlayer::validate_state)
+}
+
+/// Replaces the player's instance state with the section; false = unchanged.
+///
+/// # Safety
+///
+/// `ptr` must provide exclusive access to a live player and `data` must name
+/// `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_tween_state_restore(
+    ptr: *mut TweenPlayer,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    // SAFETY: The caller upholds the buffer contract.
+    let Some(payload) = (unsafe { state_payload(data, len) }) else {
+        return false;
+    };
+    // SAFETY: The caller upholds exclusive access to the player.
+    unsafe { ptr.as_mut() }.is_some_and(|p| p.restore_state(payload))
+}
+
+/// Size of the `palette_signature` section of `ptr` (0 for a null resolver).
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live resolver.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_pose_sub_signature_state_size(
+    ptr: *const PoseSetSubstitutor,
+) -> usize {
+    // SAFETY: The caller upholds the pointer and lifetime contract.
+    unsafe { ptr.as_ref() }.map_or(0, |p| p.save_palette_signature_state().len())
+}
+
+/// Writes the `palette_signature` section when `cap` is enough; returns its
+/// size or 0.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live resolver; `out` must name `cap`
+/// writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_pose_sub_signature_state_write(
+    ptr: *const PoseSetSubstitutor,
+    out: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: The caller upholds the pointer, capacity, and lifetime contract.
+    unsafe { ptr.as_ref() }.map_or(0, |p| unsafe {
+        write_state_payload(&p.save_palette_signature_state(), out, cap)
+    })
+}
+
+/// Whether `data` is a complete `palette_signature` section.
+///
+/// # Safety
+///
+/// `data` must be null or name `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_pose_sub_signature_state_validate(
+    data: *const u8,
+    len: usize,
+) -> bool {
+    // SAFETY: The caller upholds the buffer contract.
+    unsafe { state_payload(data, len) }
+        .is_some_and(PoseSetSubstitutor::validate_palette_signature_state)
+}
+
+/// Replaces the palette-signature tracking with the section; false =
+/// unchanged.
+///
+/// # Safety
+///
+/// `ptr` must provide exclusive access to a live resolver and `data` must
+/// name `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_pose_sub_signature_state_restore(
+    ptr: *mut PoseSetSubstitutor,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    // SAFETY: The caller upholds the buffer contract.
+    let Some(payload) = (unsafe { state_payload(data, len) }) else {
+        return false;
+    };
+    // SAFETY: The caller upholds exclusive access to the resolver.
+    unsafe { ptr.as_mut() }.is_some_and(|p| p.restore_palette_signature_state(payload))
+}
+
+/// Size of the `animation_grouper` section of `ptr` (0 for a null hasher).
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live hasher.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_sprite_hasher_grouper_state_size(
+    ptr: *const SpriteHasher,
+) -> usize {
+    // SAFETY: The caller upholds the pointer and lifetime contract.
+    unsafe { ptr.as_ref() }.map_or(0, |h| h.save_animation_grouper_state().len())
+}
+
+/// Writes the `animation_grouper` section when `cap` is enough; returns its
+/// size or 0.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a live hasher; `out` must name `cap`
+/// writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_sprite_hasher_grouper_state_write(
+    ptr: *const SpriteHasher,
+    out: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: The caller upholds the pointer, capacity, and lifetime contract.
+    unsafe { ptr.as_ref() }.map_or(0, |h| unsafe {
+        write_state_payload(&h.save_animation_grouper_state(), out, cap)
+    })
+}
+
+/// Whether `data` is a complete `animation_grouper` section.
+///
+/// # Safety
+///
+/// `data` must be null or name `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_sprite_hasher_grouper_state_validate(
+    data: *const u8,
+    len: usize,
+) -> bool {
+    // SAFETY: The caller upholds the buffer contract.
+    unsafe { state_payload(data, len) }.is_some_and(SpriteHasher::validate_animation_grouper_state)
+}
+
+/// Replaces the animation grouper with the section; false = unchanged.
+///
+/// # Safety
+///
+/// `ptr` must provide exclusive access to a live hasher and `data` must name
+/// `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_sprite_hasher_grouper_state_restore(
+    ptr: *mut SpriteHasher,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    // SAFETY: The caller upholds the buffer contract.
+    let Some(payload) = (unsafe { state_payload(data, len) }) else {
+        return false;
+    };
+    // SAFETY: The caller upholds exclusive access to the hasher.
+    unsafe { ptr.as_mut() }.is_some_and(|h| h.restore_animation_grouper_state(payload))
+}
+
+/// Writes the SHA-256 of `len` bytes at `data` as 64 lowercase hexadecimal
+/// characters plus a terminating NUL into `out` (65 bytes). Spec 002 uses it
+/// as the identity of a core state (contracts.md C4 `game_state_identity`).
+/// Returns false, writing nothing, when `out` is null or `data` is null with a
+/// nonzero `len`.
+///
+/// # Safety
+///
+/// `data` must be null or name `len` readable bytes; `out` must be null or
+/// name 65 writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ayther_sha256_hex(
+    data: *const u8,
+    len: usize,
+    out: *mut std::os::raw::c_char,
+) -> bool {
+    use sha2::{Digest, Sha256};
+    if out.is_null() || (data.is_null() && len != 0) {
+        return false;
+    }
+    let bytes: &[u8] = if len == 0 {
+        &[]
+    } else {
+        // SAFETY: The caller promises `data` names `len` readable bytes.
+        unsafe { std::slice::from_raw_parts(data, len) }
+    };
+    let hex = format!("{:x}", Sha256::digest(bytes));
+    // SAFETY: `out` names 65 writable bytes and `hex` has 64 ASCII bytes.
+    unsafe {
+        std::ptr::copy_nonoverlapping(hex.as_ptr(), out.cast::<u8>(), 64);
+        *out.add(64) = 0;
+    }
+    true
 }
 
 // ===========================================================================
@@ -7351,5 +7785,70 @@ pub unsafe extern "C" fn ayther_tile_brightness_factor(
             std::slice::from_raw_parts(referencia, 32),
         )
         .unwrap_or(-1.0)
+    }
+}
+
+#[cfg(test)]
+mod visual_state_ffi_tests {
+    use super::*;
+
+    /// Spec 002, BR-026 and BR-029 (RF-3.6): the section FFI exports, validates
+    /// and restores each payload, and leaves the object unchanged on a bad one.
+    #[test]
+    fn visual_state_sections_rf_3_6_round_trip_through_the_ffi() {
+        let source = Box::into_raw(Box::new(TweenPlayer::new()));
+        let target = Box::into_raw(Box::new(TweenPlayer::new()));
+        // SAFETY: Both players are live and owned by this test.
+        unsafe {
+            ayther_tween_begin_frame(source);
+            let size = ayther_tween_state_size(source);
+            assert!(size > 0);
+            let mut buf = vec![0u8; size];
+            assert_eq!(
+                ayther_tween_state_write(source, buf.as_mut_ptr(), size - 1),
+                0
+            );
+            assert_eq!(
+                ayther_tween_state_write(source, buf.as_mut_ptr(), size),
+                size
+            );
+            assert!(ayther_tween_state_validate(buf.as_ptr(), size));
+            assert!(!ayther_tween_state_validate(buf.as_ptr(), size - 1));
+            assert!(!ayther_tween_state_restore(target, buf.as_ptr(), size - 1));
+            assert_eq!((*target).save_state(), TweenPlayer::new().save_state());
+            assert!(ayther_tween_state_restore(target, buf.as_ptr(), size));
+            assert_eq!((*target).save_state(), (*source).save_state());
+            drop(Box::from_raw(source));
+            drop(Box::from_raw(target));
+        }
+
+        let hasher = SpriteHasher::new();
+        let pose_sub = PoseSetSubstitutor::new();
+        // SAFETY: The objects are live for the calls.
+        unsafe {
+            assert!(ayther_sprite_hasher_grouper_state_size(&hasher) > 0);
+            assert!(ayther_pose_sub_signature_state_size(&pose_sub) > 0);
+            assert_eq!(ayther_sprite_hasher_grouper_state_size(std::ptr::null()), 0);
+            assert!(!ayther_pose_sub_signature_state_validate(
+                std::ptr::null(),
+                0
+            ));
+        }
+    }
+
+    #[test]
+    fn sha256_hex_rf_3_6_matches_the_known_answer() {
+        let mut out = [0 as std::os::raw::c_char; 65];
+        // SAFETY: `out` has 65 bytes and the input is a live slice.
+        unsafe {
+            assert!(ayther_sha256_hex(b"abc".as_ptr(), 3, out.as_mut_ptr()));
+            let text = std::ffi::CStr::from_ptr(out.as_ptr()).to_str().unwrap();
+            assert_eq!(
+                text,
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            );
+            assert!(!ayther_sha256_hex(std::ptr::null(), 1, out.as_mut_ptr()));
+            assert!(!ayther_sha256_hex(b"abc".as_ptr(), 3, std::ptr::null_mut()));
+        }
     }
 }
