@@ -349,7 +349,7 @@ jobs:
             "llvm-${CLANG_TIDY_VERSION}" \
             libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxft-dev \
             libxi-dev libxrandr-dev libxss-dev libxtst-dev \
-            mesa-vulkan-drivers xauth xvfb
+            mesa-vulkan-drivers vulkan-tools vulkan-validationlayers xauth xvfb
 
       - name: Configure coverage build
         run: cmake --preset linux-native-coverage
@@ -369,9 +369,12 @@ jobs:
         env:
           LLVM_PROFILE_FILE: ${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw
           SDL_VIDEODRIVER: x11
+          SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/linux-native-coverage/vcpkg_installed/x64-linux/debug/lib/libvulkan.so
           LIBGL_ALWAYS_SOFTWARE: '1'
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
+          test -f "$SDL_VULKAN_LIBRARY"
+          vulkaninfo --summary
           xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
             -Preset linux-native-coverage-gpu \
             -ReportFile coverage-gpu-report.md

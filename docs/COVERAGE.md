@@ -52,7 +52,11 @@ the same LLVM profile set. CI selects SDL's X11 backend and Mesa's Lavapipe ICD
 explicitly so the headless runner cannot silently choose a missing display or
 hardware device. SDL's complete X11 development dependency set is installed before CMake
 configures vcpkg, because SDL otherwise compiles without its X11 backend even
-when the vcpkg `x11` feature is enabled. `check_gpu_matrix.ps1` rejects an empty or skipped
+when the vcpkg `x11` feature is enabled. The job also points SDL at the exact
+dynamic Vulkan loader linked by the coverage executables; loading the system
+copy independently would split SDL surface creation and Engine instance calls
+across different loader objects. `vulkaninfo` verifies Lavapipe before CTest.
+`check_gpu_matrix.ps1` rejects an empty or skipped
 GPU run, so first-party Vulkan code stays inside both the total and changed-line
 denominators without turning an omitted renderer suite into a green result.
 

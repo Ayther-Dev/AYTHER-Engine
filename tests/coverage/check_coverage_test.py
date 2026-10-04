@@ -129,6 +129,13 @@ class CoverageGateTest(unittest.TestCase):
             "VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json",
             coverage_job,
         )
+        self.assertIn("vulkan-validationlayers", coverage_job)
+        self.assertIn("vulkaninfo --summary", coverage_job)
+        self.assertIn(
+            "SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/linux-native-coverage/"
+            "vcpkg_installed/x64-linux/debug/lib/libvulkan.so",
+            coverage_job,
+        )
         self.assertGreaterEqual(coverage_job.count("LLVM_PROFILE_FILE"), 2)
 
 
