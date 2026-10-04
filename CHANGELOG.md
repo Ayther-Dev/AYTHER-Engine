@@ -35,6 +35,27 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Render observation (spec 002, contract C3): the installed header
+  `ayther/engine/render_observer.hpp`, `AytherSession::Config::render_observer`,
+  `AytherSession::publish_render_observation` and
+  `AytherRenderer::last_draw_report`. Per frame, a host learns which sprite
+  occurrences were detected, which replacement claimed each one, why an
+  assigned pose was not applied, how it was drawn and whether the frame could
+  be composed. See `docs/RENDER_OBSERVATION.md`.
+- Visual state (spec 002, contract C4): the installed header
+  `ayther/engine/visual_state.hpp`, `AytherSession::game_state_identity`,
+  `export_visual_state` and `restore_visual_state`. A checkpoint restored
+  with the core state and the visual state presents the same frame as the
+  linear run. See `docs/VISUAL_STATE.md`.
+- `tools/render_probe` replays a take with or without a pack and writes the
+  composed and core images and a JSON report per frame, with the O1 (no pack
+  against the core) and O2 (pack invariants) oracles and the `--settle`,
+  `--prewarm` and `--timing` options.
+- Texture residency controls: `AytherRenderer::set_synchronous_textures`,
+  `prewarm_textures` with its `PrewarmReport`, `sprite_texture_state`, and
+  `AytherSession::catalog_texture_assets` and `pack_derived_state`.
+- The pack validator reports `pose.asset_missing` and `pose.asset_unreadable`.
+
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions
@@ -111,6 +132,18 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Replacement composition follows the rules R1-R9 documented in
+  `docs/REPLACEMENT_COMPOSITION.md`: membership-only pose anchors, per-member
+  depth partitions, the VDP sprite layer with per-pixel priority through a
+  depth buffer, low-priority HD lanes in their plane pass, the framebuffer
+  judge and per-line sprite limits, synchronous texture residency, poses
+  without an asset left unclaimed, scroll composed by bands, and pack
+  retirement. The SPIR-V of `indexed_plane.vert`, `sprite.vert`, `sprite.frag`
+  and `sprite_mask.frag` changes accordingly.
+- On a pack change the session now clears its own pack-derived state; the
+  renderer's texture caches stay with the host, which still calls
+  `AytherRenderer::evict_pack_textures`.
+
 - Cargo, CMake, vcpkg, SDK, engine validation, and Lua now share the `0.1.0`
   release version; ABI and pack-schema values are explicitly independent
   protocol revisions.
@@ -167,6 +200,20 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - None.
 
 ### Fixed
+
+- A replacement no longer hides sprites it does not own, and is no longer
+  drawn over or under the wrong sprites: the depth came from the pose's area
+  and its anchor could be an unrelated sprite.
+- Replacements no longer flicker or vanish while their texture decodes, and a
+  cold run now produces the same image as a prewarmed one.
+- Frames with raster writes in mid-screen are presented with the originals
+  only, never an original and its replacement together.
+- Retiring a pack no longer leaves its plane sets, screens, panoramas,
+  kinematics or palette luminance peak behind.
+- The animation grouper gives a hash shared by several slots the same group
+  in every instance.
+- The HD audio state exported while a take plays is complete even when the
+  device still holds queued bytes, so the checkpoint restores.
 
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take

@@ -232,6 +232,15 @@ set_tests_properties(ayther.quality.release_fixture_paths PROPERTIES
     TIMEOUT 30
     LABELS  "audio_qa;quality;release")
 
+add_test(
+    NAME ayther.quality.spec002_docs
+    COMMAND "${CMAKE_COMMAND}"
+        "-DAYTHER_ROOT=${PROJECT_SOURCE_DIR}"
+        -P "${PROJECT_SOURCE_DIR}/tests/engine_docs_contract.cmake")
+set_tests_properties(ayther.quality.spec002_docs PROPERTIES
+    TIMEOUT 30
+    LABELS  "engine;native;quality")
+
 add_subdirectory(unit)
 add_subdirectory(integration)
 add_subdirectory(audio_qa)

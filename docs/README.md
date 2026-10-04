@@ -27,6 +27,9 @@ owned by AYTHER Runtime, SDK, Play, Hub, or Lab.
 | [Audio continuity pack format](AUDIO_CONTINUITY_FORMAT.md) | Pack authors and Engine consumers | `audio_events.toml` schema 1, units, validation, legacy defaults, and rejection policy |
 | [Pack identity specification](IDENTITY_SPECIFICATION.md) | Pack tooling authors and integrators | Bit-exact identity algorithms, KATs, compatibility risks, and reimplementation hazards |
 | [Emulator extension ABI](EMULATOR_EXTENSION_ABI.md) | Emulator-core and Engine integrators | ABI 1.10 negotiation, capabilities, regions, snapshots, subscriptions, and fallback |
+| [Render observation](RENDER_OBSERVATION.md) | Runtime and QA integrators | Contract C3: per-frame occurrences, replacements, reasons, draw outcome, and composability |
+| [Visual state](VISUAL_STATE.md) | Runtime and replay integrators | Contract C4: export, restore order, sections, and restore codes of the visual state |
+| [Replacement composition rules](REPLACEMENT_COMPOSITION.md) | Renderer maintainers and pack developers | Rules R1-R9: membership, depth, VDP layer order, residency, non-composable frames, and pack retirement |
 | [Cinematic plane composition](CINEMATIC_PLANE_COMPOSITION.md) | Renderer maintainers | Plane masks, VDP priority, opaque-video policy, and GPU oracle |
 | [Widescreen composition](WIDESCREEN.md) | Renderer and pack developers | Implemented widening/gating contract and the planned HUD safe-zone boundary |
 | [Generated dependency graph](DEPENDENCY_GRAPH.md) | Maintainers | Cargo and CMake dependency edges generated from the current checkout |
