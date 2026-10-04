@@ -35,12 +35,6 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Audio observation fact `audio_frame_output_boundary` (spec 002, P-9): for
-  every frame that reaches the device, its first sample on the
-  `engine_main_output` line after rate control (`output_position`,
-  `sample_rate`, `resample_rate_q32`, `valid`), with or without HD voices.
-  It needs the fact and PCM observers, costs nothing without them, and silent
-  production emits none. Additive: no existing fact changes.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions
@@ -117,12 +111,6 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- `AudioPlayer::resume_transport` (after `pause_after_drain`) restarts the
-  device with the next frame's PCM and no longer re-primes the drained
-  backlog with silence when the pause outlasted the 250 ms stall detector, so
-  frame k+1 follows frame k on the device line (P-9). Playback resumes with an
-  empty backlog, as it already did after a short pause; rate control rebuilds
-  it. Normal playback and `cut_transport_audio` are unchanged.
 - Cargo, CMake, vcpkg, SDK, engine validation, and Lua now share the `0.1.0`
   release version; ABI and pack-schema values are explicitly independent
   protocol revisions.
@@ -263,6 +251,29 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - A release build could open no pack whatsoever through `AytherSession`: an
   unsigned pack is refused, the development key is refused in an optimized
   build, and `Config` had no way to name a production trust registry.
+
+## [0.1.0-rc.15] - 2026-10-04
+
+Replay QA audio/image alignment (spec 002, P-9). The release-version surfaces
+keep the core `0.1.0`; the tag carries the pre-release suffix.
+
+### Added
+
+- Audio observation fact `audio_frame_output_boundary` (spec 002, P-9): for
+  every frame that reaches the device, its first sample on the
+  `engine_main_output` line after rate control (`output_position`,
+  `sample_rate`, `resample_rate_q32`, `valid`), with or without HD voices.
+  It needs the fact and PCM observers, costs nothing without them, and silent
+  production emits none. Additive: no existing fact changes.
+
+### Fixed
+
+- `AudioPlayer::resume_transport` (after `pause_after_drain`) restarts the
+  device with the next frame's PCM and no longer re-primes the drained
+  backlog with silence when the pause outlasted the 250 ms stall detector, so
+  frame k+1 follows frame k on the device line (P-9). Playback resumes with an
+  empty backlog, as it already did after a short pause; rate control rebuilds
+  it. Normal playback and `cut_transport_audio` are unchanged.
 
 ## [0.1.0-rc.14] - 2026-10-04
 
