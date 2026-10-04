@@ -48,7 +48,9 @@ C++ changed lines are held to 70% rather than 80% because the native renderer
 still has device- and driver-dependent branches that a single software device
 cannot exercise. The coverage job runs the CPU suite first, then the `gpu`
 suite against Mesa's software Vulkan device under `xvfb`; both runs write into
-the same LLVM profile set. `check_gpu_matrix.ps1` rejects an empty or skipped
+the same LLVM profile set. CI selects SDL's X11 backend and Mesa's Lavapipe ICD
+explicitly so the headless runner cannot silently choose a missing display or
+hardware device. `check_gpu_matrix.ps1` rejects an empty or skipped
 GPU run, so first-party Vulkan code stays inside both the total and changed-line
 denominators without turning an omitted renderer suite into a green result.
 
@@ -140,6 +142,8 @@ mkdir -p build/linux-native-coverage/coverage-profiles
 LLVM_PROFILE_FILE="$PWD/build/linux-native-coverage/coverage-profiles/%m-%p.profraw" \
   ctest --preset linux-native-coverage
 LLVM_PROFILE_FILE="$PWD/build/linux-native-coverage/coverage-profiles/%m-%p.profraw" \
+  SDL_VIDEODRIVER=x11 LIBGL_ALWAYS_SOFTWARE=1 \
+  VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
   xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
     -Preset linux-native-coverage-gpu \
     -ReportFile coverage-gpu-report.md

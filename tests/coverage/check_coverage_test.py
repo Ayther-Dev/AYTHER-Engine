@@ -112,6 +112,12 @@ class CoverageGateTest(unittest.TestCase):
         self.assertIn("tools/check_gpu_matrix.ps1", coverage_job)
         self.assertIn("xvfb-run --auto-servernum pwsh -File", coverage_job)
         self.assertNotIn("-Launcher 'xvfb-run --auto-servernum'", coverage_job)
+        self.assertIn("SDL_VIDEODRIVER: x11", coverage_job)
+        self.assertIn("LIBGL_ALWAYS_SOFTWARE: '1'", coverage_job)
+        self.assertIn(
+            "VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json",
+            coverage_job,
+        )
         self.assertGreaterEqual(coverage_job.count("LLVM_PROFILE_FILE"), 2)
 
 

@@ -363,6 +363,9 @@ jobs:
         shell: bash
         env:
           LLVM_PROFILE_FILE: ${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw
+          SDL_VIDEODRIVER: x11
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
           xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
             -Preset linux-native-coverage-gpu \
@@ -702,6 +705,10 @@ jobs:
       - name: Test GPU targets on Linux
         if: runner.os == 'Linux'
         shell: bash
+        env:
+          SDL_VIDEODRIVER: x11
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
           xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
             -Preset ${{ matrix.preset }} \
