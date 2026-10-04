@@ -50,7 +50,9 @@ cannot exercise. The coverage job runs the CPU suite first, then the `gpu`
 suite against Mesa's software Vulkan device under `xvfb`; both runs write into
 the same LLVM profile set. CI selects SDL's X11 backend and Mesa's Lavapipe ICD
 explicitly so the headless runner cannot silently choose a missing display or
-hardware device. `check_gpu_matrix.ps1` rejects an empty or skipped
+hardware device. The Xorg development packages are installed before CMake
+configures vcpkg, because SDL otherwise compiles without its X11 backend even
+when the vcpkg `x11` feature is enabled. `check_gpu_matrix.ps1` rejects an empty or skipped
 GPU run, so first-party Vulkan code stays inside both the total and changed-line
 denominators without turning an omitted renderer suite into a green result.
 

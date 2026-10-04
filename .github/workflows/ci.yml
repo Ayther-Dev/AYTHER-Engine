@@ -338,19 +338,20 @@ jobs:
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      # Changed-line coverage includes the Vulkan backend. Exercise it through
+      # Mesa's deterministic software device instead of excluding first-party
+      # renderer code from the gate. Xorg headers must be present before vcpkg
+      # builds SDL or its X11 video backend is compiled out.
+      - name: Install coverage tools and headless GPU dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}" libx11-dev libxext-dev libxft-dev mesa-vulkan-drivers xauth xvfb
+
       - name: Configure coverage build
         run: cmake --preset linux-native-coverage
 
       - name: Build coverage targets
         run: cmake --build --preset linux-native-coverage
-
-      # Changed-line coverage includes the Vulkan backend. Exercise it through
-      # Mesa's deterministic software device instead of excluding first-party
-      # renderer code from the gate.
-      - name: Install LLVM coverage tools and software Vulkan runtime
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}" mesa-vulkan-drivers xauth xvfb
 
       - name: Run CPU CTests with LLVM profiles
         shell: bash
@@ -669,7 +670,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes mesa-vulkan-drivers xvfb
+          sudo apt-get install --yes libx11-dev libxext-dev libxft-dev mesa-vulkan-drivers xauth xvfb
 
       - name: Cache Cargo inputs and outputs
         uses: actions/cache@v4

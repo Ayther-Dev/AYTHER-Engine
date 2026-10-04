@@ -108,6 +108,13 @@ class CoverageGateTest(unittest.TestCase):
         coverage_job = workflow.split("  cpp-coverage:", 1)[1].split("\n  native:", 1)[0]
         self.assertIn("mesa-vulkan-drivers", coverage_job)
         self.assertIn("xvfb", coverage_job)
+        self.assertIn("libx11-dev", coverage_job)
+        self.assertIn("libxft-dev", coverage_job)
+        self.assertIn("libxext-dev", coverage_job)
+        self.assertLess(
+            coverage_job.index("libx11-dev"),
+            coverage_job.index("Configure coverage build"),
+        )
         self.assertIn("linux-native-coverage-gpu", coverage_job)
         self.assertIn("tools/check_gpu_matrix.ps1", coverage_job)
         self.assertIn("xvfb-run --auto-servernum pwsh -File", coverage_job)
