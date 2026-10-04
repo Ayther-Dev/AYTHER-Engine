@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,6 +87,30 @@ class CoverageGateTest(unittest.TestCase):
         self.assertFalse(
             coverage_gate.gate_failed(100, 80.0, 50.0, 0, 100.0, 70.0)
         )
+
+    def test_cpp_coverage_executes_gpu_oracles_into_the_same_profile_set(self):
+        root = SCRIPT.parents[1]
+        presets = json.loads((root / "CMakePresets.json").read_text(encoding="utf-8"))
+        configure = {item["name"]: item for item in presets["configurePresets"]}
+        tests = {item["name"]: item for item in presets["testPresets"]}
+
+        self.assertEqual(
+            configure["linux-native-coverage"]["cacheVariables"].get(
+                "AYTHER_BUILD_GPU_TESTS"
+            ),
+            "ON",
+        )
+        gpu = tests["linux-native-coverage-gpu"]
+        self.assertEqual(gpu["configurePreset"], "linux-native-coverage")
+        self.assertEqual(gpu["filter"]["include"]["label"], "gpu")
+
+        workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        coverage_job = workflow.split("  cpp-coverage:", 1)[1].split("\n  native:", 1)[0]
+        self.assertIn("mesa-vulkan-drivers", coverage_job)
+        self.assertIn("xvfb", coverage_job)
+        self.assertIn("linux-native-coverage-gpu", coverage_job)
+        self.assertIn("tools/check_gpu_matrix.ps1", coverage_job)
+        self.assertGreaterEqual(coverage_job.count("LLVM_PROFILE_FILE"), 2)
 
 
 if __name__ == "__main__":

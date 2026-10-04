@@ -344,10 +344,13 @@ jobs:
       - name: Build coverage targets
         run: cmake --build --preset linux-native-coverage
 
-      - name: Install matching LLVM coverage tools
+      # Changed-line coverage includes the Vulkan backend. Exercise it through
+      # Mesa's deterministic software device instead of excluding first-party
+      # renderer code from the gate.
+      - name: Install LLVM coverage tools and software Vulkan runtime
         run: |
           sudo apt-get update
-          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}"
+          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}" mesa-vulkan-drivers xvfb
 
       - name: Run CPU CTests with LLVM profiles
         shell: bash
@@ -355,6 +358,16 @@ jobs:
           mkdir -p build/linux-native-coverage/coverage-profiles
           LLVM_PROFILE_FILE='${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw' \
             ctest --preset linux-native-coverage
+
+      - name: Run GPU CTests with LLVM profiles
+        shell: pwsh
+        env:
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw
+        run: >-
+          ./tools/check_gpu_matrix.ps1
+          -Preset linux-native-coverage-gpu
+          -Launcher 'xvfb-run --auto-servernum'
+          -ReportFile coverage-gpu-report.md
 
       - name: Generate C++ coverage
         shell: bash

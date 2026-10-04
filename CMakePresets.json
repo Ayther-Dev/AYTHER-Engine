@@ -226,11 +226,12 @@
     {
       "name": "linux-native-coverage",
       "displayName": "Linux Native Engine Coverage",
-      "description": "Informational LLVM source coverage for first-party C++",
+      "description": "LLVM source coverage for first-party CPU and software-Vulkan tests",
       "inherits": "linux-native",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "AYTHER_ENABLE_COVERAGE": "ON"
+        "AYTHER_ENABLE_COVERAGE": "ON",
+        "AYTHER_BUILD_GPU_TESTS": "ON"
       }
     },
     {
@@ -529,6 +530,21 @@
       },
       "filter": {
         "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "linux-native-coverage-gpu",
+      "configurePreset": "linux-native-coverage",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "include": {
           "label": "gpu"
         }
       }
