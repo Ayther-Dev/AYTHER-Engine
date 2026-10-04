@@ -264,6 +264,8 @@ AytherSession::create(const Config &cfg) {
       im.audio.set_hd_effect_observer(&im, &Impl::observe_hd_effect);
       im.audio.set_original_audio_observer(&im, &Impl::observe_original_audio);
       im.audio.set_frame_sample_observer(&im, &Impl::observe_frame_sample);
+      // Spec 002 (P-9): needs the PCM observer too, which defines the line.
+      im.audio.set_frame_output_observer(&im, &Impl::observe_frame_output);
       im.audio.set_main_mix_submission_observer(
           &im, &Impl::observe_main_mix_submission);
       im.audio.set_auxiliary_submission_observer(

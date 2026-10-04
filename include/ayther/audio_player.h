@@ -182,6 +182,24 @@ public:
     bool auxiliary_mapping_complete = true;
   };
   using MainOutputCallback = void (*)(void *, const MainOutputBlock &) noexcept;
+  /// Spec 002 (P-9, DI-12): where the audio of an emulated frame starts on
+  /// the device line (`engine_main_output`), after rate control. Reported from
+  /// the device thread when the first output sample whose resampling position
+  /// reaches the frame's first input sample is produced.
+  struct FrameOutputBoundary {
+    uint64_t emulation_frame = 0;
+    /// Index of that sample on the `engine_main_output` timeline, the same
+    /// line as MainOutputBlock::sample_begin.
+    uint64_t output_position = 0;
+    uint32_t output_sample_rate = 0;
+    /// Input samples per output sample in 32.32 fixed point, with the rate
+    /// control ratio in force when the sample was produced.
+    uint64_t resample_rate_q32 = 0;
+    /// False when boundaries were lost (capacity) before this one.
+    bool complete = true;
+  };
+  using FrameOutputBoundaryCallback =
+      void (*)(void *, const FrameOutputBoundary &) noexcept;
 
   /// Explains why a replacement asset is unavailable. `None` means decoded
   /// and ready. Disk failures may be invalidated when the file appears or its
@@ -527,6 +545,16 @@ public:
   }
   [[nodiscard]] bool
   set_main_output_observer(void *context, MainOutputCallback callback) noexcept;
+  /// Spec 002 (P-9): reports every audible frame's start on the device line.
+  /// It needs the main output observer, which defines that line: frames are
+  /// only reported while one is installed. Silent production (and any other
+  /// PCM that never reaches the device) reports nothing.
+  void
+  set_frame_output_observer(void *context,
+                            FrameOutputBoundaryCallback callback) noexcept {
+    frame_output_context_ = context;
+    frame_output_callback_ = callback;
+  }
   void set_auxiliary_submission_observer(
       void *context, AuxiliarySubmissionCallback callback) noexcept {
     auxiliary_submission_context_ = context;
@@ -686,6 +714,9 @@ public:
   void mark_frame_boundary() { frame_mark_ = pending_pcm_.size() / 2; }
   void mark_frame_boundary(uint64_t emulation_frame) noexcept {
     mark_frame_boundary();
+    if (frame_output_callback_)
+      staged_frame_marks_.push_back(
+          StagedFrameMark{emulation_frame, static_cast<uint64_t>(frame_mark_)});
     current_emulation_frame_ = emulation_frame;
     current_frame_boundary_ = timeline_samples_ + frame_mark_;
     current_frame_known_ = true;
@@ -771,6 +802,9 @@ public:
   // ---- Dynamic rate control (DRC, v0.10) ----------------------------------
   /// Enable/disable drift compensation on the emulator stream (on by default).
   void set_drc_enabled(bool on) { drc_enabled_ = on; }
+  /// Applies a fixed frequency ratio to the emulator stream, as rate control
+  /// does, so a test can change it at a known point. Turn DRC off first.
+  bool set_rate_ratio_for_test(float ratio) noexcept;
   /// Last frequency ratio applied to emu_stream_ (1.0 = neutral; ~±0.5%).
   float drc_ratio() const { return drc_ratio_; }
   /// Flush frames with a backlog < 1/4 of the target (starvation) —
@@ -967,6 +1001,43 @@ private:
                               AuxiliaryLossReason reason) noexcept;
   void prepare_auxiliary_spans(uint64_t output_frames) noexcept;
   void prepare_main_mix_spans(uint64_t output_frames) noexcept;
+  // Spec 002 (P-9): frame starts on the device line. The session thread
+  // stages each frame's offset in the block, resolves it to a position on the
+  // emulator stream's input when the block is delivered, and queues it; the
+  // device thread follows the stream's resampling position (with the rate
+  // control ratio read under the stream lock) and reports each frame when its
+  // first output sample is produced. An epoch change marks a stream clear.
+  struct StagedFrameMark {
+    uint64_t emulation_frame = 0;
+    uint64_t offset = 0;
+  };
+  struct FrameOutputMark {
+    uint64_t emulation_frame = 0;
+    uint64_t input_position = 0;
+    uint32_t epoch = 0;
+  };
+  static constexpr uint32_t kFrameOutputCapacity = 512;
+  void *frame_output_context_ = nullptr;
+  FrameOutputBoundaryCallback frame_output_callback_ = nullptr;
+  std::vector<StagedFrameMark> staged_frame_marks_;
+  uint64_t frame_output_input_ = 0; ///< input frames put since the epoch
+  std::array<FrameOutputMark, kFrameOutputCapacity> frame_output_marks_{};
+  std::atomic<uint32_t> frame_output_write_{0};
+  std::atomic<uint32_t> frame_output_read_{0};
+  std::atomic<uint32_t> frame_output_epoch_{0};
+  std::atomic<uint64_t> frame_output_anchor_{0};
+  std::atomic<bool> frame_output_lost_{false};
+  std::atomic<uint64_t> main_mix_rate_now_q32_{uint64_t{1} << 32};
+  uint64_t prepared_frame_output_rate_q32_ = uint64_t{1} << 32;
+  uint32_t frame_output_epoch_seen_ = 0;
+  uint64_t frame_output_cursor_q32_ = 0;
+  void set_emu_ratio_locked(float ratio) noexcept;
+  void deliver_frame_marks(uint64_t block_begin, uint64_t frames) noexcept;
+  bool apply_emu_ratio(float ratio) noexcept;
+  void reset_frame_output(uint64_t consumed_input) noexcept;
+  void clear_frame_output() noexcept;
+  void emit_frame_output_boundaries(uint64_t output_begin, uint64_t frames,
+                                    uint32_t output_rate) noexcept;
   static void SDLCALL observe_main_mix_put(void *context,
                                            SDL_AudioStream *stream,
                                            int additional_amount,

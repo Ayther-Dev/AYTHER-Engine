@@ -165,6 +165,7 @@ bool AudioPlayer::init(const ayther::RuntimeOptions &options) {
     main_mix_resample_rate_q32_ =
         ((uint64_t{44100} << 32) + main_mix_output_sample_rate_ - 1) /
         main_mix_output_sample_rate_;
+    set_emu_ratio_locked(1.0F);
     if (main_mix_output_sample_rate_ != 44100) {
       main_mix_filter_support_left_ = 5;
       main_mix_filter_support_right_ = 6;
@@ -445,8 +446,9 @@ AudioPlayer::restore_hd_pending_audio(
     }
     bool cleared = true;
     if (emu_stream_)
-      cleared = SDL_ClearAudioStream(emu_stream_) &&
-                SDL_SetAudioStreamFrequencyRatio(emu_stream_, 1.0F) && cleared;
+      cleared =
+          SDL_ClearAudioStream(emu_stream_) && apply_emu_ratio(1.0F) && cleared;
+    clear_frame_output();
     if (synth_stream_)
       cleared = SDL_ClearAudioStream(synth_stream_) && cleared;
     if (resume_device)
@@ -628,7 +630,7 @@ bool AudioPlayer::prepare_fresh_session() noexcept {
 
   if (emu_stream_) {
     complete = SDL_ClearAudioStream(emu_stream_) && complete;
-    complete = SDL_SetAudioStreamFrequencyRatio(emu_stream_, 1.0F) && complete;
+    complete = apply_emu_ratio(1.0F) && complete;
     complete = SDL_SetAudioStreamGain(emu_stream_, 1.0F) && complete;
   }
   if (synth_stream_)
@@ -650,6 +652,7 @@ bool AudioPlayer::prepare_fresh_session() noexcept {
 
   timeline_samples_ = 0;
   frame_mark_ = 0;
+  clear_frame_output();
   current_emulation_frame_ = 0;
   current_frame_boundary_ = 0;
   current_frame_known_ = false;
@@ -755,6 +758,11 @@ void AudioPlayer::buffer_router(const float *in, size_t frames,
   // : el bloque del router ES el frame actual — las voces HD que
   // dispararon en este frame se colocan en su comienzo.
   frame_mark_ = 0;
+  if (!staged_frame_marks_.empty()) {
+    const StagedFrameMark current{staged_frame_marks_.back().emulation_frame,
+                                  0};
+    staged_frame_marks_.assign(1, current);
+  }
 }
 
 void AudioPlayer::clear_synth() {
@@ -854,6 +862,14 @@ bool AudioPlayer::set_main_output_observer(
   main_output_context_ = context;
   main_output_callback_ = callback;
   main_output_samples_.store(0, std::memory_order_relaxed);
+  {
+    // Spec 002 (P-9): the device thread starts following the stream here,
+    // at the input it has not consumed yet.
+    const int queued = emu_stream_ ? SDL_GetAudioStreamQueued(emu_stream_) : 0;
+    const auto pending = queued > 0 ? static_cast<uint64_t>(queued) / 4 : 0;
+    reset_frame_output(
+        frame_output_input_ > pending ? frame_output_input_ - pending : 0);
+  }
   main_mix_write_.store(0, std::memory_order_relaxed);
   main_mix_read_.store(0, std::memory_order_relaxed);
   prepared_main_mix_count_ = 0;
@@ -937,6 +953,10 @@ void SDLCALL AudioPlayer::observe_main_mix_get(void *context,
                                                SDL_AudioStream *stream, int,
                                                int total_amount) noexcept {
   auto &player = *static_cast<AudioPlayer *>(context);
+  // Spec 002 (P-9): the rate SDL resamples this request with; the stream is
+  // locked, as it is when apply_emu_ratio stores it.
+  player.prepared_frame_output_rate_q32_ =
+      player.main_mix_rate_now_q32_.load(std::memory_order_relaxed);
   if (total_amount < 0) {
     player.main_mix_mapping_complete_.store(false, std::memory_order_release);
     return;
@@ -1208,6 +1228,8 @@ void SDLCALL AudioPlayer::observe_main_output(void *context,
   const auto begin =
       player.main_output_samples_.fetch_add(frames, std::memory_order_acq_rel);
   const auto end = begin + frames;
+  player.emit_frame_output_boundaries(begin, main_mix_frames,
+                                      static_cast<uint32_t>(spec->freq));
   std::array<MainMixOutputSpan, kMainMixSpansPerBlock> main_mix_spans{};
   std::array<AuxiliaryOutputSpan, kAuxiliarySpansPerBlock> auxiliary_spans{};
   const auto main_mix_count = player.prepared_main_mix_count_;
@@ -1423,6 +1445,7 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
             main_mix_mapping_complete_.store(false, std::memory_order_release);
           } else {
             device_frames_ += static_cast<uint64_t>(prime);
+            frame_output_input_ += static_cast<uint64_t>(prime);
           }
           drc_queue_avg_ = kDrcTargetFrames; // no arrastrar el EMA viejo
           ayther::log::write(ayther::log::Severity::Warning, "audio.player",
@@ -1498,6 +1521,7 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
         pending_main_mix_frames_ = frames;
         pending_main_mix_submission_ = ++main_mix_submission_;
         pending_main_mix_silence_ = false;
+        const uint64_t frame_output_begin = frame_output_input_;
         // Spec 002 (C4): silent production mixes and advances the
         // timeline exactly as audible, but delivers nothing to the device.
         delivery_complete =
@@ -1516,6 +1540,14 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
           timeline_samples_ += frames;
           if (!output_silent_)
             device_frames_ += frames;
+          // Spec 002 (P-9): only PCM that reaches the device has a place on
+          // the device line; silent production reports no frame boundaries.
+          if (output_silent_) {
+            staged_frame_marks_.clear();
+          } else {
+            deliver_frame_marks(frame_output_begin, frames);
+            frame_output_input_ += frames;
+          }
         }
       }
     }
@@ -1563,7 +1595,7 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
           max_delta = kMaxDeltaNear + (kMaxDeltaFar - kMaxDeltaNear) * t;
         }
         drc_ratio_ = 1.0f + max_delta * dev;
-        SDL_SetAudioStreamFrequencyRatio(emu_stream_, drc_ratio_);
+        (void)apply_emu_ratio(drc_ratio_);
 
         // : diagnostico de starvation — el DRC (±0.5%) no puede
         // compensar picos de frame-time (decode de texturas, stalls):
@@ -1607,6 +1639,7 @@ void AudioPlayer::discard_emulator() {
   pending_original_overflow_ = false;
   current_frame_known_ = false;
   frame_mark_ = 0; // : el próximo frame arranca el bloque
+  staged_frame_marks_.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -2132,7 +2165,8 @@ uint64_t AudioPlayer::cut_transport_audio() {
     if (q > 0)
       frames += static_cast<uint64_t>(q) / 4; // S16 estéreo
     SDL_ClearAudioStream(emu_stream_);
-    SDL_SetAudioStreamFrequencyRatio(emu_stream_, 1.0f);
+    (void)apply_emu_ratio(1.0F);
+    clear_frame_output();
   }
   if (synth_stream_) {
     const int q = SDL_GetAudioStreamQueued(synth_stream_);
@@ -2669,4 +2703,113 @@ AudioPlayer::observe_asset_cache(const std::string &path) const noexcept {
   return {true, ready, static_cast<uint64_t>(entry.pcm.size()),
           error ? error
                 : (ready ? "decoded_pcm_available" : "empty_decoded_pcm")};
+}
+
+// ---------------------------------------------------------------------------
+// Spec 002 (P-9, DI-12): frame boundaries on the device line
+// ---------------------------------------------------------------------------
+
+bool AudioPlayer::set_rate_ratio_for_test(float ratio) noexcept {
+  if (!emu_stream_)
+    return false;
+  drc_ratio_ = ratio;
+  return apply_emu_ratio(ratio);
+}
+
+void AudioPlayer::set_emu_ratio_locked(float ratio) noexcept {
+  // SDL 3.4.8 (GetAudioStreamResampleRate): the source rate is scaled by the
+  // ratio in float, truncated, and the 32.32 rate is rounded up.
+  const auto source = static_cast<uint64_t>(
+      static_cast<int>(static_cast<float>(44100) * ratio));
+  const uint64_t output = main_mix_output_sample_rate_;
+  main_mix_rate_now_q32_.store(((source << 32) + output - 1) / output,
+                               std::memory_order_relaxed);
+}
+
+bool AudioPlayer::apply_emu_ratio(float ratio) noexcept {
+  if (!emu_stream_)
+    return false;
+  // Under the stream lock, so the device thread reads the rate that SDL
+  // resamples with (observe_main_mix_get runs with the stream locked).
+  if (!SDL_LockAudioStream(emu_stream_))
+    return false;
+  const bool applied = SDL_SetAudioStreamFrequencyRatio(emu_stream_, ratio);
+  if (applied)
+    set_emu_ratio_locked(ratio);
+  (void)SDL_UnlockAudioStream(emu_stream_);
+  return applied;
+}
+
+void AudioPlayer::deliver_frame_marks(uint64_t block_begin,
+                                      uint64_t frames) noexcept {
+  const auto epoch = frame_output_epoch_.load(std::memory_order_relaxed);
+  for (const StagedFrameMark &mark : staged_frame_marks_) {
+    const auto write = frame_output_write_.load(std::memory_order_relaxed);
+    const auto read = frame_output_read_.load(std::memory_order_acquire);
+    if (write - read == kFrameOutputCapacity) {
+      frame_output_lost_.store(true, std::memory_order_release);
+      continue;
+    }
+    frame_output_marks_[write % kFrameOutputCapacity] =
+        FrameOutputMark{mark.emulation_frame,
+                        block_begin + (std::min)(mark.offset, frames), epoch};
+    frame_output_write_.store(write + 1, std::memory_order_release);
+  }
+  staged_frame_marks_.clear();
+}
+
+void AudioPlayer::reset_frame_output(uint64_t consumed_input) noexcept {
+  frame_output_anchor_.store(consumed_input, std::memory_order_relaxed);
+  frame_output_epoch_.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void AudioPlayer::clear_frame_output() noexcept {
+  staged_frame_marks_.clear();
+  frame_output_input_ = 0;
+  reset_frame_output(0);
+}
+
+void AudioPlayer::emit_frame_output_boundaries(uint64_t output_begin,
+                                               uint64_t frames,
+                                               uint32_t output_rate) noexcept {
+  if (!frame_output_callback_)
+    return;
+  const auto epoch = frame_output_epoch_.load(std::memory_order_acquire);
+  if (epoch != frame_output_epoch_seen_) {
+    frame_output_epoch_seen_ = epoch;
+    frame_output_cursor_q32_ =
+        frame_output_anchor_.load(std::memory_order_relaxed) << 32;
+  }
+  const auto rate = prepared_frame_output_rate_q32_;
+  auto read = frame_output_read_.load(std::memory_order_relaxed);
+  const auto write = frame_output_write_.load(std::memory_order_acquire);
+  while (read != write && rate != 0) {
+    const FrameOutputMark &mark =
+        frame_output_marks_[read % kFrameOutputCapacity];
+    if (mark.epoch != epoch) {
+      // Queued before a stream clear: that audio never reaches the device.
+      if (epoch - mark.epoch < 0x8000'0000U) {
+        ++read;
+        continue;
+      }
+      break; // queued after a clear this block does not see yet
+    }
+    // The first output sample whose resampling position reaches the frame.
+    const auto target = mark.input_position << 32;
+    const auto offset =
+        target > frame_output_cursor_q32_
+            ? (target - frame_output_cursor_q32_ + rate - 1) / rate
+            : 0;
+    if (offset >= frames)
+      break;
+    const bool complete =
+        !frame_output_lost_.exchange(false, std::memory_order_acq_rel);
+    frame_output_callback_(frame_output_context_,
+                           FrameOutputBoundary{mark.emulation_frame,
+                                               output_begin + offset,
+                                               output_rate, rate, complete});
+    ++read;
+  }
+  frame_output_read_.store(read, std::memory_order_release);
+  frame_output_cursor_q32_ += frames * rate;
 }

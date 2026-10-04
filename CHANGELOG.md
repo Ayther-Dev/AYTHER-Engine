@@ -35,7 +35,12 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-
+- Audio observation fact `audio_frame_output_boundary` (spec 002, P-9): for
+  every frame that reaches the device, its first sample on the
+  `engine_main_output` line after rate control (`output_position`,
+  `sample_rate`, `resample_rate_q32`, `valid`), with or without HD voices.
+  It needs the fact and PCM observers, costs nothing without them, and silent
+  production emits none. Additive: no existing fact changes.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions

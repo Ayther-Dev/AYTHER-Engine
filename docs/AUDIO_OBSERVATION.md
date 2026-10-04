@@ -867,6 +867,28 @@ relacionan con el límite del cuadro en la muestra 0, pero sus efectos conservan
 límites enteros distintos en las muestras 0 y 2. La integración de sesión exige
 cuadro conocido, causa de límite válida y rangos semiabiertos sin redondeo.
 
+## Inicio de cada cuadro en la línea del dispositivo — spec 002, P-9
+
+`audio_frame_output_boundary` sitúa el comienzo de cada cuadro audible en la línea
+`engine_main_output`, la misma de `PcmView`, después del control de tasa. Es
+aditivo: `audio_frame_sample_boundary` sigue en `engine_main_mix` a 44100, y
+`main_mix_output_span` no cambia.
+
+| Campo | Unidad | Significado |
+| --- | --- | --- |
+| cuadro (`FramePosition`) | cuadro de emulación | el cuadro, siempre conocido |
+| `output_timeline` | — | `engine_main_output` |
+| `output_position` | sample frame | primera muestra de salida cuya posición de remuestreo alcanza la primera muestra del cuadro en la entrada del stream del emulador |
+| `sample_rate` | Hz | tasa del dispositivo |
+| `resample_rate_q32` | 32.32 | muestras de entrada por muestra de salida con la razón del control de tasa vigente al producirla |
+| `valid` | — | `false` si antes de este se perdieron límites por capacidad |
+
+- **Cuándo se emite.** Se emite una vez por cuadro que llega al dispositivo, haya o no voces HD, y sólo con observador de hechos y de PCM instalados: el observador PCM es el que define la línea. El productor es el hilo del dispositivo (`postmix`), en el momento en que se produce esa muestra.
+- **Qué no se emite.** La producción silenciosa (DI-8) no entrega PCM al dispositivo y no emite límites. Tampoco lo hace el audio descartado o cortado antes de llegar.
+- **Cálculo.** La sesión resuelve la posición del cuadro en la entrada del stream del emulador al entregar el bloque, contando el silencio de cebado. El hilo del dispositivo sigue la posición de remuestreo de SDL 3.4.8 con la razón del control de tasa leída bajo el lock del stream. Un vaciado del stream (corte, restauración o sesión nueva) reinicia el seguimiento.
+- **Precisión.** La prueba `audio_qa_frame_output_boundary` (dispositivo a 48 kHz, cambio de razón a 1,005 a mitad de toma) exige que el escalón de cada cuadro cruce la mitad de su nivel a ±2 muestras de su límite. Mide un error máximo de una muestra.
+- **Uso en P-9.** El desfase de reanudación es la posición de reproducción de la imagen de k+1 frente a `output_position` del cuadro k+1, convertida con `sample_rate`.
+
 ## Bloques reales de salida principal — QA-064; RF-6 y RF-10
 
 El canal PCM del contrato publica cada búfer recibido por el callback postmix

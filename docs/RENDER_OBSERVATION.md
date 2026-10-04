@@ -92,6 +92,13 @@ replacements are listed per frame. Above that the spans stop at the limit and
 `occurrences_total` and `replacements_total` keep the real count: an excess
 is reported, never truncated silently.
 
+## Aligning frames with audio
+
+`RenderFrameView::frame` carries the emulation frame. The audio observation
+reports the same frame's start on the device line as
+`audio_frame_output_boundary`, so a host can relate what it presented with
+when that frame's audio left the device.
+
 ## Draw report
 
 `AytherRenderer::last_draw_report()` returns a `DrawReport` for the last

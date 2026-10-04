@@ -149,6 +149,15 @@ struct AytherSession::Impl {
             true};
     ++self.qa_frame_sample_count;
   }
+  static void observe_frame_output(
+      void *context,
+      const AudioPlayer::FrameOutputBoundary &boundary) noexcept {
+    auto &self = *static_cast<Impl *>(context);
+    const auto result = audio_qa::FrameOutputObservation::emit(
+        self.qa_observer, self.qa_identities, boundary);
+    if (!result.complete)
+      self.qa_main_output_complete.store(false, std::memory_order_relaxed);
+  }
   static void observe_hd_position(void *context,
                                   const HdMixer::PositionSpan &span) noexcept {
     auto &self = *static_cast<Impl *>(context);

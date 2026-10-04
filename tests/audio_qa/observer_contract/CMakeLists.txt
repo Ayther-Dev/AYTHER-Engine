@@ -314,6 +314,15 @@ target_link_libraries(audio_qa_frame_sample_observation PRIVATE Ayther::engine S
 ayther_instrument_target(audio_qa_frame_sample_observation)
 add_test(NAME audio_qa_frame_sample_observation COMMAND audio_qa_frame_sample_observation)
 set_tests_properties(audio_qa_frame_sample_observation PROPERTIES TIMEOUT 15 LABELS "audio_qa;integration" ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_AUDIO_FREQUENCY=44100;SDL_AUDIO_CHANNELS=2;SDL_AUDIO_DEVICE_SAMPLE_FRAMES=512")
+# Spec 002 (P-9, DI-12): each audible frame's start on the 48 kHz device line,
+# across a rate-control change.
+add_executable(audio_qa_frame_output_boundary frame_output_boundary.cpp)
+target_compile_features(audio_qa_frame_output_boundary PRIVATE cxx_std_20)
+target_include_directories(audio_qa_frame_output_boundary PRIVATE ../../../include ../../../src)
+target_link_libraries(audio_qa_frame_output_boundary PRIVATE Ayther::engine SDL3::SDL3)
+ayther_instrument_target(audio_qa_frame_output_boundary)
+add_test(NAME audio_qa_frame_output_boundary COMMAND audio_qa_frame_output_boundary)
+set_tests_properties(audio_qa_frame_output_boundary PROPERTIES TIMEOUT 30 LABELS "audio_qa;integration" ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_AUDIO_DEVICE_SAMPLE_FRAMES=512")
 add_executable(audio_qa_original_audio_observation original_audio_observation.cpp)
 target_compile_features(audio_qa_original_audio_observation PRIVATE cxx_std_20)
 target_include_directories(audio_qa_original_audio_observation PRIVATE ../../../include ../../../src)

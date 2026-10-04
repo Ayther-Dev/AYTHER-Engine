@@ -62,6 +62,11 @@ state instead.
    validated against the session's frame. See
    [Audio observation](AUDIO_OBSERVATION.md).
 
+After a restore or a resume, the first frames that reach the device report
+where they start on the device line through `audio_frame_output_boundary`
+(see [Audio observation](AUDIO_OBSERVATION.md)). A host compares that position
+with the presentation of the same frame to measure the image/audio offset.
+
 ## Restore codes
 
 Everything is validated before anything changes: an incompatible state
