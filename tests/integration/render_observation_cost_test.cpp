@@ -12,6 +12,11 @@
 //     hidden debugging (0.05 ms).
 //   - Publishing costs at most the DA-2 budget for visible debugging: 1.0 ms
 //     of CPU per frame at the 95th percentile.
+//
+// The two time budgets hold for optimised builds. A coverage or sanitizer
+// build (AYTHER_INSTRUMENTED_BUILD) runs unoptimised and instruments every
+// branch the observation adds, so it still measures and prints the times but
+// does not gate on them; the content checks apply everywhere.
 #include <ayther/ayther_session.h>
 #include <ayther/engine/render_observer.hpp>
 
@@ -53,6 +58,21 @@ constexpr std::size_t kFrames = 600;
 constexpr std::size_t kRounds = 3;
 constexpr double kHiddenBudgetUs = 50.0;    // DA-2: hidden debugging
 constexpr double kVisibleBudgetUs = 1000.0; // DA-2: visible debugging, p95
+#if defined(AYTHER_INSTRUMENTED_BUILD)
+constexpr bool kTimingGated = false;
+#else
+constexpr bool kTimingGated = true;
+#endif
+
+// A time budget: a check in optimised builds, a report in instrumented ones.
+void check_time(bool condition, const char *message) {
+  if constexpr (kTimingGated) {
+    check(condition, message);
+    return;
+  }
+  std::printf("[INFO] %s: %s (not gated in an instrumented build)\n", message,
+              condition ? "within" : "over");
+}
 
 class CountingObserver final : public ro::RenderObserver {
 public:
@@ -224,11 +244,12 @@ int main() try {
               "on_median_us=%.2f difference_us=%.2f noise_us=%.2f "
               "publish_p95_us=%.2f\n",
               off_median, on_median, difference_us, noise_us, publish_p95);
-  check(std::abs(difference_us) <= std::max(noise_us, kHiddenBudgetUs),
-        "RNF-2: step() with observer differs from step() without it by no "
-        "more than the measured noise (floor: 0.05 ms)");
-  check(publish_p95 <= kVisibleBudgetUs,
-        "RNF-2: publishing costs <= 1.0 ms per frame at the 95th percentile");
+  check_time(std::abs(difference_us) <= std::max(noise_us, kHiddenBudgetUs),
+             "RNF-2: step() with observer differs from step() without it by no "
+             "more than the measured noise (floor: 0.05 ms)");
+  check_time(
+      publish_p95 <= kVisibleBudgetUs,
+      "RNF-2: publishing costs <= 1.0 ms per frame at the 95th percentile");
 
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;

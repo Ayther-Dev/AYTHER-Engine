@@ -326,6 +326,12 @@ target_compile_definitions(ayther_render_observation_cost_test PRIVATE
 add_dependencies(ayther_render_observation_cost_test ayther_test_core)
 set_tests_properties(ayther.integration.render_observation_cost_test
     PROPERTIES LABELS "engine;native;integration;performance")
+# Coverage and sanitizer builds are unoptimised and instrumented: the test
+# still measures, but its time budgets apply to optimised builds only.
+if(AYTHER_ENABLE_COVERAGE OR AYTHER_ENABLE_ASAN OR AYTHER_ENABLE_UBSAN)
+    target_compile_definitions(ayther_render_observation_cost_test PRIVATE
+        AYTHER_INSTRUMENTED_BUILD=1)
+endif()
 
 # Spec 002 (contracts.md C4): export and restore of the visual state of a live
 # session, section by section, driven with the test core.
