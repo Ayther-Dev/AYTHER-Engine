@@ -888,6 +888,11 @@ aditivo: `audio_frame_sample_boundary` sigue en `engine_main_mix` a 44100, y
 - **Cálculo.** La sesión resuelve la posición del cuadro en la entrada del stream del emulador al entregar el bloque, contando el silencio de cebado. El hilo del dispositivo sigue la posición de remuestreo de SDL 3.4.8 con la razón del control de tasa leída bajo el lock del stream. Un vaciado del stream (corte, restauración o sesión nueva) reinicia el seguimiento.
 - **Precisión.** La prueba `audio_qa_frame_output_boundary` (dispositivo a 48 kHz, cambio de razón a 1,005 a mitad de toma) exige que el escalón de cada cuadro cruce la mitad de su nivel a ±2 muestras de su límite. Mide un error máximo de una muestra.
 - **Uso en P-9.** El desfase de reanudación es la posición de reproducción de la imagen de k+1 frente a `output_position` del cuadro k+1, convertida con `sample_rate`.
+- **Reanudar tras `pause_after_drain`.**
+  - `resume_transport` no arranca el dispositivo enseguida: lo arranca la primera entrega de PCM, la del cuadro k+1. Esa entrega no se precarga con silencio, aunque la pausa supere los 250 ms del detector de atascos.
+  - Así, k+1 sigue a k en `engine_main_output` sin silencio intermedio. Antes, la primera reanudación tras una pausa larga anteponía unos 70 ms (3072 frames a 44,1 kHz).
+  - **Contrapartida.** La reproducción se reanuda con el colchón vacío, como ya ocurría tras una pausa corta, y el control de tasa lo reconstruye. La reproducción normal y el corte de pausa `cut_transport_audio` no cambian.
+  - Lo cubre la prueba `audio_qa_frame_output_resume`.
 
 ## Bloques reales de salida principal — QA-064; RF-6 y RF-10
 

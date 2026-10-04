@@ -117,7 +117,12 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-
+- `AudioPlayer::resume_transport` (after `pause_after_drain`) restarts the
+  device with the next frame's PCM and no longer re-primes the drained
+  backlog with silence when the pause outlasted the 250 ms stall detector, so
+  frame k+1 follows frame k on the device line (P-9). Playback resumes with an
+  empty backlog, as it already did after a short pause; rate control rebuilds
+  it. Normal playback and `cut_transport_audio` are unchanged.
 - Cargo, CMake, vcpkg, SDK, engine validation, and Lua now share the `0.1.0`
   release version; ABI and pack-schema values are explicitly independent
   protocol revisions.
