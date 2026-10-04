@@ -144,6 +144,7 @@ class CoverageGateTest(unittest.TestCase):
         )
         self.assertIn("SDL_Vulkan_GetInstanceExtensions", vulkan_context)
         self.assertIn("enable_extensions", vulkan_context)
+        self.assertIn("set_headless", vulkan_context)
 
 
 if __name__ == "__main__":
