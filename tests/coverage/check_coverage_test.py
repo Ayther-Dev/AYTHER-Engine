@@ -125,10 +125,10 @@ class CoverageGateTest(unittest.TestCase):
         self.assertNotIn("-Launcher 'xvfb-run --auto-servernum'", coverage_job)
         self.assertIn("SDL_VIDEODRIVER: x11", coverage_job)
         self.assertIn("LIBGL_ALWAYS_SOFTWARE: '1'", coverage_job)
-        self.assertIn(
-            "VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json",
-            coverage_job,
-        )
+        self.assertIn("find /usr/share/vulkan/icd.d", coverage_job)
+        self.assertIn("-name 'lvp_icd*.json'", coverage_job)
+        self.assertIn('export VK_DRIVER_FILES="$lavapipe_icd"', coverage_job)
+        self.assertNotIn("lvp_icd.x86_64.json", coverage_job)
         self.assertIn("vulkan-validationlayers", coverage_job)
         self.assertIn("vulkaninfo --summary", coverage_job)
         self.assertIn(

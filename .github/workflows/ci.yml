@@ -371,9 +371,16 @@ jobs:
           SDL_VIDEODRIVER: x11
           SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/linux-native-coverage/vcpkg_installed/x64-linux/debug/lib/libvulkan.so
           LIBGL_ALWAYS_SOFTWARE: '1'
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
           test -f "$SDL_VULKAN_LIBRARY"
+          lavapipe_icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)"
+          if [[ -z "$lavapipe_icd" ]]; then
+            echo "Lavapipe ICD manifest not found; installed manifests:" >&2
+            find /usr/share/vulkan/icd.d -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+          export VK_DRIVER_FILES="$lavapipe_icd"
+          export VK_ICD_FILENAMES="$lavapipe_icd"
           vulkaninfo --summary
           xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
             -Preset linux-native-coverage-gpu \
@@ -680,7 +687,7 @@ jobs:
           sudo apt-get install --yes \
             libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxft-dev \
             libxi-dev libxrandr-dev libxss-dev libxtst-dev \
-            mesa-vulkan-drivers xauth xvfb
+            mesa-vulkan-drivers vulkan-tools vulkan-validationlayers xauth xvfb
 
       - name: Cache Cargo inputs and outputs
         uses: actions/cache@v4
@@ -718,9 +725,19 @@ jobs:
         shell: bash
         env:
           SDL_VIDEODRIVER: x11
+          SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/${{ matrix.preset }}/vcpkg_installed/x64-linux/lib/libvulkan.so
           LIBGL_ALWAYS_SOFTWARE: '1'
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
+          test -f "$SDL_VULKAN_LIBRARY"
+          lavapipe_icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)"
+          if [[ -z "$lavapipe_icd" ]]; then
+            echo "Lavapipe ICD manifest not found; installed manifests:" >&2
+            find /usr/share/vulkan/icd.d -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+          export VK_DRIVER_FILES="$lavapipe_icd"
+          export VK_ICD_FILENAMES="$lavapipe_icd"
+          vulkaninfo --summary
           xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
             -Preset ${{ matrix.preset }} \
             -ReportFile gpu-report-${{ matrix.preset }}.md
