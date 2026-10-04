@@ -1396,6 +1396,7 @@ AudioPlayer::pause_after_drain(std::chrono::milliseconds limit) noexcept {
   // so they keep their state while paused.
   SDL_PauseAudioDevice(device_);
   drain_paused_ = true;
+  drain_resume_pending_ = false;
   remaining = queued_frames();
   return {remaining == 0 ? DrainResult::Code::drained
                          : DrainResult::Code::timed_out,
@@ -1406,6 +1407,19 @@ void AudioPlayer::resume_transport() noexcept {
   if (!drain_paused_)
     return;
   drain_paused_ = false;
+  // Spec 002 (P-9): the device restarts when frame k+1's PCM is delivered
+  // (flush_emulator), not now. Restarting now would play silence until the
+  // host produces k+1, and the stall detector would re-prime the backlog the
+  // drain emptied with ~70 ms of silence ahead of k+1 whenever the pause
+  // outlasted it. The tradeoff: playback resumes with an empty backlog, as
+  // after a short pause, and rate control rebuilds it.
+  drain_resume_pending_ = device_ != 0;
+}
+
+void AudioPlayer::finish_drain_resume() noexcept {
+  if (!drain_resume_pending_)
+    return;
+  drain_resume_pending_ = false;
   if (device_ != 0)
     SDL_ResumeAudioDevice(device_);
 }
@@ -1426,6 +1440,7 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
     if (!pending_batches_.empty()) {
       const uint64_t now = SDL_GetTicks();
       const bool stalled = !production_limit_.frozen && !output_silent_ &&
+                           !drain_resume_pending_ &&
                            (last_flush_ms_ == 0 || now - last_flush_ms_ > 250);
       if (stalled) {
         const int queued_bytes = SDL_GetAudioStreamQueued(emu_stream_);
@@ -1549,6 +1564,10 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
             frame_output_input_ += frames;
           }
         }
+        // Spec 002 (P-9): after a drain the device restarts with the first
+        // delivery (or at once when nothing will be delivered).
+        if (delivery_complete || output_silent_)
+          finish_drain_resume();
       }
     }
 

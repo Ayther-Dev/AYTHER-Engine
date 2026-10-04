@@ -348,7 +348,9 @@ public:
   };
   DrainResult pause_after_drain(std::chrono::milliseconds limit) noexcept;
   /// Resumes the device after pause_after_drain; the next PCM it plays is
-  /// the next frame produced.
+  /// the next frame produced. The device restarts when that frame's PCM is
+  /// delivered, with no silence before it: the backlog the drain emptied is
+  /// not re-primed, so frame k+1 follows frame k on the device line.
   void resume_transport() noexcept;
   bool transport_drain_paused() const noexcept { return drain_paused_; }
 
@@ -859,6 +861,9 @@ private:
   uint64_t starved_frames_ = 0;
   bool output_silent_ = false; ///< spec 002: no PCM to the device
   bool drain_paused_ = false;  ///< spec 002: device stopped after a drain
+  /// Spec 002 (P-9): resumed after a drain; the device restarts with the
+  /// next delivery, which is not re-primed.
+  bool drain_resume_pending_ = false;
   uint64_t device_frames_ = 0; ///< spec 002: frames delivered to the device
   uint64_t last_starve_log_ms_ = 0;
   // Pause telemetry — frames discarded by cut_transport_audio (staging + emu
@@ -1036,6 +1041,7 @@ private:
   bool apply_emu_ratio(float ratio) noexcept;
   void reset_frame_output(uint64_t consumed_input) noexcept;
   void clear_frame_output() noexcept;
+  void finish_drain_resume() noexcept;
   void emit_frame_output_boundaries(uint64_t output_begin, uint64_t frames,
                                     uint32_t output_rate) noexcept;
   static void SDLCALL observe_main_mix_put(void *context,
