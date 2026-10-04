@@ -2091,9 +2091,12 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
   // Spec 002 (C3): texture state of every sprite sub, once its draws are
   // recorded — the same cache key (path + flip) the draws used.
   for (uint32_t si = 0; si < impl_->draw_rows_.size(); ++si) {
+    const char *const asset = fv.sprite_subs[si].asset_path;
+    if (asset == nullptr)
+      continue; // no asset: never drawn, its row stays discarded
     const uint8_t flip =
         fv.sprite_sub_flips ? (uint8_t)(fv.sprite_sub_flips[si] & 3) : 0;
-    switch (impl_->sprite_.texture_state(fv.sprite_subs[si].asset_path, flip)) {
+    switch (impl_->sprite_.texture_state(asset, flip)) {
     case VkSprite::TexState::Ready:
       impl_->draw_rows_[si].texture = ro::TextureState::ready;
       break;
