@@ -111,6 +111,10 @@ class CoverageGateTest(unittest.TestCase):
         self.assertIn("libx11-dev", coverage_job)
         self.assertIn("libxft-dev", coverage_job)
         self.assertIn("libxext-dev", coverage_job)
+        self.assertIn("libxcursor-dev", coverage_job)
+        self.assertIn("libxfixes-dev", coverage_job)
+        self.assertIn("libxi-dev", coverage_job)
+        self.assertIn("libxrandr-dev", coverage_job)
         self.assertLess(
             coverage_job.index("libx11-dev"),
             coverage_job.index("Configure coverage build"),
