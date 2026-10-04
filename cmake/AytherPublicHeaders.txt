@@ -25,6 +25,8 @@ engine/audio_observation_close.hpp
 engine/audio_observation_overflow.hpp
 engine/audio_observation_worker.hpp
 engine/audio_observer.hpp
+engine/render_observer.hpp
+engine/visual_state.hpp
 engine/audio_pcm_queue.hpp
 engine/audio_production_limit.hpp
 engine/capabilities.hpp
