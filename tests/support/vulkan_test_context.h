@@ -30,10 +30,20 @@ public:
             return false;
         }
 
+        Uint32 extension_count = 0;
+        const char* const* extensions =
+            SDL_Vulkan_GetInstanceExtensions(&extension_count);
+        if (extensions == nullptr || extension_count == 0) {
+            std::fprintf(stderr, "[FAIL] Vulkan instance extensions: %s\n",
+                         SDL_GetError());
+            return false;
+        }
+
         vkb::InstanceBuilder instance_builder;
         instance_builder.set_app_name("Ayther Engine GPU smoke")
             .set_engine_name("Ayther")
-            .require_api_version(1, 1, 0);
+            .require_api_version(1, 1, 0)
+            .enable_extensions(extension_count, extensions);
 #ifndef NDEBUG
         instance_builder.request_validation_layers(true)
             .use_default_debug_messenger();

@@ -54,11 +54,17 @@ public:
   bool init(std::uint32_t w, std::uint32_t h) {
     w_ = w;
     h_ = h;
-    if (!SDL_Init(SDL_INIT_VIDEO))
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+      std::fprintf(stderr, "[FAIL] SDL_Init: %s\n", SDL_GetError());
       return false;
+    }
     window_ = SDL_CreateWindow("gpu_oracle", 64, 64,
                                SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
-    if (window_ == nullptr || !ctx_.init(window_))
+    if (window_ == nullptr) {
+      std::fprintf(stderr, "[FAIL] SDL_CreateWindow: %s\n", SDL_GetError());
+      return false;
+    }
+    if (!ctx_.init(window_))
       return false;
     const std::string shaders = std::string(AYTHER_SOURCE_DIR) + "/shaders/";
     return renderer_.init(ctx_, w, h, shaders.c_str()) &&

@@ -121,9 +121,10 @@ class CoverageGateTest(unittest.TestCase):
         )
         self.assertIn("linux-native-coverage-gpu", coverage_job)
         self.assertIn("tools/check_gpu_matrix.ps1", coverage_job)
-        self.assertIn("xvfb-run --auto-servernum pwsh -File", coverage_job)
+        self.assertIn("SDL_VIDEODRIVER: offscreen", coverage_job)
+        self.assertIn("pwsh -File ./tools/check_gpu_matrix.ps1", coverage_job)
+        self.assertNotIn("xvfb-run --auto-servernum pwsh -File", coverage_job)
         self.assertNotIn("-Launcher 'xvfb-run --auto-servernum'", coverage_job)
-        self.assertIn("SDL_VIDEODRIVER: x11", coverage_job)
         self.assertIn("LIBGL_ALWAYS_SOFTWARE: '1'", coverage_job)
         self.assertIn("find /usr/share/vulkan/icd.d", coverage_job)
         self.assertIn("-name 'lvp_icd*.json'", coverage_job)
@@ -137,6 +138,12 @@ class CoverageGateTest(unittest.TestCase):
             coverage_job,
         )
         self.assertGreaterEqual(coverage_job.count("LLVM_PROFILE_FILE"), 2)
+
+        vulkan_context = (root / "tests/support/vulkan_test_context.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("SDL_Vulkan_GetInstanceExtensions", vulkan_context)
+        self.assertIn("enable_extensions", vulkan_context)
 
 
 if __name__ == "__main__":

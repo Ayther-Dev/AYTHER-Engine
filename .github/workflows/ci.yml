@@ -368,7 +368,7 @@ jobs:
         shell: bash
         env:
           LLVM_PROFILE_FILE: ${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw
-          SDL_VIDEODRIVER: x11
+          SDL_VIDEODRIVER: offscreen
           SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/linux-native-coverage/vcpkg_installed/x64-linux/debug/lib/libvulkan.so
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
@@ -382,7 +382,7 @@ jobs:
           export VK_DRIVER_FILES="$lavapipe_icd"
           export VK_ICD_FILENAMES="$lavapipe_icd"
           vulkaninfo --summary
-          xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
+          pwsh -File ./tools/check_gpu_matrix.ps1 \
             -Preset linux-native-coverage-gpu \
             -ReportFile coverage-gpu-report.md
 
@@ -724,7 +724,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         env:
-          SDL_VIDEODRIVER: x11
+          SDL_VIDEODRIVER: offscreen
           SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/${{ matrix.preset }}/vcpkg_installed/x64-linux/lib/libvulkan.so
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
@@ -738,7 +738,7 @@ jobs:
           export VK_DRIVER_FILES="$lavapipe_icd"
           export VK_ICD_FILENAMES="$lavapipe_icd"
           vulkaninfo --summary
-          xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
+          pwsh -File ./tools/check_gpu_matrix.ps1 \
             -Preset ${{ matrix.preset }} \
             -ReportFile gpu-report-${{ matrix.preset }}.md
 
