@@ -42,6 +42,7 @@ layout(push_constant) uniform PC {
     uint  nb1;        //  v2: vecinos arriba | abajo<<14
     uint  nb2;        //  v3: diagonales arriba-izq | arriba-der<<14
     uint  nb3;        //  v3: diagonales abajo-izq | abajo-der<<14
+    float z;          // spec 002 R3: profundidad de cadena (sprites; planos 0)
 } pc;
 
 layout(location = 0)      out vec2  v_local;  // 0..8 dentro del tile, ya flipeado
@@ -68,5 +69,5 @@ void main() {
     float px = pc.x + uv.x * pc.w;
     float py = pc.y + uv.y * pc.h;
     gl_Position = vec4((px / pc.canvas_w) * 2.0 - 1.0,
-                       (py / pc.canvas_h) * 2.0 - 1.0, 0.0, 1.0);
+                       (py / pc.canvas_h) * 2.0 - 1.0, pc.z, 1.0);
 }

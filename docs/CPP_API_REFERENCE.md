@@ -210,7 +210,10 @@ driver optimization.
 
 Plane-aware video composition and widescreen behavior have dedicated contracts:
 [Cinematic plane composition](CINEMATIC_PLANE_COMPOSITION.md) and
-[Widescreen composition](WIDESCREEN.md).
+[Widescreen composition](WIDESCREEN.md). Sprite and plane replacements follow
+the [Replacement composition rules](REPLACEMENT_COMPOSITION.md), and the
+[Render observation](RENDER_OBSERVATION.md) and [Visual state](VISUAL_STATE.md)
+contracts cover per-frame inspection and checkpoint restore.
 
 ### Video
 

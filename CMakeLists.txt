@@ -199,6 +199,12 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/runtime_options.cpp
     src/session/emulation_observer.cpp
     src/session/emulation_observer.h
+    src/session/frame_composability.cpp
+    src/session/frame_composability.h
+    src/session/render_observation_builder.cpp
+    src/session/render_observation_builder.h
+    src/session/visual_state_codec.cpp
+    src/session/visual_state_codec.h
     src/session/pack_runtime.cpp
     src/session/pack_runtime.h
     src/session/recording_controller.cpp

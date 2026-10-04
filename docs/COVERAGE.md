@@ -44,12 +44,27 @@ new change into its average almost invisibly. Measured on a synthetic
 repository, a change adding three uncovered lines to a 97%-covered file fails
 the gate on the changed-line rule while the total rule passes comfortably.
 
-C++ changed lines are held to 70% rather than 80% for a stated reason: the
-coverage job runs the CPU test suite, and tests labelled `gpu` are excluded
-because the runners promise no Vulkan device. Code under `src/vulkan_backend/`
-therefore cannot be covered by this job at all, and an 80% rule would block
-legitimate renderer work for a reason unrelated to test quality. Raising it
-requires either a GPU coverage run or accepting that friction deliberately.
+C++ changed lines are held to 70% rather than 80% because the native renderer
+still has device- and driver-dependent branches that a single software device
+cannot exercise. The coverage job runs the CPU suite first, then the `gpu`
+suite against Mesa's software Vulkan device under `xvfb`; both runs write into
+the same LLVM profile set. CI selects SDL's X11 backend and Mesa's Lavapipe ICD
+explicitly so the headless runner cannot silently choose a missing display or
+hardware device. SDL's complete X11 development dependency set is installed before CMake
+configures vcpkg, because SDL otherwise compiles without its X11 backend even
+when the vcpkg `x11` feature is enabled. The job also points SDL at the exact
+dynamic Vulkan loader linked by the coverage executables; loading the system
+copy independently would split SDL surface creation and Engine instance calls
+across different loader objects. `vulkaninfo` verifies Lavapipe before CTest.
+The runner discovers Mesa's installed `lvp_icd*.json` manifest rather than
+assuming an architecture-specific filename that changes between distributions.
+GPU tests select SDL's `offscreen` Vulkan backend; Lavapipe exposes
+`VK_EXT_headless_surface`, so no X server is involved. The test Vulkan owner
+passes SDL's required instance extensions to vk-bootstrap before creating the
+headless surface.
+`check_gpu_matrix.ps1` rejects an empty or skipped
+GPU run, so first-party Vulkan code stays inside both the total and changed-line
+denominators without turning an omitted renderer suite into a green result.
 
 ## Scope and exclusions
 
@@ -138,6 +153,12 @@ cmake --build --preset linux-native-coverage
 mkdir -p build/linux-native-coverage/coverage-profiles
 LLVM_PROFILE_FILE="$PWD/build/linux-native-coverage/coverage-profiles/%m-%p.profraw" \
   ctest --preset linux-native-coverage
+LLVM_PROFILE_FILE="$PWD/build/linux-native-coverage/coverage-profiles/%m-%p.profraw" \
+  SDL_VIDEODRIVER=x11 LIBGL_ALWAYS_SOFTWARE=1 \
+  VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+  xvfb-run --auto-servernum pwsh -File ./tools/check_gpu_matrix.ps1 \
+    -Preset linux-native-coverage-gpu \
+    -ReportFile coverage-gpu-report.md
 bash tools/collect_cpp_coverage.sh build/linux-native-coverage coverage/cpp
 python3 tools/check_coverage.py --component cpp \
   --lcov coverage/cpp/cpp.lcov --base origin/main

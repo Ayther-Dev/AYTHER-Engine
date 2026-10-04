@@ -338,16 +338,24 @@ jobs:
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      # Changed-line coverage includes the Vulkan backend. Exercise it through
+      # Mesa's deterministic software device instead of excluding first-party
+      # renderer code from the gate. Xorg headers must be present before vcpkg
+      # builds SDL or its X11 video backend is compiled out.
+      - name: Install coverage tools and headless GPU dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            "llvm-${CLANG_TIDY_VERSION}" \
+            libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxft-dev \
+            libxi-dev libxrandr-dev libxss-dev libxtst-dev \
+            mesa-vulkan-drivers vulkan-tools vulkan-validationlayers xauth xvfb
+
       - name: Configure coverage build
         run: cmake --preset linux-native-coverage
 
       - name: Build coverage targets
         run: cmake --build --preset linux-native-coverage
-
-      - name: Install matching LLVM coverage tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes "llvm-${CLANG_TIDY_VERSION}"
 
       - name: Run CPU CTests with LLVM profiles
         shell: bash
@@ -355,6 +363,28 @@ jobs:
           mkdir -p build/linux-native-coverage/coverage-profiles
           LLVM_PROFILE_FILE='${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw' \
             ctest --preset linux-native-coverage
+
+      - name: Run GPU CTests with LLVM profiles
+        shell: bash
+        env:
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw
+          SDL_VIDEODRIVER: offscreen
+          SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/linux-native-coverage/vcpkg_installed/x64-linux/debug/lib/libvulkan.so
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          test -f "$SDL_VULKAN_LIBRARY"
+          lavapipe_icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)"
+          if [[ -z "$lavapipe_icd" ]]; then
+            echo "Lavapipe ICD manifest not found; installed manifests:" >&2
+            find /usr/share/vulkan/icd.d -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+          export VK_DRIVER_FILES="$lavapipe_icd"
+          export VK_ICD_FILENAMES="$lavapipe_icd"
+          vulkaninfo --summary
+          pwsh -File ./tools/check_gpu_matrix.ps1 \
+            -Preset linux-native-coverage-gpu \
+            -ReportFile coverage-gpu-report.md
 
       - name: Generate C++ coverage
         shell: bash
@@ -383,7 +413,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-cpp
-          path: coverage/cpp
+          path: |
+            coverage/cpp
+            coverage-gpu-report.md
           if-no-files-found: error
           retention-days: 14
 
@@ -652,7 +684,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes mesa-vulkan-drivers xvfb
+          sudo apt-get install --yes \
+            libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxft-dev \
+            libxi-dev libxrandr-dev libxss-dev libxtst-dev \
+            mesa-vulkan-drivers vulkan-tools vulkan-validationlayers xauth xvfb
 
       - name: Cache Cargo inputs and outputs
         uses: actions/cache@v4
@@ -687,12 +722,25 @@ jobs:
 
       - name: Test GPU targets on Linux
         if: runner.os == 'Linux'
-        shell: pwsh
-        run: >-
-          ./tools/check_gpu_matrix.ps1
-          -Preset ${{ matrix.preset }}
-          -Launcher 'xvfb-run --auto-servernum'
-          -ReportFile gpu-report-${{ matrix.preset }}.md
+        shell: bash
+        env:
+          SDL_VIDEODRIVER: offscreen
+          SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/${{ matrix.preset }}/vcpkg_installed/x64-linux/lib/libvulkan.so
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          test -f "$SDL_VULKAN_LIBRARY"
+          lavapipe_icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)"
+          if [[ -z "$lavapipe_icd" ]]; then
+            echo "Lavapipe ICD manifest not found; installed manifests:" >&2
+            find /usr/share/vulkan/icd.d -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+          export VK_DRIVER_FILES="$lavapipe_icd"
+          export VK_ICD_FILENAMES="$lavapipe_icd"
+          vulkaninfo --summary
+          pwsh -File ./tools/check_gpu_matrix.ps1 \
+            -Preset ${{ matrix.preset }} \
+            -ReportFile gpu-report-${{ matrix.preset }}.md
 
       # Uploaded whether the job passed or failed: the device, the driver, and
       # the list of anything omitted are the record this matrix exists to keep,

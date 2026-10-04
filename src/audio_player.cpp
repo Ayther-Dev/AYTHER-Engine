@@ -219,7 +219,9 @@ void AudioPlayer::feed_synth(const float *interleaved, size_t frames) {
   pending_auxiliary_frames_ = frames;
   pending_auxiliary_submission_ = ++auxiliary_submission_;
   pending_auxiliary_silence_ = false;
-  if (SDL_PutAudioStreamData(synth_stream_, interleaved,
+  // Spec 002 (C4): silent production keeps the counters, delivers nothing.
+  if (output_silent_ ||
+      SDL_PutAudioStreamData(synth_stream_, interleaved,
                              static_cast<int>(frames * 2 * sizeof(float)))) {
     auxiliary_input_samples_ += frames;
   } else {
@@ -324,17 +326,18 @@ AudioPlayer::hd_pending_audio_state() const {
   state.auxiliary_resample_phase_q32 = auxiliary_resample_phase_q32_;
   state.current_frame_known = current_frame_known_;
 
-  const auto stream_empty = [](SDL_AudioStream *stream) noexcept {
-    if (!stream)
-      return true;
-    return SDL_GetAudioStreamQueued(stream) == 0 &&
-           SDL_GetAudioStreamAvailable(stream) == 0;
-  };
+  // Spec 002 (BR-033b, C4): what the device streams still hold is OUTPUT of
+  // frames already produced — the timeline above counts it — not production
+  // state: a restore discards inherited output before its first input, and
+  // the restored session produces from frame k on. So the device queues do
+  // not make the state incomplete (audible production exported mid-take was
+  // always incomplete and could not be restored). What production still
+  // owes does: gameplay SFX streams, auxiliary submissions not yet consumed
+  // and a resampler mid-phase.
   const bool gameplay_sfx =
       std::any_of(sfx_streams_.begin(), sfx_streams_.end(),
                   [](const SfxStream &stream) { return !stream.preview; });
-  state.complete = stream_empty(emu_stream_) && stream_empty(synth_stream_) &&
-                   !gameplay_sfx && pending_auxiliary_frames_ == 0 &&
+  state.complete = !gameplay_sfx && pending_auxiliary_frames_ == 0 &&
                    auxiliary_write_.load(std::memory_order_acquire) ==
                        auxiliary_read_.load(std::memory_order_acquire) &&
                    active_auxiliary_.frames == active_auxiliary_consumed_;
@@ -685,7 +688,8 @@ void AudioPlayer::prime_synth(size_t frames) {
   pending_auxiliary_frames_ = frames;
   pending_auxiliary_submission_ = ++auxiliary_submission_;
   pending_auxiliary_silence_ = true;
-  if (SDL_PutAudioStreamData(synth_stream_, z.data(),
+  if (output_silent_ ||
+      SDL_PutAudioStreamData(synth_stream_, z.data(),
                              static_cast<int>(z.size() * sizeof(float)))) {
     auxiliary_input_samples_ += frames;
   } else {
@@ -1332,6 +1336,58 @@ void AudioPlayer::buffer_emulator(uint64_t hash, const int16_t *data,
   pending_batches_.push_back({hash, frame_offset, frames});
 }
 
+AudioPlayer::DrainResult
+AudioPlayer::pause_after_drain(std::chrono::milliseconds limit) noexcept {
+  if (device_ == 0)
+    return {DrainResult::Code::unavailable, 0};
+  // Stereo frames still queued in the streams the device pulls from. A
+  // stream is drained once the device has pulled all of it.
+  const auto queued_frames = [this]() -> uint64_t {
+    uint64_t frames = 0;
+    const auto add = [&](SDL_AudioStream *stream, size_t frame_bytes) {
+      if (stream == nullptr)
+        return;
+      const int queued = SDL_GetAudioStreamQueued(stream);
+      if (queued > 0)
+        frames += static_cast<uint64_t>(queued) / frame_bytes;
+    };
+    add(emu_stream_, 2 * sizeof(int16_t));
+    add(synth_stream_, 2 * sizeof(float));
+    add(preview_stream_, 2 * sizeof(int16_t));
+    for (const auto &sfx : sfx_streams_)
+      add(sfx.stream, 1);
+    return frames;
+  };
+  // A resampling stream keeps a few input frames until more arrive: flushing
+  // makes them available, so the last frame produced can be played whole.
+  for (SDL_AudioStream *stream : {emu_stream_, synth_stream_, preview_stream_})
+    if (stream != nullptr)
+      SDL_FlushAudioStream(stream);
+  const auto deadline = std::chrono::steady_clock::now() + limit;
+  uint64_t remaining = queued_frames();
+  while (remaining != 0 && std::chrono::steady_clock::now() < deadline) {
+    SDL_Delay(1);
+    remaining = queued_frames();
+  }
+  // Pausing waits for the device iteration in progress, whose output the
+  // observers have then seen. Voices only advance when a frame is flushed,
+  // so they keep their state while paused.
+  SDL_PauseAudioDevice(device_);
+  drain_paused_ = true;
+  remaining = queued_frames();
+  return {remaining == 0 ? DrainResult::Code::drained
+                         : DrainResult::Code::timed_out,
+          remaining};
+}
+
+void AudioPlayer::resume_transport() noexcept {
+  if (!drain_paused_)
+    return;
+  drain_paused_ = false;
+  if (device_ != 0)
+    SDL_ResumeAudioDevice(device_);
+}
+
 void AudioPlayer::flush_emulator(bool suppress_original) {
   if (!emu_stream_ && !pending_pcm_.empty())
     return;
@@ -1347,7 +1403,7 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
     // silencio es inaudible, y la escena entra con el colchón lleno.
     if (!pending_batches_.empty()) {
       const uint64_t now = SDL_GetTicks();
-      const bool stalled = !production_limit_.frozen &&
+      const bool stalled = !production_limit_.frozen && !output_silent_ &&
                            (last_flush_ms_ == 0 || now - last_flush_ms_ > 250);
       if (stalled) {
         const int queued_bytes = SDL_GetAudioStreamQueued(emu_stream_);
@@ -1365,6 +1421,8 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
                                           static_cast<int>(sizeof(int16_t)))) {
             pending_main_mix_frames_ = 0;
             main_mix_mapping_complete_.store(false, std::memory_order_release);
+          } else {
+            device_frames_ += static_cast<uint64_t>(prime);
           }
           drc_queue_avg_ = kDrcTargetFrames; // no arrastrar el EMA viejo
           ayther::log::write(ayther::log::Severity::Warning, "audio.player",
@@ -1440,7 +1498,10 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
         pending_main_mix_frames_ = frames;
         pending_main_mix_submission_ = ++main_mix_submission_;
         pending_main_mix_silence_ = false;
+        // Spec 002 (C4): silent production mixes and advances the
+        // timeline exactly as audible, but delivers nothing to the device.
         delivery_complete =
+            output_silent_ ||
             SDL_PutAudioStreamData(emu_stream_, pending_pcm_.data(), byte_len);
         if (!delivery_complete) {
           pending_main_mix_frames_ = 0;
@@ -1451,8 +1512,11 @@ void AudioPlayer::flush_emulator(bool suppress_original) {
                       static_cast<FILE *>(dump_));
           dump_data_bytes_ += static_cast<uint64_t>(byte_len);
         }
-        if (delivery_complete)
+        if (delivery_complete) {
           timeline_samples_ += frames;
+          if (!output_silent_)
+            device_frames_ += frames;
+        }
       }
     }
 
@@ -1552,7 +1616,9 @@ void AudioPlayer::discard_emulator() {
 void AudioPlayer::play_substitutions(AyArchive *pack,
                                      const AytherAudioSub *subs,
                                      uint32_t count) {
-  if (production_limit_.frozen || !device_ || !pack || count == 0)
+  // Spec 002 (C4): the per-hash streams go straight to the device.
+  if (production_limit_.frozen || !device_ || !pack || count == 0 ||
+      output_silent_)
     return;
 
   // Build a set of hashes already playing (from previous ticks that haven't
@@ -1670,6 +1736,10 @@ bool AudioPlayer::play_oneshot_asset_file(
     if (off >= wav->pcm.size())
       return true;
   }
+  // Spec 002 (C4): an authoring preview is a stream of its own; silent
+  // production validates it but delivers nothing.
+  if (output_silent_)
+    return true;
 
   SDL_AudioSpec dev_spec = {};
   SDL_GetAudioDeviceFormat(device_, &dev_spec, nullptr);
@@ -2219,7 +2289,8 @@ bool AudioPlayer::stop_event(uint64_t signature) {
 // ---------------------------------------------------------------------------
 
 void AudioPlayer::play_oneshot_pcm(const int16_t *pcm, size_t frames) {
-  if (production_limit_.frozen || !device_ || !pcm || frames == 0)
+  if (production_limit_.frozen || !device_ || !pcm || frames == 0 ||
+      output_silent_)
     return;
   stop_oneshot(); // reemplaza el preview anterior
 

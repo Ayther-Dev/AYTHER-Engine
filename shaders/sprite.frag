@@ -23,5 +23,8 @@ layout(set = 0, binding = 0) uniform sampler2D sprite_tex;
 
 void main() {
     vec4 c = texture(sprite_tex, frag_uv);
+    // Spec 002 (R3): a fully transparent texel is no sprite pixel — it must
+    // not write the sprite layer's depth (it draws nothing either way).
+    if (c.a * frag_alpha <= 0.0) discard;
     out_color = vec4(c.rgb * frag_tint, c.a * frag_alpha);   // E1 cromático + opacidad
 }

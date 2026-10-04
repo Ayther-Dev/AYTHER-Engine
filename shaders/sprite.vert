@@ -38,6 +38,7 @@ layout(push_constant) uniform PC {
     float uw;     // sub-rect UV width    (normalized)
     float vh;     // sub-rect UV height   (normalized)
     float a;      // opacidad del quad (1 = opaco; atenuado de capa )
+    float z;      // spec 002 R3: profundidad de cadena (0 sin profundidad)
 } pc;
 
 layout(location = 0) out vec2  frag_uv;
@@ -67,5 +68,5 @@ void main() {
     float nx = (px / pc.scr_w) * 2.0 - 1.0;
     float ny = (py / pc.scr_h) * 2.0 - 1.0;
 
-    gl_Position = vec4(nx, ny, 0.0, 1.0);
+    gl_Position = vec4(nx, ny, pc.z, 1.0);
 }

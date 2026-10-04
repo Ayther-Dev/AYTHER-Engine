@@ -60,6 +60,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -315,6 +316,23 @@ public:
   /// duplicate voices. Returns true when at least one physical voice was
   /// restored; false lets the session use its logical fallback.
   bool resume_transport_audio() noexcept;
+
+  /// Spec 002 (contracts.md C4): pause with drain. Waits, up to `limit`,
+  /// until the device has pulled every sample already produced (the end of
+  /// the last frame), then stops the device. HD voices keep their state: they
+  /// only advance when a frame is flushed. On `timed_out` the device stops at
+  /// once and `remaining_frames` says what stayed queued. The host must not
+  /// produce frames while paused.
+  struct DrainResult {
+    enum class Code : uint8_t { drained, timed_out, unavailable };
+    Code code = Code::unavailable;
+    uint64_t remaining_frames = 0;
+  };
+  DrainResult pause_after_drain(std::chrono::milliseconds limit) noexcept;
+  /// Resumes the device after pause_after_drain; the next PCM it plays is
+  /// the next frame produced.
+  void resume_transport() noexcept;
+  bool transport_drain_paused() const noexcept { return drain_paused_; }
 
   /// Telemetry: frames discarded by pause cuts (accumulated) and how many
   /// effective cuts there were (calls that discarded something).
@@ -703,8 +721,11 @@ public:
     return hd_mixer_.restore_voice_state(state);
   }
 
-  /// Copies canonical staged audio and its clocks. If SDL already owns queued
-  /// bytes, the result is marked incomplete because peeking would consume it.
+  /// Copies canonical staged audio and its clocks. Bytes SDL already owns are
+  /// output of frames already produced (the clocks count them) and are not
+  /// part of the state: a restore discards them (spec 002, BR-033b). The
+  /// result is incomplete only while production still owes audio (gameplay
+  /// SFX streams, unconsumed auxiliary submissions, a resampler mid-phase).
   ayther::engine::audio_observation::AudioHdPendingAudioState
   hd_pending_audio_state() const;
 
@@ -755,6 +776,12 @@ public:
   /// Flush frames with a backlog < 1/4 of the target (starvation) —
   /// telemetry.
   uint64_t starved_frames() const { return starved_frames_; }
+  /// Spec 002 (C4): silent production delivers no PCM to the device while
+  /// the timeline, the mix and the HD voices advance as in audible mode.
+  void set_output_silent(bool silent) noexcept { output_silent_ = silent; }
+  bool output_silent() const noexcept { return output_silent_; }
+  /// Stereo frames delivered to the device by the main mix.
+  uint64_t device_frames() const noexcept { return device_frames_; }
   /// Average backlog (EMA) in frames of the emulator stream.
   float drc_queue_avg() const { return drc_queue_avg_; }
 
@@ -796,6 +823,9 @@ private:
   /// even after a stall, with latency imperceptible for authoring.
   static constexpr float kDrcTargetFrames = 3072.0f;
   uint64_t starved_frames_ = 0;
+  bool output_silent_ = false; ///< spec 002: no PCM to the device
+  bool drain_paused_ = false;  ///< spec 002: device stopped after a drain
+  uint64_t device_frames_ = 0; ///< spec 002: frames delivered to the device
   uint64_t last_starve_log_ms_ = 0;
   // Pause telemetry — frames discarded by cut_transport_audio (staging + emu
   // + synth) and how many cuts discarded something.

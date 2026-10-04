@@ -853,6 +853,7 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
             "instruments.toml",
             "game_profile.toml",
             "entity_substitutions.toml",
+            "pose_substitutions.toml",
         ] {
             if !names.iter().any(|n| n == cat) {
                 continue;
@@ -876,9 +877,126 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                 );
             }
         }
+
+        // Spec 002 (R7, RF-2.2, RF-9.3): every pose of pose_substitutions.toml
+        // names an asset the pack holds and can read. The engine skips a pose
+        // without it — its originals stay drawn — so the author would never
+        // see the replacement; the validator rejects it instead of letting it
+        // go unnoticed.
+        let mut poses_txt = String::new();
+        if names.iter().any(|n| n == "pose_substitutions.toml")
+            && zip
+                .by_name("pose_substitutions.toml")
+                .map(|mut e| e.read_to_string(&mut poses_txt))
+                .is_ok()
+            && let Ok(poses) = toml::from_str::<toml::Value>(&poses_txt)
+        {
+            let mut assets: Vec<String> = Vec::new();
+            for pose in poses
+                .get("pose")
+                .and_then(|p| p.as_array())
+                .into_iter()
+                .flatten()
+            {
+                let asset_of = |t: &toml::Value| {
+                    t.get("asset")
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                };
+                assets.push(asset_of(pose));
+                for variant in pose
+                    .get("variant")
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                {
+                    assets.push(asset_of(variant));
+                }
+            }
+            for asset in assets {
+                // The entries the engine can resolve the asset id to
+                // (AyArchive::resolve): a region overlay, a tier, `assets/`
+                // or the root.
+                let entries: Vec<&String> = if asset.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    names
+                        .iter()
+                        .filter(|n| asset_entry_matches(n, &asset))
+                        .collect()
+                };
+                if entries.is_empty() {
+                    r.error(
+                        "pose.asset_missing",
+                        format!(
+                            "pose_substitutions.toml asigna '{asset}', que no \
+                             está en el pack: la pose no se aplica"
+                        ),
+                    );
+                    continue;
+                }
+                let unreadable = entries.iter().any(|entry| {
+                    let mut head = Vec::new();
+                    let read = zip
+                        .by_name(entry)
+                        .map(|e| e.take(64).read_to_end(&mut head))
+                        .is_ok();
+                    !read || !image_header_is_readable(entry, &head)
+                });
+                if unreadable {
+                    r.error(
+                        "pose.asset_unreadable",
+                        format!(
+                            "pose_substitutions.toml asigna '{asset}', que no \
+                             se puede leer como imagen: la pose no se aplica"
+                        ),
+                    );
+                }
+            }
+        }
     }
 
     r
+}
+
+/// Whether archive entry `entry` is one the engine resolves asset `asset`
+/// to: `asset` itself, `assets/<asset>`, or `<asset>` under a tier or region
+/// overlay (`[assets/]tiers/<t>/`, `[assets/]locales/<r>/`).
+fn asset_entry_matches(entry: &str, asset: &str) -> bool {
+    if entry == asset {
+        return true;
+    }
+    let rest = entry.strip_prefix("assets/").unwrap_or(entry);
+    if rest == asset && rest.len() != entry.len() {
+        return true;
+    }
+    ["tiers/", "locales/"].iter().any(|overlay| {
+        rest.strip_prefix(overlay)
+            .and_then(|r| r.split_once('/'))
+            .is_some_and(|(_, path)| path == asset)
+    })
+}
+
+/// Whether the first bytes of an asset read as an image (spec 002, R7): PNG
+/// bytes (or a `.png` name) need the signature and an IHDR with a non-zero
+/// size, a `.jpg`/`.jpeg` its SOI marker; any other asset only needs bytes.
+fn image_header_is_readable(path: &str, head: &[u8]) -> bool {
+    const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".png") || head.starts_with(&SIGNATURE) {
+        let be32 =
+            |at: usize| u32::from_be_bytes([head[at], head[at + 1], head[at + 2], head[at + 3]]);
+        return head.len() >= 24
+            && head[..8] == SIGNATURE
+            && &head[12..16] == b"IHDR"
+            && be32(16) > 0
+            && be32(20) > 0;
+    }
+    if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        return head.starts_with(&[0xFF, 0xD8, 0xFF]);
+    }
+    !head.is_empty()
 }
 
 // ---------------------------------------------------------------------------
@@ -1366,6 +1484,97 @@ supported = ["NTSC"]
         );
         let r = validate_path(&p, &SessionCtx::default());
         assert!(codes(&r).contains(&"catalog.malformed"), "{:?}", codes(&r));
+    }
+
+    /// Header of a 1x1 RGBA PNG: what the validator reads of an image.
+    fn png_1x1() -> Vec<u8> {
+        let mut v = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        v.extend_from_slice(&[0, 0, 0, 13]);
+        v.extend_from_slice(b"IHDR");
+        v.extend_from_slice(&[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
+        v.extend_from_slice(&[0x1F, 0x15, 0xC4, 0x89]);
+        v
+    }
+
+    /// Validates a pack whose `pose_substitutions.toml` is `poses`, with
+    /// `assets/ok.png` (a PNG) and `assets/roto.png` (not an image).
+    fn pose_codes(dir: &std::path::Path, name: &str, poses: &str) -> Vec<&'static str> {
+        let png = png_1x1();
+        let p = pack(
+            dir,
+            name,
+            &[
+                ("manifest.toml", VALID_MANIFEST.as_bytes()),
+                ("assets/ok.png", &png),
+                ("assets/roto.png", b"no es una imagen"),
+                ("assets/tiers/3/0826f5b6", &png),
+                ("pose_substitutions.toml", poses.as_bytes()),
+            ],
+        );
+        codes(&validate_path(&p, &SessionCtx::default()))
+    }
+
+    /// Spec 002, BR-087 (R7, RF-2.2, RF-9.3): the control. A pose and a
+    /// variant whose assets are in the pack and readable give no pose finding,
+    /// also for an asset id the engine resolves under a tier.
+    #[test]
+    fn pose_with_its_asset_is_clean() {
+        let d = tempfile::tempdir().unwrap();
+        let c = pose_codes(
+            d.path(),
+            "pose_ok.ay",
+            "[[pose]]\nhashes = [\"0x1\"]\nasset = \"assets/ok.png\"\n\n\
+             [[pose.variant]]\npalette = 1\nasset = \"ok.png\"\n\n\
+             [[pose]]\nhashes = [\"0x2\"]\nasset = \"0826f5b6\"\n",
+        );
+        assert!(!c.iter().any(|c| c.starts_with("pose.")), "{c:?}");
+    }
+
+    /// Spec 002, BR-087: a pose whose asset is absent from the pack (or
+    /// empty) is rejected, also for a variant candidate.
+    #[test]
+    fn pose_with_missing_asset_is_an_error() {
+        let d = tempfile::tempdir().unwrap();
+        for (name, poses) in [
+            (
+                "pose_ausente.ay",
+                "[[pose]]\nhashes = [\"0x1\"]\nasset = \"assets/fantasma.png\"\n",
+            ),
+            (
+                "pose_vacia.ay",
+                "[[pose]]\nhashes = [\"0x1\"]\nasset = \"\"\n",
+            ),
+            (
+                "variante_ausente.ay",
+                "[[pose]]\nhashes = [\"0x1\"]\nasset = \"assets/ok.png\"\n\n\
+                 [[pose.variant]]\npalette = 1\nasset = \"assets/fantasma.png\"\n",
+            ),
+        ] {
+            let c = pose_codes(d.path(), name, poses);
+            assert!(c.contains(&"pose.asset_missing"), "{name}: {c:?}");
+        }
+    }
+
+    /// Spec 002, BR-087: a pose whose asset is in the pack but is not a
+    /// readable image is rejected.
+    #[test]
+    fn pose_with_unreadable_asset_is_an_error() {
+        let d = tempfile::tempdir().unwrap();
+        let c = pose_codes(
+            d.path(),
+            "pose_rota.ay",
+            "[[pose]]\nhashes = [\"0x1\"]\nasset = \"assets/roto.png\"\n",
+        );
+        assert!(c.contains(&"pose.asset_unreadable"), "{c:?}");
+    }
+
+    /// Spec 002, BR-087: an unreadable pose_substitutions.toml is reported
+    /// like the other catalogs.
+    #[test]
+    fn unreadable_pose_catalog() {
+        let d = tempfile::tempdir().unwrap();
+        let c = pose_codes(d.path(), "poses_rotas.ay", "[[pose]] hashes = ROTO [");
+        assert!(c.contains(&"catalog.malformed"), "{c:?}");
     }
 
     #[test]

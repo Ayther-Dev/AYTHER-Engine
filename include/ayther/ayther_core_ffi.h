@@ -861,6 +861,14 @@ void ayther_sprite_sub_free(AytherSpriteSubstitutor *s);
 void ayther_sprite_sub_load_pack(AytherSpriteSubstitutor *s,
                                  const AyArchive *pack);
 
+/// Spec 002 (BR-091): the textures the per-sprite catalog can draw, each once
+/// and sorted. `..._asset` copies texture `index` NUL-terminated into `buf`
+/// (truncated to `cap - 1`) and returns its full length; 0 = out of range.
+uint32_t
+ayther_sprite_sub_catalog_asset_count(const AytherSpriteSubstitutor *s);
+size_t ayther_sprite_sub_catalog_asset(const AytherSpriteSubstitutor *s,
+                                       uint32_t index, char *buf, size_t cap);
+
 /// Register a runtime override (hash → asset_path).
 void ayther_sprite_sub_add_override(AytherSpriteSubstitutor *s, uint64_t hash,
                                     const char *asset_path);
@@ -899,6 +907,12 @@ void ayther_pose_sub_free(PoseSetSubstitutor *p);
 /// count.
 uint32_t ayther_pose_sub_load_pack(PoseSetSubstitutor *p,
                                    const AyArchive *pack);
+/// Spec 002 (BR-091): the textures the pose catalog can draw — each base and
+/// variant asset once, in catalog order. Same copy contract as
+/// ayther_sprite_sub_catalog_asset.
+uint32_t ayther_pose_sub_catalog_asset_count(const PoseSetSubstitutor *p);
+size_t ayther_pose_sub_catalog_asset(const PoseSetSubstitutor *p,
+                                     uint32_t index, char *buf, size_t cap);
 /// LIVE preview (Animate): adds a pose override (a set of hashes → asset),
 /// resolved with priority over the catalogue and preserved when a pack is
 /// loaded.
@@ -962,6 +976,16 @@ uint32_t ayther_pose_sub_resolve(const PoseSetSubstitutor *p,
                                  const AytherSpriteOccurrence *occs,
                                  uint32_t occ_count, uint8_t *claimed,
                                  AytherSpriteSub *out_buf, uint32_t buf_cap);
+/// Same as ayther_pose_sub_resolve, also reporting the members of each written
+/// substitution (spec 002, RF-7.3). `owners` (occ_count entries, or NULL)
+/// receives, per occurrence, the index into `out_buf` of the substitution that
+/// claimed it, or UINT32_MAX when no written substitution claimed it. Claims
+/// are identical to ayther_pose_sub_resolve.
+uint32_t ayther_pose_sub_resolve_owned(const PoseSetSubstitutor *p,
+                                       const AytherSpriteOccurrence *occs,
+                                       uint32_t occ_count, uint8_t *claimed,
+                                       AytherSpriteSub *out_buf,
+                                       uint32_t buf_cap, uint32_t *owners);
 
 // ---------------------------------------------------------------------------
 // TweenPlayer v2 — in-betweens by TRANSITION (§6.1/6.2). It filters the
@@ -992,6 +1016,49 @@ void ayther_tween_set_override(TweenPlayer *p, const char *from,
                                const char *target, const char *const *frames,
                                uint32_t n_frames, uint32_t ticks);
 void ayther_tween_clear_overrides(TweenPlayer *p);
+
+// ---------------------------------------------------------------------------
+// Visual state sections (spec 002, contracts.md C4)
+//
+// Each stateful object exports its section as an opaque, versioned payload.
+// `*_state_size` + `*_state_write` export it (write returns the bytes written,
+// or 0 when `cap` is too small); `*_state_validate` checks a payload without
+// touching anything; `*_state_restore` replaces the state only when the whole
+// payload is valid (false = unchanged).
+// ---------------------------------------------------------------------------
+/// `sprite_tweens`: the frame counter and every tracked instance with its
+/// in-between in progress. The catalog and the live overrides are not included.
+size_t ayther_tween_state_size(const TweenPlayer *p);
+size_t ayther_tween_state_write(const TweenPlayer *p, uint8_t *out, size_t cap);
+bool ayther_tween_state_validate(const uint8_t *data, size_t len);
+bool ayther_tween_state_restore(TweenPlayer *p, const uint8_t *data,
+                                size_t len);
+/// `palette_signature`: the last CRAM, the stability counter of each line and
+/// the latched content signatures. The slot masks come from the catalog.
+size_t ayther_pose_sub_signature_state_size(const PoseSetSubstitutor *p);
+size_t ayther_pose_sub_signature_state_write(const PoseSetSubstitutor *p,
+                                             uint8_t *out, size_t cap);
+bool ayther_pose_sub_signature_state_validate(const uint8_t *data, size_t len);
+bool ayther_pose_sub_signature_state_restore(PoseSetSubstitutor *p,
+                                             const uint8_t *data, size_t len);
+/// `animation_grouper`: the SAT slot histories, the groups and clips and the
+/// frame counters. The catalog of unique sprites (a diagnostic count) is not
+/// included.
+size_t ayther_sprite_hasher_grouper_state_size(const AytherSpriteHasher *h);
+size_t ayther_sprite_hasher_grouper_state_write(const AytherSpriteHasher *h,
+                                                uint8_t *out, size_t cap);
+bool ayther_sprite_hasher_grouper_state_validate(const uint8_t *data,
+                                                 size_t len);
+bool ayther_sprite_hasher_grouper_state_restore(AytherSpriteHasher *h,
+                                                const uint8_t *data,
+                                                size_t len);
+/// Number of callbacks the pack's scripts registered with `ayther.on_frame`:
+/// their Lua state cannot be exported (`script_state = not_exportable`).
+uint32_t ayther_script_on_frame_count(const AytherScriptEnv *env);
+/// SHA-256 of `len` bytes as 64 lowercase hex characters plus NUL into `out`
+/// (65 bytes): the identity of a core state. False when `out` is null or
+/// `data` is null with a nonzero `len`.
+bool ayther_sha256_hex(const uint8_t *data, size_t len, char *out);
 
 // ---------------------------------------------------------------------------
 // PackBuilder — assemble + sign a .ay pack in-process  (R8 Deliver)

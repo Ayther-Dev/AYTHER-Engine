@@ -49,11 +49,19 @@
 #include "libretro_host/retro_runner.h" // RetroRunner (emulator host)
 #include "rewind_buffer.h"              // RewindBuffer (R6)
 #include "session/emulation_observer.h"
+#include "session/frame_composability.h"
 #include "session/pack_runtime.h"
+#include "session/plane_bands.h"
 #include "session/plane_set_match.h"
 #include "session/plane_set_order.h"
+#include "session/plane_set_split.h"
 #include "session/plane_sub_join.h"
+#include "session/pose_anchor.h"
+#include "session/pose_depth.h"
 #include "session/recording_controller.h"
+#include "session/render_observation_builder.h"
+#include "session/sprite_line_limits.h"
+#include "session/visual_state_codec.h"
 #include "voice_router.h" // ChannelRouter (): componer en vez de mutear
 
 #include <algorithm>
@@ -175,6 +183,7 @@ AytherSession::create(const Config &cfg) {
   std::unique_ptr<AytherSession> session(new AytherSession());
   Impl &im = *session->impl_;
   im.qa_observer = cfg.audio_observer;
+  im.render_observer = cfg.render_observer;
   if (im.qa_observer.on_fact) {
     try {
       im.qa_sequence_origins = std::make_unique<audio_qa::SequenceOrigins>();
@@ -397,6 +406,10 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
   im.escalation.clear();
   im.subsystems_on |= im.auto_disabled_on;
   im.auto_disabled_on = 0;
+  // Spec 002 (R9, RF-1.3): nothing the old pack defined survives it. The
+  // renderer's texture caches belong to the host, which calls
+  // AytherRenderer::evict_pack_textures() on a pack change.
+  im.clear_pack_elements();
   im.pack.close(); // close old pack (RAII)
 
   // A registry means production trust; without one this is the authoring
@@ -605,38 +618,6 @@ uint32_t collect_plane_tiles(const uint8_t *vram, size_t vsz, uint32_t base,
   return n;
 }
 } // namespace
-
-// C8 v2 (2026-07-14): menor slot SAT de las occs reclamadas MIEMBRO de la pose
-// del sub (centro dentro del rect + hash del pose-set). Alimenta el z-order
-// entre HD reclamados Y el umbral "delante de la pose" del compose. 255 = sin
-// miembro identificable (asset repetido, pose sin override).
-static uint8_t
-sub_member_min_slot(const AytherSpriteSub &sb,
-                    const AytherSpriteOccurrence *occs, uint32_t n_occs,
-                    const uint8_t *claimed,
-                    const std::vector<AytherSession::PosePreview> &overrides) {
-  const int rx = sb.screen_x, ry = sb.screen_y;
-  const int rw = sb.w_px ? sb.w_px : sb.w_tiles * 8;
-  const int rh = sb.h_px ? sb.h_px : sb.h_tiles * 8;
-  uint8_t mn = 255;
-  for (uint32_t o = 0; o < n_occs; ++o) {
-    if (!claimed[o])
-      continue;
-    const AytherSpriteOccurrence &oc = occs[o];
-    const int cx = oc.screen_x + oc.w_tiles * 4;
-    const int cy = oc.screen_y + oc.h_tiles * 4;
-    if (cx < rx || cx >= rx + rw || cy < ry || cy >= ry + rh)
-      continue;
-    for (const auto &pv : overrides)
-      if (pv.asset == sb.asset_path &&
-          std::find(pv.hashes.begin(), pv.hashes.end(), oc.hash) !=
-              pv.hashes.end()) {
-        mn = std::min<uint8_t>(mn, oc.slot);
-        break;
-      }
-  }
-  return mn;
-}
 
 const FrameView &AytherSession::produce_frame() {
   Impl &im = *impl_;
@@ -3530,9 +3511,49 @@ const FrameView &AytherSession::produce_frame() {
                 if (has_reference) {
                   std::memcpy(substitution.ref_rgb, def.ref_rgb, 3);
                 }
-                const auto priority = (anchor_cell.flags >> 2) & 1;
-                setq[priority].push_back(substitution);
-                setq_plane[priority].push_back(occurrence->plane);
+                // Spec 002 (R4, BR-098): a set whose cells mix VDP
+                // priorities is split by priority (per row, runs of its
+                // visible cells), so each part is drawn in the pass of the
+                // cells it replaces; a set of one priority stays one quad.
+                const auto priority =
+                    static_cast<uint8_t>((anchor_cell.flags >> 2) & 1);
+                std::vector<session::SetCell> set_cells;
+                set_cells.reserve(matched_cell_indices.size());
+                for (const uint32_t k : matched_cell_indices) {
+                  const PlaneCellHit &mc = im.plane_cells[k];
+                  set_cells.push_back(session::SetCell{
+                      static_cast<uint16_t>(
+                          (mc.screen_x - occurrence->origin_x) / 8),
+                      static_cast<uint16_t>(
+                          (mc.screen_y - occurrence->origin_y) / 8),
+                      static_cast<uint8_t>((mc.flags >> 2) & 1)});
+                }
+                const std::vector<session::SetQuad> quads =
+                    session::split_set_by_priority(def.w_cells, def.h_cells,
+                                                   set_cells, priority);
+                if (quads.size() == 1 && quads[0].w == def.w_cells &&
+                    quads[0].h == def.h_cells) {
+                  setq[quads[0].priority].push_back(substitution);
+                  setq_plane[quads[0].priority].push_back(occurrence->plane);
+                } else {
+                  for (const session::SetQuad &q : quads) {
+                    AytherSpriteSub part = substitution;
+                    part.screen_x =
+                        static_cast<int16_t>(substitution.screen_x + q.x * 8);
+                    part.screen_y =
+                        static_cast<int16_t>(substitution.screen_y + q.y * 8);
+                    part.w_tiles = static_cast<uint8_t>(q.w);
+                    part.h_tiles = static_cast<uint8_t>(q.h);
+                    part.w_px = static_cast<uint16_t>(q.w * 8);
+                    part.h_px = static_cast<uint16_t>(q.h * 8);
+                    part.u0 = (float)q.x / (float)def.w_cells;
+                    part.v0 = (float)q.y / (float)def.h_cells;
+                    part.uw = (float)q.w / (float)def.w_cells;
+                    part.vh = (float)q.h / (float)def.h_cells;
+                    setq[q.priority].push_back(part);
+                    setq_plane[q.priority].push_back(occurrence->plane);
+                  }
+                }
               }
             }
           }
@@ -3972,8 +3993,11 @@ const FrameView &AytherSession::produce_frame() {
   uint32_t n_sprite_subs = 0;
   uint32_t n_claimed_total =
       0; // subs de pose-set (índices [0, n) en sprite_subs)
+  im.n_pose_subs = 0;
+  im.sprite_partitions.clear(); // spec 002 R2: none from a previous frame
   if (n_sprite_occs > 0) {
     std::memset(im.sprite_claimed, 0, n_sprite_occs); // claims de pose-sets
+    std::fill_n(im.pose_owner, n_sprite_occs, session::kNoPoseOwner);
     uint32_t n_pose = 0;
 
     // : los pose-sets son el subsistema Metasprites. Apagarlo tiene que
@@ -4000,12 +4024,15 @@ const FrameView &AytherSession::produce_frame() {
           ayther_pose_sub_set_cram(im.pose_sub.get(), words, 64);
         }
       }
-      n_pose = ayther_pose_sub_resolve(im.pose_sub.get(), im.sprite_occs,
-                                       n_sprite_occs, im.sprite_claimed,
-                                       im.sprite_subs, kMaxSpriteOccs);
+      // Spec 002 (C3): the owner of each claimed occurrence names the
+      // members of every pose substitution; claims are unchanged.
+      n_pose = ayther_pose_sub_resolve_owned(
+          im.pose_sub.get(), im.sprite_occs, n_sprite_occs, im.sprite_claimed,
+          im.sprite_subs, kMaxSpriteOccs, im.pose_owner);
     }
 
     const uint32_t n_claimed_subs = n_pose;
+    im.n_pose_subs = n_pose;
     n_claimed_total = n_claimed_subs;
 
     // 3. Lista de occs SIN reclamar para el per-sprite.
@@ -4071,28 +4098,71 @@ const FrameView &AytherSession::produce_frame() {
     // C8 (z-order entre HD superpuestos): slot por sub; el renderer los ordena
     // por slot DESCENDENTE (menor = al frente, dibujado último en el
     // painter's).
-    //  - Sub CLAIMED (pose): slot = menor slot SAT de las occs reclamadas
-    //    MIEMBRO de su pose (centro en el rect + hash del pose-set) — el orden
+    //  - Sub CLAIMED (pose): slot = el de su miembro más adelantado en la
+    //    cadena (spec 002 R1: pose_owner, pose_anchor.h) — el orden
     //    REAL del hardware entre personajes solapados (reporte 2026-07-14: la
     //    amazona montada va DELANTE del dragón; el ÁREA de antes lo invertía
     //    cuando la pose de adelante era más grande — Tyris Ride 42 tiles vs
     //    dragón echado 40 → el dragón quedaba encima). El caso que motivó el
     //    área — accesorio CONTENIDO (el reloj dentro del bbox del Genio: slot
     //    SAT mayor pero visible por transparencia del original) — lo conserva
-    //    la pasada de contención de abajo. Sin miembro identificable → área.
+    //    la pasada de contención de abajo. Sin miembro en pantalla → 255.
     //  - Sub PER-SPRITE: el slot SAT de SU occ (match exacto por
     //  posición+tamaño,
     //    como flips) o el menor slot de las occs del bbox. 255 si nada matchea.
+    // Spec 002 (R1, RF-8.1/RF-8.4): the depth of a pose substitution is its
+    // frontmost MEMBER by link chain (session/pose_anchor.h), for pack
+    // catalog poses and Lab preview overrides alike — both report their
+    // members through pose_owner. No member on screen → 255 (behind), never
+    // a slot taken from the area of the pose.
+    {
+      std::array<uint8_t, 80> chain_by_slot;
+      chain_by_slot.fill(0xFF);
+      uint8_t rn = 0;
+      const uint8_t *rp = parsed_sprites_raw(&rn);
+      for (uint8_t i = 0; rp && i < rn; ++i) {
+        const uint8_t sat = rp[(size_t)i * 10 + 8];
+        if (sat < chain_by_slot.size() && chain_by_slot[sat] == 0xFF)
+          chain_by_slot[sat] = rp[(size_t)i * 10 + 9];
+      }
+      session::pose_anchors({im.sprite_occs, n_sprite_occs},
+                            {im.pose_owner, n_sprite_occs}, chain_by_slot,
+                            {im.pose_anchor, n_claimed_subs});
+      // Spec 002 (R2, RF-8.3): the depth parts of each pose replacement with
+      // two or more members on screen (session/pose_depth.h) — each part at
+      // the chain position of the member it covers.
+      im.sprite_partitions.clear();
+      std::vector<session::DepthBox> boxes;
+      for (uint32_t s = 0; s < n_claimed_subs; ++s) {
+        boxes.clear();
+        for (uint32_t o = 0; o < n_sprite_occs; ++o)
+          if (im.pose_owner[o] == s) {
+            const AytherSpriteOccurrence &oc = im.sprite_occs[o];
+            boxes.push_back(session::DepthBox{
+                oc.screen_x, oc.screen_y, oc.w_tiles * 8, oc.h_tiles * 8,
+                oc.slot < chain_by_slot.size() ? chain_by_slot[oc.slot]
+                                               : (uint8_t)0xFF});
+          }
+        if (boxes.size() < 2)
+          continue;
+        const AytherSpriteSub &sub = im.sprite_subs[s];
+        const session::DepthBox quad{
+            sub.screen_x, sub.screen_y,
+            sub.w_px ? (int)sub.w_px : (int)sub.w_tiles * 8,
+            sub.h_px ? (int)sub.h_px : (int)sub.h_tiles * 8, 0};
+        for (const session::DepthBox &p :
+             session::partition_by_members(quad, boxes))
+          im.sprite_partitions.push_back(
+              SpritePartition{s, (int16_t)p.x, (int16_t)p.y, (uint16_t)p.w,
+                              (uint16_t)p.h, p.chain});
+      }
+    }
     for (uint32_t s = 0; s < n_sprite_subs; ++s) {
       const AytherSpriteSub &sub = im.sprite_subs[s];
       if (s < n_claimed_subs) {
-        const uint8_t mn =
-            sub_member_min_slot(sub, im.sprite_occs, n_sprite_occs,
-                                im.sprite_claimed, im.preview_pose_overrides);
+        const uint32_t a = im.pose_anchor[s];
         im.sprite_sub_slot[s] =
-            mn != 255 ? mn
-                      : (uint8_t)std::min<int>(
-                            (int)sub.w_tiles * (int)sub.h_tiles, 255);
+            a != session::kNoPoseAnchor ? im.sprite_occs[a].slot : 255;
         continue;
       }
       uint8_t exact = 255, overlap = 255;
@@ -4469,6 +4539,9 @@ const FrameView &AytherSession::produce_frame() {
   v.tile_subs = im.tile_subs;
   v.tile_sub_count = n_tile_subs;
   v.sprite_subs = im.sprite_subs;
+  v.sprite_partitions =
+      im.sprite_partitions.empty() ? nullptr : im.sprite_partitions.data();
+  v.sprite_partition_count = (uint32_t)im.sprite_partitions.size();
   v.sprite_sub_count = n_sprite_subs;
   v.sprite_sub_flips = im.sprite_sub_flips; // CU-AN-11
   v.sprite_sub_tint = im.sprite_sub_tint;   // E1 cromático (fundido + color)
@@ -4724,7 +4797,6 @@ const FrameView &AytherSession::produce_frame() {
             ? im.runner.read_raster_fallback_v1(im.observer.snapshot())
             : im.runner.raster_dirty();
     AYTHER_LEGACY_READ_END
-    v.scene_dirty = (raster > 0 ? 1 : 0) | (im.layer_dim_want ? 2 : 0);
     // A positive mask remains fallback, but two bits
     // dicen algo más que «el frame se partió» y conviene verlos en el log
     // una vez: OVERFLOW = la multicapa va a devolver RC_JOURNAL_OVERFLOW
@@ -4749,57 +4821,56 @@ const FrameView &AytherSession::produce_frame() {
             "queda apagada en vez de a medias");
       }
     }
-    // bit2: hscroll por línea/celda CON variación real en el span visible.
-    // La tabla se escribe en vblank (la señal 0x10E no la ve) pero las
-    // celdas del inventario muestrean H por banda al centro del tile → la
-    // composición tendría cizalla sub-tile. Hasta que el pipeline dibuje
-    // strips por línea (R-7, parallax), esos frames usan el blit. Con H
-    // uniforme (GA toda la demo) se compone normal.
-    if (v.scene_vram && v.scene_vram_size >= 0x10000) {
+    // bit2: hscroll por línea/celda o vscroll por columna CON variación real
+    // en el span visible (las tablas se escriben en vblank y la señal 0x10E
+    // no las ve; el inventario muestrea por celda → cizalla sub-tile). Hasta
+    // que el pipeline dibuje strips por línea (R-7, parallax), esos frames
+    // usan el blit. Spec 002 (C3): el mismo cálculo da el motivo publicado.
+    {
       size_t rsz3 = 0;
       const uint8_t *regs3 = vdp_regs(&rsz3);
-      if (regs3 && rsz3 >= 0x20 && (regs3[11] & 3)) {
-        const uint32_t hscb = (uint32_t)(regs3[13] & 0x3F) << 10;
-        const uint32_t hmask = (regs3[11] & 3) == 3   ? 0xFF
-                               : (regs3[11] & 3) == 2 ? 0xF8
-                                                      : 0x07;
-        auto entry = [&](uint32_t l) {
-          const uint32_t off = hscb + ((l & hmask) << 2);
-          return (uint32_t)v.scene_vram[off] |
-                 ((uint32_t)v.scene_vram[off + 1] << 8) |
-                 ((uint32_t)v.scene_vram[off + 2] << 16) |
-                 ((uint32_t)v.scene_vram[off + 3] << 24);
-        };
-        const uint32_t e0 = entry(0);
-        for (uint32_t l = 1; l < v.fb_height; ++l)
-          if (entry(l) != e0) {
-            v.scene_dirty |= 4;
-            break;
-          }
+      const uint8_t *vsr = impl_->vsram_ptr(); // E-5
+      session::FrameComposabilityInput fc;
+      fc.raster = raster;
+      fc.layer_dim = im.layer_dim_want;
+      if (v.scene_vram)
+        fc.vram = {v.scene_vram, v.scene_vram_size};
+      if (regs3)
+        fc.vdp_regs = {regs3, rsz3};
+      if (vsr)
+        fc.vsram = {vsr, impl_->runner.vsram_size()};
+      fc.fb_width = v.fb_width;
+      fc.fb_height = v.fb_height;
+      session::FrameComposability composability = session::classify_frame(fc);
+      // Spec 002 (R8): scene_inventory composed the scroll bands, so per-line
+      // hscroll and column vscroll no longer make the frame dirty.
+      if ((composability.scene_dirty & session::kDirtyScroll) != 0) {
+        composability.scene_dirty =
+            (uint8_t)(composability.scene_dirty & ~session::kDirtyScroll);
+        if (composability.reason ==
+                engine::render_observation::Composability::line_hscroll ||
+            composability.reason ==
+                engine::render_observation::Composability::column_vscroll)
+          composability.reason =
+              engine::render_observation::Composability::composable;
       }
-      // Variante VERTICAL del mismo límite: vscroll por columna (2-cell)
-      // CON variación entre columnas — el inventario da V por celda con
-      // la columna del borde izquierdo, el VDP la aplica por columna de
-      // píxel → cizalla en los tiles que cruzan el límite (el fondo
-      // ondulado de Chemical Plant). Uniforme → compone normal.
-      if (regs3 && rsz3 >= 0x20 && (regs3[11] & 4)) {
-        const uint8_t *vsr = impl_->vsram_ptr(); // E-5
-        const size_t vsz3 = impl_->runner.vsram_size();
-        if (vsr && vsz3 >= 4) {
-          const int cols = (int)((v.fb_width + 15) / 16);
-          uint32_t c0 = (uint32_t)vsr[0] | ((uint32_t)vsr[1] << 8) |
-                        ((uint32_t)vsr[2] << 16) | ((uint32_t)vsr[3] << 24);
-          for (int c2 = 1; c2 < cols && (size_t)(c2 * 4 + 3) < vsz3; ++c2) {
-            const uint32_t cv = (uint32_t)vsr[c2 * 4] |
-                                ((uint32_t)vsr[c2 * 4 + 1] << 8) |
-                                ((uint32_t)vsr[c2 * 4 + 2] << 16) |
-                                ((uint32_t)vsr[c2 * 4 + 3] << 24);
-            if (cv != c0) {
-              v.scene_dirty |= 4;
-              break;
-            }
-          }
-        }
+      v.scene_dirty = composability.scene_dirty;
+      im.frame_composability = composability.reason;
+      // Spec 002 (R8, BR-112): the hscroll of every visible line.
+      if (v.scene_vram && regs3 && rsz3 >= 0x20) {
+        const session::PlaneBandInput hin{
+            {v.scene_vram, v.scene_vram_size},
+            {regs3, rsz3},
+            vsr ? std::span<const uint8_t>{vsr, impl_->runner.vsram_size()}
+                : std::span<const uint8_t>{},
+            (int)v.fb_width,
+            (int)v.fb_height};
+        for (int p = 0; p < 2; ++p)
+          for (int y = 0; y < 240; ++y)
+            v.plane_hscroll_lines[p][y] =
+                y < (int)v.fb_height
+                    ? (int16_t)session::plane_hscroll(hin, p, y)
+                    : (int16_t)0;
       }
     }
     size_t rsz2 = 0;
@@ -4812,6 +4883,291 @@ const FrameView &AytherSession::produce_frame() {
     }
   }
   return v;
+}
+
+// ---------------------------------------------------------------------------
+// Spec 002 (contracts.md C3): render observation of the current frame.
+// ---------------------------------------------------------------------------
+void AytherSession::publish_render_observation(
+    const engine::render_observation::DrawReport *draw) {
+  Impl &im = *impl_;
+  if (im.render_observer == nullptr)
+    return;
+  const FrameView &v = im.view;
+  const uint32_t n =
+      (std::min<uint32_t>)(v.sprite_occs ? v.sprite_occ_count : 0,
+                           kMaxSpriteOccs);
+  // Link-chain position by SAT slot, from the scene the frame published.
+  std::array<uint8_t, 80> chain;
+  chain.fill(0xFF);
+  for (uint32_t e = 0; v.scene && e < v.scene_count; ++e)
+    if (v.scene[e].layer == 3 && v.scene[e].slot < chain.size())
+      chain[v.scene[e].slot] = v.scene[e].chain;
+  // Hidden on purpose: by hash (Lab channel) or by SAT slot (Edit eye).
+  im.render_hidden.assign(n, 0);
+  for (uint32_t i = 0; i < n; ++i) {
+    const AytherSpriteOccurrence &o = v.sprite_occs[i];
+    if (im.hidden_sprite_hashes.count(o.hash) != 0 ||
+        (im.suppress_any && o.slot < 80 &&
+         (im.suppress_want[o.slot >> 3] & (1u << (o.slot & 7))) != 0))
+      im.render_hidden[i] = 1;
+  }
+  session::RenderObservationInput in;
+  in.emulation_frame = v.frame_index;
+  in.frame_known = v.frame_index > 0;
+  in.composability = im.frame_composability;
+  in.occurrences = {v.sprite_occs, n};
+  in.claimed = {im.sprite_claimed, n};
+  in.hidden = im.render_hidden;
+  in.chain_by_slot = chain;
+  in.subs = {v.sprite_subs, v.sprite_subs ? v.sprite_sub_count : 0u};
+  in.pose_sub_count = (std::min)(im.n_pose_subs, v.sprite_sub_count);
+  in.pose_owner = {im.pose_owner, n};
+  in.draw = draw;
+  im.render_observer->on_render_frame(im.render_builder.build(in));
+}
+
+// ---------------------------------------------------------------------------
+// Spec 002 (contracts.md C4): visual state.
+// ---------------------------------------------------------------------------
+namespace {
+
+/// The section a Rust object exports, or an empty body without the object.
+template <typename T>
+std::vector<std::byte> rust_section(const T *object, size_t (*size)(const T *),
+                                    size_t (*write)(const T *, uint8_t *,
+                                                    size_t)) {
+  std::vector<std::byte> body(object != nullptr ? size(object) : 0);
+  if (!body.empty() && write(object, reinterpret_cast<uint8_t *>(body.data()),
+                             body.size()) != body.size())
+    body.clear();
+  return body;
+}
+
+const uint8_t *section_bytes(std::span<const std::byte> body) {
+  return reinterpret_cast<const uint8_t *>(body.data());
+}
+
+} // namespace
+
+std::string AytherSession::game_state_identity() const {
+  std::vector<uint8_t> core;
+  if (!impl_->runner.serialize(core) || core.empty())
+    return {};
+  std::array<char, 65> hex{};
+  if (!ayther_sha256_hex(core.data(), core.size(), hex.data()))
+    return {};
+  return {hex.data(), 64};
+}
+
+engine::visual_state::VisualState AytherSession::export_visual_state() const {
+  namespace vs = engine::visual_state;
+  namespace sv = session::visual;
+  using Section = vs::VisualStateSection;
+  const Impl &im = *impl_;
+  vs::VisualState state;
+  state.header.game_state_identity = game_state_identity();
+  state.header.emulation_frame = im.frame_index;
+  if (im.script && ayther_script_on_frame_count(im.script.get()) > 0)
+    state.header.script_state = vs::ScriptState::not_exportable;
+  const auto add = [&](Section section, std::span<const std::byte> body) {
+    sv::append_section(state.payload, section, body);
+    state.header.sections |= vs::visual_state_section(section);
+  };
+
+  // In increasing bit order, as the payload requires.
+  add(Section::sprite_tweens,
+      rust_section(im.tween.get(), ayther_tween_state_size,
+                   ayther_tween_state_write));
+  add(Section::screen_recognition,
+      sv::encode(sv::ScreenRecognition{im.screen_active, im.screen_cand,
+                                       im.screen_streak}));
+  sv::LevelCamera camera;
+  for (size_t p = 0; p < 2; ++p) {
+    camera.cam_x[p] = im.cam_x[p];
+    camera.cam_y[p] = im.cam_y[p];
+    camera.prev_h[p] = im.cam_prev_h[p];
+    camera.prev_v[p] = im.cam_prev_v[p];
+  }
+  camera.last_frame = im.cam_last_frame;
+  camera.valid = im.cam_valid;
+  camera.pano_last_id = im.pano_last_id;
+  camera.pano_last_x = im.pano_last_x;
+  camera.pano_last_y = im.pano_last_y;
+  add(Section::level_camera, sv::encode(camera));
+  sv::PaletteLuma luma;
+  std::copy(std::begin(im.pal_luma_peak), std::end(im.pal_luma_peak),
+            luma.peak.begin());
+  add(Section::palette_luma, sv::encode(luma));
+  add(Section::previous_audio_mask,
+      sv::encode(sv::PreviousAudioMask{im.audio_mute_applied}));
+  add(Section::palette_signature,
+      rust_section(im.pose_sub.get(), ayther_pose_sub_signature_state_size,
+                   ayther_pose_sub_signature_state_write));
+  add(Section::animation_grouper,
+      rust_section(im.sprite_hasher.get(),
+                   ayther_sprite_hasher_grouper_state_size,
+                   ayther_sprite_hasher_grouper_state_write));
+  std::vector<sv::PlaneSequenceClock> clocks;
+  clocks.reserve(im.seq_clocks.size());
+  for (const auto &[id, clock] : im.seq_clocks)
+    clocks.push_back({id, clock.anchor, clock.last_seen});
+  std::sort(clocks.begin(), clocks.end(),
+            [](const sv::PlaneSequenceClock &a,
+               const sv::PlaneSequenceClock &b) { return a.id < b.id; });
+  add(Section::plane_sequence_clocks, sv::encode(clocks));
+  sv::Cinematic cinematic;
+  cinematic.active = im.kine_active;
+  cinematic.step = im.kine_step;
+  cinematic.gap = im.kine_gap;
+  cinematic.last_frame = im.kine_last_frame;
+  cinematic.video_kinematic = im.vid.kin;
+  cinematic.video_step = im.vid.step;
+  cinematic.video_anchor = im.vid.anchor;
+  cinematic.audio_kinematic = im.vaud.kin;
+  cinematic.audio_anchor = im.vaud.anchor;
+  cinematic.audio_on = im.vaud.on;
+  cinematic.audio_last_frame = im.vaud.last_f;
+  cinematic.audio_still = im.vaud.still;
+  cinematic.audio_gain = im.vaud.gain;
+  add(Section::cinematic, sv::encode(cinematic));
+  std::vector<sv::HdAnimationPhase> phases;
+  for (const AnimationPlayer::Phase &p : im.anim.phases())
+    phases.push_back({p.clip_id, p.last_pose, p.pose_start_frame});
+  add(Section::hd_animation_phase, sv::encode(phases));
+  std::vector<sv::PanoramaTint> tints;
+  tints.reserve(im.panoramas.size());
+  for (const auto &[id, d] : im.panoramas) {
+    sv::PanoramaTint t;
+    t.id = id;
+    t.ref_luma = d.ref_luma;
+    std::copy(std::begin(d.ref_w), std::end(d.ref_w), t.ref_w.begin());
+    std::copy(std::begin(d.ref_ch), std::end(d.ref_ch), t.ref_ch.begin());
+    t.ref_chroma = d.ref_chroma;
+    t.ref_peak = d.ref_peak;
+    tints.push_back(t);
+  }
+  std::sort(tints.begin(), tints.end(),
+            [](const sv::PanoramaTint &a, const sv::PanoramaTint &b) {
+              return a.id < b.id;
+            });
+  add(Section::panorama_tint, sv::encode(tints));
+  return state;
+}
+
+engine::visual_state::VisualStateRestoreResult
+AytherSession::restore_visual_state(
+    const engine::visual_state::VisualState &state,
+    std::string_view expected_identity, std::uint64_t expected_frame) {
+  namespace vs = engine::visual_state;
+  namespace sv = session::visual;
+  using Section = vs::VisualStateSection;
+  Impl &im = *impl_;
+  const vs::VisualStateRestoreResult header = vs::validate_visual_state_header(
+      state.header, expected_identity, expected_frame);
+  if (!header.restored())
+    return header;
+  const vs::VisualStateRestoreResult invalid{
+      vs::VisualStateRestoreCode::invalid_payload};
+  sv::SectionBodies bodies;
+  if (state.payload.size() > vs::kVisualStatePayloadLimit ||
+      !sv::split_sections(state.payload, state.header.sections, bodies))
+    return invalid;
+  const auto body = [&](Section section) {
+    return bodies[sv::section_index(section)];
+  };
+
+  // 1. Validate every section; nothing is touched until all of them pass.
+  const std::span<const std::byte> tweens = body(Section::sprite_tweens);
+  const std::span<const std::byte> signature = body(Section::palette_signature);
+  const std::span<const std::byte> grouper = body(Section::animation_grouper);
+  sv::ScreenRecognition screen;
+  sv::LevelCamera camera;
+  sv::PaletteLuma luma;
+  sv::PreviousAudioMask mask;
+  std::vector<sv::PlaneSequenceClock> clocks;
+  sv::Cinematic cinematic;
+  std::vector<sv::HdAnimationPhase> phases;
+  std::vector<sv::PanoramaTint> tints;
+  if (!ayther_tween_state_validate(section_bytes(tweens), tweens.size()) ||
+      !sv::decode(body(Section::screen_recognition), screen) ||
+      !sv::decode(body(Section::level_camera), camera) ||
+      !sv::decode(body(Section::palette_luma), luma) ||
+      !sv::decode(body(Section::previous_audio_mask), mask) ||
+      !ayther_pose_sub_signature_state_validate(section_bytes(signature),
+                                                signature.size()) ||
+      !ayther_sprite_hasher_grouper_state_validate(section_bytes(grouper),
+                                                   grouper.size()) ||
+      !sv::decode(body(Section::plane_sequence_clocks), clocks) ||
+      !sv::decode(body(Section::cinematic), cinematic) ||
+      !sv::decode(body(Section::hd_animation_phase), phases) ||
+      !sv::decode(body(Section::panorama_tint), tints))
+    return invalid;
+  // Each tint names a Panorama of this session; the others keep theirs.
+  for (const sv::PanoramaTint &t : tints)
+    if (im.panoramas.find(t.id) == im.panoramas.end())
+      return invalid;
+  std::vector<AnimationPlayer::Phase> anim_phases;
+  anim_phases.reserve(phases.size());
+  for (const sv::HdAnimationPhase &p : phases)
+    anim_phases.push_back({p.clip_id, p.last_pose, p.pose_start_frame});
+  const auto n_phases = static_cast<uint32_t>(anim_phases.size());
+  if (!im.anim.phases_valid(anim_phases.data(), n_phases))
+    return invalid;
+
+  // 2. Apply. Every part was validated, so none of these can reject it.
+  if (im.tween)
+    (void)ayther_tween_state_restore(im.tween.get(), section_bytes(tweens),
+                                     tweens.size());
+  im.screen_active = screen.active;
+  im.screen_cand = screen.candidate;
+  im.screen_streak = screen.streak;
+  for (size_t p = 0; p < 2; ++p) {
+    im.cam_x[p] = camera.cam_x[p];
+    im.cam_y[p] = camera.cam_y[p];
+    im.cam_prev_h[p] = camera.prev_h[p];
+    im.cam_prev_v[p] = camera.prev_v[p];
+  }
+  im.cam_last_frame = camera.last_frame;
+  im.cam_valid = camera.valid;
+  im.pano_last_id = camera.pano_last_id;
+  im.pano_last_x = camera.pano_last_x;
+  im.pano_last_y = camera.pano_last_y;
+  std::copy(luma.peak.begin(), luma.peak.end(), std::begin(im.pal_luma_peak));
+  im.audio_mute_applied = mask.mask;
+  if (im.pose_sub)
+    (void)ayther_pose_sub_signature_state_restore(
+        im.pose_sub.get(), section_bytes(signature), signature.size());
+  if (im.sprite_hasher)
+    (void)ayther_sprite_hasher_grouper_state_restore(
+        im.sprite_hasher.get(), section_bytes(grouper), grouper.size());
+  im.seq_clocks.clear();
+  for (const sv::PlaneSequenceClock &c : clocks)
+    im.seq_clocks[c.id] = {c.anchor, c.last_seen};
+  im.kine_active = cinematic.active;
+  im.kine_step = cinematic.step;
+  im.kine_gap = cinematic.gap;
+  im.kine_last_frame = cinematic.last_frame;
+  im.vid.kin = cinematic.video_kinematic;
+  im.vid.step = cinematic.video_step;
+  im.vid.anchor = cinematic.video_anchor;
+  im.vaud.kin = cinematic.audio_kinematic;
+  im.vaud.anchor = cinematic.audio_anchor;
+  im.vaud.on = cinematic.audio_on;
+  im.vaud.last_f = cinematic.audio_last_frame;
+  im.vaud.still = cinematic.audio_still;
+  im.vaud.gain = cinematic.audio_gain;
+  (void)im.anim.restore_phases(anim_phases.data(), n_phases);
+  for (const sv::PanoramaTint &t : tints) {
+    Impl::PanoramaDef &d = im.panoramas.at(t.id);
+    d.ref_luma = t.ref_luma;
+    std::copy(t.ref_w.begin(), t.ref_w.end(), std::begin(d.ref_w));
+    std::copy(t.ref_ch.begin(), t.ref_ch.end(), std::begin(d.ref_ch));
+    d.ref_chroma = t.ref_chroma;
+    d.ref_peak = t.ref_peak;
+  }
+  im.frame_index = expected_frame;
+  return header;
 }
 
 // ---------------------------------------------------------------------------
@@ -8477,6 +8833,12 @@ const uint8_t *AytherSession::vdp_regs(size_t *size) const {
   return impl_->regs_ptr(); // E-5
 }
 
+const uint8_t *AytherSession::vsram(size_t *size) const {
+  if (size)
+    *size = impl_->runner.vsram_size();
+  return impl_->vsram_ptr();
+}
+
 const uint8_t *AytherSession::parsed_sprites_raw(uint8_t *count) const {
   // E-5: con ABI, el espejo que produce_frame ya leyó por read_region; sin
   // ABI, el puntero del core.
@@ -8699,11 +9061,16 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
 
   // Joins de subs HD ya resueltos: sprite_subs por slot SAT (el array
   // paralelo sprite_sub_slot); plane_tile_subs 1×1 por posición exacta.
+  // Spec 002 (R1, RF-8.1/RF-9.1): sólo los subs PER-SPRITE se unen por slot.
+  // Un reemplazo de pose se une a sus MIEMBROS (pose_owner): su ancla es su
+  // miembro más adelantado (pose_anchor) y sólo sus miembros quedan reclamados
+  // — el sprite ajeno que ocupa el slot del reemplazo ya no desaparece.
+  const uint32_t n_pose_subs = (std::min)(im.n_pose_subs, v.sprite_sub_count);
   int32_t slot2sub[80];
   for (int i = 0; i < 80; ++i)
     slot2sub[i] = -1;
   if (v.sprite_sub_slot)
-    for (uint32_t i = 0; i < v.sprite_sub_count; ++i)
+    for (uint32_t i = n_pose_subs; i < v.sprite_sub_count; ++i)
       if (v.sprite_sub_slot[i] < 80 && slot2sub[v.sprite_sub_slot[i]] < 0)
         slot2sub[v.sprite_sub_slot[i]] = (int32_t)i;
   // The 1×1 cell→sub join lives in session/plane_sub_join.h (with its own
@@ -8740,33 +9107,30 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
         const Raw *rb = raw_of(*b);
         return (ra ? ra->chain : 255) < (rb ? rb->chain : 255);
       });
+  // Spec 002 (R5, BR-096, RF-9.4): only what the VDP draws on some line —
+  // the per-line sprite limit (20/16 sprites, 320/256 pixels) unless the core
+  // option lifts it, and the x = 0 mask (session/sprite_line_limits.h), over
+  // the WHOLE parsed list: the mask sprites and the ones off screen count
+  // toward the line even though they are not occurrences.
   std::unordered_set<const AytherSpriteOccurrence *> fully_masked;
-  if (!chain_order.empty()) {
-    // GPX: el sprite en x=0 no se enmascara a sí mismo — enmascara a los
-    // SIGUIENTES de la cadena en esa línea (y requiere al menos un sprite
-    // previo con x≠0). Un sprite queda fuera si TODAS sus líneas visibles
-    // cayeron detrás de la máscara.
-    const int fh = (int)v.fb_height;
-    std::vector<int> vis(chain_order.size(), 0), msk(chain_order.size(), 0);
-    for (int line = 0; line < fh; ++line) {
-      bool masking = false, seen_nonzero = false;
-      for (size_t k = 0; k < chain_order.size(); ++k) {
-        const AytherSpriteOccurrence *oc = chain_order[k];
-        if (line < oc->screen_y || line >= oc->screen_y + oc->h_tiles * 8)
-          continue;
-        ++vis[k];
-        if (masking)
-          ++msk[k];
-        const Raw *r = raw_of(*oc);
-        if (r && r->xr != 0)
-          seen_nonzero = true;
-        else if (r && r->xr == 0 && seen_nonzero)
-          masking = true;
-      }
+  if (!chain_order.empty() && !raw.empty()) {
+    std::vector<session::ParsedSprite> parsed(raw.size());
+    for (size_t k = 0; k < raw.size(); ++k) {
+      const uint8_t *p = rp + k * 10;
+      parsed[k].x_raw = (int16_t)(raw[k].xr & 0x1FF);
+      parsed[k].y = (int16_t)((int)(raw[k].yr & 0x1FF) - 128);
+      parsed[k].w_tiles = std::max<uint8_t>(p[6], 1);
+      parsed[k].h_tiles = std::max<uint8_t>(p[7], 1);
+      parsed[k].chain = raw[k].chain;
     }
-    for (size_t k = 0; k < chain_order.size(); ++k)
-      if (vis[k] > 0 && msk[k] == vis[k])
-        fully_masked.insert(chain_order[k]);
+    const bool no_limit =
+        im.runner.core_option("genesis_plus_gx_no_sprite_limit") == "enabled";
+    const std::vector<uint8_t> drawn = session::drawn_on_some_line(
+        parsed, (int)v.fb_height,
+        session::line_limits_for(v.fb_width, no_limit));
+    for (const AytherSpriteOccurrence *oc : chain_order)
+      if (const Raw *r = raw_of(*oc); r && drawn[(size_t)(r - raw.data())] == 0)
+        fully_masked.insert(oc);
   }
 
   // ---- : el FRAMEBUFFER como juez de qué sprite se dibujó ------------
@@ -8834,6 +9198,75 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
       const bool jregs_ok = jregs && jrsz >= 6;
       const uint32_t sat_base =
           jregs_ok ? ((uint32_t)(jregs[5] & 0x7F) << 9) : 0u;
+      // Spec 002 (R5, BR-095): a sample hidden by something in FRONT of the
+      // sprite is no evidence that it was not drawn — an opaque pixel of a
+      // sprite earlier in the link chain, or of a priority-1 plane cell over
+      // a priority-0 sprite. Only unhidden samples count (O1 lost Golden
+      // Axe sprites half behind the title rock and behind another sprite).
+      auto index_at = [&](uint16_t pattern, int tx, int ty) -> int {
+        const uint8_t byte = vrd(pattern * 32u + ty * 4 + (tx >> 1));
+        return (tx & 1) ? (byte & 0xF) : (byte >> 4);
+      };
+      auto sprite_opaque_at = [&](const AytherSpriteOccurrence &o, int px,
+                                  int py) -> bool {
+        const int lx = px - o.screen_x, ly = py - o.screen_y;
+        if (lx < 0 || ly < 0 || lx >= o.w_tiles * 8 || ly >= o.h_tiles * 8 ||
+            o.slot >= 80)
+          return false;
+        const uint32_t e = sat_base + (uint32_t)o.slot * 8u;
+        const uint16_t a = (uint16_t)((vrd(e + 4) << 8) | vrd(e + 5));
+        const int c = lx >> 3, r = ly >> 3;
+        const int pc = o.hflip ? (o.w_tiles - 1 - c) : c;
+        const int pr = o.vflip ? (o.h_tiles - 1 - r) : r;
+        const uint16_t pat =
+            (uint16_t)((a & 0x7FF) + pc * o.h_tiles + pr) & 0x7FF;
+        const int tx = o.hflip ? 7 - (lx & 7) : (lx & 7);
+        const int ty = o.vflip ? 7 - (ly & 7) : (ly & 7);
+        return index_at(pat, tx, ty) != 0;
+      };
+      std::unordered_map<int, std::vector<uint32_t>> hi_cells;
+      auto cell_bucket = [](int x, int y) {
+        return ((x >> 3) + 64) * 1024 + ((y >> 3) + 64);
+      };
+      for (uint32_t c = 0; c < v.plane_cell_count; ++c)
+        if ((v.plane_cells[c].flags >> 2) & 1)
+          hi_cells[cell_bucket(v.plane_cells[c].screen_x,
+                               v.plane_cells[c].screen_y)]
+              .push_back(c);
+      auto hi_plane_opaque_at = [&](int px, int py) -> bool {
+        for (int bx = 0; bx < 2; ++bx)
+          for (int by = 0; by < 2; ++by) {
+            const auto it =
+                hi_cells.find(cell_bucket(px - 7 * bx, py - 7 * by));
+            if (it == hi_cells.end())
+              continue;
+            for (const uint32_t c : it->second) {
+              const PlaneCellHit &pc = v.plane_cells[c];
+              const int lx = px - pc.screen_x, ly = py - pc.screen_y;
+              if (lx < 0 || ly < 0 || lx >= 8 || ly >= 8)
+                continue;
+              const int tx = (pc.flags & 1) ? 7 - lx : lx;
+              const int ty = (pc.flags & 2) ? 7 - ly : ly;
+              if (index_at(pc.pattern, tx, ty) != 0)
+                return true;
+            }
+          }
+        return false;
+      };
+      std::unordered_map<const AytherSpriteOccurrence *, size_t> chain_rank;
+      for (size_t k = 0; k < chain_order.size(); ++k)
+        chain_rank[chain_order[k]] = k;
+      auto hidden_at = [&](const AytherSpriteOccurrence &o, int px,
+                           int py) -> bool {
+        if (o.priority == 0 && hi_plane_opaque_at(px, py))
+          return true;
+        const auto rank = chain_rank.find(&o);
+        const size_t front = rank == chain_rank.end() ? 0 : rank->second;
+        for (size_t k = 0; k < front; ++k)
+          if (sprite_opaque_at(*chain_order[k], px, py))
+            return true;
+        return false;
+      };
       for (uint32_t i = 0; jregs_ok && i < v.sprite_occ_count; ++i) {
         const AytherSpriteOccurrence &oc = v.sprite_occs[i];
         if (oc.slot >= 80)
@@ -8862,6 +9295,15 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
                 const int idx = (tx & 1) ? (byte & 0xF) : (byte >> 4);
                 if (idx == 0)
                   continue; // transparente
+                // Spec 002 (R5, BR-095): only a sample that falls on the
+                // screen is evidence. A sprite that crosses an edge has
+                // opaque pixels off screen, and counting them judged it
+                // «not drawn» (O1 lost Golden Axe sprites at x = 0).
+                int fr = 0, fg = 0, fb2 = 0;
+                const int px = oc.screen_x + sc * 8 + col;
+                const int py = oc.screen_y + sr * 8 + row;
+                if (!fb_rgb(px, py, fr, fg, fb2) || hidden_at(oc, px, py))
+                  continue;
                 ++opacas;
                 const size_t ce = (size_t)(oc.palette * 16 + idx) * 2;
                 if (ce + 1 >= jcsz)
@@ -8870,10 +9312,6 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
                     (uint16_t)(jcram[ce] | (jcram[ce + 1] << 8));
                 const int er = c8(cv & 7), eg = c8((cv >> 3) & 7),
                           eb = c8((cv >> 6) & 7);
-                int fr = 0, fg = 0, fb2 = 0;
-                if (!fb_rgb(oc.screen_x + sc * 8 + col,
-                            oc.screen_y + sr * 8 + row, fr, fg, fb2))
-                  continue;
                 // Tolerancia: el core expande 3→8 bits con su
                 // propia tabla y el formato del frame puede ser
                 // de 16 bits.
@@ -8899,9 +9337,60 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
   }
 
   // Capas de plano en orden de fondo→frente: B (plane 1), A (0), Window (2).
+  // Spec 002 (R8, RF-10.1): with per-line hscroll or 2-cell column vscroll
+  // that varies, planes A and B are placed per scroll BAND and clipped to it
+  // (session/plane_bands.h) — composed exactly instead of falling back to
+  // the core's image. Those cells are originals only: the matchers keep
+  // working on the pick-list, and no plane replacement applies in them.
+  std::vector<session::BandCell> bands;
+  bool banded = false;
+  {
+    const uint8_t *bvram = im.vram_ptr();
+    const uint8_t *bregs = im.regs_ptr();
+    const uint8_t *bvsram = im.vsram_ptr();
+    const size_t bvsz = im.runner.video_ram_size();
+    const size_t brsz = im.runner.vdp_regs_size();
+    const size_t bvssz = im.runner.vsram_size();
+    if (bvram && bregs && bvsram && bvsz >= 0x10000 && brsz >= 0x20) {
+      const session::PlaneBandInput bin{{bvram, bvsz},
+                                        {bregs, brsz},
+                                        {bvsram, bvssz},
+                                        (int)v.fb_width,
+                                        (int)v.fb_height};
+      if (v.fb_width && v.fb_height && session::needs_bands(bin)) {
+        banded = true;
+        for (int plane = 0; plane < 2; ++plane) {
+          const std::vector<session::BandCell> cells =
+              session::band_cells(bin, plane);
+          bands.insert(bands.end(), cells.begin(), cells.end());
+        }
+      }
+    }
+  }
   auto emit_planes = [&](uint8_t pri) {
     static constexpr uint8_t kOrder[3] = {1, 0, 2};
-    for (uint8_t pl : kOrder)
+    for (uint8_t pl : kOrder) {
+      if (banded && pl < 2) {
+        for (const session::BandCell &c : bands) {
+          if (c.plane != pl || c.priority != pri)
+            continue;
+          SceneElement e;
+          e.x = c.x;
+          e.y = c.y;
+          e.w = e.h = 8;
+          e.pattern = c.pattern;
+          e.palette = c.palette;
+          e.flips = c.flips;
+          e.layer = pl == 1 ? 0 : 1; // 0=B · 1=A
+          e.priority = pri;
+          e.clip_x0 = c.clip_x0;
+          e.clip_y0 = c.clip_y0;
+          e.clip_x1 = c.clip_x1;
+          e.clip_y1 = c.clip_y1;
+          out.push_back(e);
+        }
+        continue;
+      }
       for (uint32_t i = 0; i < v.plane_cell_count; ++i) {
         const PlaneCellHit &pc = v.plane_cells[i];
         if (pc.plane != pl || ((pc.flags >> 2) & 1) != pri)
@@ -8930,7 +9419,9 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
         if (e.sub < 0 && consumida)
           for (uint32_t q = 0; q < v.plane_tile_sub_count; ++q) {
             const AytherSpriteSub &sq = v.plane_tile_subs[q];
-            if ((sq.w_tiles > 1 || sq.h_tiles > 1) &&
+            // A set quad: larger than a cell, or a split part (BR-098),
+            // which carries its size in pixels; a 1x1 cell sub has none.
+            if ((sq.w_tiles > 1 || sq.h_tiles > 1 || sq.w_px > 0) &&
                 im.plane_tile_sub_plane[q] == pc.plane &&
                 pc.screen_x >= sq.screen_x &&
                 pc.screen_x < sq.screen_x + sq.w_tiles * 8 &&
@@ -8970,15 +9461,26 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
         }
         out.push_back(e);
       }
+    }
   };
   // Sprites del grupo de prioridad, del fondo al frente (cadena invertida:
   // menor chain = más al frente en el VDP → va último).
   auto emit_sprites = [&](uint8_t pri) {
     std::vector<const AytherSpriteOccurrence *> grp;
-    for (uint32_t i = 0; i < v.sprite_occ_count; ++i)
-      if (v.sprite_occs[i].priority == pri &&
-          !fully_masked.count(&v.sprite_occs[i]))
-        grp.push_back(&v.sprite_occs[i]);
+    for (uint32_t i = 0; i < v.sprite_occ_count; ++i) {
+      const AytherSpriteOccurrence &occ = v.sprite_occs[i];
+      if (occ.priority != pri || fully_masked.count(&occ))
+        continue;
+      // Spec 002 (R5, BR-095, RF-9.4): the judge's verdict is applied — a
+      // sprite the core did not draw is not drawn as an original. One that a
+      // replacement claims stays: it carries that replacement's depth.
+      const bool replaced =
+          (i < kMaxSpriteOccs && im.pose_owner[i] < n_pose_subs) ||
+          (occ.slot < 80 && slot2sub[occ.slot] >= 0);
+      if (not_drawn.count(&occ) && !replaced)
+        continue;
+      grp.push_back(&occ);
+    }
     std::stable_sort(
         grp.begin(), grp.end(),
         [&](const AytherSpriteOccurrence *a, const AytherSpriteOccurrence *b) {
@@ -9001,8 +9503,18 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
       e.priority = pri;
       e.slot = oc->slot;
       e.chain = r ? r->chain : 0xFF;
-      e.sub = oc->slot < 80 ? slot2sub[oc->slot] : -1;
+      const size_t oidx = static_cast<size_t>(oc - v.sprite_occs);
+      const uint32_t pose_owner =
+          oidx < kMaxSpriteOccs ? im.pose_owner[oidx] : session::kNoPoseOwner;
+      const bool pose_member = pose_owner < n_pose_subs;
+      if (pose_member)
+        e.sub = im.pose_anchor[pose_owner] == oidx ? (int32_t)pose_owner : -1;
+      else
+        e.sub = oc->slot < 80 ? slot2sub[oc->slot] : -1;
       e.sub_kind = e.sub >= 0 ? 1 : 0;
+      // Spec 002 (R6): the replacement that claims the sprite, whose texture
+      // decides whether the original is hidden (texture_residency.h).
+      e.owner = pose_member ? (int16_t)pose_owner : (int16_t)e.sub;
       e.hidden = im.hidden_sprite_hashes.count(oc->hash) ? 1 : 0;
       // R-5: el ojo por SLOT de Editar (ex canal 0x103) idem.
       if (!e.hidden && im.suppress_any && oc->slot < 80 &&
@@ -9010,11 +9522,7 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
         e.hidden = 1;
       // R-5: TODOS los occs reclamados por un sub (miembros de la pose,
       // no sólo el ancla) — sin esto el original asoma bajo el HD.
-      const size_t oidx = static_cast<size_t>(oc - v.sprite_occs);
-      e.claimed =
-          (e.sub >= 0 || (oidx < kMaxSpriteOccs && im.sprite_claimed[oidx]))
-              ? 1
-              : 0;
+      e.claimed = (e.sub >= 0 || pose_member) ? 1 : 0;
       // R-6: efectos asignados a este elemento (capa 3, hash).
       if (auto fit = im.element_fx[3].find(e.hash);
           fit != im.element_fx[3].end()) {
@@ -9500,6 +10008,33 @@ double AytherSession::timing_fps() const noexcept {
 uint64_t AytherSession::audio_starved_frames() const noexcept {
   return impl_->audio.starved_frames();
 }
+void AytherSession::set_audio_output_mode(AudioOutputMode mode) noexcept {
+  impl_->audio_output_mode = mode;
+  impl_->audio.set_output_silent(mode == AudioOutputMode::silent);
+}
+AudioOutputMode AytherSession::audio_output_mode() const noexcept {
+  return impl_->audio_output_mode;
+}
+uint64_t AytherSession::audio_device_frames() const noexcept {
+  return impl_->audio.device_frames();
+}
+AudioDrainResult
+AytherSession::pause_after_drain(std::chrono::milliseconds limit) noexcept {
+  if (!impl_->audio_enabled)
+    return {AudioDrainResult::Code::unavailable, 0};
+  const AudioPlayer::DrainResult r = impl_->audio.pause_after_drain(limit);
+  AudioDrainResult out;
+  out.remaining_frames = r.remaining_frames;
+  out.code = r.code == AudioPlayer::DrainResult::Code::drained
+                 ? AudioDrainResult::Code::drained
+             : r.code == AudioPlayer::DrainResult::Code::timed_out
+                 ? AudioDrainResult::Code::timed_out
+                 : AudioDrainResult::Code::unavailable;
+  return out;
+}
+void AytherSession::resume_transport() noexcept {
+  impl_->audio.resume_transport();
+}
 float AytherSession::audio_drc_ratio() const noexcept {
   return impl_->audio.drc_ratio();
 }
@@ -9946,6 +10481,78 @@ AytherSession::drain_frozen_audio() noexcept {
 
 engine::PackView AytherSession::pack() const noexcept {
   return engine::PackView{impl_->pack.get()};
+}
+AytherSession::PackDerivedState AytherSession::pack_derived_state() const {
+  const Impl &im = *impl_;
+  PackDerivedState out;
+  out.plane_sets = (uint32_t)im.plane_sets.size();
+  out.plane_sequences = (uint32_t)im.plane_seqs.size();
+  out.screens = (uint32_t)im.screens.size();
+  out.panoramas = (uint32_t)im.panoramas.size();
+  out.kinematics = (uint32_t)im.kinematics.size();
+  std::copy(std::begin(im.pal_luma_peak), std::end(im.pal_luma_peak),
+            out.luma_peak);
+  return out;
+}
+
+std::vector<std::string> AytherSession::catalog_texture_assets() const {
+  // Spec 002 (R6, BR-091): poses first (catalog order), then per-sprite,
+  // then plane sets and their sequences.
+  std::vector<std::string> out;
+  char name[512];
+  const auto add = [&](size_t len) {
+    if (len == 0 || len >= sizeof(name))
+      return;
+    std::string asset(name, len);
+    if (std::find(out.begin(), out.end(), asset) == out.end())
+      out.push_back(std::move(asset));
+  };
+  if (const PoseSetSubstitutor *p = impl_->pose_sub.get())
+    for (uint32_t i = 0, n = ayther_pose_sub_catalog_asset_count(p); i < n; ++i)
+      add(ayther_pose_sub_catalog_asset(p, i, name, sizeof(name)));
+  if (const AytherSpriteSubstitutor *s = impl_->sprite_sub.get())
+    for (uint32_t i = 0, n = ayther_sprite_sub_catalog_asset_count(s); i < n;
+         ++i)
+      add(ayther_sprite_sub_catalog_asset(s, i, name, sizeof(name)));
+  // Plane sets and the steps of their sequences (BR-092: their first
+  // appearance was the largest synchronous decode of Golden Axe), by id so
+  // the order does not depend on the hash maps.
+  const Impl &im = *impl_;
+  std::vector<uint64_t> ids;
+  ids.reserve(im.plane_sets.size());
+  for (const auto &[id, def] : im.plane_sets)
+    ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  const auto add_name = [&](const std::string &asset) {
+    if (!asset.empty() && std::find(out.begin(), out.end(), asset) == out.end())
+      out.push_back(asset);
+  };
+  for (const uint64_t id : ids)
+    add_name(im.plane_sets.at(id).asset);
+  ids.clear();
+  for (const auto &[id, def] : im.plane_seqs)
+    ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  for (const uint64_t id : ids)
+    for (const std::string &asset : im.plane_seqs.at(id).assets)
+      add_name(asset);
+  // Panoramas and screens (Cuadros): the largest textures of a pack, whose
+  // first appearance cost Golden Axe a 0.5 s synchronous decode (a 13752 px
+  // panorama) once BR-092 made every texture resident before composing.
+  // Kinematic steps are left out: a step can be a video, which is no texture.
+  ids.clear();
+  for (const auto &[id, def] : im.panoramas)
+    ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  for (const uint64_t id : ids)
+    add_name(im.panoramas.at(id).asset);
+  ids.clear();
+  for (const auto &[id, def] : im.screens)
+    ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  for (const uint64_t id : ids)
+    add_name(im.screens.at(id).asset);
+  return out;
 }
 const uint8_t *AytherSession::work_ram() const noexcept {
   return impl_->runner.work_ram();

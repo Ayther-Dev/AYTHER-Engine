@@ -17,57 +17,66 @@
 // device/allocator handles it needs, so destruction is automatic; shutdown()
 // remains available for deterministic early release.
 // ---------------------------------------------------------------------------
-#include <vulkan/vulkan.h>
 #include <ayther/engine/vulkan_interop.hpp>
 #include <cstdint>
+#include <vulkan/vulkan.h>
 
 // VMA handle is a pointer typedef — forward-declare so this PUBLIC header keeps
 // <vk_mem_alloc.h> out of the frontend (matches vk_texture.h).
 struct VmaAllocation_T;
-using  VmaAllocation = VmaAllocation_T*;
+using VmaAllocation = VmaAllocation_T *;
 struct VmaAllocator_T;
-using  VmaAllocator = VmaAllocator_T*;
-
-
+using VmaAllocator = VmaAllocator_T *;
 
 class VkRenderTarget {
 public:
-    VkRenderTarget()  = default;
-    ~VkRenderTarget();
+  VkRenderTarget() = default;
+  ~VkRenderTarget();
 
-    VkRenderTarget(const VkRenderTarget&)            = delete;
-    VkRenderTarget& operator=(const VkRenderTarget&) = delete;
+  VkRenderTarget(const VkRenderTarget &) = delete;
+  VkRenderTarget &operator=(const VkRenderTarget &) = delete;
 
-    // Create the offscreen color image + view + sampler at width × height.
-    // The default format is the UNORM color target the sprite/postprocess passes
-    // already assume, and is blit-compatible with the swapchain.
-    bool init(const ayther::engine::VulkanContextView& ctx, uint32_t width, uint32_t height,
-              VkFormat format = VK_FORMAT_B8G8R8A8_UNORM);
+  // Create the offscreen color image + view + sampler at width × height.
+  // The default format is the UNORM color target the sprite/postprocess passes
+  // already assume, and is blit-compatible with the swapchain.
+  bool init(const ayther::engine::VulkanContextView &ctx, uint32_t width,
+            uint32_t height, VkFormat format = VK_FORMAT_B8G8R8A8_UNORM);
 
-    // Recreate at a new size (window / viewport resize): shutdown() + init().
-    bool resize(const ayther::engine::VulkanContextView& ctx, uint32_t width, uint32_t height);
+  // Recreate at a new size (window / viewport resize): shutdown() + init().
+  bool resize(const ayther::engine::VulkanContextView &ctx, uint32_t width,
+              uint32_t height);
 
-    // Destroy all resources. Safe on a partially-initialized / empty target.
-    void shutdown(const ayther::engine::VulkanContextView& ctx);
+  // Destroy all resources. Safe on a partially-initialized / empty target.
+  void shutdown(const ayther::engine::VulkanContextView &ctx);
 
-    bool is_ready() const { return image_ != VK_NULL_HANDLE; }
+  bool is_ready() const { return image_ != VK_NULL_HANDLE; }
 
-    // ---- Accessors ---------------------------------------------------------
-    VkImage     image()   const { return image_;   }
-    VkImageView view()    const { return view_;    }   // SAMPLED + attachment
-    VkSampler   sampler() const { return sampler_; }   // LINEAR, for sampling
-    VkFormat    format()  const { return format_;  }
-    VkExtent2D  extent()  const { return extent_;  }
+  // ---- Accessors ---------------------------------------------------------
+  VkImage image() const { return image_; }
+  VkImageView view() const { return view_; }     // SAMPLED + attachment
+  VkSampler sampler() const { return sampler_; } // LINEAR, for sampling
+  VkFormat format() const { return format_; }
+  VkExtent2D extent() const { return extent_; }
+  // Spec 002 (R3): the depth image of the sprite layer (D32_SFLOAT), kept in
+  // VK_IMAGE_LAYOUT_GENERAL. Each sprite pixel carries the depth of its
+  // link-chain position, so the first of the chain wins across the two
+  // priority passes (session/vdp_sprite_order.h).
+  VkImage depth_image() const { return depth_image_; }
+  VkImageView depth_view() const { return depth_view_; }
+  static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 
 private:
-    void release() noexcept;
+  void release() noexcept;
 
-    VkDevice       device_    = VK_NULL_HANDLE;
-    VmaAllocator   allocator_ = nullptr;
-    VkImage       image_   = VK_NULL_HANDLE;
-    VmaAllocation alloc_   = nullptr;
-    VkImageView   view_    = VK_NULL_HANDLE;
-    VkSampler     sampler_ = VK_NULL_HANDLE;
-    VkFormat      format_  = VK_FORMAT_UNDEFINED;
-    VkExtent2D    extent_  = {};
+  VkDevice device_ = VK_NULL_HANDLE;
+  VmaAllocator allocator_ = nullptr;
+  VkImage image_ = VK_NULL_HANDLE;
+  VmaAllocation alloc_ = nullptr;
+  VkImageView view_ = VK_NULL_HANDLE;
+  VkSampler sampler_ = VK_NULL_HANDLE;
+  VkImage depth_image_ = VK_NULL_HANDLE;
+  VmaAllocation depth_alloc_ = nullptr;
+  VkImageView depth_view_ = VK_NULL_HANDLE;
+  VkFormat format_ = VK_FORMAT_UNDEFINED;
+  VkExtent2D extent_ = {};
 };

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,6 +87,74 @@ class CoverageGateTest(unittest.TestCase):
         self.assertFalse(
             coverage_gate.gate_failed(100, 80.0, 50.0, 0, 100.0, 70.0)
         )
+
+    def test_cpp_coverage_executes_gpu_oracles_into_the_same_profile_set(self):
+        root = SCRIPT.parents[1]
+        presets = json.loads((root / "CMakePresets.json").read_text(encoding="utf-8"))
+        configure = {item["name"]: item for item in presets["configurePresets"]}
+        tests = {item["name"]: item for item in presets["testPresets"]}
+
+        self.assertEqual(
+            configure["linux-native-coverage"]["cacheVariables"].get(
+                "AYTHER_BUILD_GPU_TESTS"
+            ),
+            "ON",
+        )
+        gpu = tests["linux-native-coverage-gpu"]
+        self.assertEqual(gpu["configurePreset"], "linux-native-coverage")
+        self.assertEqual(gpu["filter"]["include"]["label"], "gpu")
+
+        workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        coverage_job = workflow.split("  cpp-coverage:", 1)[1].split("\n  native:", 1)[0]
+        self.assertIn("mesa-vulkan-drivers", coverage_job)
+        self.assertIn("xvfb", coverage_job)
+        self.assertIn("libx11-dev", coverage_job)
+        self.assertIn("libxft-dev", coverage_job)
+        self.assertIn("libxext-dev", coverage_job)
+        self.assertIn("libxcursor-dev", coverage_job)
+        self.assertIn("libxfixes-dev", coverage_job)
+        self.assertIn("libxi-dev", coverage_job)
+        self.assertIn("libxrandr-dev", coverage_job)
+        self.assertLess(
+            coverage_job.index("libx11-dev"),
+            coverage_job.index("Configure coverage build"),
+        )
+        self.assertIn("linux-native-coverage-gpu", coverage_job)
+        self.assertIn("tools/check_gpu_matrix.ps1", coverage_job)
+        self.assertIn("SDL_VIDEODRIVER: offscreen", coverage_job)
+        self.assertIn("pwsh -File ./tools/check_gpu_matrix.ps1", coverage_job)
+        self.assertNotIn("xvfb-run --auto-servernum pwsh -File", coverage_job)
+        self.assertNotIn("-Launcher 'xvfb-run --auto-servernum'", coverage_job)
+        self.assertIn("LIBGL_ALWAYS_SOFTWARE: '1'", coverage_job)
+        self.assertIn("find /usr/share/vulkan/icd.d", coverage_job)
+        self.assertIn("-name 'lvp_icd*.json'", coverage_job)
+        self.assertIn('export VK_DRIVER_FILES="$lavapipe_icd"', coverage_job)
+        self.assertNotIn("lvp_icd.x86_64.json", coverage_job)
+        self.assertIn("vulkan-validationlayers", coverage_job)
+        self.assertIn("vulkaninfo --summary", coverage_job)
+        self.assertIn(
+            "SDL_VULKAN_LIBRARY: ${{ github.workspace }}/build/linux-native-coverage/"
+            "vcpkg_installed/x64-linux/debug/lib/libvulkan.so",
+            coverage_job,
+        )
+        self.assertGreaterEqual(coverage_job.count("LLVM_PROFILE_FILE"), 2)
+
+        vulkan_context = (root / "tests/support/vulkan_test_context.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("SDL_Vulkan_GetInstanceExtensions", vulkan_context)
+        self.assertIn("enable_extensions", vulkan_context)
+        self.assertIn("set_headless", vulkan_context)
+
+    def test_render_probe_subprocess_quoting_is_platform_specific(self):
+        root = Path(__file__).resolve().parents[2]
+        render_probe_test = (
+            root / "tests/renderer/render_probe_test.cpp"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("#ifdef _WIN32", render_probe_test)
+        self.assertIn("#else", render_probe_test)
+        self.assertIn('std::string("\\\"") + RENDER_PROBE_PATH', render_probe_test)
 
 
 if __name__ == "__main__":

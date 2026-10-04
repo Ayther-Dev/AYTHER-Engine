@@ -45,6 +45,7 @@
 // positional changes (we don't include X/Y in the hash).
 // ---------------------------------------------------------------------------
 
+use crate::state_codec::{StateReader, StateWriter};
 use std::collections::{HashMap, HashSet, VecDeque};
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -190,7 +191,13 @@ impl AnimationGrouper {
         self.hash_to_group.clear();
         self.group_to_clip.clear();
 
-        for hist in self.slot_histories.values() {
+        // Spec 002 (BR-115b, RNF-1): slots in ascending order, so a hash that
+        // cycles in two slots gets the group of the lowest one in every
+        // instance — HashMap order depends on the per-instance random seed.
+        let mut slots: Vec<u8> = self.slot_histories.keys().copied().collect();
+        slots.sort_unstable();
+        for slot in slots {
+            let hist = &self.slot_histories[&slot];
             // Count occurrences of each distinct hash in this slot's window.
             let mut counts: HashMap<u64, u32> = HashMap::new();
             for &hash in hist {
@@ -252,6 +259,94 @@ impl AnimationGrouper {
         self.hash_to_group.clear();
         self.group_to_clip.clear();
         self.clip_list.clear();
+    }
+
+    /// Writes every value that decides later groupings, in a deterministic
+    /// order (spec 002, contracts.md C4 `animation_grouper`).
+    fn save(&self, w: &mut StateWriter) {
+        w.u64(self.frame_counter);
+        let mut slots: Vec<(&u8, &VecDeque<u64>)> = self.slot_histories.iter().collect();
+        slots.sort_unstable_by_key(|(slot, _)| **slot);
+        w.count(slots.len());
+        for (slot, hist) in slots {
+            w.u8(*slot);
+            w.count(hist.len());
+            for hash in hist {
+                w.u64(*hash);
+            }
+        }
+        let mut groups: Vec<(&u64, &u64)> = self.hash_to_group.iter().collect();
+        groups.sort_unstable();
+        w.count(groups.len());
+        for (hash, group) in groups {
+            w.u64(*hash);
+            w.u64(*group);
+        }
+        // `clip_list` is `group_to_clip` sorted by id: it is rebuilt on restore.
+        w.count(self.clip_list.len());
+        for clip in &self.clip_list {
+            w.u64(clip.id);
+            w.count(clip.frames.len());
+            for frame in &clip.frames {
+                w.u64(frame.pose);
+                w.u16(frame.duration);
+            }
+            w.bool(clip.looping);
+        }
+    }
+
+    /// Reads a grouper written by [`Self::save`], rejecting values the
+    /// grouper itself could not have produced.
+    fn parse(r: &mut StateReader<'_>) -> Option<Self> {
+        let mut g = Self::new();
+        g.frame_counter = r.u64()?;
+        let n_slots = r.count(MAX_SPRITES_H40)?;
+        for _ in 0..n_slots {
+            let slot = r.u8()?;
+            if usize::from(slot) >= MAX_SPRITES_H40 {
+                return None;
+            }
+            let n = r.count(ANIM_WINDOW)?;
+            let mut hist = VecDeque::with_capacity(n);
+            for _ in 0..n {
+                hist.push_back(r.u64()?);
+            }
+            if g.slot_histories.insert(slot, hist).is_some() {
+                return None;
+            }
+        }
+        let n_groups = r.count(MAX_SPRITES_H40 * ANIM_WINDOW)?;
+        for _ in 0..n_groups {
+            let hash = r.u64()?;
+            let group = r.u64()?;
+            if g.hash_to_group.insert(hash, group).is_some() {
+                return None;
+            }
+        }
+        let n_clips = r.count(MAX_SPRITES_H40)?;
+        for _ in 0..n_clips {
+            let id = r.u64()?;
+            let n_frames = r.count(ANIM_WINDOW)?;
+            let mut frames = Vec::with_capacity(n_frames);
+            for _ in 0..n_frames {
+                frames.push(AnimFrame {
+                    pose: r.u64()?,
+                    duration: r.u16()?,
+                });
+            }
+            let looping = r.bool()?;
+            let clip = AnimationClip {
+                id,
+                frames,
+                looping,
+            };
+            if g.group_to_clip.insert(id, clip).is_some() {
+                return None;
+            }
+        }
+        g.clip_list = g.group_to_clip.values().cloned().collect();
+        g.clip_list.sort_by_key(|c| c.id);
+        Some(g)
     }
 }
 
@@ -678,8 +773,18 @@ impl SpriteHasher {
         self.last_occurrences.clear();
         let mut new_this_frame = 0u32;
         let n = data.len() / 10;
+        // Spec 002 (R5, RF-9.1): the same SAT entry parsed twice — the same
+        // first 9 bytes: position, attributes, size and slot — is one sprite.
+        // It keeps its first occurrence, at the frontmost chain position.
+        let mut seen: Vec<(&[u8], usize)> = Vec::with_capacity(n);
         for i in 0..n {
             let o = i * 10;
+            let key = &data[o..o + 9];
+            if let Some(&(_, at)) = seen.iter().find(|(k, _)| *k == key) {
+                let link = &mut self.last_occurrences[at].link;
+                *link = (*link).min(data[o + 9]);
+                continue;
+            }
             let yr = (u16::from_le_bytes([data[o], data[o + 1]]) & 0x1FF) as i16;
             let xr = (u16::from_le_bytes([data[o + 2], data[o + 3]]) & 0x1FF) as i16;
             let attr = u16::from_le_bytes([data[o + 4], data[o + 5]]);
@@ -718,6 +823,7 @@ impl SpriteHasher {
                 hflip: hflip as u8,
                 vflip: vflip as u8,
             });
+            seen.push((key, self.last_occurrences.len() - 1));
             use std::collections::hash_map::Entry;
             if let Entry::Vacant(e) = self.catalog.entry(hash) {
                 e.insert((self.frame_index, w, h));
@@ -752,6 +858,49 @@ impl SpriteHasher {
     /// only the recording being scanned, not whatever played before.
     pub fn reset_animation_grouper(&mut self) {
         self.anim_grouper.reset();
+    }
+
+    const GROUPER_STATE_MAGIC: &'static [u8; 8] = b"AYAGRPS\0";
+    const GROUPER_STATE_VERSION: u16 = 1;
+
+    /// Serializes the animation grouper and the hasher's frame counter: the
+    /// state that decides each occurrence's `anim_group_id` in later frames
+    /// (spec 002, contracts.md C4 `animation_grouper`). The catalog of unique
+    /// sprites only feeds a diagnostic count and is not included.
+    pub fn save_animation_grouper_state(&self) -> Vec<u8> {
+        let mut w = StateWriter::new(Self::GROUPER_STATE_MAGIC, Self::GROUPER_STATE_VERSION);
+        w.u64(self.frame_index);
+        self.anim_grouper.save(&mut w);
+        w.finish()
+    }
+
+    fn parse_animation_grouper_state(payload: &[u8]) -> Option<(u64, AnimationGrouper)> {
+        let mut r = StateReader::open(
+            payload,
+            Self::GROUPER_STATE_MAGIC,
+            Self::GROUPER_STATE_VERSION,
+        )?;
+        let frame_index = r.u64()?;
+        let grouper = AnimationGrouper::parse(&mut r)?;
+        r.finish()?;
+        Some((frame_index, grouper))
+    }
+
+    /// Whether `payload` is a complete grouper state this version can restore.
+    pub fn validate_animation_grouper_state(payload: &[u8]) -> bool {
+        Self::parse_animation_grouper_state(payload).is_some()
+    }
+
+    /// Replaces the grouper state only when the whole payload is valid.
+    pub fn restore_animation_grouper_state(&mut self, payload: &[u8]) -> bool {
+        match Self::parse_animation_grouper_state(payload) {
+            Some((frame_index, grouper)) => {
+                self.frame_index = frame_index;
+                self.anim_grouper = grouper;
+                true
+            }
+            None => false,
+        }
     }
 
     /// Recover the SAT base address from VRAM contents.
@@ -917,6 +1066,21 @@ impl SpriteSubstitutor {
             pal_catalog: HashMap::new(),
             overrides: HashMap::new(),
         }
+    }
+
+    /// The textures the per-sprite catalog can draw (spec 002, R6, BR-091):
+    /// each asset once, sorted, so the list does not depend on map order.
+    pub fn catalog_assets(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .catalog
+            .values()
+            .chain(self.pal_catalog.values())
+            .map(|d| d.asset.clone())
+            .filter(|a| !a.is_empty())
+            .collect();
+        out.sort();
+        out.dedup();
+        out
     }
 
     /// Load from `sprite_substitutions.toml` in the pack.
@@ -1355,6 +1519,11 @@ fn choose_variant_asset(
     }
 }
 
+/// Owner value for an occurrence that no substitution claimed in a resolve call.
+///
+/// See [`PoseSetSubstitutor::resolve_with_owners`].
+pub const NO_OWNER: u32 = u32::MAX;
+
 /// Resolves whole multi-sprite poses before per-sprite fallback.
 pub struct PoseSetSubstitutor {
     catalog: Vec<PoseEntry>,
@@ -1443,6 +1612,89 @@ impl PoseSetSubstitutor {
         }
     }
 
+    const SIGNATURE_STATE_MAGIC: &'static [u8; 8] = b"AYPSIGS\0";
+    const SIGNATURE_STATE_VERSION: u16 = 1;
+    /// Latched signatures a restored state may carry: 4 lines × slot masks.
+    const SIGNATURE_STATE_LIMIT: usize = 4 * 4096;
+
+    /// Serializes the palette-signature tracking: the last CRAM seen, the
+    /// stability counter of each line and the latched signatures, which decide
+    /// `SigState` while a palette fades (spec 002, contracts.md C4
+    /// `palette_signature`). The slot masks derive from the catalog and are
+    /// not included.
+    pub fn save_palette_signature_state(&self) -> Vec<u8> {
+        let mut w = StateWriter::new(Self::SIGNATURE_STATE_MAGIC, Self::SIGNATURE_STATE_VERSION);
+        for word in self.cram {
+            w.u16(word);
+        }
+        for stable in self.cram_stable {
+            w.u32(stable);
+        }
+        let mut latch: Vec<(u8, u16, u64)> = self
+            .sig_latch
+            .iter()
+            .map(|(&(line, slots), &sig)| (line, slots, sig))
+            .collect();
+        latch.sort_unstable();
+        w.count(latch.len());
+        for (line, slots, sig) in latch {
+            w.u8(line);
+            w.u16(slots);
+            w.u64(sig);
+        }
+        w.finish()
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn parse_palette_signature_state(
+        payload: &[u8],
+    ) -> Option<([u16; 64], [u32; 4], HashMap<(u8, u16), u64>)> {
+        let mut r = StateReader::open(
+            payload,
+            Self::SIGNATURE_STATE_MAGIC,
+            Self::SIGNATURE_STATE_VERSION,
+        )?;
+        let mut cram = [0u16; 64];
+        for word in &mut cram {
+            *word = r.u16()?;
+        }
+        let mut cram_stable = [0u32; 4];
+        for stable in &mut cram_stable {
+            *stable = r.u32()?;
+        }
+        let n = r.count(Self::SIGNATURE_STATE_LIMIT)?;
+        let mut sig_latch = HashMap::with_capacity(n);
+        for _ in 0..n {
+            let line = r.u8()?;
+            let slots = r.u16()?;
+            let sig = r.u64()?;
+            if line >= 4 || sig_latch.insert((line, slots), sig).is_some() {
+                return None;
+            }
+        }
+        r.finish()?;
+        Some((cram, cram_stable, sig_latch))
+    }
+
+    /// Whether `payload` is a complete palette-signature state.
+    pub fn validate_palette_signature_state(payload: &[u8]) -> bool {
+        Self::parse_palette_signature_state(payload).is_some()
+    }
+
+    /// Replaces the palette-signature tracking only when the whole payload is
+    /// valid.
+    pub fn restore_palette_signature_state(&mut self, payload: &[u8]) -> bool {
+        match Self::parse_palette_signature_state(payload) {
+            Some((cram, cram_stable, sig_latch)) => {
+                self.cram = cram;
+                self.cram_stable = cram_stable;
+                self.sig_latch = sig_latch;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// ¿Un sprite de w×h tiles en (x,y) quedaría TOTALMENTE fuera del área
     /// visible? Sólo ahí la ausencia de un miembro es provablemente "salió por
     /// el borde" (uno parcialmente visible se dibuja y genera occurrence).
@@ -1459,8 +1711,43 @@ impl PoseSetSubstitutor {
         if let Some(data) = pack.read("pose_substitutions.toml")
             && let Ok(s) = std::str::from_utf8(&data)
         {
-            self.parse_toml(s);
+            self.parse_toml_in(s, |asset| pack.file_size(asset).is_some());
         }
+    }
+
+    /// Parses `pose_substitutions.toml` for a pack whose entries answer
+    /// `has_asset` (spec 002, R7, RF-9.3): a pose whose asset is empty or
+    /// absent from the pack is not loaded, so it never claims its members and
+    /// their originals stay drawn; a variant candidate without its asset is
+    /// dropped the same way.
+    fn parse_toml_in(&mut self, s: &str, has_asset: impl Fn(&str) -> bool) {
+        let valid = |asset: &str| !asset.trim().is_empty() && has_asset(asset);
+        let before = self.catalog.len();
+        self.parse_toml(s);
+        let mut kept = before;
+        for i in before..self.catalog.len() {
+            if valid(&self.catalog[i].asset) {
+                self.catalog[i].candidates.retain(|(_, a)| valid(a));
+                self.catalog.swap(kept, i);
+                kept += 1;
+            }
+        }
+        self.catalog.truncate(kept);
+    }
+
+    /// The textures the pose catalog can draw (spec 002, R6, BR-091): each
+    /// base and variant asset once, in catalog order — what the preparation
+    /// prewarms.
+    pub fn catalog_assets(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for e in &self.catalog {
+            for asset in std::iter::once(&e.asset).chain(e.candidates.iter().map(|(_, a)| a)) {
+                if !asset.is_empty() && !out.contains(asset) {
+                    out.push(asset.clone());
+                }
+            }
+        }
+        out
     }
 
     /// Returns the number of authored pose entries.
@@ -1577,6 +1864,24 @@ impl PoseSetSubstitutor {
     /// captured bounding box. Legacy set-only poses resolve afterward from the
     /// remaining unclaimed occurrences.
     pub fn resolve(&self, occs: &[SpriteOccurrence], claimed: &mut [bool]) -> Vec<SpriteSub> {
+        self.resolve_with_owners(occs, claimed).0
+    }
+
+    /// Like [`Self::resolve`], also reporting which substitution claimed each
+    /// occurrence.
+    ///
+    /// `owners[i]` is the index, into the returned substitutions, of the one
+    /// whose pose claimed `occs[i]` in this call, or [`NO_OWNER`] when this call
+    /// did not claim it. A pose split into palette groups maps each member to
+    /// the quad of its own group. Claims are exactly those of [`Self::resolve`]
+    /// (spec 002, RF-7.3: a replacement is related to its own member
+    /// occurrences, never to an unrelated sprite).
+    pub fn resolve_with_owners(
+        &self,
+        occs: &[SpriteOccurrence],
+        claimed: &mut [bool],
+    ) -> (Vec<SpriteSub>, Vec<u32>) {
+        let mut owners = vec![NO_OWNER; occs.len()];
         let mut subs = Vec::new();
         // Dims por hash desde el frame vivo (mismo hash = mismo gráfico = mismas
         // dims): los espejos EXACTOS por miembro las necesitan (abajo).
@@ -1915,6 +2220,19 @@ impl PoseSetSubstitutor {
                     [0, 0, 0]
                 }
             };
+            // Dueño de cada miembro: el quad de SU grupo de paleta (o el único).
+            let first_sub = subs.len();
+            for &i in &inst {
+                let offset = if disjoint {
+                    groups
+                        .iter()
+                        .position(|g| g.0 == occs[i].palette)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                owners[i] = (first_sub + offset) as u32;
+            }
             if disjoint {
                 let (fw, fh) = ((x1 - x0).max(1) as f32, (y1 - y0).max(1) as f32);
                 for g in &groups {
@@ -2004,6 +2322,7 @@ impl PoseSetSubstitutor {
             };
             for &i in &members {
                 claimed[i] = true;
+                owners[i] = subs.len() as u32;
             }
             let w = ((x1 - x0) / 8).clamp(1, 255) as u8;
             let h = ((y1 - y0) / 8).clamp(1, 255) as u8;
@@ -2029,7 +2348,7 @@ impl PoseSetSubstitutor {
                 mask_path: mask_of_choice,
             });
         }
-        subs
+        (subs, owners)
     }
 
     /// `pose_substitutions.toml` del pack — modelo COMPLETO de pose (paridad
@@ -2331,6 +2650,98 @@ impl TweenPlayer {
     pub fn clear_state(&mut self) {
         self.tracks.clear();
         self.frame = 0;
+    }
+
+    const STATE_MAGIC: &'static [u8; 8] = b"AYTWNST\0";
+    const STATE_VERSION: u16 = 1;
+    /// Longest in-between sequence a restored track may carry.
+    const STATE_FRAME_LIMIT: usize = 1024;
+
+    /// Serializes the per-instance playback state: the frame counter and every
+    /// tracked instance, in order, with its in-between in progress (spec 002,
+    /// contracts.md C4 `sprite_tweens`). The catalog and the live overrides
+    /// are configuration and are not included.
+    pub fn save_state(&self) -> Vec<u8> {
+        let mut w = StateWriter::new(Self::STATE_MAGIC, Self::STATE_VERSION);
+        w.u64(self.frame);
+        w.count(self.tracks.len());
+        for t in &self.tracks {
+            w.u64(t.pose_key);
+            w.i64(t.cx);
+            w.i64(t.cy);
+            w.str(&t.last_target);
+            w.count(t.frames.len());
+            for frame in &t.frames {
+                w.str(frame);
+            }
+            w.count(t.idx);
+            w.u32(t.timer);
+            w.u32(t.ticks);
+            w.u64(t.last_seen);
+        }
+        w.finish()
+    }
+
+    fn parse_state(payload: &[u8]) -> Option<(u64, Vec<TweenTrack>)> {
+        let mut r = StateReader::open(payload, Self::STATE_MAGIC, Self::STATE_VERSION)?;
+        let frame = r.u64()?;
+        let n = r.count(MAX_TRACKS)?;
+        let mut tracks = Vec::with_capacity(n);
+        for _ in 0..n {
+            let pose_key = r.u64()?;
+            let cx = r.i64()?;
+            let cy = r.i64()?;
+            let last_target = r.str()?;
+            let n_frames = r.count(Self::STATE_FRAME_LIMIT)?;
+            let mut frames = Vec::with_capacity(n_frames);
+            for _ in 0..n_frames {
+                frames.push(r.str()?);
+            }
+            let idx = r.count(Self::STATE_FRAME_LIMIT)?;
+            let timer = r.u32()?;
+            let ticks = r.u32()?;
+            let last_seen = r.u64()?;
+            // The invariants begin_frame and resolve keep.
+            let idx_ok = if frames.is_empty() {
+                idx == 0
+            } else {
+                idx < frames.len()
+            };
+            if !idx_ok || ticks == 0 || timer >= ticks || last_seen > frame {
+                return None;
+            }
+            tracks.push(TweenTrack {
+                pose_key,
+                cx,
+                cy,
+                last_target,
+                frames,
+                idx,
+                timer,
+                ticks,
+                last_seen,
+            });
+        }
+        r.finish()?;
+        Some((frame, tracks))
+    }
+
+    /// Whether `payload` is a complete tween state this version can restore.
+    pub fn validate_state(payload: &[u8]) -> bool {
+        Self::parse_state(payload).is_some()
+    }
+
+    /// Replaces the per-instance playback state only when the whole payload
+    /// is valid.
+    pub fn restore_state(&mut self, payload: &[u8]) -> bool {
+        match Self::parse_state(payload) {
+            Some((frame, tracks)) => {
+                self.frame = frame;
+                self.tracks = tracks;
+                true
+            }
+            None => false,
+        }
     }
 
     /// Escalera: par exacto (vivo > pack) > comodín (vivo > pack) > None.
@@ -5077,5 +5488,612 @@ mod tests {
         let without = subs.iter().find(|s| s.asset_path == "bbbb3333").unwrap();
         assert_eq!(with.mask_path, "mmmm2222");
         assert_eq!(without.mask_path, "", "pack sin `mask` → sin máscara");
+    }
+
+    // ---- Spec 002, BR-019: miembros de cada reemplazo (RF-7.3) ----
+
+    fn occ_pal(hash: u64, x: i16, y: i16, palette: u8) -> SpriteOccurrence {
+        SpriteOccurrence {
+            palette,
+            ..occ_at(hash, x, y)
+        }
+    }
+
+    fn members_of(owners: &[u32], sub: usize) -> Vec<usize> {
+        owners
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| **o == sub as u32)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// RF-7.3: a three-sprite pose reports exactly its three members; an
+    /// unrelated sprite in the frame keeps no owner.
+    #[test]
+    fn pose_members_rf_7_3_three_sprite_pose_reports_its_members() {
+        let mut ps = PoseSetSubstitutor::new();
+        ps.add_override(
+            vec![1, 2, 3],
+            Some(vec![(0, 0), (8, 0), (16, 0)]),
+            24,
+            8,
+            "pose.png".into(),
+        );
+        let occs = vec![
+            occ_at(9, 40, 40), // ajeno
+            occ_at(1, 100, 50),
+            occ_at(2, 108, 50),
+            occ_at(3, 116, 50),
+        ];
+        let mut claimed = vec![false; occs.len()];
+        let (subs, owners) = ps.resolve_with_owners(&occs, &mut claimed);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(members_of(&owners, 0), vec![1, 2, 3]);
+        assert_eq!(owners[0], NO_OWNER, "el sprite ajeno no tiene dueño");
+        assert_eq!(claimed, vec![false, true, true, true]);
+    }
+
+    /// RF-7.3: with a member tolerated off-screen, only the visible members are
+    /// reported, the same ones that are claimed.
+    #[test]
+    fn pose_members_rf_7_3_offscreen_member_reports_only_visible() {
+        let mut ps = PoseSetSubstitutor::new();
+        ps.set_screen(320, 224);
+        ps.add_override(
+            vec![1, 2, 3],
+            Some(vec![(0, 0), (8, 0), (16, 0)]),
+            24,
+            8,
+            "pose.png".into(),
+        );
+        let occs = vec![occ_at(1, 304, 100), occ_at(2, 312, 100)];
+        let mut claimed = vec![false; occs.len()];
+        let (subs, owners) = ps.resolve_with_owners(&occs, &mut claimed);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(members_of(&owners, 0), vec![0, 1]);
+        assert!(claimed.iter().all(|&c| c));
+    }
+
+    /// RF-7.3: two instances of the same pose report their own members, never
+    /// the other instance's.
+    #[test]
+    fn pose_members_rf_7_3_two_instances_keep_their_own_members() {
+        let mut ps = PoseSetSubstitutor::new();
+        ps.add_override(
+            vec![0xaa, 0xbb],
+            Some(vec![(0, 0), (16, 0)]),
+            0,
+            0,
+            "pose.png".into(),
+        );
+        let occs = vec![
+            occ_at(0xaa, 10, 10),
+            occ_at(0xbb, 26, 10),
+            occ_at(0xaa, 200, 90),
+            occ_at(0xbb, 216, 90),
+        ];
+        let mut claimed = vec![false; occs.len()];
+        let (subs, owners) = ps.resolve_with_owners(&occs, &mut claimed);
+        assert_eq!(subs.len(), 2);
+        for (s, sub) in subs.iter().enumerate() {
+            let members = members_of(&owners, s);
+            assert_eq!(members.len(), 2, "cada instancia tiene sus dos miembros");
+            for i in members {
+                assert!(
+                    (occs[i].screen_y - sub.screen_y).abs() < 8,
+                    "el miembro {i} pertenece al reemplazo {s}"
+                );
+            }
+        }
+        assert_ne!(owners[0], owners[2]);
+    }
+
+    /// RF-7.3: a pose split into palette groups maps each member to the quad of
+    /// its own group.
+    #[test]
+    fn pose_members_rf_7_3_palette_groups_map_to_group_quad() {
+        let mut ps = PoseSetSubstitutor::new();
+        ps.add_override(
+            vec![1, 2],
+            Some(vec![(0, 0), (32, 0)]),
+            40,
+            8,
+            "pose.png".into(),
+        );
+        let occs = vec![occ_pal(1, 100, 50, 0), occ_pal(2, 132, 50, 1)];
+        let mut claimed = vec![false; occs.len()];
+        let (subs, owners) = ps.resolve_with_owners(&occs, &mut claimed);
+        assert_eq!(subs.len(), 2, "un quad por grupo de paleta disjunto");
+        for (i, o) in occs.iter().enumerate() {
+            assert_eq!(subs[owners[i] as usize].palette, o.palette);
+        }
+    }
+
+    /// RF-7.3: reporting owners never changes what is claimed or emitted,
+    /// including legacy set-only poses.
+    #[test]
+    fn pose_members_rf_7_3_claims_identical_to_resolve() {
+        let mut ps = PoseSetSubstitutor::new();
+        ps.add_override(
+            vec![1, 2, 3],
+            Some(vec![(0, 0), (8, 0), (16, 0)]),
+            24,
+            8,
+            "inst.png".into(),
+        );
+        ps.add_override(vec![7, 8], None, 0, 0, "legacy.png".into());
+        let occs = vec![
+            occ_at(1, 100, 50),
+            occ_at(2, 108, 50),
+            occ_at(3, 116, 50),
+            occ_at(7, 10, 10),
+            occ_at(8, 18, 10),
+            occ_at(5, 60, 60),
+        ];
+        let mut a = vec![false; occs.len()];
+        let mut b = vec![false; occs.len()];
+        let subs_a = ps.resolve(&occs, &mut a);
+        let (subs_b, owners) = ps.resolve_with_owners(&occs, &mut b);
+        assert_eq!(a, b);
+        assert_eq!(subs_a.len(), subs_b.len());
+        for (x, y) in subs_a.iter().zip(&subs_b) {
+            assert_eq!(x.asset_path, y.asset_path);
+            assert_eq!((x.screen_x, x.screen_y), (y.screen_x, y.screen_y));
+        }
+        for (i, &c) in b.iter().enumerate() {
+            assert_eq!(c, owners[i] != NO_OWNER, "dueño ⇔ reclamado ({i})");
+        }
+        let legacy = subs_b
+            .iter()
+            .position(|s| s.asset_path == "legacy.png")
+            .unwrap();
+        assert_eq!(members_of(&owners, legacy), vec![3, 4]);
+    }
+
+    // -- Spec 002, BR-086 (R7, RF-9.3): a pose without a valid asset -------
+
+    #[test]
+    fn catalog_assets_list_each_texture_once() {
+        // Spec 002, BR-091 (R6, RF-10.2): the preparation prewarms what the
+        // catalogs can draw — every pose asset and variant asset once, and
+        // every per-sprite asset once.
+        let mut ps = PoseSetSubstitutor::new();
+        ps.parse_toml_in(
+            concat!(
+                "[[pose]]\nhashes = [\"0x1\"]\nasset = \"b.png\"\n\n",
+                "[[pose]]\nhashes = [\"0x2\"]\nasset = \"a.png\"\n\n",
+                "[[pose.variant]]\npalette = 1\nasset = \"v.png\"\n\n",
+                "[[pose]]\nhashes = [\"0x3\"]\nasset = \"b.png\"\n",
+            ),
+            |_| true,
+        );
+        assert_eq!(ps.catalog_assets(), vec!["b.png", "a.png", "v.png"]);
+
+        let mut sub = SpriteSubstitutor::new();
+        sub.parse_toml(concat!(
+            "[[sub]]\nhash = \"0x00000000000000aa\"\nasset = \"z.png\"\n\n",
+            "[[sub]]\nhash = \"0x00000000000000aa\"\nasset = \"p.png\"\npalette = 1\n\n",
+            "[[sub]]\nhash = \"0x00000000000000bb\"\nasset = \"z.png\"\n",
+        ));
+        assert_eq!(sub.catalog_assets(), vec!["p.png", "z.png"]);
+    }
+
+    #[test]
+    fn pose_without_asset_keeps_originals() {
+        // A catalog pose with no asset, or with an asset the pack does not
+        // hold, claims none of its members: their originals stay drawn. A
+        // pose with its asset still applies.
+        let mut ps = PoseSetSubstitutor::new();
+        ps.parse_toml_in(
+            concat!(
+                "[[pose]]\nhashes = [\"0x1\", \"0x2\"]\nasset = \"\"\n\n",
+                "[[pose]]\nhashes = [\"0x7\"]\nasset = \"graphics/missing.png\"\n\n",
+                "[[pose]]\nhashes = [\"0x5\"]\nasset = \"graphics/ok.png\"\n",
+            ),
+            |asset| asset == "graphics/ok.png",
+        );
+        let occs = vec![
+            occ_at(1, 100, 50),
+            occ_at(2, 108, 50),
+            occ_at(7, 10, 10),
+            occ_at(5, 60, 60),
+        ];
+        let mut claimed = vec![false; occs.len()];
+        let (subs, owners) = ps.resolve_with_owners(&occs, &mut claimed);
+        assert_eq!(
+            claimed,
+            vec![false, false, false, true],
+            "only the pose with its asset claims"
+        );
+        assert_eq!(owners[..3], [NO_OWNER; 3]);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].asset_path, "graphics/ok.png");
+    }
+
+    // -- Spec 002, BR-026 and BR-029 (RF-3.6): visual state sections ---------
+
+    /// One frame of two tracked instances: instance 1 changes pose (and
+    /// asset) a → b at frame 3, instance 2 stays on c.
+    fn tween_frame(p: &mut TweenPlayer, f: u32) -> Vec<String> {
+        p.begin_frame();
+        let (target, key) = if f < 3 { ("a.png", 1) } else { ("b.png", 2) };
+        vec![
+            p.resolve(target, key, 100, 50),
+            p.resolve("c.png", 9, 200, 50),
+        ]
+    }
+
+    fn tween_player() -> TweenPlayer {
+        let mut p = TweenPlayer::new();
+        p.set_override(
+            Some("a.png"),
+            "b.png",
+            vec!["ab1.png".into(), "ab2.png".into(), "ab3.png".into()],
+            2,
+        );
+        p
+    }
+
+    #[test]
+    fn tween_state_roundtrip_rf_3_6_restores_in_flight_tweens() {
+        let mut linear = tween_player();
+        let expected: Vec<Vec<String>> = (0..12).map(|f| tween_frame(&mut linear, f)).collect();
+        assert_eq!(
+            expected[4][0], "ab1.png",
+            "the tween is in flight at frame 4"
+        );
+        assert_eq!(expected[9][0], "b.png", "and over by frame 9");
+
+        let mut first = tween_player();
+        for f in 0..5 {
+            tween_frame(&mut first, f);
+        }
+        let saved = first.save_state();
+        assert!(TweenPlayer::validate_state(&saved));
+        let mut restored = tween_player();
+        assert!(restored.restore_state(&saved));
+        for (f, want) in expected.iter().enumerate().skip(5) {
+            assert_eq!(&tween_frame(&mut restored, f as u32), want, "frame {f}");
+        }
+        assert_eq!(restored.save_state(), linear.save_state());
+
+        // Control: without the state, the new player pops straight to b.png.
+        let mut fresh = tween_player();
+        assert_ne!(tween_frame(&mut fresh, 5)[0], expected[5][0]);
+    }
+
+    #[test]
+    fn tween_state_roundtrip_rf_3_6_rejects_invalid_payloads_unchanged() {
+        let mut p = tween_player();
+        for f in 0..5 {
+            tween_frame(&mut p, f);
+        }
+        let saved = p.save_state();
+        let mut target = tween_player();
+        tween_frame(&mut target, 0);
+        let before = target.save_state();
+        let mut wrong_version = saved.clone();
+        wrong_version[8] ^= 1;
+        // The in-flight track with its position beyond its three frames.
+        let mut q = tween_player();
+        for f in 0..5 {
+            tween_frame(&mut q, f);
+        }
+        q.tracks[0].idx = 7;
+        let bad_idx = q.save_state();
+        for (name, payload) in [
+            ("truncated", &saved[..saved.len() - 1]),
+            ("version", &wrong_version[..]),
+            ("idx out of range", &bad_idx[..]),
+            ("empty", &[][..]),
+        ] {
+            assert!(!TweenPlayer::validate_state(payload), "{name}");
+            assert!(!target.restore_state(payload), "{name}");
+            assert_eq!(target.save_state(), before, "{name}: unchanged");
+        }
+    }
+
+    /// 64 KB of VRAM where tiles 1, 2 and 3 have distinct content.
+    fn grouper_vram() -> Vec<u8> {
+        let mut vram = vec![0u8; 0x10000];
+        for tile in 1..=3usize {
+            for b in 0..32 {
+                vram[tile * 32 + b] = (tile * 37 + b * 11) as u8;
+            }
+        }
+        vram
+    }
+
+    /// Slot 5 alternates tiles 1 and 2 every three frames (an animation);
+    /// slot 7 holds tile 3 (a static sprite).
+    fn grouper_records(f: u32) -> Vec<u8> {
+        let tile: u16 = if (f / 3).is_multiple_of(2) { 1 } else { 2 };
+        let mut out = Vec::new();
+        for (slot, tile, x) in [(5u8, tile, 100u16), (7u8, 3u16, 200u16)] {
+            out.extend_from_slice(&(100u16 + 128).to_le_bytes());
+            out.extend_from_slice(&(x + 128).to_le_bytes());
+            out.extend_from_slice(&tile.to_le_bytes());
+            out.extend_from_slice(&[1, 1, slot, slot]);
+        }
+        out
+    }
+
+    fn grouper_frame(h: &mut SpriteHasher, vram: &[u8], f: u32) -> Vec<(u64, u64)> {
+        h.process_parsed_sprites(&grouper_records(f), vram);
+        h.last_occurrences()
+            .iter()
+            .map(|o| (o.hash, o.anim_group_id))
+            .collect()
+    }
+
+    #[test]
+    fn animation_grouper_roundtrip_rf_3_6_restores_a_half_window() {
+        let vram = grouper_vram();
+        let mut linear = SpriteHasher::new();
+        let expected: Vec<Vec<(u64, u64)>> = (0..64)
+            .map(|f| grouper_frame(&mut linear, &vram, f))
+            .collect();
+        assert!(
+            expected[40].iter().any(|&(_, group)| group != 0),
+            "the alternating slot is grouped once the grouper recomputes"
+        );
+
+        let mut first = SpriteHasher::new();
+        for f in 0..24 {
+            grouper_frame(&mut first, &vram, f);
+        }
+        // 24 frames: one recompute done (16), the next window half full.
+        let saved = first.save_animation_grouper_state();
+        assert!(SpriteHasher::validate_animation_grouper_state(&saved));
+        let mut restored = SpriteHasher::new();
+        assert!(restored.restore_animation_grouper_state(&saved));
+        for (f, want) in expected.iter().enumerate().skip(24) {
+            assert_eq!(
+                &grouper_frame(&mut restored, &vram, f as u32),
+                want,
+                "frame {f}"
+            );
+        }
+        assert_eq!(
+            restored.save_animation_grouper_state(),
+            linear.save_animation_grouper_state()
+        );
+        let ids = |h: &SpriteHasher| h.animation_clips().iter().map(|c| c.id).collect::<Vec<_>>();
+        assert_eq!(ids(&restored), ids(&linear));
+
+        // Control: without the state the groups are lost until the next
+        // recompute.
+        let mut fresh = SpriteHasher::new();
+        assert_ne!(grouper_frame(&mut fresh, &vram, 24), expected[24]);
+    }
+
+    #[test]
+    fn animation_grouper_roundtrip_rf_3_6_rejects_invalid_payloads_unchanged() {
+        let vram = grouper_vram();
+        let mut h = SpriteHasher::new();
+        for f in 0..24 {
+            grouper_frame(&mut h, &vram, f);
+        }
+        let saved = h.save_animation_grouper_state();
+        let before = h.save_animation_grouper_state();
+        let mut bad_slot = saved.clone();
+        // frame_index (8) + frame_counter (8) + slot count (4): the first slot.
+        bad_slot[10 + 8 + 8 + 4] = 200;
+        for (name, payload) in [
+            ("truncated", &saved[..saved.len() - 1]),
+            ("slot out of range", &bad_slot[..]),
+            ("empty", &[][..]),
+        ] {
+            assert!(
+                !SpriteHasher::validate_animation_grouper_state(payload),
+                "{name}"
+            );
+            assert!(!h.restore_animation_grouper_state(payload), "{name}");
+            assert_eq!(
+                h.save_animation_grouper_state(),
+                before,
+                "{name}: unchanged"
+            );
+        }
+    }
+
+    fn cram_with_line0(seed: u16) -> Vec<u16> {
+        (0..64u16)
+            .map(|i| if i < 16 { (seed + i * 3) & 0x01FF } else { i })
+            .collect()
+    }
+
+    #[test]
+    fn palette_signature_roundtrip_rf_3_6_keeps_a_latched_signature() {
+        // 35 stable frames latch line 0, then a 6-frame fade, then a new
+        // stable palette for 35 frames.
+        let script: Vec<Vec<u16>> = (0..76u16)
+            .map(|f| match f {
+                0..35 => cram_with_line0(10),
+                35..41 => cram_with_line0(10 + (f - 34) * 5),
+                _ => cram_with_line0(90),
+            })
+            .collect();
+        let mask = 0x0006u16;
+        let new_pose_sub = || {
+            let mut p = PoseSetSubstitutor::new();
+            p.note_sig_mask(mask);
+            p
+        };
+        let mut linear = new_pose_sub();
+        let mut expected = Vec::new();
+        for words in &script {
+            linear.set_cram(words);
+            expected.push(linear.save_palette_signature_state());
+        }
+
+        let mut first = new_pose_sub();
+        for words in &script[..38] {
+            first.set_cram(words);
+        }
+        // Mid-fade: line 0 is unstable and keeps the signature it latched.
+        let latched = first.sig_latch.get(&(0, mask)).copied();
+        assert_eq!(
+            latched,
+            Some(palette_signature(&cram_from(&script[34]), 0, mask))
+        );
+        let saved = first.save_palette_signature_state();
+        assert!(PoseSetSubstitutor::validate_palette_signature_state(&saved));
+        let mut restored = new_pose_sub();
+        assert!(restored.restore_palette_signature_state(&saved));
+        for (f, words) in script.iter().enumerate().skip(38) {
+            restored.set_cram(words);
+            assert_eq!(
+                restored.save_palette_signature_state(),
+                expected[f],
+                "frame {f}"
+            );
+        }
+        assert_ne!(
+            restored.sig_latch.get(&(0, mask)).copied(),
+            latched,
+            "the new stable palette latches its own signature"
+        );
+
+        // Control: without the state there is no signature during the fade.
+        let mut fresh = new_pose_sub();
+        fresh.set_cram(&script[38]);
+        assert!(!fresh.sig_latch.contains_key(&(0, mask)));
+    }
+
+    fn cram_from(words: &[u16]) -> [u16; 64] {
+        let mut cram = [0u16; 64];
+        cram.copy_from_slice(&words[..64]);
+        cram
+    }
+
+    #[test]
+    fn palette_signature_roundtrip_rf_3_6_rejects_invalid_payloads_unchanged() {
+        let mut p = PoseSetSubstitutor::new();
+        p.note_sig_mask(0x0006);
+        for _ in 0..35 {
+            p.set_cram(&cram_with_line0(10));
+        }
+        let saved = p.save_palette_signature_state();
+        let before = p.save_palette_signature_state();
+        let mut bad_line = saved.clone();
+        // magic+version (10) + CRAM (128) + stability (16) + count (4).
+        bad_line[10 + 128 + 16 + 4] = 9;
+        for (name, payload) in [
+            ("truncated", &saved[..saved.len() - 1]),
+            ("line out of range", &bad_line[..]),
+            ("empty", &[][..]),
+        ] {
+            assert!(
+                !PoseSetSubstitutor::validate_palette_signature_state(payload),
+                "{name}"
+            );
+            assert!(!p.restore_palette_signature_state(payload), "{name}");
+            assert_eq!(
+                p.save_palette_signature_state(),
+                before,
+                "{name}: unchanged"
+            );
+        }
+    }
+
+    // -- Spec 002, BR-094 (R5, RF-9.1): the parsed list ----------------------
+
+    /// One 10-byte parsed record: screen (x, y), tile, size, SAT slot, chain.
+    fn parsed_record(x: i16, y: i16, tile: u16, w: u8, h: u8, slot: u8, chain: u8) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&((y + 128) as u16).to_le_bytes());
+        out.extend_from_slice(&((x + 128) as u16).to_le_bytes());
+        out.extend_from_slice(&tile.to_le_bytes());
+        out.extend_from_slice(&[w, h, slot, chain]);
+        out
+    }
+
+    #[test]
+    fn parsed_list_duplicates_become_unique() {
+        // The same SAT entry parsed twice (same slot, position, attributes and
+        // size) is one sprite: it keeps one occurrence, at its frontmost chain
+        // position. A different entry stays.
+        let vram = grouper_vram();
+        let mut data = parsed_record(100, 50, 1, 1, 1, 5, 3);
+        data.extend(parsed_record(100, 50, 1, 1, 1, 5, 1));
+        data.extend(parsed_record(140, 50, 3, 1, 1, 6, 2));
+        let mut h = SpriteHasher::new();
+        h.process_parsed_sprites(&data, &vram);
+        let occs = h.last_occurrences();
+        assert_eq!(occs.len(), 2, "the duplicate entry is one occurrence");
+        let five: Vec<_> = occs.iter().filter(|o| o.slot == 5).collect();
+        assert_eq!(five.len(), 1);
+        assert_eq!(five[0].link, 1, "the occurrence keeps the frontmost chain");
+    }
+
+    #[test]
+    fn parsed_partially_offscreen_sprite_is_an_occurrence() {
+        // A sprite that crosses an edge of the screen is still drawn in part:
+        // it stays an occurrence (left, top, right and bottom edges).
+        let vram = grouper_vram();
+        let mut data = parsed_record(-8, 50, 1, 2, 1, 0, 0);
+        data.extend(parsed_record(100, -8, 1, 1, 2, 1, 1));
+        data.extend(parsed_record(312, 50, 1, 2, 1, 2, 2));
+        data.extend(parsed_record(100, 220, 1, 1, 2, 3, 3));
+        let mut h = SpriteHasher::new();
+        h.process_parsed_sprites(&data, &vram);
+        assert_eq!(h.last_occurrences().len(), 4);
+    }
+
+    #[test]
+    fn pose_at_the_edge_matches_from_parsed_sprites() {
+        // A two-member pose crossing the left edge: both members are partially
+        // visible, so both are occurrences and the pose matches (the same
+        // occurrences on every frame — the edge does not make it flicker).
+        let vram = grouper_vram();
+        let mut data = parsed_record(-4, 60, 1, 1, 1, 0, 0);
+        data.extend(parsed_record(4, 60, 3, 1, 1, 1, 1));
+        let mut h = SpriteHasher::new();
+        h.process_parsed_sprites(&data, &vram);
+        let occs = h.last_occurrences().to_vec();
+        assert_eq!(occs.len(), 2);
+        let mut ps = PoseSetSubstitutor::new();
+        ps.add_override(
+            vec![occs[0].hash, occs[1].hash],
+            Some(vec![(0, 0), (8, 0)]),
+            16,
+            8,
+            "edge.png".into(),
+        );
+        let mut claimed = vec![false; occs.len()];
+        let subs = ps.resolve(&occs, &mut claimed);
+        assert_eq!(subs.len(), 1, "the pose at the edge matches");
+        assert_eq!(claimed, vec![true, true]);
+    }
+
+    // -- Spec 002, BR-115b (RNF-1, RF-3.6): a deterministic grouper ---------
+
+    #[test]
+    fn animation_grouper_shared_hash_gets_the_same_group_in_every_instance() {
+        // Hash 0x100 cycles in two slots: with 0x200 at slot 5 and with 0x300
+        // at slot 7. Every instance (each HashMap has its own random seed)
+        // must give it the same group: the one of the lowest slot.
+        let ids: Vec<u64> = (0..10)
+            .map(|_| {
+                let mut g = AnimationGrouper::new();
+                for f in 0..32u64 {
+                    g.record(7, if f % 2 == 0 { 0x100 } else { 0x300 });
+                    g.record(5, if f % 2 == 0 { 0x100 } else { 0x200 });
+                    g.record(9, 0x400 + f % 3);
+                }
+                g.recompute();
+                g.group_id_for(0x100)
+            })
+            .collect();
+        let slot5 = {
+            let mut m = [0x100u64, 0x200];
+            m.sort_unstable();
+            let raw: Vec<u8> = m.iter().flat_map(|h| h.to_le_bytes()).collect();
+            xxh3_64(&raw)
+        };
+        assert!(ids.iter().all(|&id| id == ids[0]), "{ids:x?}");
+        assert_eq!(ids[0], slot5, "the lowest slot's group wins");
     }
 }
