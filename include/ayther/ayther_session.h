@@ -36,6 +36,7 @@
 // emulation thread), matching ayther_core's rule. Non-copyable; movable.
 // ---------------------------------------------------------------------------
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -58,6 +59,8 @@
 #include <ayther/engine/audio_initial_snapshot.hpp>
 #include <ayther/engine/audio_observer.hpp>
 #include <ayther/engine/audio_production_limit.hpp>
+#include <ayther/engine/render_observer.hpp>
+#include <ayther/engine/visual_state.hpp>
 
 namespace ayther {
 
@@ -169,6 +172,17 @@ struct PlaneCellHit {
 // the planes at ITS priority — an exact compositor passes the sprites through a
 // first-wins buffer and blends afterwards. R-5: FrameView publishes it (scene)
 // when the scene compose is ON — which is why it lives at namespace level.
+/// Spec 002 (R2, RF-8.3): one depth part of a pose replacement. The HD of a
+/// pose covers several member sprites, each at its own link-chain position;
+/// the replacement is drawn as these parts, each at the depth of the member
+/// it covers (the silhouette excess at the nearest member's).
+struct SpritePartition {
+  uint32_t sub = 0;     ///< index into FrameView::sprite_subs
+  int16_t x = 0, y = 0; ///< top-left, screen px
+  uint16_t w = 0, h = 0;
+  uint8_t chain = 0xFF; ///< link-chain position of its member
+};
+
 struct SceneElement {
   uint64_t hash = 0;    ///< stable identity (flip-invariant hash); 0 = no hash
   int16_t x = 0, y = 0; ///< screen px (top-left corner)
@@ -210,7 +224,15 @@ struct SceneElement {
   /// Smoothing strength 0..255 (it only means something with
   /// fx_enhance = 1). 255 = clean vector · 0 = pixel art barely rounded.
   uint8_t fx_enhance_k = 255;
+  /// Spec 002 (R6): sprite claimed by a replacement — the fv.sprite_subs
+  /// index of that replacement, anchor or member (-1 = none). The compose
+  /// hides the original only while that replacement's texture is resident.
+  int16_t owner = -1;
   int32_t sub = -1; ///< index into the corresponding subs array (-1 = none)
+  /// Spec 002 (R8): plane cell placed for one scroll BAND (per-line hscroll ×
+  /// 2-cell column vscroll) — drawn only inside [clip_x0, clip_x1) ×
+  /// [clip_y0, clip_y1), screen px. clip_x1 <= clip_x0 = no clip.
+  int16_t clip_x0 = 0, clip_y0 = 0, clip_x1 = 0, clip_y1 = 0;
 };
 
 // R-4: identity of a HIDDEN element of the inventory — (layer, hash), not the
@@ -273,6 +295,10 @@ struct FrameView {
   // -- Resolved sprite substitutions: HD alpha-blended overlay sprites -------
   const AytherSpriteSub *sprite_subs = nullptr;
   uint32_t sprite_sub_count = 0;
+  /// Spec 002 (R2): the depth parts of the pose replacements, grouped by
+  /// `sub` (a pose with two or more members on screen; none otherwise).
+  const SpritePartition *sprite_partitions = nullptr;
+  uint32_t sprite_partition_count = 0;
   const uint8_t *sprite_sub_flips =
       nullptr; ///< CU-AN-11: parallel to sprite_subs
                ///< (bit0 hflip, bit1 vflip) → auto-mirror
@@ -431,6 +457,9 @@ struct FrameView {
   /// lane anchors per strip only then).
   bool vs_two_cell = false;
   int16_t plane_vscroll_col[2][20] = {};
+  /// Spec 002 (R8): hscroll of planes A [0] and B [1] on every visible line
+  /// (the VDP's hscroll table read for that line in the current mode).
+  int16_t plane_hscroll_lines[2][240] = {};
 
   // -- Camera in LEVEL space (EM-1): unwrapped scroll ACCUMULATED per plane
   //    ([0]=A · [1]=B; the Window is fixed). SEQUENTIAL tracking: valid while
@@ -651,6 +680,22 @@ struct FrameView {
 // `[systems]`— and a test compares the two name by name. Two parallel lists
 // with nothing tying them together drift apart silently, and then somebody
 // switches off "music" and loses the interface.
+/// Spec 002 (contracts.md C4): whether produced audio reaches the device.
+/// `silent` advances every audio decision, HD voice and exportable state
+/// exactly as `audible`, but delivers no PCM to the device.
+enum class AudioOutputMode : uint8_t { audible, silent };
+
+/// Spec 002 (contracts.md C4): outcome of AytherSession::pause_after_drain.
+struct AudioDrainResult {
+  enum class Code : uint8_t {
+    drained,     ///< the device played everything produced, then stopped
+    timed_out,   ///< the limit passed: the device stopped at once
+    unavailable, ///< no audio device
+  };
+  Code code = Code::unavailable;
+  uint64_t remaining_frames = 0; ///< stereo frames left queued on timed_out
+};
+
 enum class Subsystem : uint8_t {
   Sprites = 0, ///< loose sprites by hash
   Metasprites, ///< poses / sets of sprites (CU-AN)
@@ -753,6 +798,10 @@ public:
     /// context until session destruction has stopped all producers. Null
     /// callbacks preserve ordinary execution without QA collection.
     engine::audio_observation::Observer audio_observer;
+    /// Optional render observation receiver (spec 002, contracts.md C3).
+    /// Caller owns it and keeps it alive until the session is destroyed. Null
+    /// disables the observation: nothing is built and FrameView is unchanged.
+    engine::render_observation::RenderObserver *render_observer = nullptr;
   };
 
   // -- Lifecycle (no-throw) --------------------------------------------------
@@ -792,11 +841,37 @@ public:
   // data boundary (see FrameView lifetime note).
   const FrameView &step();
 
+  /// Publishes the render observation of the current frame to
+  /// Config::render_observer (spec 002, contracts.md C3). Call it after
+  /// rendering that frame and before the next step(), passing the renderer's
+  /// draw report for it, or nullptr when the frame was not rendered (draw
+  /// outcome and texture state are then unknown). No-op without an observer.
+  void publish_render_observation(
+      const engine::render_observation::DrawReport *draw = nullptr);
+
   // -- Determinism: savestate round-trip (the foundation of .arp recordings) -
   size_t serialize_size() const;
   Result<void> serialize(std::vector<uint8_t> &out) const;
   Result<void> unserialize(const std::vector<uint8_t> &in);
   void reset();
+
+  // -- Visual state (spec 002, contracts.md C4) ------------------------------
+  /// Identity of the current core state: the SHA-256 of its savestate in
+  /// lowercase hex. Empty when the core cannot serialize.
+  [[nodiscard]] std::string game_state_identity() const;
+  /// What this session carries from one frame to the next to draw the
+  /// following ones, for the current frame and core state. `script_state` is
+  /// `not_exportable` when the pack's scripts run every frame.
+  [[nodiscard]] engine::visual_state::VisualState export_visual_state() const;
+  /// Restores a state exported for `expected_identity` at `expected_frame`.
+  /// Everything is validated first: an incompatible state returns its code
+  /// and leaves the session untouched. On success the session is at
+  /// `expected_frame`; restore the HD audio state after this, since it is
+  /// validated against the session's frame.
+  [[nodiscard]] engine::visual_state::VisualStateRestoreResult
+  restore_visual_state(const engine::visual_state::VisualState &state,
+                       std::string_view expected_identity,
+                       std::uint64_t expected_frame);
 
   // -- Rewind + fast-forward (R6) --------------------------------------------
   // enable_rewind allocates a zstd-compressed ring of `seconds` of savestates
@@ -1461,6 +1536,9 @@ public:
   /// The 32 VDP registers (reg[0x20]) — null without the fork. For deriving
   /// the plane name-table bases (tilemap viewer, M9.3).
   const uint8_t *vdp_regs(size_t *size) const;
+  /// Spec 002 (R8): the VDP VSRAM (80 bytes: vscroll of planes A/B per 2-cell
+  /// column, LE words, A low) — null without the fork. A passive read.
+  const uint8_t *vsram(size_t *size) const;
   /// RAW list of the sprites the VDP parsed this frame (the fork's ids
   /// 0x10B/0x10C): 8-byte entries {yr u16, xr u16, attr u16, w u8, h u8} (raw
   /// SAT values: yr/xr with a +128 offset; attr = tile|flips|pal|pri). The
@@ -2368,6 +2446,18 @@ public:
   /// (accumulated starvation) and the current DRC ratio. For diagnosing
   /// DELIVERY degradation with HD active (the Lab's audio_health MCP tool).
   uint64_t audio_starved_frames() const noexcept;
+  /// Spec 002 (C4): audible or silent production (see AudioOutputMode).
+  void set_audio_output_mode(AudioOutputMode mode) noexcept;
+  AudioOutputMode audio_output_mode() const noexcept;
+  /// Stereo frames of PCM delivered to the audio device so far (the main
+  /// mix, including the silence that primes it after a stall).
+  uint64_t audio_device_frames() const noexcept;
+  /// Spec 002 (C4): waits up to `limit` until the device has played every
+  /// frame already produced, then stops the HD transport, which keeps its
+  /// state. Do not step while paused; resume_transport() resumes, and the
+  /// next PCM is that of the next frame.
+  AudioDrainResult pause_after_drain(std::chrono::milliseconds limit) noexcept;
+  void resume_transport() noexcept;
   float audio_drc_ratio() const noexcept;
   float audio_backlog_avg() const noexcept; ///< frames (EMA)
 
@@ -2462,6 +2552,21 @@ public:
   // The active HD pack. The typed value hides the raw core handle and is
   // invalidated by set_pack()/reload_pack(). An empty view means no pack.
   engine::PackView pack() const noexcept;
+  /// Spec 002 (R6, BR-091): the textures the active pack's catalogs can draw
+  /// — every pose asset and variant, every per-sprite asset, then every plane
+  /// set and sequence-step asset, and every panorama and screen asset, each
+  /// once.
+  /// What the preparation prewarms (AytherRenderer::prewarm_textures).
+  std::vector<std::string> catalog_texture_assets() const;
+  /// Spec 002 (R9, BR-115): what the session holds that a pack can define —
+  /// for checking that retiring the pack leaves nothing behind. Counts
+  /// include the definitions an authoring tool injected through the API.
+  struct PackDerivedState {
+    uint32_t plane_sets = 0, plane_sequences = 0, screens = 0, panoramas = 0,
+             kinematics = 0;
+    double luma_peak[4] = {0, 0, 0, 0}; ///< E1 tint reference per line
+  };
+  PackDerivedState pack_derived_state() const;
   // Emulator work RAM (read-only) for inspection overlays (e.g. Sonic XY).
   const uint8_t *work_ram() const noexcept;
   size_t work_ram_size() const noexcept;

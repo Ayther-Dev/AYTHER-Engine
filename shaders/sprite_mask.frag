@@ -30,6 +30,7 @@ layout(set = 0, binding = 1) uniform sampler2D mask_tex;   // R8: 0 = sólo luma
 
 void main() {
     vec4  c = texture(sprite_tex, frag_uv);
+    if (c.a * frag_alpha <= 0.0) discard; // spec 002 R3: no depth for empty texels
     float m = texture(mask_tex, frag_uv).r;
     // Luma Rec.601 del tinte (mismos pesos que el peak-hold del motor): lo que
     // el fundido oscurece, lo oscurece PAREJO; el matiz sólo pasa por la ropa.

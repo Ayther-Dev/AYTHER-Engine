@@ -4,6 +4,7 @@
 # ---------------------------------------------------------------------------
 
 foreach(_source IN ITEMS
+        animation_phase_test.cpp
         audio_bus_balance_test.cpp
         capabilities_test.cpp
         audio_fade_test.cpp
@@ -15,6 +16,7 @@ foreach(_source IN ITEMS
         core_path_test.cpp
         decode_limits_test.cpp
         failure_escalation_test.cpp
+        frame_composability_test.cpp
         log_test.cpp
         loop_region_test.cpp
         music_sequence_model_test.cpp
@@ -56,10 +58,24 @@ foreach(_source IN ITEMS
         parallax_bands_test.cpp
         plane_set_match_test.cpp
         plane_set_order_test.cpp
+        plane_bands_test.cpp
+        plane_set_split_test.cpp
         plane_sub_join_test.cpp
+        pose_anchor_order_test.cpp
+        pose_depth_test.cpp
         recording_controller_test.cpp
+        reference_compositor_test.cpp
         render_image_view_test.cpp
+        render_observation_builder_test.cpp
+        render_probe_json_test.cpp
+        render_probe_o1_test.cpp
+        render_probe_missing_test.cpp
+        render_probe_o2_test.cpp
         runtime_options_test.cpp
+        sprite_line_limits_test.cpp
+        texture_residency_test.cpp
+        vdp_sprite_order_test.cpp
+        visual_state_codec_test.cpp
         widescreen_test.cpp)
     ayther_add_native_test("${_source}" unit)
 endforeach()

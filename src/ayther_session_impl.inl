@@ -991,8 +991,8 @@ struct AytherSession::Impl {
     if (const auto it = audio_event_continuity.find(sig);
         it != audio_event_continuity.end()) {
       const auto &value = it->second;
-      return {value.category, value.repeat, value.transition,
-              value.max_voices, value.exclusive_bus};
+      return {value.category, value.repeat, value.transition, value.max_voices,
+              value.exclusive_bus};
     }
     switch (bus_of_signature(sig)) {
     case AudioBus::Music:
@@ -3639,12 +3639,69 @@ struct AytherSession::Impl {
   // las restantes (sin reclamar) que alimentan el resolve per-sprite.
   uint8_t sprite_claimed[kMaxSpriteOccs];
   AytherSpriteOccurrence sprite_occs_free[kMaxSpriteOccs];
+  // Spec 002 (C3): which pose substitution claimed each occurrence
+  // (session::kNoPoseOwner = none) and how many pose substitutions lead
+  // sprite_subs this frame — the members of each replacement.
+  uint32_t pose_owner[kMaxSpriteOccs];
+  uint32_t n_pose_subs = 0;
+  // Spec 002 (R1): per pose substitution, the occurrence of its frontmost
+  // member (session::kNoPoseAnchor = none on screen): its HD depth.
+  uint32_t pose_anchor[kMaxSpriteOccs];
+  // Spec 002 (R2): the depth parts of the pose replacements of the frame.
+  std::vector<SpritePartition> sprite_partitions;
+  engine::render_observation::RenderObserver *render_observer = nullptr;
+  session::RenderObservationBuilder render_builder;
+  std::vector<uint8_t> render_hidden; // per occurrence, scratch of publish
+  // Why the last produced frame can or cannot be composed (its scene_dirty
+  // reason).
+  AudioOutputMode audio_output_mode = AudioOutputMode::audible; // spec 002 C4
+  engine::render_observation::Composability frame_composability =
+      engine::render_observation::Composability::composable;
 
   FrameView view;
   uint64_t frame_index = 0;
 
   // Wire a freshly-opened pack into the script env + the three substitutors,
   // then autoload scripts/init.lua if the pack carries one.
+  // Spec 002 (R9, RF-1.3): the ids each pack defined, so retiring the pack
+  // removes exactly what it brought (definitions an authoring tool injected
+  // through the API with other ids survive).
+  std::vector<uint64_t> pack_set_ids, pack_seq_ids, pack_screen_ids,
+      pack_pano_ids, pack_kin_ids;
+
+  /// Spec 002 (R9): forgets everything the current pack defined or left
+  /// behind — sets, sequences, screens, panoramas, kinematics, the enhance
+  /// list, the matcher and clock state that pointed at them, and the palette
+  /// luma peak (the E1 reference measured under that pack).
+  void clear_pack_elements() {
+    for (const uint64_t id : pack_set_ids)
+      plane_sets.erase(id);
+    for (const uint64_t id : pack_seq_ids)
+      plane_seqs.erase(id);
+    for (const uint64_t id : pack_screen_ids)
+      screens.erase(id);
+    for (const uint64_t id : pack_pano_ids)
+      panoramas.erase(id);
+    for (const uint64_t id : pack_kin_ids)
+      kinematics.erase(id);
+    pack_set_ids.clear();
+    pack_seq_ids.clear();
+    pack_screen_ids.clear();
+    pack_pano_ids.clear();
+    pack_kin_ids.clear();
+    rebuild_plane_set_order();
+    plane_seq_reindex();
+    seq_clocks.clear();
+    kinematic_reindex();
+    kinematic_reset();
+    pano_valid = false;
+    pano_id = 0;
+    for (auto &s : element_enhance_pack)
+      s.clear();
+    rebuild_enhance_sets();
+    std::fill(std::begin(pal_luma_peak), std::end(pal_luma_peak), 0.0);
+  }
+
   void load_pack_into(AyArchive *p) {
     // /: IDENTIDAD DEL HORNEADO, una vez y al principio del log.
     //
@@ -3986,6 +4043,7 @@ struct AytherSession::Impl {
         d.off_x = s.off_x; //
         d.off_y = s.off_y;
         plane_sets[s.id] = std::move(d); // por id → recargar es idempotente
+        pack_set_ids.push_back(s.id);
       }
       rebuild_plane_set_order();
     }
@@ -4015,8 +4073,10 @@ struct AytherSession::Impl {
           ++d.cells_plane[c.plane];
           d.hashes_plane[c.plane].insert(c.hash);
         }
-        if (!d.cells.empty())
+        if (!d.cells.empty()) {
           screens[sc.id] = std::move(d);
+          pack_screen_ids.push_back(sc.id);
+        }
       }
     }
 
@@ -4035,6 +4095,7 @@ struct AytherSession::Impl {
         panoramas[p.id] =
             build_panorama(p.plane, p.origin_x, p.origin_y, p.w_cells,
                            p.h_cells, cs.data(), (uint32_t)cs.size(), p.asset);
+        pack_pano_ids.push_back(p.id);
       }
     }
 
@@ -4059,6 +4120,7 @@ struct AytherSession::Impl {
           d.video_offsets.push_back(s.video_offset);
         }
         kinematics[k.id] = std::move(d);
+        pack_kin_ids.push_back(k.id);
       }
       kinematic_reindex();
       kinematic_reset();
@@ -4081,6 +4143,7 @@ struct AytherSession::Impl {
           d.total += s.duration ? s.duration : kSeqDefaultDur;
         }
         plane_seqs[q.id] = std::move(d);
+        pack_seq_ids.push_back(q.id);
       }
       plane_seq_reindex();
       seq_clocks.clear();

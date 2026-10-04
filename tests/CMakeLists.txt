@@ -27,6 +27,8 @@ foreach(_header_probe IN ITEMS
         core_probe_header
         input_header
         layers_header
+        render_observer_header
+        visual_state_header
         session_header
         pack_header)
     add_library("ayther_${_header_probe}" OBJECT
@@ -66,7 +68,7 @@ add_test(
     NAME ayther.package.engine_public_contract
     COMMAND "${CMAKE_COMMAND}"
         "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
-        "-DAYTHER_ENGINE_PUBLIC_HEADERS=audio_fact_queue.hpp;audio_hd_state.hpp;audio_initial_snapshot.hpp;audio_observation_close.hpp;audio_observation_overflow.hpp;audio_observation_worker.hpp;audio_observer.hpp;audio_pcm_queue.hpp;audio_production_limit.hpp;capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;music_analysis_limits.hpp;music_analysis_snapshot.hpp;music_asset_owner.hpp;music_audio_math.hpp;music_causal_recognizer.hpp;music_corpus_quality.hpp;music_event_normalization.hpp;music_event_scoring.hpp;music_execution_adapter.hpp;music_identity_state.hpp;music_late_entry.hpp;music_live_recognition.hpp;music_pack_contract.hpp;music_pause_signal.hpp;music_pause_state.hpp;music_pattern_analysis.hpp;music_position_recovery.hpp;music_proposal_assessment.hpp;music_recognition_candidate.hpp;music_sequence.hpp;music_sequence_validation.hpp;music_source_lifecycle.hpp;music_transition_arbiter.hpp;music_transition_cancel.hpp;music_transition_queue.hpp;music_transition_span.hpp;music_voice_budget.hpp;pack.hpp;vulkan_interop.hpp"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=audio_fact_queue.hpp;audio_hd_state.hpp;audio_initial_snapshot.hpp;audio_observation_close.hpp;audio_observation_overflow.hpp;audio_observation_worker.hpp;audio_observer.hpp;audio_pcm_queue.hpp;audio_production_limit.hpp;capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;music_analysis_limits.hpp;music_analysis_snapshot.hpp;music_asset_owner.hpp;music_audio_math.hpp;music_causal_recognizer.hpp;music_corpus_quality.hpp;music_event_normalization.hpp;music_event_scoring.hpp;music_execution_adapter.hpp;music_identity_state.hpp;music_late_entry.hpp;music_live_recognition.hpp;music_pack_contract.hpp;music_pause_signal.hpp;music_pause_state.hpp;music_pattern_analysis.hpp;music_position_recovery.hpp;music_proposal_assessment.hpp;music_recognition_candidate.hpp;music_sequence.hpp;music_sequence_validation.hpp;music_source_lifecycle.hpp;music_transition_arbiter.hpp;music_transition_cancel.hpp;music_transition_queue.hpp;music_transition_span.hpp;music_voice_budget.hpp;pack.hpp;render_observer.hpp;visual_state.hpp;vulkan_interop.hpp"
         -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
 set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
@@ -296,6 +298,93 @@ target_compile_definitions(ayther_plane_set_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_plane_set_session_test ayther_test_core)
 
+# Spec 002 (contracts.md C3): the render observation a live session publishes
+# through Config::render_observer, driven with the test core.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/render_observation_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_render_observation_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_render_observation_session_test ayther_test_core)
+
+# Spec 002 (RNF-2): the render observation neither changes the frame nor slows
+# down its production; it measures the cost against the DA-2 budgets.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/render_observation_cost_test.cpp"
+    integration)
+target_compile_definitions(ayther_render_observation_cost_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_render_observation_cost_test ayther_test_core)
+set_tests_properties(ayther.integration.render_observation_cost_test
+    PROPERTIES LABELS "engine;native;integration;performance")
+
+# Spec 002 (contracts.md C4): export and restore of the visual state of a live
+# session, section by section, driven with the test core.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/visual_state_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_visual_state_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_visual_state_session_test ayther_test_core)
+
+# Spec 002 (contracts.md C4, BR-031): restoring the visual state at every frame
+# of a synthetic take reproduces linear production for the next 30 frames.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/visual_state_roundtrip_all_frames.cpp"
+    integration)
+target_compile_definitions(ayther_visual_state_roundtrip_all_frames PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_visual_state_roundtrip_all_frames ayther_test_core)
+set_tests_properties(ayther.integration.visual_state_roundtrip_all_frames
+    PROPERTIES TIMEOUT 600)
+
+# Spec 002 phase 5 (plan §5.12): representation fixes with the test core and a
+# trusted synthetic pack.
+foreach(_ayther_fix_test IN ITEMS pose_anchor_test pose_membership_paths_test
+        pose_partition_session_test
+        framebuffer_judge_test
+        scroll_tables_test
+        pack_removal_test)
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/${_ayther_fix_test}.cpp"
+        integration)
+    target_compile_definitions("ayther_${_ayther_fix_test}" PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies("ayther_${_ayther_fix_test}" ayther_test_core)
+endforeach()
+unset(_ayther_fix_test)
+
+# Spec 002 (contracts.md C4, BR-032): silent production on SDL's dummy audio
+# driver delivers no PCM and leaves the same HD audio state.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/silent_production_test.cpp"
+    integration)
+target_compile_definitions(ayther_silent_production_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_silent_production_test ayther_test_core)
+set_tests_properties(ayther.integration.silent_production_test PROPERTIES
+    ENVIRONMENT "SDL_AUDIO_DRIVER=dummy")
+
+# Spec 002 (contracts.md C4, BR-033b): the pending HD audio exported in the
+# middle of a take is complete and restores to the linear state.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/audio_pending_midtake_test.cpp"
+    integration)
+target_compile_definitions(ayther_audio_pending_midtake_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_audio_pending_midtake_test ayther_test_core)
+set_tests_properties(ayther.integration.audio_pending_midtake_test PROPERTIES
+    ENVIRONMENT "SDL_AUDIO_DRIVER=dummy")
+
+# Spec 002 (contracts.md C4, BR-033): pause with drain on the audio player,
+# SDL's dummy driver capturing the device output.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/pause_after_drain_test.cpp"
+    integration)
+target_link_libraries(ayther_pause_after_drain_test PRIVATE SDL3::SDL3)
+set_tests_properties(ayther.integration.pause_after_drain_test PROPERTIES
+    ENVIRONMENT "SDL_AUDIO_DRIVER=dummy")
+
 # Restoring cached audio events (set_audio_events) leaves the session as an
 # analysis would; a live session with the test core drives it.
 ayther_add_native_test(
@@ -360,6 +449,133 @@ if(AYTHER_BUILD_GPU_TESTS)
         AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     set_tests_properties(ayther.renderer.focus_layer_test PROPERTIES
         LABELS "engine;native;renderer;gpu")
+    # Spec 002 (contracts.md C3): the renderer's draw report on a synthetic
+    # scene, fed to the session's observation builder.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/render_draw_report_test.cpp"
+        renderer)
+    target_link_libraries(ayther_render_draw_report_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_render_draw_report_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.render_draw_report_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, BR-089 (R6): a replacement hides its originals only with its
+    # texture resident.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/texture_residency_gpu_test.cpp"
+        renderer)
+    target_link_libraries(ayther_texture_residency_gpu_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_texture_residency_gpu_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.texture_residency_gpu_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, BR-090 (R6): flips by texture coordinates.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/sprite_flip_uv_test.cpp"
+        renderer)
+    target_link_libraries(ayther_sprite_flip_uv_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_sprite_flip_uv_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.sprite_flip_uv_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, BR-091 (R6): the preparation prewarms the pack catalog.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/pack_prewarm_test.cpp"
+        renderer)
+    target_link_libraries(ayther_pack_prewarm_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_pack_prewarm_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_pack_prewarm_test ayther_test_core)
+    set_tests_properties(ayther.renderer.pack_prewarm_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, BR-092 (R6): a missing texture is decoded before the frame.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/texture_sync_decode_test.cpp"
+        renderer)
+    target_link_libraries(ayther_texture_sync_decode_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_texture_sync_decode_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.texture_sync_decode_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, BR-093 (R6): an unreadable assigned asset is diagnosed.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/missing_asset_test.cpp"
+        renderer)
+    target_link_libraries(ayther_missing_asset_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_missing_asset_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.missing_asset_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, R4 (BR-097, BR-098): the HD lanes in their pass (GPU oracle).
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/hd_lane_order_test.cpp"
+        renderer)
+    target_link_libraries(ayther_hd_lane_order_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_hd_lane_order_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.hd_lane_order_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, R3 (BR-100 to BR-102): the VDP sprite layer (GPU oracle).
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/sprite_layer_order_test.cpp"
+        renderer)
+    target_link_libraries(ayther_sprite_layer_order_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_sprite_layer_order_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.sprite_layer_order_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, R2 (BR-106, BR-107): pose replacements drawn by parts.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/pose_partition_gpu_test.cpp"
+        renderer)
+    target_link_libraries(ayther_pose_partition_gpu_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_pose_partition_gpu_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.pose_partition_gpu_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, R8 (BR-111, BR-113): planes composed per scroll band.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/scroll_compose_gpu_test.cpp"
+        renderer)
+    target_link_libraries(ayther_scroll_compose_gpu_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_scroll_compose_gpu_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.scroll_compose_gpu_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, R8 (BR-114): a raster frame shows the originals only.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/raster_frame_test.cpp" renderer)
+    target_link_libraries(ayther_raster_frame_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_raster_frame_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.raster_frame_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002 (plan §5.13): the render probe and its test, which records a
+    # take with the test core and runs the probe on it.
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/render_probe"
+        "${PROJECT_BINARY_DIR}/tools/render_probe")
+    ayther_instrument_target(render_probe)
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/render_probe_test.cpp" renderer)
+    target_compile_definitions(ayther_render_probe_test PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+        RENDER_PROBE_PATH="$<TARGET_FILE:render_probe>")
+    add_dependencies(ayther_render_probe_test ayther_test_core render_probe)
+    set_tests_properties(ayther.renderer.render_probe_test PROPERTIES
+        LABELS "engine;native;renderer;gpu" TIMEOUT 300)
     foreach(_ayther_gpu_test IN ITEMS
             ab_compare_smoke
             overlay_blend_smoke
