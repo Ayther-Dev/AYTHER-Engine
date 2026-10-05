@@ -363,6 +363,32 @@ int main() {
     check(z == 0 && w.scr.empty(), "documento roto: cero, sin crash");
   }
 
+  // -- 3b. Cuadro sin asset (spec 002, DI-18) -------------------------------
+  // Un Cuadro sólo de reconocimiento —la puerta de un Acetato, el paso de una
+  // Cinemática cubierto por su video— no tiene asset. El motor lo reconoce
+  // igual (define_screen); el formato del pack tiene que conservarlo, o la
+  // puerta que lo nombra no se abre nunca.
+  {
+    std::vector<PackScreen> recon = make_screens();
+    recon[0].asset.clear();
+    recon[0].id = 0x4451C3DCE705076DULL;
+    Bag w;
+    parse_elements_toml(bake_elements_toml(recon, {}, {}, {}, {}, {}), w.scr,
+                        w.pans, w.kins, w.seqs, w.sets, w.fonts);
+    check(same(recon, w.scr),
+          "Cuadro sin asset: ida y vuelta por el documento unico");
+    Bag x;
+    parse_screens_toml(bake_screens_toml(recon), x.scr);
+    check(same(recon, x.scr),
+          "Cuadro sin asset: ida y vuelta por screens.toml (legacy)");
+    std::vector<PackScreen> empty_cells = recon;
+    empty_cells[0].cells.clear();
+    Bag y;
+    parse_elements_toml(bake_elements_toml(empty_cells, {}, {}, {}, {}, {}),
+                        y.scr, y.pans, y.kins, y.seqs, y.sets, y.fonts);
+    check(y.scr.empty(), "un Cuadro sin celdas sigue sin viajar");
+  }
+
   // -- 4. [[enhance]] (#493): «Mejorar por software» -----------------------
   {
     std::vector<PackEnhance> enh0;
