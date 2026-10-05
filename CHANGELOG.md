@@ -35,22 +35,6 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- `FrameView::sprite_occ_core_drawn`: per sprite occurrence, whether the core
-  drew it (the VDP line limits and the framebuffer judge, R5). The render
-  probe's O2 invariant 6a reads it; before, it assumed every sprite drawn
-  and checked nothing.
-- Render observation contract 1.1 (spec 002, DI-18):
-  `RenderFrameView::layers` and `DrawReport::layers` list the layers of the
-  stack each frame was drawn with, and for an overlay (Acetato) whether its
-  gate was open and its sheet drawn. A 1.0 consumer is still served.
-- `AytherSession::PackOverlay::index`: the overlay's position in the layer
-  stack the pack was authored with (`index` in `acetatos.toml`).
-- `FrameView::raster_reasons` and `FrameView::raster_bands`: the core's
-  raster reasons of the frame and the bands of lines they leave
-  non-composable.
-- `render_probe` stacks and draws the pack's overlays, reports them in every
-  record, and checks continuity with `--check o3` (O3); `--no-images` scans a
-  whole take.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions
@@ -127,12 +111,6 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- R8 by bands (spec 002, DI-17): a frame with raster writes in mid-screen
-  loses HD only in the lines those writes touch, found from the core's raster
-  journal and, for pattern writes, from the core's recomposition; elsewhere it
-  keeps its HD. Before, the whole frame fell back to the core's image, which
-  made the HD background flicker (Golden Axe Toma 3, frames 1568-1690,
-  4062-4066 and 4742-4757).
 - Cargo, CMake, vcpkg, SDK, engine validation, and Lua now share the `0.1.0`
   release version; ABI and pack-schema values are explicitly independent
   protocol revisions.
@@ -190,23 +168,6 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- A frame that ends with the display off (VDP register 1, bit 6) is the
-  core's image, with no HD lane recognized or drawn over it, and the lines
-  drawn before a register's first write in mid-screen take the value the
-  previous frame ended with, so a one-shot write bands them (spec 002, A).
-  Before, a game that turned the display off in mid-frame while VRAM still
-  held a recognized background showed that background, or its HD Panorama,
-  over a black screen for a frame (Golden Axe Toma 3, frame 2): the raster
-  journal gave 0 bands and the frame composed whole.
-- `render_probe` O2 invariant 6b accepts a pose hand-off, when every member
-  of a replacement that leaves now belongs to one other drawn replacement,
-  and compares members by layout (flips and relative positions) as well as
-  identity. Before, a pose changing with the same sprites was reported as a
-  replacement leaving before its members (116 frames of Toma 3).
-- A Cuadro without an asset (recognition only: an Acetato's gate, a
-  Kinematic step covered by its video) is kept by the `elements.toml` and
-  `screens.toml` writers and readers. Before, it was dropped, so an Acetato
-  gated on it never appeared from a baked pack (spec 002, F-1).
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take
   with the same count kept the previous ones; any change of the events now
@@ -289,6 +250,63 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - A release build could open no pack whatsoever through `AytherSession`: an
   unsigned pack is refused, the development key is refused in an optimized
   build, and `Config` had no way to name a production trust registry.
+
+## [0.1.0-rc.16] - 2026-10-05
+
+Render findings of the spec 002 visual review (DI-17, DI-18) and of the
+whole-take review (display enable, O2 hand-offs). The release-version
+surfaces keep the core `0.1.0`; the tag carries the pre-release suffix.
+
+### Added
+
+- Render observation contract 1.1 (spec 002, DI-18):
+  `RenderFrameView::layers` and `DrawReport::layers` list the layers of the
+  stack each frame was drawn with, and for an overlay (Acetato) whether its
+  gate was open and its sheet drawn. A 1.0 consumer is still served.
+- `AytherSession::PackOverlay::index`: the overlay's position in the layer
+  stack the pack was authored with (`index` in `acetatos.toml`).
+- `FrameView::raster_reasons` and `FrameView::raster_bands`: the core's
+  raster reasons of the frame and the bands of lines they leave
+  non-composable.
+- `render_probe` stacks and draws the pack's overlays, reports them in every
+  record, and checks continuity with `--check o3` (O3); `--no-images` scans a
+  whole take.
+- `FrameView::sprite_occ_core_drawn`: per sprite occurrence, whether the core
+  drew it (the VDP line limits and the framebuffer judge, R5). The render
+  probe's O2 invariant 6a reads it; before, it assumed every sprite drawn
+  and checked nothing.
+
+### Changed
+
+- R8 by bands (spec 002, DI-17): a frame with raster writes in mid-screen
+  loses HD only in the lines those writes touch, found from the core's raster
+  journal and, for pattern writes, from the core's recomposition; elsewhere it
+  keeps its HD. Before, the whole frame fell back to the core's image, which
+  made the HD background flicker (Golden Axe Toma 3, frames 1568-1690,
+  4062-4066 and 4742-4757).
+
+### Fixed
+
+- A Cuadro without an asset (recognition only: an Acetato's gate, a
+  Kinematic step covered by its video) is kept by the `elements.toml` and
+  `screens.toml` writers and readers. Before, it was dropped, so an Acetato
+  gated on it never appeared from a baked pack (spec 002, F-1).
+- A sprite replacement that touches a raster band is not applied in that
+  frame: its members are drawn as originals in and out of the band, so one
+  element never shows as original and as replacement at once (RF-10.1).
+- A frame that ends with the display off (VDP register 1, bit 6) is the
+  core's image, with no HD lane recognized or drawn over it, and the lines
+  drawn before a register's first write in mid-screen take the value the
+  previous frame ended with, so a one-shot write bands them (spec 002, A).
+  Before, a game that turned the display off in mid-frame while VRAM still
+  held a recognized background showed that background, or its HD Panorama,
+  over a black screen for a frame (Golden Axe Toma 3, frame 2): the raster
+  journal gave 0 bands and the frame composed whole.
+- `render_probe` O2 invariant 6b accepts a pose hand-off, when every member
+  of a replacement that leaves now belongs to one other drawn replacement,
+  and compares members by layout (flips and relative positions) as well as
+  identity. Before, a pose changing with the same sprites was reported as a
+  replacement leaving before its members (116 frames of Toma 3).
 
 ## [0.1.0-rc.15] - 2026-10-04
 
