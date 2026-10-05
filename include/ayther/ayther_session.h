@@ -371,6 +371,11 @@ struct FrameView {
   uint32_t tile_occ_count = 0;
   const AytherSpriteOccurrence *sprite_occs = nullptr;
   uint32_t sprite_occ_count = 0;
+  /// Spec 002 (R5, O2): parallel to `sprite_occs`, 1 when the core drew the
+  /// sprite on some line and 0 when it did not (the VDP line limits and the
+  /// x = 0 mask, or the framebuffer judge found none of its pixels). Null
+  /// when the frame has no verdict.
+  const uint8_t *sprite_occ_core_drawn = nullptr;
   const AytherAudioOccurrence *audio_occs = nullptr;
   uint32_t audio_occ_count = 0;
   uint32_t unique_tile_count = 0;

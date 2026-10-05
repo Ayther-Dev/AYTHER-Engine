@@ -200,6 +200,18 @@ ayther::probe::O2Frame o2_frame(const ro::RenderFrameView &view,
     occ.index = sprite_identity(o.id.slot, o.identity_hash);
     id_of[i] = occ.index;
     occ.depth = o.id.chain;
+    // The layout 6b compares, and whether the core drew it at all (the
+    // session's R5 verdict; 6a), from the frame's occurrence of the same
+    // index.
+    occ.x = o.x;
+    occ.y = o.y;
+    if (fv.sprite_occs != nullptr && i < fv.sprite_occ_count) {
+      const AytherSpriteOccurrence &so = fv.sprite_occs[i];
+      occ.flips = static_cast<std::uint8_t>((so.hflip != 0 ? 1U : 0U) |
+                                            (so.vflip != 0 ? 2U : 0U));
+      if (fv.sprite_occ_core_drawn != nullptr)
+        occ.core_drawn = fv.sprite_occ_core_drawn[i] != 0;
+    }
     // The scene element that draws this occurrence's original.
     const ayther::SceneElement *element = nullptr;
     for (std::uint32_t e = 0; composed && e < fv.scene_count; ++e)

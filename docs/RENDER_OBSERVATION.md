@@ -131,4 +131,8 @@ every replacement stays unapplied with the reason `hd_off`.
   a real session, with and without a draw report.
 - `tests/integration/render_observation_cost_test.cpp`: the cost with and
   without an observer.
-- `tools/render_probe` consumes the observation for its O2 invariants.
+- `tools/render_probe` consumes the observation for its O2 invariants. Its
+  invariant 6a reads `FrameView::sprite_occ_core_drawn`, the session's R5
+  verdict per occurrence; 6b compares a replacement's members by identity
+  and layout (flips and relative positions), and accepts a hand-off: every
+  member now belongs to one other drawn replacement.

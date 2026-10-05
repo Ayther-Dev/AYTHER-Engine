@@ -4813,6 +4813,11 @@ const FrameView &AytherSession::produce_frame() {
   // forkeado los campos quedan vacíos y el renderer cae al blit.
   {
     scene_inventory(im.scene_elements);
+    v.sprite_occ_core_drawn =
+        v.sprite_occ_count > 0 &&
+                im.sprite_core_drawn.size() == v.sprite_occ_count
+            ? im.sprite_core_drawn.data()
+            : nullptr;
     v.scene = im.scene_elements.data();
     v.scene_count = static_cast<uint32_t>(im.scene_elements.size());
     // OJO orden: VRAM/CRAM se cablean ANTES del cálculo de dirty — los
@@ -9449,6 +9454,16 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
       im.judge_hits = (uint32_t)jaciertos;
       im.judge_dropped = (uint32_t)not_drawn.size();
     }
+  }
+
+  // Spec 002 (R5, O2): the verdict per occurrence, published with the frame
+  // (FrameView::sprite_occ_core_drawn): not drawn on any line, or judged
+  // absent from the framebuffer.
+  im.sprite_core_drawn.assign(v.sprite_occs ? v.sprite_occ_count : 0U, 1);
+  for (uint32_t i = 0; i < im.sprite_core_drawn.size(); ++i) {
+    const AytherSpriteOccurrence *oc = &v.sprite_occs[i];
+    if (fully_masked.count(oc) != 0 || not_drawn.count(oc) != 0)
+      im.sprite_core_drawn[i] = 0;
   }
 
   // Capas de plano en orden de fondo→frente: B (plane 1), A (0), Window (2).

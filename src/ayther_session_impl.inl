@@ -1246,6 +1246,9 @@ struct AytherSession::Impl {
   // : telemetría del juez de framebuffer (última pasada de scene_inventory).
   mutable uint32_t judge_occs = 0, judge_dropped = 0, judge_opaque = 0,
                    judge_hits = 0;
+  /// Spec 002 (R5, O2): per occurrence of the last scene_inventory, 1 when
+  /// the core drew it (FrameView::sprite_occ_core_drawn).
+  mutable std::vector<uint8_t> sprite_core_drawn;
 
   void activate_ayther_subscriptions() {
     observer.activate_subscriptions(runner);
