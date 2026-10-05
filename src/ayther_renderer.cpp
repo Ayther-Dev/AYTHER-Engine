@@ -27,6 +27,7 @@
 #include <vk_mem_alloc.h> // buffer de readback (export MP4)
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -80,6 +81,43 @@ void blit_tex(VkCommandBuffer cmd, VkTexture &src, VkImage dst,
                 VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+}
+
+// Spec 002 (DI-18): the observation's name of a stack layer kind.
+const char *layer_kind_name(AytherLayerKind kind) {
+  switch (kind) {
+  case AytherLayerKind::VdpPlaneB:
+    return "plane_b";
+  case AytherLayerKind::VdpPlaneA:
+    return "plane_a";
+  case AytherLayerKind::VdpWindow:
+    return "window";
+  case AytherLayerKind::VdpSprites:
+    return "sprites";
+  case AytherLayerKind::TileSubs:
+    return "tile_subs";
+  case AytherLayerKind::Video:
+    return "video";
+  case AytherLayerKind::Picture:
+    return "picture";
+  case AytherLayerKind::Panorama:
+    return "panorama";
+  case AytherLayerKind::PlaneTilesLo:
+    return "plane_tiles_lo";
+  case AytherLayerKind::SpritesHd:
+    return "sprites_hd";
+  case AytherLayerKind::Mode3:
+    return "entities";
+  case AytherLayerKind::Anim:
+    return "animations";
+  case AytherLayerKind::VdpFrente:
+    return "foreground";
+  case AytherLayerKind::PlaneTilesHi:
+    return "plane_tiles_hi";
+  case AytherLayerKind::Custom:
+    return "overlay";
+  }
+  return "overlay";
 }
 
 // Full source image → a destination rectangle.
@@ -156,6 +194,9 @@ public:
   ayther::engine::VulkanContextView context_{};
   // Spec 002 (C3): draw report of the last render(), one row per sprite sub.
   std::vector<ayther::engine::render_observation::ReplacementDraw> draw_rows_;
+  // Spec 002 (DI-18, C3 1.1): the stack's layers of the last render().
+  std::vector<ayther::engine::render_observation::LayerView> layer_rows_;
+  size_t layer_row_ = 0; // the layer being drawn
   std::uint64_t draw_frame_ = 0;
   bool draw_hd_ = true;
 };
@@ -487,6 +528,7 @@ AytherRenderer::last_draw_report() const noexcept {
   report.emulation_frame = impl_->draw_frame_;
   report.hd_enabled = impl_->draw_hd_;
   report.replacements = impl_->draw_rows_;
+  report.layers = impl_->layer_rows_;
   return report;
 }
 
@@ -508,6 +550,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
   if ((fv.scene_dirty & session::kDirtyRaster) != 0)
     hd_on = false;
   impl_->draw_rows_.clear();
+  impl_->layer_rows_.clear();
   if (!impl_->target_.is_ready())
     return;
   impl_->draw_rows_.assign(fv.sprite_subs ? fv.sprite_sub_count : 0u,
@@ -1821,6 +1864,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
       if (!overlay_gate_open(cc, fv.screen_match_id, fv.screen_presence_ids,
                              fv.screen_presence_count))
         break;
+      if (impl_->layer_row_ < impl_->layer_rows_.size())
+        impl_->layer_rows_[impl_->layer_row_].gate_open = cc.gated();
       // : el paso vigente de la animación — función pura del frame
       // de la toma (seek atrás y pausa dan el mismo cuadro). Un paso sin
       // lámina declarada cae al paso 0, nunca a un quad vacío.
@@ -2080,13 +2125,75 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
                             logical_w ? logical_w : Impl::kEmuW,
                             impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                             nullptr, tp, nullptr, ap, cc.blend);
+        if (impl_->layer_row_ < impl_->layer_rows_.size())
+          impl_->layer_rows_[impl_->layer_row_].drawn = true;
       }
       break;
     }
     }
   };
-  for (const AytherLayer &L : stack.layers())
+  impl_->layer_rows_.reserve(stack.layers().size());
+  for (size_t li = 0; li < stack.layers().size(); ++li) {
+    const AytherLayer &L = stack.layers()[li];
+    ro::LayerView row;
+    row.kind = layer_kind_name(L.kind);
+    row.name = L.name;
+    row.stack_index = static_cast<uint32_t>(li);
+    row.visible = L.visible;
+    row.overlay = L.kind == AytherLayerKind::Custom;
+    row.gated = row.overlay && L.content.gated();
+    impl_->layer_rows_.push_back(row);
+    impl_->layer_row_ = li;
     draw_layer(L);
+  }
+
+  // Spec 002 (DI-17, RF-10.1): raster writes in mid-screen left these bands
+  // of lines drawn with another VDP state. There the frame is the core's
+  // image — its originals, never one next to its replacement — and a
+  // replacement whole inside the bands was not applied.
+  if (fv.raster_band_count > 0 && impl_->emu_tex_.is_ready() &&
+      impl_->emu_h_ > 0) {
+    const uint32_t src_w =
+        impl_->emu_w_ ? impl_->emu_w_ : impl_->emu_tex_.width();
+    const int32_t bx = static_cast<int32_t>(wide_dx + 0.5f);
+    const int32_t bw =
+        logical_w
+            ? static_cast<int32_t>(static_cast<float>(src_w) * scene_sx + 0.5f)
+            : static_cast<int32_t>(canvas.width);
+    std::array<VkImageBlit, 16> rows{};
+    uint32_t n = 0;
+    const uint32_t bands = (std::min)(uint32_t{fv.raster_band_count}, 16U);
+    for (uint32_t k = 0; k < bands; ++k) {
+      const int32_t y0 = fv.raster_bands[k][0];
+      const int32_t y1 = (std::min)(int32_t{fv.raster_bands[k][1]},
+                                    static_cast<int32_t>(impl_->emu_h_));
+      if (y1 <= y0)
+        continue;
+      VkImageBlit r{};
+      r.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      r.srcOffsets[0] = {0, y0, 0};
+      r.srcOffsets[1] = {static_cast<int32_t>(src_w), y1, 1};
+      r.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      r.dstOffsets[0] = {bx, static_cast<int32_t>(y0 * scene_sy + 0.5f), 0};
+      r.dstOffsets[1] = {bx + bw, static_cast<int32_t>(y1 * scene_sy + 0.5f),
+                         1};
+      rows[n++] = r;
+    }
+    blit_tex(cmd, impl_->emu_tex_, impl_->target_.image(), rows.data(), n,
+             VK_FILTER_NEAREST);
+    const auto in_bands = [&](int top, int bottom) {
+      for (uint32_t k = 0; k < bands; ++k)
+        if (fv.raster_bands[k][0] <= top && bottom <= fv.raster_bands[k][1])
+          return true;
+      return false;
+    };
+    for (uint32_t si = 0; si < impl_->draw_rows_.size(); ++si) {
+      const AytherSpriteSub &sub = fv.sprite_subs[si];
+      const int h = sub.h_px ? sub.h_px : sub.h_tiles * 8;
+      if (in_bands(sub.screen_y, sub.screen_y + h))
+        impl_->draw_rows_[si].draw = ro::DrawOutcome::discarded;
+    }
+  }
 
   // Spec 002 (C3): texture state of every sprite sub, once its draws are
   // recorded — the same cache key (path + flip) the draws used.

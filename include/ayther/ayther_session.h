@@ -443,6 +443,16 @@ struct FrameView {
   /// bit2 = per-line/per-cell hscroll with real variation (sub-tile shear not
   /// modelled until the pipeline draws strips — R-7).
   uint8_t scene_dirty = 0;
+  /// Spec 002 (DI-17): the core's raster fallback reasons of the frame
+  /// (AYTHER_RASTER_REASON_* bits; 0 = no write in mid-screen).
+  uint32_t raster_reasons = 0;
+  /// Spec 002 (DI-17): with raster writes, the bands of lines they leave
+  /// drawn with another VDP state ([y0, y1) each). The renderer composes the
+  /// frame and shows the core's image in those bands only; `scene_dirty`
+  /// then has no raster bit. 0 bands with `raster_reasons` set: the writes
+  /// could not be placed on lines (or touch none) — see `scene_dirty`.
+  uint8_t raster_band_count = 0;
+  uint16_t raster_bands[16][2] = {};
 
   int16_t plane_hscroll[3] = {0, 0, 0}; ///< [0]=A [1]=B [2]=Window
   int16_t plane_vscroll[3] = {0, 0, 0};
@@ -2388,6 +2398,12 @@ public:
     std::string name;
     bool visible = true;
     AytherLayerContent content;
+    /// Spec 002 (DI-18): the overlay's position in the layer stack the pack
+    /// was authored with (`index` in acetatos.toml, a position among all
+    /// the stack's layers). kAppend when the pack does not say: the frontend
+    /// appends it on top, in pack order.
+    static constexpr uint32_t kAppend = UINT32_MAX;
+    uint32_t index = kAppend;
   };
   const std::vector<PackOverlay> &pack_overlays() const noexcept;
 
