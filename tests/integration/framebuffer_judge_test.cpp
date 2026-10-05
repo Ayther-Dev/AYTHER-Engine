@@ -69,6 +69,18 @@ int main() try {
   check(sprites_in_scene + dropped <= view->sprite_occ_count,
         "RF-9.4: a sprite the core did not draw is not drawn as an original");
 
+  // Spec 002 (O2, invariant 6a): the verdict is published per occurrence,
+  // so the render probe can tell a replacement that outlives its members.
+  std::uint32_t not_drawn = 0;
+  for (std::uint32_t i = 0;
+       view->sprite_occ_core_drawn != nullptr && i < view->sprite_occ_count;
+       ++i)
+    not_drawn += view->sprite_occ_core_drawn[i] == 0 ? 1U : 0U;
+  std::printf("  core_drawn published=%d not_drawn=%u\n",
+              view->sprite_occ_core_drawn != nullptr ? 1 : 0, not_drawn);
+  check(view->sprite_occ_core_drawn != nullptr && not_drawn >= dropped,
+        "O2 6a: the frame publishes which occurrences the core did not draw");
+
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;
 } catch (const std::exception &error) {

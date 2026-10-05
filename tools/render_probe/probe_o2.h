@@ -13,6 +13,11 @@ struct O2Occurrence {
   bool claimed = false;        ///< a replacement suppresses its original
   bool original_drawn = false; ///< the composed frame shows the original
   std::uint8_t depth = 0;      ///< link-chain position (lower = in front)
+  /// Layout: screen position and flips (bit0 h, bit1 v). The identity
+  /// (`index`) is flip-invariant; 6b compares the layout too.
+  std::int16_t x = 0;
+  std::int16_t y = 0;
+  std::uint8_t flips = 0;
 };
 
 struct O2Replacement {
@@ -113,23 +118,39 @@ inline std::vector<O2Violation> check_o2(const O2Frame &frame,
       add(O2Invariant::transition, r.index);
   }
   // 6b. A replacement does not leave before its members: drawn in the
-  //     previous frame, members still drawn and claimed now, not drawn now.
+  //     previous frame and not drawn now, while its members are still the
+  //     same sprites in the same layout (flips and positions relative to
+  //     each other) and still claimed. A hand-off is not a departure: when
+  //     every member now belongs to one other drawn replacement, the pose
+  //     changed with the game (same sprites, other pose; or a pose that
+  //     grows as more sprites enter).
   if (previous != nullptr)
     for (const O2Replacement &before : previous->replacements) {
-      if (!before.drawn)
+      if (!before.drawn || before.members.empty())
         continue;
       bool still_drawn = false;
       for (const O2Replacement &now : frame.replacements)
         still_drawn = still_drawn || (now.drawn && now.key == before.key);
       if (still_drawn)
         continue;
-      bool members_stay = !before.members.empty();
+      const O2Occurrence *first_was = occurrence(*previous, before.members[0]);
+      const O2Occurrence *first_now = occurrence(frame, before.members[0]);
+      bool members_stay = first_was != nullptr && first_now != nullptr;
       for (const std::uint32_t m : before.members) {
+        const O2Occurrence *was = occurrence(*previous, m);
         const O2Occurrence *o = occurrence(frame, m);
-        members_stay =
-            members_stay && o != nullptr && o->core_drawn && o->claimed;
+        members_stay = members_stay && was != nullptr && o != nullptr &&
+                       o->core_drawn && o->claimed && o->flips == was->flips &&
+                       o->x - first_now->x == was->x - first_was->x &&
+                       o->y - first_now->y == was->y - first_was->y;
       }
-      if (members_stay)
+      if (!members_stay)
+        continue;
+      const O2Replacement *heir = drawn_owner(before.members[0]);
+      bool hand_off = heir != nullptr;
+      for (const std::uint32_t m : before.members)
+        hand_off = hand_off && drawn_owner(m) == heir;
+      if (!hand_off)
         add(O2Invariant::transition, before.index);
     }
   return out;

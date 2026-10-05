@@ -1246,6 +1246,9 @@ struct AytherSession::Impl {
   // : telemetría del juez de framebuffer (última pasada de scene_inventory).
   mutable uint32_t judge_occs = 0, judge_dropped = 0, judge_opaque = 0,
                    judge_hits = 0;
+  /// Spec 002 (R5, O2): per occurrence of the last scene_inventory, 1 when
+  /// the core drew it (FrameView::sprite_occ_core_drawn).
+  mutable std::vector<uint8_t> sprite_core_drawn;
 
   void activate_ayther_subscriptions() {
     observer.activate_subscriptions(runner);
@@ -1277,6 +1280,16 @@ struct AytherSession::Impl {
   /// and the lines where its image differs from it (raster frames only).
   std::vector<uint16_t> raster_recomposed;
   std::vector<uint8_t> raster_diff_lines;
+  /// Spec 002 (A): the VDP registers the previous frame ended with, read
+  /// before the core runs this one (whatever ran before: a produced frame, a
+  /// bare replay frame or a restored state). `raster_prev_regs_n` = 0 when
+  /// they could not be read.
+  std::array<uint8_t, 0x40> raster_prev_regs{};
+  size_t raster_prev_regs_n = 0;
+  /// Spec 002 (A): the display is on (VDP register 1, bit 6) at the end of
+  /// the frame. Off, the VDP shows the backdrop only: no HD is recognized or
+  /// drawn over it.
+  bool display_on = true;
   void *multilayer_fn = nullptr; ///< el export, resuelto una vez
   bool multilayer_fn_resolved = false;
   int32_t layers_error_status = AYTHER_STATUS_OK;

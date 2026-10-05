@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -22,13 +23,39 @@ using ayther::probe::O2Invariant;
 using ayther::probe::O2Occurrence;
 using ayther::probe::O2Replacement;
 
+O2Occurrence occ(std::uint32_t index, bool core_drawn, bool claimed,
+                 bool original_drawn, std::uint8_t depth, std::int16_t x = 0,
+                 std::int16_t y = 0, std::uint8_t flips = 0) {
+  O2Occurrence o;
+  o.index = index;
+  o.core_drawn = core_drawn;
+  o.claimed = claimed;
+  o.original_drawn = original_drawn;
+  o.depth = depth;
+  o.x = x;
+  o.y = y;
+  o.flips = flips;
+  return o;
+}
+
+O2Replacement pose_of(std::uint32_t index, std::uint64_t key,
+                      std::vector<std::uint32_t> members) {
+  O2Replacement r;
+  r.index = index;
+  r.key = key;
+  r.drawn = true;
+  r.texture_ready = true;
+  r.partition_depths.assign(members.size(), 0);
+  r.members = std::move(members);
+  return r;
+}
+
 // A pose of members 0 and 1 drawn in two partitions at their depths, and an
 // unclaimed sprite 2 drawn as the original. Satisfies every invariant.
 O2Frame good_frame() {
   O2Frame f;
-  f.occurrences = {{0, true, true, false, 3},
-                   {1, true, true, false, 5},
-                   {2, true, false, true, 4}};
+  f.occurrences = {occ(0, true, true, false, 3), occ(1, true, true, false, 5),
+                   occ(2, true, false, true, 4)};
   O2Replacement pose;
   pose.index = 0;
   pose.key = 0x1234;
@@ -111,13 +138,72 @@ int main() try {
     early.replacements[0].drawn = false;
     O2Frame gone = good; // members and replacement leave together
     gone.occurrences.resize(1);
-    gone.occurrences[0] = {2, true, false, true, 4};
+    gone.occurrences[0] = occ(2, true, false, true, 4);
     gone.replacements.clear();
     check(violates(lingering, O2Invariant::transition, &good) &&
               violates(early, O2Invariant::transition, &good) &&
               !violates(gone, O2Invariant::transition, &good),
           "RF-9.3: a replacement that outlives its members, or leaves before "
           "them, is reported");
+  }
+
+  // 6b. A pose handing off to another pose of the same sprites is not a
+  //     replacement leaving before its members (spec 002, whole-take O2:
+  //     the 116 `transition` frames of Toma 3 are all hand-offs).
+  {
+    // Dwarf - Stand 01 -> Stand 02: the same three sprites (hashes); the
+    // head turns (h-flip) and moves 6 px. The game alternates the two every
+    // 8-9 frames and the replacement changes asset in the same frame.
+    O2Frame stand01;
+    stand01.occurrences = {occ(10, true, true, false, 1, 100, 50, 0),
+                           occ(11, true, true, false, 2, 100, 66, 0),
+                           occ(12, true, true, false, 3, 116, 66, 0)};
+    stand01.replacements = {pose_of(0, 0xD01, {10, 11, 12})};
+    for (std::size_t i = 0; i < 3; ++i)
+      stand01.replacements[0].partition_depths[i] =
+          stand01.occurrences[i].depth;
+    O2Frame stand02 = stand01;
+    stand02.occurrences[0].flips = 1;
+    stand02.occurrences[0].x = 94;
+    stand02.replacements[0].key = 0xD02;
+    check(clean(stand02, &stand01) && clean(stand01, &stand02),
+          "6b: Dwarf Stand 01 <-> 02 (same hashes, other flips) hands off");
+    // The same hand-off with an unchanged layout (two poses of the same
+    // sprites in the same arrangement): every member moves to the new pose.
+    O2Frame same = stand01;
+    same.replacements[0].key = 0xD02;
+    check(clean(same, &stand01),
+          "6b: a hand-off with the same layout is accepted");
+    // Without the new pose the members are claimed by nothing: reported.
+    O2Frame dropped = stand01;
+    dropped.replacements[0].drawn = false;
+    check(violates(dropped, O2Invariant::transition, &stand01),
+          "6b: a pose dropped while its members stay as they were is "
+          "reported");
+    // Split between two other poses: not every member moves to one.
+    O2Frame split = stand01;
+    split.replacements = {pose_of(1, 0xE01, {10, 11}), pose_of(2, 0xE02, {12})};
+    split.replacements[0].partition_depths = {1, 2};
+    split.replacements[1].partition_depths = {3};
+    check(violates(split, O2Invariant::transition, &stand01),
+          "6b: members that scatter over several poses are reported");
+  }
+  {
+    // Maceman - Walk 03 (3 members) -> Walk 01 (5 members): the pose grows
+    // as more sprites enter from the right; its three members move to it.
+    O2Frame walk03;
+    walk03.occurrences = {occ(20, true, true, false, 4, 300, 100),
+                          occ(21, true, true, false, 5, 300, 116),
+                          occ(22, true, true, false, 6, 300, 132)};
+    walk03.replacements = {pose_of(0, 0xA03, {20, 21, 22})};
+    walk03.replacements[0].partition_depths = {4, 5, 6};
+    O2Frame walk01 = walk03;
+    walk01.occurrences.push_back(occ(23, true, true, false, 7, 316, 100));
+    walk01.occurrences.push_back(occ(24, true, true, false, 8, 316, 116));
+    walk01.replacements = {pose_of(0, 0xA01, {20, 21, 22, 23, 24})};
+    walk01.replacements[0].partition_depths = {4, 5, 6, 7, 8};
+    check(clean(walk01, &walk03),
+          "6b: Maceman Walk 03 -> Walk 01 (3 -> 5 members) hands off");
   }
 
   std::printf("%d failure(s)\n", failures);

@@ -104,6 +104,12 @@ validator reports it as `pose.asset_missing` or `pose.asset_unreadable`.
   pattern writes the journal does not record, from the lines where the
   core's image differs from the frame the core recomposes from its final
   state. `FrameView::raster_bands` carries them.
+- The lines before the first write to a register were drawn with the value
+  the previous frame ended with, which the session reads before the core
+  runs the frame. A one-shot write (the display turned on, a plane base
+  moved for good) therefore bands the lines above it too. CRAM, VSRAM and
+  hscroll keep the earlier convention: before the first write, the final
+  value.
 - In those bands the renderer shows the core's image: the originals, without
   HD assets. The rest of the frame is composed as usual. A replacement whole
   inside the bands reads `assigned_not_applied` with the reason
@@ -111,6 +117,17 @@ validator reports it as `pose.asset_missing` or `pose.asset_unreadable`.
 - When the writes cannot be placed on lines (a dropped journal event, a
   reason the journal does not record and no recomposition), the whole frame
   is presented with the originals only, as before.
+- A frame that ends with the display off (VDP register 1, bit 6) is the
+  core's image whole, reported as `other` unless raster writes come first
+  (`FrameView::scene_dirty` bit 3). The VDP shows the backdrop only, and
+  while the display is off the game can change any VDP state without the
+  journal seeing it, so the lines drawn before the display went off cannot
+  be checked against the final state either. No HD lane is recognized or
+  published for it: no Panorama anchors (nor fixes its tint reference), no
+  Cuadro, plane set or tile replacement is drawn, and sprite replacements
+  read `assigned_not_applied(frame_not_composable)`. A game that turns the
+  display off at the bottom of every frame would lose its HD; Toma 3 has
+  none (its display-off frames are black).
 
 An original and its replacement are therefore never visible at the same time
 on the same lines.
@@ -140,7 +157,7 @@ Each rule has its regression test, written before the fix:
 | R5 | `framebuffer_judge_test`, `sprite_line_limits_test` |
 | R6 | `texture_residency_test`, `texture_residency_gpu_test`, `texture_sync_decode_test`, `pack_prewarm_test`, `missing_asset_test`, `sprite_flip_uv_test` |
 | R7 | Rust tests of `vram_sprite` and `pack_validate` |
-| R8 | `plane_bands_test`, `scroll_tables_test`, `scroll_compose_gpu_test`, `raster_frame_test`, `raster_bands_test`, `raster_band_test` |
+| R8 | `plane_bands_test`, `scroll_tables_test`, `scroll_compose_gpu_test`, `raster_frame_test`, `raster_bands_test`, `raster_band_test`, `frame_composability_test`, `display_enable_session_test` |
 | R9 | `pack_removal_test` |
 
 The GPU tests carry the `gpu` label and run under the `windows-native-gpu`

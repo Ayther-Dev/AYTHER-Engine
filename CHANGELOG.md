@@ -35,6 +35,10 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `FrameView::sprite_occ_core_drawn`: per sprite occurrence, whether the core
+  drew it (the VDP line limits and the framebuffer judge, R5). The render
+  probe's O2 invariant 6a reads it; before, it assumed every sprite drawn
+  and checked nothing.
 - Render observation contract 1.1 (spec 002, DI-18):
   `RenderFrameView::layers` and `DrawReport::layers` list the layers of the
   stack each frame was drawn with, and for an overlay (Acetato) whether its
@@ -186,6 +190,19 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A frame that ends with the display off (VDP register 1, bit 6) is the
+  core's image, with no HD lane recognized or drawn over it, and the lines
+  drawn before a register's first write in mid-screen take the value the
+  previous frame ended with, so a one-shot write bands them (spec 002, A).
+  Before, a game that turned the display off in mid-frame while VRAM still
+  held a recognized background showed that background, or its HD Panorama,
+  over a black screen for a frame (Golden Axe Toma 3, frame 2): the raster
+  journal gave 0 bands and the frame composed whole.
+- `render_probe` O2 invariant 6b accepts a pose hand-off, when every member
+  of a replacement that leaves now belongs to one other drawn replacement,
+  and compares members by layout (flips and relative positions) as well as
+  identity. Before, a pose changing with the same sprites was reported as a
+  replacement leaving before its members (116 frames of Toma 3).
 - A Cuadro without an asset (recognition only: an Acetato's gate, a
   Kinematic step covered by its video) is kept by the `elements.toml` and
   `screens.toml` writers and readers. Before, it was dropped, so an Acetato
