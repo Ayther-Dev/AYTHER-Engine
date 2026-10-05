@@ -27,6 +27,7 @@
 #include <vk_mem_alloc.h> // buffer de readback (export MP4)
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -82,6 +83,43 @@ void blit_tex(VkCommandBuffer cmd, VkTexture &src, VkImage dst,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 }
 
+// Spec 002 (DI-18): the observation's name of a stack layer kind.
+const char *layer_kind_name(AytherLayerKind kind) {
+  switch (kind) {
+  case AytherLayerKind::VdpPlaneB:
+    return "plane_b";
+  case AytherLayerKind::VdpPlaneA:
+    return "plane_a";
+  case AytherLayerKind::VdpWindow:
+    return "window";
+  case AytherLayerKind::VdpSprites:
+    return "sprites";
+  case AytherLayerKind::TileSubs:
+    return "tile_subs";
+  case AytherLayerKind::Video:
+    return "video";
+  case AytherLayerKind::Picture:
+    return "picture";
+  case AytherLayerKind::Panorama:
+    return "panorama";
+  case AytherLayerKind::PlaneTilesLo:
+    return "plane_tiles_lo";
+  case AytherLayerKind::SpritesHd:
+    return "sprites_hd";
+  case AytherLayerKind::Mode3:
+    return "entities";
+  case AytherLayerKind::Anim:
+    return "animations";
+  case AytherLayerKind::VdpFrente:
+    return "foreground";
+  case AytherLayerKind::PlaneTilesHi:
+    return "plane_tiles_hi";
+  case AytherLayerKind::Custom:
+    return "overlay";
+  }
+  return "overlay";
+}
+
 // Full source image → a destination rectangle.
 VkImageBlit full_to_rect(uint32_t srcW, uint32_t srcH, int32_t dx, int32_t dy,
                          int32_t dw, int32_t dh) {
@@ -109,6 +147,7 @@ struct AytherRenderer::FrameScratch {
   std::vector<uint8_t> plane_focused;
   std::vector<uint8_t> sub_has_anchor;
   std::vector<uint8_t> sub_resident;
+  std::vector<uint8_t> band_drop; // spec 002 (DI-17): subs touching a band
   std::vector<uint8_t> plane_resident;
   std::vector<int> plane_lo_layer;
   std::vector<AytherSpriteSub> lo_subs;
@@ -156,6 +195,9 @@ public:
   ayther::engine::VulkanContextView context_{};
   // Spec 002 (C3): draw report of the last render(), one row per sprite sub.
   std::vector<ayther::engine::render_observation::ReplacementDraw> draw_rows_;
+  // Spec 002 (DI-18, C3 1.1): the stack's layers of the last render().
+  std::vector<ayther::engine::render_observation::LayerView> layer_rows_;
+  size_t layer_row_ = 0; // the layer being drawn
   std::uint64_t draw_frame_ = 0;
   bool draw_hd_ = true;
 };
@@ -487,6 +529,7 @@ AytherRenderer::last_draw_report() const noexcept {
   report.emulation_frame = impl_->draw_frame_;
   report.hd_enabled = impl_->draw_hd_;
   report.replacements = impl_->draw_rows_;
+  report.layers = impl_->layer_rows_;
   return report;
 }
 
@@ -508,6 +551,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
   if ((fv.scene_dirty & session::kDirtyRaster) != 0)
     hd_on = false;
   impl_->draw_rows_.clear();
+  impl_->layer_rows_.clear();
   if (!impl_->target_.is_ready())
     return;
   impl_->draw_rows_.assign(fv.sprite_subs ? fv.sprite_sub_count : 0u,
@@ -774,6 +818,34 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
       sub_resident[s] = resident_now(
           fv.sprite_subs[s].asset_path,
           fv.sprite_sub_flips ? (uint8_t)(fv.sprite_sub_flips[s] & 3) : 0);
+  // Spec 002 (DI-17, RF-10.1): a sprite replacement that touches a raster
+  // band is not applied this frame. Its members are drawn as originals, in
+  // and out of the band, so the element never shows as original and as
+  // replacement at once.
+  auto &band_drop = impl_->scratch_->band_drop;
+  band_drop.assign(fv.sprite_sub_count, 0);
+  if (fv.raster_band_count > 0 && fv.sprite_subs) {
+    const uint32_t bands = (std::min)(uint32_t{fv.raster_band_count}, 16U);
+    const auto touches = [&](int top, int bottom) {
+      for (uint32_t k = 0; k < bands; ++k)
+        if (top < fv.raster_bands[k][1] && fv.raster_bands[k][0] < bottom)
+          return true;
+      return false;
+    };
+    for (uint32_t s2 = 0; s2 < fv.sprite_sub_count; ++s2) {
+      const AytherSpriteSub &sub = fv.sprite_subs[s2];
+      const int h = sub.h_px ? sub.h_px : sub.h_tiles * 8;
+      band_drop[s2] = touches(sub.screen_y, sub.screen_y + h) ? 1 : 0;
+    }
+    for (uint32_t e2 = 0; fv.scene && e2 < fv.scene_count; ++e2) {
+      const SceneElement &el = fv.scene[e2];
+      const int32_t owner =
+          el.owner >= 0 ? el.owner : (el.sub_kind == 1 ? el.sub : -1);
+      if (el.layer == 3 && owner >= 0 &&
+          (uint32_t)owner < fv.sprite_sub_count && touches(el.y, el.y + el.h))
+        band_drop[owner] = 1;
+    }
+  }
   auto &plane_resident = impl_->scratch_->plane_resident;
   plane_resident.assign(fv.plane_tile_sub_count, 1);
   if (hd_on && fv.plane_tile_subs)
@@ -1071,13 +1143,16 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
               : e.sub_kind != 2 || e.sub < 0 ||
                     (uint32_t)e.sub >= fv.plane_tile_sub_count ||
                     plane_resident[e.sub] != 0;
-      const bool hd_replaces =
-          hd_on && e.claimed && resident_claim && checker_cat == 0;
+      const bool band_dropped = e.layer == 3 && claim_sub >= 0 &&
+                                (uint32_t)claim_sub < band_drop.size() &&
+                                band_drop[claim_sub] != 0;
+      const bool hd_replaces = hd_on && e.claimed && resident_claim &&
+                               !band_dropped && checker_cat == 0;
       const bool anchors_sprite_sub =
           e.layer == 3 && e.sub >= 0 && e.sub_kind == 1 &&
           (uint32_t)e.sub < fv.sprite_sub_count && impl_->sprite_ok_;
-      if (hd_on && e.claimed && !resident_claim && !impl_->checker_ &&
-          anchors_sprite_sub) {
+      if (hd_on && e.claimed && !resident_claim && !band_dropped &&
+          !impl_->checker_ && anchors_sprite_sub) {
         // Not resident yet: the sub is still drawn in its pass (it draws
         // nothing until the texture lands) and the original follows below.
         flush_quads();
@@ -1646,7 +1721,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
           // oculta); acá sólo el resto (sin ancla — slot 255 /
           // entity-like) para no duplicarlos encima.
           for (uint32_t si = 0; si < fv.sprite_sub_count; ++si) {
-            if (si < sub_has_anchor.size() && sub_has_anchor[si])
+            if ((si < sub_has_anchor.size() && sub_has_anchor[si]) ||
+                band_drop[si] != 0)
               continue;
             mark_sprite_draw(si, ro::DrawOutcome::lane);
             impl_->sprite_.draw(
@@ -1663,7 +1739,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
           // las letras del título de GA sobre el isologotipo), así
           // que se difieren a después de la lane PlaneTilesHi.
           for (uint32_t si = 0; si < fv.sprite_sub_count; ++si) {
-            if (fv.sprite_sub_prio && fv.sprite_sub_prio[si])
+            if ((fv.sprite_sub_prio && fv.sprite_sub_prio[si]) ||
+                band_drop[si] != 0)
               continue;
             mark_sprite_draw(si, ro::DrawOutcome::lane);
             impl_->sprite_.draw(
@@ -1782,7 +1859,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
           fv.sprite_sub_count > 0 && fv.sprite_sub_prio) {
         impl_->sprite_.set_dim(dim_spr, op_spr);
         for (uint32_t si = 0; si < fv.sprite_sub_count; ++si) {
-          if (!fv.sprite_sub_prio[si])
+          if (!fv.sprite_sub_prio[si] || band_drop[si] != 0)
             continue;
           mark_sprite_draw(si, ro::DrawOutcome::lane);
           impl_->sprite_.draw(
@@ -1821,6 +1898,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
       if (!overlay_gate_open(cc, fv.screen_match_id, fv.screen_presence_ids,
                              fv.screen_presence_count))
         break;
+      if (impl_->layer_row_ < impl_->layer_rows_.size())
+        impl_->layer_rows_[impl_->layer_row_].gate_open = cc.gated();
       // : el paso vigente de la animación — función pura del frame
       // de la toma (seek atrás y pausa dan el mismo cuadro). Un paso sin
       // lámina declarada cae al paso 0, nunca a un quad vacío.
@@ -2080,13 +2159,63 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
                             logical_w ? logical_w : Impl::kEmuW,
                             impl_->emu_h_ ? impl_->emu_h_ : Impl::kEmuH,
                             nullptr, tp, nullptr, ap, cc.blend);
+        if (impl_->layer_row_ < impl_->layer_rows_.size())
+          impl_->layer_rows_[impl_->layer_row_].drawn = true;
       }
       break;
     }
     }
   };
-  for (const AytherLayer &L : stack.layers())
+  impl_->layer_rows_.reserve(stack.layers().size());
+  for (size_t li = 0; li < stack.layers().size(); ++li) {
+    const AytherLayer &L = stack.layers()[li];
+    ro::LayerView row;
+    row.kind = layer_kind_name(L.kind);
+    row.name = L.name;
+    row.stack_index = static_cast<uint32_t>(li);
+    row.visible = L.visible;
+    row.overlay = L.kind == AytherLayerKind::Custom;
+    row.gated = row.overlay && L.content.gated();
+    impl_->layer_rows_.push_back(row);
+    impl_->layer_row_ = li;
     draw_layer(L);
+  }
+
+  // Spec 002 (DI-17, RF-10.1): raster writes in mid-screen left these bands
+  // of lines drawn with another VDP state. There the frame is the core's
+  // image — its originals, never one next to its replacement. The sprite
+  // replacements that touch a band were not drawn (band_drop above).
+  if (fv.raster_band_count > 0 && impl_->emu_tex_.is_ready() &&
+      impl_->emu_h_ > 0) {
+    const uint32_t src_w =
+        impl_->emu_w_ ? impl_->emu_w_ : impl_->emu_tex_.width();
+    const int32_t bx = static_cast<int32_t>(wide_dx + 0.5f);
+    const int32_t bw =
+        logical_w
+            ? static_cast<int32_t>(static_cast<float>(src_w) * scene_sx + 0.5f)
+            : static_cast<int32_t>(canvas.width);
+    std::array<VkImageBlit, 16> rows{};
+    uint32_t n = 0;
+    const uint32_t bands = (std::min)(uint32_t{fv.raster_band_count}, 16U);
+    for (uint32_t k = 0; k < bands; ++k) {
+      const int32_t y0 = fv.raster_bands[k][0];
+      const int32_t y1 = (std::min)(int32_t{fv.raster_bands[k][1]},
+                                    static_cast<int32_t>(impl_->emu_h_));
+      if (y1 <= y0)
+        continue;
+      VkImageBlit r{};
+      r.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      r.srcOffsets[0] = {0, y0, 0};
+      r.srcOffsets[1] = {static_cast<int32_t>(src_w), y1, 1};
+      r.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      r.dstOffsets[0] = {bx, static_cast<int32_t>(y0 * scene_sy + 0.5f), 0};
+      r.dstOffsets[1] = {bx + bw, static_cast<int32_t>(y1 * scene_sy + 0.5f),
+                         1};
+      rows[n++] = r;
+    }
+    blit_tex(cmd, impl_->emu_tex_, impl_->target_.image(), rows.data(), n,
+             VK_FILTER_NEAREST);
+  }
 
   // Spec 002 (C3): texture state of every sprite sub, once its draws are
   // recorded — the same cache key (path + flip) the draws used.

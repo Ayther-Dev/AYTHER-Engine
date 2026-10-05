@@ -191,6 +191,24 @@ frame_json(std::uint32_t frame, std::uint64_t emulation_frame,
     out += "}";
   }
   out += view.replacements.empty() ? "]" : "\n  ]";
+  // Contract 1.1 (DI-18): the overlays of the stack, with gate and draw.
+  bool first_overlay = true;
+  for (const ro::LayerView &layer : view.layers) {
+    if (!layer.overlay)
+      continue;
+    out += first_overlay ? ",\n  \"overlays\": [{" : ", {";
+    first_overlay = false;
+    out += "\"name\": ";
+    d::quoted(out, layer.name);
+    out += ", \"stack_index\": " + std::to_string(layer.stack_index);
+    out += std::string(", \"gated\": ") + (layer.gated ? "true" : "false");
+    out +=
+        std::string(", \"gate_open\": ") + (layer.gate_open ? "true" : "false");
+    out += std::string(", \"drawn\": ") + (layer.drawn ? "true" : "false");
+    out += "}";
+  }
+  if (!first_overlay)
+    out += "]";
   out += "\n}\n";
   return out;
 }

@@ -86,6 +86,8 @@ public:
   GpuOracle &operator=(const GpuOracle &) = delete;
 
   ayther::AytherRenderer &renderer() { return renderer_; }
+  /// The layer stack render() draws with (to add overlays).
+  AytherLayerStack &stack() { return stack_; }
 
   /// The renderer's image of `fv` (HD on, default layer stack).
   probe::RgbImage render(const ayther::FrameView &fv) {

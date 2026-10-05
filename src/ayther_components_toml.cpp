@@ -760,16 +760,23 @@ std::string bake_screens_toml(const std::vector<PackScreen> &screens) {
       "# aunque las otras cambien.\n";
   char buf[320];
   for (const PackScreen &sc : screens) {
-    if (!sc.id || sc.asset.empty() || sc.cells.empty())
+    // Spec 002 (DI-18): a Cuadro without an asset is recognition only (the
+    // gate of an Acetato, a Kinematic step covered by its video): it travels
+    // without the `asset` key, as the motor recognizes it without one.
+    if (!sc.id || sc.cells.empty())
       continue;
     out += "\n[[screen]]\n";
     append_hex(out, "id", sc.id);
     std::snprintf(buf, sizeof(buf),
                   "name = \"%s\"\nplanes = %u\nmin_match = %.3f\n"
-                  "max_extra = %.3f\nasset = \"%s\"\n",
+                  "max_extra = %.3f\n",
                   sc.name.c_str(), unsigned(sc.plane_mask),
-                  double(sc.min_match), double(sc.max_extra), sc.asset.c_str());
+                  double(sc.min_match), double(sc.max_extra));
     out += buf;
+    if (!sc.asset.empty()) {
+      std::snprintf(buf, sizeof(buf), "asset = \"%s\"\n", sc.asset.c_str());
+      out += buf;
+    }
     out += "cells = \"";
     for (size_t i = 0; i < sc.cells.size(); ++i) {
       const PackScreenCell &c = sc.cells[i];
@@ -809,10 +816,10 @@ size_t parse_screens_from(const toml::table &tbl,
       continue;
     PackScreen d;
     d.id = parse_hex(*t, "id");
-    const auto asset = (*t)["asset"].value<std::string>();
-    if (!d.id || !asset || asset->empty())
+    // Spec 002 (DI-18): no asset = a recognition-only Cuadro.
+    if (!d.id)
       continue;
-    d.asset = *asset;
+    d.asset = (*t)["asset"].value<std::string>().value_or(std::string());
     d.name = (*t)["name"].value<std::string>().value_or(std::string());
     d.plane_mask = uint8_t((*t)["planes"].value<int64_t>().value_or(7) & 7);
     d.min_match = float((*t)["min_match"].value<double>().value_or(0.92));

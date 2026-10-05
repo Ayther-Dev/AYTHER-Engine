@@ -8,7 +8,8 @@
 namespace observation = ayther::engine::render_observation;
 static_assert(observation::supports({1, 0}));
 static_assert(!observation::supports({2, 0}));
-static_assert(!observation::supports({1, 1}));
+static_assert(observation::supports({1, 1}));
+static_assert(!observation::supports({1, 2}));
 static_assert(observation::max_occurrences == 256);
 static_assert(observation::max_replacements == 256);
 static_assert(std::is_trivially_copyable_v<observation::OccurrenceId>);
@@ -16,6 +17,7 @@ static_assert(std::is_trivially_copyable_v<observation::OccurrenceView>);
 static_assert(std::is_trivially_copyable_v<observation::ReplacementView>);
 static_assert(std::is_trivially_copyable_v<observation::RenderFrameView>);
 static_assert(std::is_trivially_copyable_v<observation::DrawReport>);
+static_assert(std::is_trivially_copyable_v<observation::LayerView>);
 static_assert(std::is_abstract_v<observation::RenderObserver>);
 static_assert(!std::is_copy_constructible_v<observation::RenderObserver>);
 static_assert(std::is_same_v<observation::Availability,

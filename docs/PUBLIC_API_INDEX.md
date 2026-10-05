@@ -945,7 +945,7 @@ _The installed header (`include/ayther/engine/pack.hpp`) carries the full docume
 
 ## engine/render_observer.hpp
 
-**Declares:** `contract_version`, `ContractVersion`, `DrawReport`, `OccurrenceId`, `OccurrenceView`, `RenderFrameView`, `RenderObserver`, `ReplacementDraw`, `ReplacementView`
+**Declares:** `contract_version`, `ContractVersion`, `DrawReport`, `LayerView`, `OccurrenceId`, `OccurrenceView`, `RenderFrameView`, `RenderObserver`, `ReplacementDraw`, `ReplacementView`
 
 _The installed header (`include/ayther/engine/render_observer.hpp`) carries the full documentation of every symbol._
 

@@ -74,6 +74,25 @@ int main() try {
           "the frame position is known");
   }
 
+  // Contract 1.1 (DI-18): the layers of the draw report reach the view.
+  {
+    const std::array layers{
+        ro::LayerView{"plane_b", "Plano B", 0, true, false, false, false,
+                      false},
+        ro::LayerView{"overlay", "Nubes", 1, true, true, true, false, false}};
+    const ro::DrawReport report{9, true, {}, layers};
+    RenderObservationBuilder builder;
+    RenderObservationInput in;
+    in.emulation_frame = 9;
+    in.frame_known = true;
+    in.draw = &report;
+    const ro::RenderFrameView &v = builder.build(in);
+    check(v.layers.size() == 2 && v.layers[1].overlay &&
+              v.layers[1].name == "Nubes" && v.layers[1].stack_index == 1 &&
+              v.layers[1].gated && !v.layers[1].gate_open,
+          "DI-18: the view carries the stack's layers and overlay gates");
+  }
+
   // RF-7.2, RF-7.3: one pose with two members, one per-sprite substitution,
   // one unrelated sprite and two occurrences of the same identity.
   {

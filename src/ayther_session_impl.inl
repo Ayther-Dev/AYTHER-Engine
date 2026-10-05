@@ -1273,6 +1273,10 @@ struct AytherSession::Impl {
   // realocarlos por frame seria pagar un malloc por capa a 60 Hz. Orden:
   // 0=B, 1=A, 2=ventana, 3=sprites, 4=composite.
   std::vector<uint16_t> layer_bufs[5];
+  /// Spec 002 (DI-17): the frame the core recomposes from its final state,
+  /// and the lines where its image differs from it (raster frames only).
+  std::vector<uint16_t> raster_recomposed;
+  std::vector<uint8_t> raster_diff_lines;
   void *multilayer_fn = nullptr; ///< el export, resuelto una vez
   bool multilayer_fn_resolved = false;
   int32_t layers_error_status = AYTHER_STATUS_OK;
@@ -3856,7 +3860,12 @@ struct AytherSession::Impl {
           cur.name = quoted(line);
         else if (field(line, "visible"))
           cur.visible = line.find("true") != std::string::npos;
-        else if (field(line, "asset")) {
+        // Spec 002 (DI-18): the position in the authored layer stack.
+        else if (field(line, "index")) {
+          const double v = num(line);
+          if (v >= 0.0 && v < 4294967295.0)
+            cur.index = uint32_t(v);
+        } else if (field(line, "asset")) {
           const std::string a = quoted(line);
           std::snprintf(cur.content.asset, sizeof(cur.content.asset), "%s",
                         a.c_str());

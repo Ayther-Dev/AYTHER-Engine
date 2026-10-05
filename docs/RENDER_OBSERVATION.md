@@ -12,7 +12,8 @@ appears on screen without reading Engine internals.
 
 The contract lives in the installed header `ayther/engine/render_observer.hpp`,
 namespace `ayther::engine::render_observation`. Its version
-(`contract_version`, currently 1.0) is independent of the Engine release, the
+(`contract_version`, currently 1.1; a 1.0 consumer is still served) is
+independent of the Engine release, the
 audio observation contract, the core ABI and the replay format.
 
 ## Installing an observer
@@ -98,6 +99,18 @@ is reported, never truncated silently.
 reports the same frame's start on the device line as
 `audio_frame_output_boundary`, so a host can relate what it presented with
 when that frame's audio left the device.
+
+### Layers and overlays (contract 1.1)
+
+`RenderFrameView::layers` lists the layers of the stack the frame was drawn
+with, back to front: `kind` (`plane_b`, `plane_a`, `window`, `sprites`,
+`tile_subs`, `video`, `picture`, `panorama`, `plane_tiles_lo`, `sprites_hd`,
+`entities`, `animations`, `foreground`, `plane_tiles_hi` or `overlay`), its
+`name`, its `stack_index` and whether it is `visible`. For an overlay (a
+Custom layer, such as a pack's Acetato) `gated` says whether it shows only
+while a Cuadro is present, `gate_open` whether that Cuadro is present in this
+frame, and `drawn` whether its sheet was drawn. The list comes with the draw
+report and is empty without one.
 
 ## Draw report
 

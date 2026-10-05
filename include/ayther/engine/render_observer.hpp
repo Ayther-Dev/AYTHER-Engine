@@ -28,10 +28,12 @@ struct ContractVersion {
 };
 
 // Independent of the Engine release, the audio observation contract, the core
-// ABI and the replay format versions.
-inline constexpr ContractVersion contract_version{1, 0};
+// ABI and the replay format versions. 1.1 (spec 002, DI-18) adds the layers
+// of the renderer's stack, overlays included; a 1.0 consumer is served too.
+inline constexpr ContractVersion contract_version{1, 1};
 [[nodiscard]] constexpr bool supports(ContractVersion version) noexcept {
-  return version == contract_version;
+  return version.major == contract_version.major &&
+         version.minor <= contract_version.minor;
 }
 
 // Per-frame limits (spec 002, DA-2 «Datos por frame»). Above them the spans
@@ -106,6 +108,21 @@ struct ReplacementView {
   TextureState texture = TextureState::pending;
 };
 
+// Contract 1.1 (spec 002, DI-18): one layer of the stack the renderer drew
+// the frame with, in stack order (back to front). `name` borrows the stack.
+// The gate and draw fields are meaningful for overlays (Custom layers, the
+// pack's Acetatos) only.
+struct LayerView {
+  std::string_view kind; // plane_b | plane_a | window | sprites | ... | overlay
+  std::string_view name;
+  std::uint32_t stack_index = 0;
+  bool visible = true;
+  bool overlay = false;
+  bool gated = false;     // the overlay shows only while a Cuadro is present
+  bool gate_open = false; // its Cuadro is present in this frame
+  bool drawn = false;     // its sheet was drawn in this frame
+};
+
 struct RenderFrameView {
   FramePosition frame;
   Composability composability = Composability::composable;
@@ -113,6 +130,9 @@ struct RenderFrameView {
   std::span<const ReplacementView> replacements;
   std::size_t occurrences_total = 0;  // > occurrences.size() only on excess
   std::size_t replacements_total = 0; // > replacements.size() only on excess
+  // Contract 1.1: the layers of the stack the frame was drawn with; empty
+  // when the host published no draw report.
+  std::span<const LayerView> layers = {};
 };
 
 // How the renderer drew each replacement of the frame, index-aligned with the
@@ -128,6 +148,8 @@ struct DrawReport {
   // stays unapplied with the reason hd_off.
   bool hd_enabled = true;
   std::span<const ReplacementDraw> replacements;
+  // Contract 1.1: the layers of the stack, in stack order.
+  std::span<const LayerView> layers = {};
 };
 
 class RenderObserver {

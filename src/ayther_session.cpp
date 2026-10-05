@@ -58,6 +58,7 @@
 #include "session/plane_sub_join.h"
 #include "session/pose_anchor.h"
 #include "session/pose_depth.h"
+#include "session/raster_bands.h"
 #include "session/recording_controller.h"
 #include "session/render_observation_builder.h"
 #include "session/sprite_line_limits.h"
@@ -4855,6 +4856,79 @@ const FrameView &AytherSession::produce_frame() {
                 engine::render_observation::Composability::column_vscroll)
           composability.reason =
               engine::render_observation::Composability::composable;
+      }
+      // Spec 002 (DI-17): raster writes leave non-composable only the lines
+      // they touch. From the core's journal, the bands go to the renderer,
+      // which keeps HD elsewhere; writes that cannot be placed on lines keep
+      // the whole frame non-composable.
+      v.raster_reasons = raster;
+      v.raster_band_count = 0;
+      if ((composability.scene_dirty & session::kDirtyRaster) != 0 &&
+          im.observer.snapshot_available() && v.scene_vram && regs3 &&
+          v.scene_cram && vsr) {
+        ayther_journal_v1 journal{};
+        const auto read =
+            im.runner.read_region_v1(AYTHER_REGION_RASTER_JOURNAL, &journal,
+                                     sizeof(journal), AYTHER_GENERATION_ANY);
+        if (read.status == AYTHER_STATUS_OK &&
+            journal.count <= AYTHER_JOURNAL_MAX_EVENTS) {
+          std::array<session::RasterEvent, AYTHER_JOURNAL_MAX_EVENTS> events{};
+          for (uint32_t i = 0; i < journal.count; ++i)
+            events[i] = {journal.events[i].v_counter, journal.events[i].reason,
+                         journal.events[i].address, journal.events[i].data};
+          const session::RasterFinalState final_state{
+              {regs3, rsz3},
+              {v.scene_cram, v.scene_cram_size},
+              {vsr, impl_->runner.vsram_size()},
+              {v.scene_vram, v.scene_vram_size}};
+          // Pattern writes are not journaled: their lines are the ones where
+          // the core's image differs from the frame it recomposes from its
+          // final state.
+          std::span<const uint8_t> diff_lines;
+          const ayther_interface_v1 *api = im.runner.ayther_api();
+          if ((raster & session::kRasterReasonVram) != 0 && api != nullptr &&
+              (api->capabilities & AYTHER_CAP_RECOMPOSE_V1) != 0 &&
+              AYTHER_IFACE_HAS(api, recompose_frame) &&
+              api->recompose_frame != nullptr && v.fb_pixels != nullptr &&
+              v.fb_format == 2 && v.fb_pitch >= v.fb_width * 2) {
+            const size_t px = size_t(v.fb_width) * v.fb_height;
+            if (im.raster_recomposed.size() < px)
+              im.raster_recomposed.resize(px);
+            uint32_t rw = 0;
+            uint32_t rh = 0;
+            if (api->recompose_frame(im.raster_recomposed.data(), uint32_t(px),
+                                     0, &rw, &rh) == AYTHER_STATUS_OK &&
+                rw == v.fb_width && rh == v.fb_height) {
+              im.raster_diff_lines.assign(v.fb_height, 0);
+              session::differing_lines(
+                  im.raster_recomposed.data(), v.fb_width,
+                  static_cast<const uint16_t *>(v.fb_pixels), v.fb_pitch / 2,
+                  (int)v.fb_width, (int)v.fb_height, im.raster_diff_lines);
+              diff_lines = im.raster_diff_lines;
+            }
+          }
+          const session::RasterBands bands = session::raster_bands(
+              raster, std::span{events}.first(journal.count), journal.dropped,
+              final_state, (int)v.fb_height, diff_lines);
+          uint32_t covered = 0;
+          for (uint32_t k = 0; k < bands.count; ++k)
+            covered += bands.bands[k].y1 - bands.bands[k].y0;
+          if (bands.localized && covered < v.fb_height) {
+            composability.scene_dirty =
+                (uint8_t)(composability.scene_dirty & ~session::kDirtyRaster);
+            v.raster_band_count = (uint8_t)bands.count;
+            for (uint32_t k = 0; k < bands.count; ++k) {
+              v.raster_bands[k][0] = bands.bands[k].y0;
+              v.raster_bands[k][1] = bands.bands[k].y1;
+            }
+            // No line touched: the frame composes whole.
+            if (bands.count == 0 &&
+                composability.reason ==
+                    engine::render_observation::Composability::raster_split)
+              composability.reason =
+                  engine::render_observation::Composability::composable;
+          }
+        }
       }
       v.scene_dirty = composability.scene_dirty;
       im.frame_composability = composability.reason;

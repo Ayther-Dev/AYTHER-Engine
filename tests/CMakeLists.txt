@@ -359,7 +359,8 @@ foreach(_ayther_fix_test IN ITEMS pose_anchor_test pose_membership_paths_test
         pose_partition_session_test
         framebuffer_judge_test
         scroll_tables_test
-        pack_removal_test)
+        pack_removal_test
+        pack_overlay_gate_test)
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/${_ayther_fix_test}.cpp"
         integration)
@@ -588,6 +589,25 @@ if(AYTHER_BUILD_GPU_TESTS)
     target_compile_definitions(ayther_raster_frame_test PRIVATE
         AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     set_tests_properties(ayther.renderer.raster_frame_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, DI-17: a raster frame loses HD only in its bands.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/raster_band_test.cpp" renderer)
+    target_link_libraries(ayther_raster_band_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_raster_band_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.raster_band_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, DI-18: the draw report lists the stack's layers and overlays.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/overlay_layer_report_test.cpp"
+        renderer)
+    target_link_libraries(ayther_overlay_layer_report_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_overlay_layer_report_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.overlay_layer_report_test PROPERTIES
         LABELS "engine;native;renderer;gpu")
     # Spec 002 (plan §5.13): the render probe and its test, which records a
     # take with the test core and runs the probe on it.

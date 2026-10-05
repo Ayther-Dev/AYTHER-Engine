@@ -97,12 +97,23 @@ validator reports it as `pose.asset_missing` or `pose.asset_unreadable`.
 - The compositor draws per-line horizontal scroll and per-column vertical
   scroll by bands, clipping each plane element to its band. Those frames are
   composed normally.
-- A frame with raster writes in mid-screen (`raster_split`) is presented with
-  the originals only, without HD assets. Every assigned pose then reads
-  `assigned_not_applied` with the reason `frame_not_composable` in the
-  observation.
+- A frame with raster writes in mid-screen (`raster_split`) loses HD only
+  in the bands of lines those writes touch (decision DI-17). The session
+  finds them from the core's per-line raster journal (registers, CRAM, VSRAM
+  and hscroll writes, compared with the state the frame ends with) and, for
+  pattern writes the journal does not record, from the lines where the
+  core's image differs from the frame the core recomposes from its final
+  state. `FrameView::raster_bands` carries them.
+- In those bands the renderer shows the core's image: the originals, without
+  HD assets. The rest of the frame is composed as usual. A replacement whole
+  inside the bands reads `assigned_not_applied` with the reason
+  `frame_not_composable` in the observation; one outside them is drawn.
+- When the writes cannot be placed on lines (a dropped journal event, a
+  reason the journal does not record and no recomposition), the whole frame
+  is presented with the originals only, as before.
 
-An original and its replacement are therefore never visible at the same time.
+An original and its replacement are therefore never visible at the same time
+on the same lines.
 
 ### R9. Retiring a pack
 
@@ -129,10 +140,13 @@ Each rule has its regression test, written before the fix:
 | R5 | `framebuffer_judge_test`, `sprite_line_limits_test` |
 | R6 | `texture_residency_test`, `texture_residency_gpu_test`, `texture_sync_decode_test`, `pack_prewarm_test`, `missing_asset_test`, `sprite_flip_uv_test` |
 | R7 | Rust tests of `vram_sprite` and `pack_validate` |
-| R8 | `plane_bands_test`, `scroll_tables_test`, `scroll_compose_gpu_test`, `raster_frame_test` |
+| R8 | `plane_bands_test`, `scroll_tables_test`, `scroll_compose_gpu_test`, `raster_frame_test`, `raster_bands_test`, `raster_band_test` |
 | R9 | `pack_removal_test` |
 
 The GPU tests carry the `gpu` label and run under the `windows-native-gpu`
 preset. `tools/render_probe` checks the rules over a whole take: O1 compares
-the composition without a pack against the core image, and O2 checks the
-invariants with a pack.
+the composition without a pack against the core image, O2 checks the
+invariants with a pack, and O3 (`--check o3`) checks continuity: from one
+frame to the next, a block of the composed image may only change where the
+core's image changes too, allowing for motion. `--no-images` lets O3 scan a
+whole take.

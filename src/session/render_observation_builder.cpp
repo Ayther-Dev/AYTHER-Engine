@@ -202,6 +202,9 @@ RenderObservationBuilder::build(const RenderObservationInput &in) {
   view_.replacements = replacements_;
   view_.occurrences_total = n_occ;
   view_.replacements_total = n_sub;
+  // Contract 1.1 (DI-18): the layers come with the renderer's draw report.
+  if (in.draw != nullptr)
+    view_.layers = in.draw->layers;
   return view_;
 }
 

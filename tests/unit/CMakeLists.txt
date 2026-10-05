@@ -59,6 +59,7 @@ foreach(_source IN ITEMS
         plane_set_match_test.cpp
         plane_set_order_test.cpp
         plane_bands_test.cpp
+        raster_bands_test.cpp
         plane_set_split_test.cpp
         plane_sub_join_test.cpp
         pose_anchor_order_test.cpp
@@ -71,6 +72,7 @@ foreach(_source IN ITEMS
         render_probe_o1_test.cpp
         render_probe_missing_test.cpp
         render_probe_o2_test.cpp
+        render_probe_o3_test.cpp
         runtime_options_test.cpp
         sprite_line_limits_test.cpp
         texture_residency_test.cpp
