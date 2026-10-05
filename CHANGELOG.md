@@ -35,6 +35,18 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Render observation contract 1.1 (spec 002, DI-18):
+  `RenderFrameView::layers` and `DrawReport::layers` list the layers of the
+  stack each frame was drawn with, and for an overlay (Acetato) whether its
+  gate was open and its sheet drawn. A 1.0 consumer is still served.
+- `AytherSession::PackOverlay::index`: the overlay's position in the layer
+  stack the pack was authored with (`index` in `acetatos.toml`).
+- `FrameView::raster_reasons` and `FrameView::raster_bands`: the core's
+  raster reasons of the frame and the bands of lines they leave
+  non-composable.
+- `render_probe` stacks and draws the pack's overlays, reports them in every
+  record, and checks continuity with `--check o3` (O3); `--no-images` scans a
+  whole take.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions
@@ -111,6 +123,12 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- R8 by bands (spec 002, DI-17): a frame with raster writes in mid-screen
+  loses HD only in the lines those writes touch, found from the core's raster
+  journal and, for pattern writes, from the core's recomposition; elsewhere it
+  keeps its HD. Before, the whole frame fell back to the core's image, which
+  made the HD background flicker (Golden Axe Toma 3, frames 1568-1690,
+  4062-4066 and 4742-4757).
 - Cargo, CMake, vcpkg, SDK, engine validation, and Lua now share the `0.1.0`
   release version; ABI and pack-schema values are explicitly independent
   protocol revisions.
@@ -168,7 +186,10 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-
+- A Cuadro without an asset (recognition only: an Acetato's gate, a
+  Kinematic step covered by its video) is kept by the `elements.toml` and
+  `screens.toml` writers and readers. Before, it was dropped, so an Acetato
+  gated on it never appeared from a baked pack (spec 002, F-1).
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take
   with the same count kept the previous ones; any change of the events now
