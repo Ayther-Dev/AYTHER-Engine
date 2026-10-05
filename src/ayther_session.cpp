@@ -1047,10 +1047,30 @@ const FrameView &AytherSession::produce_frame() {
   // disparos HD detectados tras run_frame se colocan en este offset, no al
   // principio del bloque (que en catch-up acumula varios frames).
   im.audio.mark_frame_boundary(im.frame_index);
+  // Spec 002 (A): the registers the previous frame ended with. The lines
+  // drawn before a register's first write in mid-screen use that value, so a
+  // one-shot write (the display turned off) touches them (raster_bands.h).
+  im.raster_prev_regs_n = 0;
+  {
+    const size_t abi = im.runner.abi_region_bytes(AYTHER_REGION_VDP_REGS);
+    const size_t n = abi ? abi : im.runner.vdp_regs_size();
+    if (n > 0 && n <= im.raster_prev_regs.size() &&
+        im.runner
+            .read_region_v1(AYTHER_REGION_VDP_REGS, im.raster_prev_regs.data(),
+                            static_cast<uint32_t>(n), AYTHER_GENERATION_ANY)
+            .ok())
+      im.raster_prev_regs_n = n;
+  }
   im.runner.run_frame();            // fires the video + audio callbacks
   im.verify_ayther_subscriptions(); // E-2 (): una sola vez
   im.refresh_abi_mirror();          // E-3 (): VDP por la ABI, 1 vez/frame
-  im.runner.set_audio_mute_v1(0);   // la re-sim bare corre sin mute
+  // Spec 002 (A): display enable (register 1, bit 6) at the end of the frame.
+  {
+    const uint8_t *de_regs = im.regs_ptr();
+    im.display_on = de_regs == nullptr || im.runner.vdp_regs_size() < 2 ||
+                    (de_regs[1] & 0x40) != 0;
+  }
+  im.runner.set_audio_mute_v1(0); // la re-sim bare corre sin mute
   // R-5: sin applies de supresión no hay restores — el core corre siempre
   // con el frame completo (los canales 0x102-0x106 quedaron inertes).
   if (im.layer_dim_want)
@@ -2966,7 +2986,10 @@ const FrameView &AytherSession::produce_frame() {
         im.pano_cells = 0;
         im.pano_valid = false;
         im.pano_cover = 0;
-        if (!im.panoramas.empty() && npick > 0) {
+        // Spec 002 (A): with the display off the screen is the backdrop; a
+        // VRAM that still holds the strip's cells (Toma 3, frame 2) must not
+        // anchor it, nor fix its tint reference.
+        if (!im.panoramas.empty() && npick > 0 && im.display_on) {
           for (const auto &[pid, pd] : im.panoramas) {
             if (pd.anchors.empty())
               continue;
@@ -4602,6 +4625,18 @@ const FrameView &AytherSession::produce_frame() {
     v.screen_presence_ids[i] = im.screen_presence[i];
   v.screen_subs = im.screen_sub_n ? &im.screen_sub : nullptr;
   v.screen_sub_count = im.screen_sub_n;
+  // Spec 002 (A): with the display off no HD lane is published: the screen
+  // is the backdrop, whatever VRAM still holds. Sprite replacements stay in
+  // the view so the observation reports them, not applied
+  // (frame_not_composable): the frame is not composed (kDirtyDisplayOff).
+  if (!im.display_on) {
+    v.tile_sub_count = 0;
+    v.plane_tile_sub_count = 0;
+    v.plane_tile_sub_hi = 0;
+    v.entity_sub_count = 0;
+    v.screen_subs = nullptr;
+    v.screen_sub_count = 0;
+  }
   v.kinematic_id = im.kine_active;
   v.kinematic_step = im.kine_step;
   {
@@ -4620,7 +4655,7 @@ const FrameView &AytherSession::produce_frame() {
   // Cinemática.
   v.wide_w = im.wide_w_eff; //  fase 0 + gate EM-8.2
   v.video_plane_mask = 0;
-  if (im.vid_on && im.kine_active) {
+  if (im.vid_on && im.kine_active && im.display_on) {
     if (const auto kt = im.kinematics.find(im.kine_active);
         kt != im.kinematics.end())
       for (uint64_t sid : kt->second.steps)
@@ -4863,7 +4898,10 @@ const FrameView &AytherSession::produce_frame() {
       // the whole frame non-composable.
       v.raster_reasons = raster;
       v.raster_band_count = 0;
+      // Spec 002 (A): a frame that ends with the display off is the core's
+      // image whole (frame_composability.cpp); it has no bands.
       if ((composability.scene_dirty & session::kDirtyRaster) != 0 &&
+          (composability.scene_dirty & session::kDirtyDisplayOff) == 0 &&
           im.observer.snapshot_available() && v.scene_vram && regs3 &&
           v.scene_cram && vsr) {
         ayther_journal_v1 journal{};
@@ -4880,7 +4918,8 @@ const FrameView &AytherSession::produce_frame() {
               {regs3, rsz3},
               {v.scene_cram, v.scene_cram_size},
               {vsr, impl_->runner.vsram_size()},
-              {v.scene_vram, v.scene_vram_size}};
+              {v.scene_vram, v.scene_vram_size},
+              {im.raster_prev_regs.data(), im.raster_prev_regs_n}};
           // Pattern writes are not journaled: their lines are the ones where
           // the core's image differs from the frame it recomposes from its
           // final state.

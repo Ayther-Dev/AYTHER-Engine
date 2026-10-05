@@ -4,7 +4,8 @@
 // write left a register, a CRAM entry, a VSRAM word or an hscroll word with a
 // value other than the final one while that line was drawn. Those lines are
 // the bands; the rest of the frame composes as usual. Pure: the session feeds
-// it the core's raster journal and the final VDP memories.
+// it the core's raster journal, the final VDP memories and, when it has
+// them, the registers the previous frame ended with.
 #pragma once
 
 #include <array>
@@ -39,6 +40,11 @@ struct RasterFinalState {
   std::span<const std::uint8_t> cram;
   std::span<const std::uint8_t> vsram;
   std::span<const std::uint8_t> vram;
+  /// The registers at the end of the previous frame (empty = unknown). The
+  /// lines before the first write to a register were drawn with that value:
+  /// a one-shot change (the display turned off, a plane base moved) touches
+  /// them too.
+  std::span<const std::uint8_t> previous_regs;
 };
 
 struct RasterBand {
@@ -91,7 +97,10 @@ inline bool final_value(const RasterEvent &e, const RasterFinalState &s,
 /// The bands of a frame whose fallback reasons are `reasons`, from its
 /// journal (`events` in the order the core recorded them, `dropped` events
 /// that did not fit) and the memories it ends with. A line before the first
-/// write to an address is taken to be drawn with the final value, as the
+/// write to a register is drawn with the value the previous frame ended with
+/// (`state.previous_regs`): a one-shot write leaves the lines before it
+/// touched. Without that value, and for CRAM, VSRAM and hscroll, a line
+/// before the first write is taken to be drawn with the final value, as the
 /// core's own raster replay does: a game that changes a colour for a band
 /// restores it, in the active area or in vblank, every frame.
 ///
@@ -129,6 +138,17 @@ raster_bands(std::uint32_t reasons, std::span<const RasterEvent> events,
     std::uint16_t final = 0;
     if (!final_value(e, state, final))
       return out;
+    // The first write to a register: the lines before it were drawn with the
+    // value the previous frame ended with.
+    if (e.reason == kRasterReasonReg &&
+        e.address < state.previous_regs.size() &&
+        state.previous_regs[e.address] != final) {
+      bool first = true;
+      for (std::size_t j = 0; j < i && first; ++j)
+        first = events[j].reason != e.reason || events[j].address != e.address;
+      for (int y = 0; first && y < e.line && y < height; ++y)
+        touched[static_cast<std::size_t>(y)] = true;
+    }
     if (e.data == final)
       continue;
     // Drawn with `e.data` from its line until the next write to the same

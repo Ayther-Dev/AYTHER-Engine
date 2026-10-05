@@ -360,7 +360,8 @@ foreach(_ayther_fix_test IN ITEMS pose_anchor_test pose_membership_paths_test
         framebuffer_judge_test
         scroll_tables_test
         pack_removal_test
-        pack_overlay_gate_test)
+        pack_overlay_gate_test
+        display_enable_session_test)
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/${_ayther_fix_test}.cpp"
         integration)

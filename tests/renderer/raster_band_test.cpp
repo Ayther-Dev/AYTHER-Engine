@@ -5,6 +5,7 @@
 // replacements. A replacement whole inside a band is reported discarded
 // (assigned_not_applied, frame_not_composable); one outside is drawn.
 #include "gpu_oracle.h"
+#include "session/frame_composability.h"
 #include "session/render_observation_builder.h"
 
 #include <array>
@@ -232,6 +233,28 @@ int main() try {
     check(report2.replacements.size() == 1 &&
               report2.replacements[0].draw == ro::DrawOutcome::discarded,
           "the replacement across the band's edge is discarded");
+  }
+
+  // Spec 002 (A, Toma 3 frame 2): the display is off. The VDP shows the
+  // backdrop only (black here); the planes and the sprites the scene still
+  // holds are not on screen, and no HD may be drawn over it.
+  {
+    std::vector<std::uint16_t> blank(320U * 224U, 0);
+    ayther::FrameView off = fv;
+    off.fb_pixels = blank.data();
+    off.scene_dirty = ayther::session::kDirtyDisplayOff;
+    off.raster_reasons = 0;
+    off.raster_band_count = 0;
+    const ayther::probe::RgbImage got3 = oracle.render(off);
+    const ayther::probe::RgbImage core3 =
+        ayther::probe::core_image(blank.data(), 320, 224, 640, 2);
+    const ro::DrawReport report3 = oracle.renderer().last_draw_report();
+    check(!got3.rgb.empty() && rows_equal(got3, core3, 0, 224),
+          "A: with the display off the frame is the core's image (O1)");
+    check(report3.replacements.size() == 2 &&
+              report3.replacements[0].draw == ro::DrawOutcome::discarded &&
+              report3.replacements[1].draw == ro::DrawOutcome::discarded,
+          "A: with the display off no replacement is drawn");
   }
 
   fs::remove_all(dir, ec);

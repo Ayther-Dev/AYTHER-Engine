@@ -14,6 +14,10 @@ namespace ayther::session {
 inline constexpr std::uint8_t kDirtyRaster = 1; // mid-screen raster writes
 inline constexpr std::uint8_t kDirtyDim = 2;    // authoring dim of Animate
 inline constexpr std::uint8_t kDirtyScroll = 4; // line hscroll / column vscroll
+/// Spec 002 (A): the display is off (VDP register 1, bit 6) at the end of
+/// the frame. The VDP shows the backdrop only: the frame is the core's
+/// image, without HD.
+inline constexpr std::uint8_t kDirtyDisplayOff = 8;
 
 struct FrameComposabilityInput {
   /// Raster fallback reasons of the frame (ABI snapshot) or the legacy count
@@ -30,8 +34,8 @@ struct FrameComposabilityInput {
 
 struct FrameComposability {
   std::uint8_t scene_dirty = 0;
-  /// The first reason that applies, in this order: raster_split, fade,
-  /// line_hscroll, column_vscroll.
+  /// The first reason that applies, in this order: raster_split, other (the
+  /// display is off), fade, line_hscroll, column_vscroll.
   engine::render_observation::Composability reason =
       engine::render_observation::Composability::composable;
 };

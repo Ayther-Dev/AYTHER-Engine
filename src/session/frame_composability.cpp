@@ -59,12 +59,22 @@ FrameComposability classify_frame(const FrameComposabilityInput &in) noexcept {
     hscroll = hscroll_varies(in);
     vscroll = vscroll_varies(in);
   }
+  // Spec 002 (A): register 1 bit 6 is the display enable. With it off at the
+  // end of the frame the VDP shows the backdrop, and while it was off the
+  // game could change any VDP state without the raster journal seeing it, so
+  // the lines drawn before cannot be checked against the final state either:
+  // the whole frame is the core's image.
+  const bool display_off =
+      in.vdp_regs.size() > 1 && (in.vdp_regs[1] & 0x40U) == 0;
   FrameComposability out;
   out.scene_dirty = static_cast<std::uint8_t>(
       (in.raster > 0 ? kDirtyRaster : 0) | (in.layer_dim ? kDirtyDim : 0) |
-      (hscroll || vscroll ? kDirtyScroll : 0));
+      (hscroll || vscroll ? kDirtyScroll : 0) |
+      (display_off ? kDirtyDisplayOff : 0));
   if (in.raster > 0)
     out.reason = Composability::raster_split;
+  else if (display_off)
+    out.reason = Composability::other;
   else if (in.layer_dim)
     out.reason = Composability::fade;
   else if (hscroll)

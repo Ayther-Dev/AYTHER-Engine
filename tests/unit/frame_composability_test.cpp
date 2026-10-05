@@ -32,7 +32,10 @@ struct Frame {
   std::uint32_t raster = 0;
   bool dim = false;
 
-  Frame() { regs[13] = 0x3F; }
+  Frame() {
+    regs[1] = 0x74; // the display is on (bit 6)
+    regs[13] = 0x3F;
+  }
 
   void hscroll(std::uint32_t line, std::uint16_t plane_a) {
     const std::uint32_t at = kHscrollTable + line * 4;
@@ -156,6 +159,30 @@ int main() try {
     const FrameComposability c = f.classify();
     check(c.reason == Composability::composable,
           "without the whole VRAM the scroll tables are not read");
+  }
+  {
+    // Spec 002 (A, Toma 3 frame 2): with the display off (register 1 bit 6)
+    // the VDP shows the backdrop only, whatever the planes and sprites hold.
+    Frame f;
+    f.regs[1] = 0x34;
+    const FrameComposability c = f.classify();
+    check(c.reason == Composability::other &&
+              c.scene_dirty == ayther::session::kDirtyDisplayOff,
+          "A: a frame with the display off is not composable (other)");
+  }
+  {
+    Frame f;
+    f.regs[1] = 0x34;
+    f.raster = 1;
+    f.regs[11] = 3;
+    f.hscroll(100, 5);
+    const FrameComposability c = f.classify();
+    check(c.reason == Composability::raster_split &&
+              (c.scene_dirty & ayther::session::kDirtyDisplayOff) != 0,
+          "A: turned off mid-screen: raster_split first, display-off bit set");
+    f.raster = 0;
+    check(f.classify().reason == Composability::other,
+          "A: display off goes before the scroll reasons the session clears");
   }
 
   std::printf("%d failure(s)\n", failures);

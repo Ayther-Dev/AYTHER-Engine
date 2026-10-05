@@ -26,6 +26,7 @@
 #include "libretro_host/ayther_api.h"
 #include "libretro_host/libretro.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -105,12 +106,43 @@ struct SerializedState {
   /// which is why the oracle checks for those and not for false positives.
   uint8_t dirty_patterns[kPatternCount];
   uint32_t raster_event_count;
+  /// Display scenario only (spec 002, A): the raster fallback reasons and
+  /// the per-line journal of the last frame, as a forked core reports them.
+  uint32_t fallback_reasons;
+  uint32_t journal_count;
+  struct JournalEvent {
+    uint16_t line;
+    uint16_t reason;
+    uint16_t address;
+    uint16_t data;
+  } journal[4];
 };
 
 SerializedState g_state{};
 
 std::vector<uint8_t> g_rom;
 uint32_t g_rom_crc32 = 0;
+
+// ---- Display scenario (spec 002, A) ---------------------------------------
+// A ROM that starts with this tag runs a scripted VDP instead of the churn:
+// stable planes a Panorama can anchor on, and the display-enable bit of
+// register 1 switched the way Golden Axe does at the start of Toma 3 (off in
+// mid-screen once, then on again), plus a one-shot register write. The
+// journal and the fallback reasons say what a forked core would.
+constexpr char kDisplayScenarioTag[] = "AYTHER-DISPLAY-SCENARIO";
+bool g_display_scenario = false;
+
+// Frame numbers (0-based, the core's own count) of the display scenario.
+// tests/integration/display_enable_session_test.cpp uses the same values.
+constexpr uint64_t kDisplayOffFrame = 20; // r1 0x74 -> 0x34 at line 100
+constexpr uint64_t kDisplayOnFrame = 30;  // r1 0x34 -> 0x74 at line 60
+constexpr uint64_t kOneShotFrame = 40;    // r7 0x00 -> 0x05 at line 120
+constexpr uint16_t kDisplayOffLine = 100;
+constexpr uint16_t kDisplayOnLine = 60;
+constexpr uint16_t kOneShotLine = 120;
+/// AYTHER_RASTER_REASON_REG of the forked core: a register written in
+/// mid-screen.
+constexpr uint16_t kRasterReasonReg = 1u << 0;
 std::vector<uint16_t> g_framebuffer(kWidth *kHeight, 0);
 std::vector<int16_t> g_audio(kSamplesPerFrame * 2, 0);
 
@@ -156,6 +188,38 @@ void reset_state(bool clear_subscriptions) {
   g_state.lcg = 0x9E3779B97F4A7C15ULL ^ g_rom_crc32;
   for (size_t i = 0; i < kVdpRegBytes; ++i) {
     g_state.vdp_regs[i] = static_cast<uint8_t>(i * 7);
+  }
+  // The display is on (register 1, bit 6), as in any game that shows a
+  // picture: with it off the VDP draws the backdrop only.
+  g_state.vdp_regs[1] |= 0x40;
+  g_display_scenario = g_rom.size() >= sizeof(kDisplayScenarioTag) - 1 &&
+                       std::memcmp(g_rom.data(), kDisplayScenarioTag,
+                                   sizeof(kDisplayScenarioTag) - 1) == 0;
+  if (g_display_scenario) {
+    // H32, plane A at 0xC000 and B at 0xE000 (64x32 cells), hscroll at
+    // 0xFC00, no window.
+    const uint8_t regs[24] = {0x04, 0x74, 0x30, 0x3C, 0x07, 0x6C, 0x00, 0x00,
+                              0x00, 0x00, 0xFF, 0x00, 0x00, 0x3F, 0x00, 0x02,
+                              0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    std::memcpy(g_state.vdp_regs, regs, sizeof(regs));
+    // Patterns 1..768 with distinct content; plane A shows each once
+    // over the 32x24 visible cells, so every cell is a rare anchor.
+    for (uint32_t p = 1; p <= 32 * 24; ++p)
+      for (uint32_t b = 0; b < kPatternBytes; ++b)
+        g_state.vram[p * kPatternBytes + b] = static_cast<uint8_t>(
+            (p * 31u + b * 7u + (p >> 3) + (b >> 2) * p) | 0x11u);
+    for (uint32_t cy = 0; cy < 24; ++cy)
+      for (uint32_t cx = 0; cx < 32; ++cx) {
+        const uint16_t word = static_cast<uint16_t>(1 + cy * 32 + cx);
+        const size_t at = 0xC000 + (cy * 64 + cx) * 2;
+        g_state.vram[at] = static_cast<uint8_t>(word & 0xFF);
+        g_state.vram[at + 1] = static_cast<uint8_t>(word >> 8);
+      }
+    for (size_t i = 2; i < 32; i += 2) {
+      const uint16_t colour = static_cast<uint16_t>((i * 0x111) & 0x0EEE);
+      g_state.cram[i] = static_cast<uint8_t>(colour & 0xFF);
+      g_state.cram[i + 1] = static_cast<uint8_t>(colour >> 8);
+    }
   }
   std::fill(g_framebuffer.begin(), g_framebuffer.end(), uint16_t{0});
   std::fill(g_audio.begin(), g_audio.end(), int16_t{0});
@@ -209,7 +273,32 @@ void advance_frame() {
   // count both grows and shrinks has something real to observe.
   g_state.raster_event_count = static_cast<uint32_t>(g_state.frame % 17);
 
-  if (subscribed(AYTHER_SUB_VDP_MEMORY)) {
+  g_state.fallback_reasons = 0;
+  g_state.journal_count = 0;
+  unsigned blank_from = kHeight; // lines [blank_from, blank_to) are blank
+  unsigned blank_to = kHeight;
+  if (g_display_scenario) {
+    const auto journal = [](uint16_t line, uint16_t reg, uint8_t value) {
+      g_state.fallback_reasons |= kRasterReasonReg;
+      g_state.journal[g_state.journal_count++] = {
+          line, static_cast<uint16_t>(kRasterReasonReg), reg, value};
+      g_state.vdp_regs[reg] = value;
+    };
+    if (g_state.frame == kDisplayOffFrame) {
+      journal(kDisplayOffLine, 1, 0x34);
+      blank_from = kDisplayOffLine;
+    } else if (g_state.frame == kDisplayOnFrame) {
+      journal(kDisplayOnLine, 1, 0x74);
+      blank_from = 0;
+      blank_to = kDisplayOnLine;
+    } else if (g_state.frame == kOneShotFrame) {
+      journal(kOneShotLine, 7, 0x05);
+    } else if ((g_state.vdp_regs[1] & 0x40) == 0) {
+      blank_from = 0;
+    }
+  }
+
+  if (subscribed(AYTHER_SUB_VDP_MEMORY) && !g_display_scenario) {
     for (unsigned i = 0; i < 32; ++i) {
       const uint64_t value = next_random();
       const size_t offset = static_cast<size_t>(value % kVramBytes);
@@ -291,6 +380,11 @@ void advance_frame() {
   // Framebuffer: RGB565, a function of the frame and the pixel position, so
   // consecutive frames differ and a given frame is reproducible.
   for (unsigned y = 0; y < kHeight; ++y) {
+    if (y >= blank_from && y < blank_to) {
+      // Display off: the backdrop (colour 0, black) on the whole line.
+      std::fill_n(g_framebuffer.begin() + y * kWidth, kWidth, uint16_t{0});
+      continue;
+    }
     for (unsigned x = 0; x < kWidth; ++x) {
       const unsigned r = (x + static_cast<unsigned>(g_state.frame)) & 0x1F;
       const unsigned g = (y * 2 + static_cast<unsigned>(g_state.frame)) & 0x3F;
@@ -414,6 +508,23 @@ bool region_view(uint32_t region_id, RegionView &out) {
     out = {g_state.vsram, 1,     kVsramBytes,
            kVsramBytes,   0x107, AYTHER_SUB_VDP_MEMORY};
     return true;
+  case AYTHER_REGION_RASTER_JOURNAL: {
+    static ayther_journal_v1 journal{};
+    journal = ayther_journal_v1{};
+    journal.layout_version = AYTHER_LAYOUT_JOURNAL_V1;
+    journal.struct_size = sizeof(ayther_journal_v1);
+    journal.count = g_state.journal_count;
+    journal.dropped = 0;
+    for (uint32_t i = 0; i < g_state.journal_count; ++i) {
+      journal.events[i].v_counter = g_state.journal[i].line;
+      journal.events[i].reason = g_state.journal[i].reason;
+      journal.events[i].address = g_state.journal[i].address;
+      journal.events[i].data = g_state.journal[i].data;
+    }
+    out = {&journal,        1, sizeof(journal),
+           sizeof(journal), 0, AYTHER_SUB_RASTER_TRACKING};
+    return true;
+  }
   case AYTHER_REGION_Z80_RAM:
     out = {g_state.z80_ram, 1,     kZ80RamBytes,
            kZ80RamBytes,    0x10F, AYTHER_SUB_VDP_MEMORY};
@@ -665,10 +776,11 @@ int32_t AYTHER_CALL api_capture_snapshot(ayther_frame_snapshot_v1 *out,
   out->frame_generation = g_state.frame;
   out->flags = AYTHER_SNAPSHOT_CONTENT_LOADED | AYTHER_SNAPSHOT_FRAME_ACTIVE;
   out->overflow_flags = 0;
-  // No raster fallback: this core has no raster path to fall back FROM, and
-  // reporting a non-zero reason would tell the engine a fidelity story that
-  // is not true.
-  out->fallback_reasons = 0;
+  // No raster fallback outside the display scenario: this core has no
+  // raster path to fall back FROM, and a non-zero reason would tell the
+  // engine a fidelity story that is not true. The scenario's register
+  // writes are journaled like a forked core's.
+  out->fallback_reasons = g_state.fallback_reasons;
   out->parsed_sprite_count = g_state.sprite_count;
   out->audio_write_count = g_state.audio_write_count;
   return AYTHER_STATUS_OK;

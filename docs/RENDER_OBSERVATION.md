@@ -50,7 +50,7 @@ occurrences and the replacements.
 | `fade` | The authoring dim of an authoring tool's animation view is on. Replacements are still drawn. |
 | `line_hscroll` | Per-line horizontal scroll. Since R8 the compositor draws the scroll bands, so the session reports such frames as `composable`; the value stays in the contract for producers that cannot. |
 | `column_vscroll` | Per-column vertical scroll, with the same treatment as `line_hscroll`. |
-| `other` | Any other reason that prevents composition. |
+| `other` | Any other reason that prevents composition, such as a frame that ends with the display off (VDP register 1, bit 6). |
 
 See [Replacement composition rules](REPLACEMENT_COMPOSITION.md#r8-frames-that-cannot-be-composed)
 for what the renderer does with each value.

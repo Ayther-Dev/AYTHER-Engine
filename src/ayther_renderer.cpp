@@ -547,8 +547,10 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
   // be composed element by element: it is presented with the originals only
   // (the core's image), never an original and its replacement together. The
   // report keeps HD on, so each replacement reads as discarded and the
-  // observation gives frame_not_composable.
-  if ((fv.scene_dirty & session::kDirtyRaster) != 0)
+  // observation gives frame_not_composable. Spec 002 (A): so is a frame with
+  // the display off, which shows the backdrop only.
+  if ((fv.scene_dirty & (session::kDirtyRaster | session::kDirtyDisplayOff)) !=
+      0)
     hd_on = false;
   impl_->draw_rows_.clear();
   impl_->layer_rows_.clear();

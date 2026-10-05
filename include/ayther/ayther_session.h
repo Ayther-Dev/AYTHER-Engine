@@ -441,7 +441,9 @@ struct FrameView {
   /// visual effect mid-screen (the fork's 0x10E signal); bit1 = Animation dim
   /// active (an effect of the produce over the fb, not modelled yet);
   /// bit2 = per-line/per-cell hscroll with real variation (sub-tile shear not
-  /// modelled until the pipeline draws strips — R-7).
+  /// modelled until the pipeline draws strips — R-7); bit3 = the display is
+  /// off at the end of the frame (VDP register 1, bit 6; spec 002): the
+  /// frame is the core's image, without HD.
   uint8_t scene_dirty = 0;
   /// Spec 002 (DI-17): the core's raster fallback reasons of the frame
   /// (AYTHER_RASTER_REASON_* bits; 0 = no write in mid-screen).

@@ -186,6 +186,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A frame that ends with the display off (VDP register 1, bit 6) is the
+  core's image, with no HD lane recognized or drawn over it, and the lines
+  drawn before a register's first write in mid-screen take the value the
+  previous frame ended with, so a one-shot write bands them (spec 002, A).
+  Before, a game that turned the display off in mid-frame while VRAM still
+  held a recognized background showed that background, or its HD Panorama,
+  over a black screen for a frame (Golden Axe Toma 3, frame 2): the raster
+  journal gave 0 bands and the frame composed whole.
 - A Cuadro without an asset (recognition only: an Acetato's gate, a
   Kinematic step covered by its video) is kept by the `elements.toml` and
   `screens.toml` writers and readers. Before, it was dropped, so an Acetato

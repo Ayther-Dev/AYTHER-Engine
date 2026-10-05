@@ -34,7 +34,7 @@ struct State {
   std::array<std::uint8_t, 0x80> cram{};
   std::array<std::uint8_t, 0x50> vsram{};
   std::vector<std::uint8_t> vram = std::vector<std::uint8_t>(0x10000, 0);
-  rb::RasterFinalState view() const { return {regs, cram, vsram, vram}; }
+  rb::RasterFinalState view() const { return {regs, cram, vsram, vram, {}}; }
   void set_cram(int index, std::uint16_t raw) {
     cram[index * 2] = static_cast<std::uint8_t>(raw & 0xFF);
     cram[index * 2 + 1] = static_cast<std::uint8_t>(raw >> 8);
@@ -175,6 +175,64 @@ int main() try {
       covered = in;
     }
     check(covered, "more runs than bands merge without dropping a line");
+  }
+  {
+    // A one-shot write (Toma 3, frame 2): the game turns the display off at
+    // line 100 and leaves it off. The lines before it were drawn with the
+    // value the previous frame ended with, not with the final one.
+    State d = s;
+    d.regs[1] = 0x34; // display off at the end of the frame
+    std::array<std::uint8_t, 0x20> previous = d.regs;
+    previous[1] = 0x74; // on at the end of the previous frame
+    rb::RasterFinalState view = d.view();
+    view.previous_regs = previous;
+    const std::array<Event, 1> ev{Event{100, kReg, 1, 0x34}};
+    const rb::RasterBands b = rb::raster_bands(kReg, ev, 0, view, 224);
+    std::printf("  display off: localized=%d count=%u [%d,%d)\n", b.localized,
+                b.count, b.count ? b.bands[0].y0 : -1,
+                b.count ? b.bands[0].y1 : -1);
+    check(b.localized && b.count == 1 && band(b, 0, 0, 100),
+          "A: a one-shot register write touches the lines drawn before it");
+    // Without the previous frame's registers the old convention holds.
+    check(rb::raster_bands(kReg, ev, 0, d.view(), 224).count == 0,
+          "without the previous registers the lines before the first write "
+          "take the final value");
+  }
+  {
+    // A one-shot plane base change at line 120 that stays: lines 0-119 show
+    // the old plane.
+    State d = s;
+    d.regs[2] = 0x30;
+    std::array<std::uint8_t, 0x20> previous = d.regs;
+    previous[2] = 0x20;
+    rb::RasterFinalState view = d.view();
+    view.previous_regs = previous;
+    const std::array<Event, 1> ev{Event{120, kReg, 2, 0x30}};
+    const rb::RasterBands b = rb::raster_bands(kReg, ev, 0, view, 224);
+    check(b.localized && b.count == 1 && band(b, 0, 0, 120),
+          "A: a plane base moved once mid-screen bands the lines above it");
+    // A split re-armed every frame: the previous frame ended with the same
+    // value, so only the lines drawn with the other value are touched.
+    previous[2] = 0x30;
+    const std::array<Event, 2> split{Event{40, kReg, 2, 0x20},
+                                     Event{80, kReg, 2, 0x30}};
+    const rb::RasterBands r = rb::raster_bands(kReg, split, 0, view, 224);
+    check(r.localized && r.count == 1 && band(r, 0, 40, 80),
+          "a register split restored every frame keeps its band only");
+  }
+  {
+    // The display turned on mid-frame (it was off): the lines above the
+    // write show the backdrop only.
+    State d = s;
+    d.regs[1] = 0x74;
+    std::array<std::uint8_t, 0x20> previous = d.regs;
+    previous[1] = 0x34;
+    rb::RasterFinalState view = d.view();
+    view.previous_regs = previous;
+    const std::array<Event, 1> ev{Event{60, kReg, 1, 0x74}};
+    const rb::RasterBands b = rb::raster_bands(kReg, ev, 0, view, 224);
+    check(b.localized && b.count == 1 && band(b, 0, 0, 60),
+          "A: the lines drawn before the display turns on are a band");
   }
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;
