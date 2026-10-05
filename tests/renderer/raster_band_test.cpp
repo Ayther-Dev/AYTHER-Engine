@@ -193,6 +193,47 @@ int main() try {
         "RF-7.9: observed per replacement — inside the band not applied "
         "(frame_not_composable), outside replaced");
 
+  // A replacement that straddles a band's edge: drawing its HD outside the
+  // band and its original inside would show the element as both at once.
+  // It is not applied: its original is drawn whole, in and out of the band.
+  {
+    std::vector<std::uint16_t> fb2(320U * 224U, 0);
+    for (int y = 104; y < 120; ++y)
+      for (int x = 200; x < 216; ++x)
+        fb2[static_cast<std::size_t>(y) * 320 + x] = 0xF800;
+    ayther::SceneElement edge = sprite(104, 0, 0);
+    edge.x = 200;
+    AytherSpriteSub edge_sub = replacement(green_png, 104);
+    edge_sub.screen_x = 200;
+    std::uint8_t p2 = 0;
+    std::uint8_t s2 = 0;
+    std::uint8_t f2 = 0;
+    ayther::FrameView fv2 = fv;
+    fv2.fb_pixels = fb2.data();
+    fv2.scene = &edge;
+    fv2.scene_count = 1;
+    fv2.sprite_subs = &edge_sub;
+    fv2.sprite_sub_count = 1;
+    fv2.sprite_sub_prio = &p2;
+    fv2.sprite_sub_slot = &s2;
+    fv2.sprite_sub_flips = &f2;
+    const ayther::probe::RgbImage got2 = oracle.render(fv2);
+    const ayther::probe::RgbImage core2 =
+        ayther::probe::core_image(fb2.data(), 320, 224, 640, 2);
+    const ro::DrawReport report2 = oracle.renderer().last_draw_report();
+    const auto red_at = [&](int x, int y) {
+      const std::size_t i = (static_cast<std::size_t>(y) * got2.width + x) * 3;
+      return got2.rgb[i] > 150 && got2.rgb[i + 1] < 40 && got2.rgb[i + 2] < 40;
+    };
+    check(!got2.rgb.empty() && rows_equal(got2, core2, 0, 112) &&
+              red_at(208, 116) && !green_at(got2, 208, 116),
+          "RF-10.1: a replacement across a band's edge is not drawn; its "
+          "original shows whole");
+    check(report2.replacements.size() == 1 &&
+              report2.replacements[0].draw == ro::DrawOutcome::discarded,
+          "the replacement across the band's edge is discarded");
+  }
+
   fs::remove_all(dir, ec);
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;

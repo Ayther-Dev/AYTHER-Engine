@@ -51,6 +51,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #ifndef AYTHER_SOURCE_DIR
@@ -215,6 +216,18 @@ ayther::probe::O2Frame o2_frame(const ro::RenderFrameView &view,
         composed ? element != nullptr && element->claimed == 0 &&
                        element->hidden == 0
                  : true; // a frame that is not composed shows the core's image
+    // Spec 002 (DI-17): a replacement not applied because the frame's raster
+    // bands touch it leaves its members drawn as originals (in the bands the
+    // frame is the core's image; out of them the renderer draws them).
+    if (o.status == ro::OccurrenceStatus::assigned_not_applied) {
+      const auto *reason =
+          std::get_if<std::string_view>(&o.not_applied_reason.value);
+      if (reason != nullptr && *reason == "frame_not_composable" &&
+          fv.raster_band_count > 0) {
+        occ.claimed = false;
+        occ.original_drawn = true;
+      }
+    }
     if (element != nullptr)
       occ.depth = element->chain;
     out.occurrences.push_back(occ);
