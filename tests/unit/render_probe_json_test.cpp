@@ -78,7 +78,11 @@ int main() try {
   const std::array draws{
       ro::ReplacementDraw{ro::DrawOutcome::in_pass, ro::TextureState::ready},
       ro::ReplacementDraw{ro::DrawOutcome::lane, ro::TextureState::pending}};
-  ro::DrawReport report{77, true, draws};
+  // Contract 1.1 (DI-18): the stack's layers; one overlay, gated and drawn.
+  const std::array layers{
+      ro::LayerView{"plane_b", "Plano B", 0, true, false, false, false, false},
+      ro::LayerView{"overlay", "Nubes", 1, true, true, true, true, true}};
+  ro::DrawReport report{77, true, draws, layers};
   RenderObservationInput in;
   in.emulation_frame = 77;
   in.frame_known = true;
@@ -97,6 +101,10 @@ int main() try {
   for (const std::string &e : errors)
     std::printf("  %s\n", e.c_str());
   check(errors.empty(), "RF-7.2: a frame record conforms to the contract");
+  check(has(record, "\"overlays\": [{\"name\": \"Nubes\", "
+                    "\"stack_index\": 1, \"gated\": true, "
+                    "\"gate_open\": true, \"drawn\": true}]"),
+        "DI-18: the record lists the overlays with their gate and draw");
   check(has(record, "\"frame\": 12") && has(record, "\"emulation_frame\": 77"),
         "the record names its frame");
   check(has(record, "\"status\": \"replaced\"") &&

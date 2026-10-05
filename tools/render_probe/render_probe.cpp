@@ -7,7 +7,15 @@
 //
 // Writes, per frame f of [a, b]: D/frame_<f>.json, the frame record of plan
 // §4.3 with the render observation (contracts.md C3); D/composed_<f>.png,
-// the renderer's image; and D/core_<f>.png, the core's framebuffer.
+// the renderer's image; and D/core_<f>.png, the core's framebuffer. The
+// pack's overlays (Acetatos) are stacked at their authored positions and
+// drawn, and every record lists them with their gate (DI-18).
+//
+// --check o3 (spec 002, DI-17) checks continuity: from one frame to the next
+// the composed image may only change where the core's image changes too. The
+// result goes to every record and to D/o3.csv. With --no-images the PNGs are
+// not written and only the records of frames with a finding are, so a whole
+// take can be scanned.
 //
 // With --timing it writes no images or records: it times every frame of
 // [a, b] (produce + compose, probe_timing.h) into D/timing.csv and prints the
@@ -20,6 +28,7 @@
 #include "probe_json.h"
 #include "probe_missing.h"
 #include "probe_o2.h"
+#include "probe_o3.h"
 #include "probe_timing.h"
 #include "vulkan_test_context.h"
 
@@ -28,6 +37,7 @@
 #include <SDL3/SDL.h>
 #include <stb_image_write.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <cstdio>
@@ -68,6 +78,8 @@ struct Options {
   bool prewarm = false;
   std::vector<std::pair<std::string, std::string>> core_options;
   bool check_o2 = false;
+  bool check_o3 = false;
+  bool no_images = false;
   fs::path out;
   std::string shaders = std::string(AYTHER_SOURCE_DIR) + "/shaders/";
 };
@@ -76,8 +88,9 @@ void usage() {
   std::fprintf(stderr,
                "usage: render_probe --rom R --core C --take T "
                "(--pack P | --no-pack) --frames a-b --out D [--shaders S] "
-               "[--check o1|o2]... [--core-option KEY=VALUE]... "
-               "[--trust-registry TOML] [--settle] [--timing] [--prewarm]\n");
+               "[--check o1|o2|o3]... [--core-option KEY=VALUE]... "
+               "[--trust-registry TOML] [--settle] [--timing] [--prewarm] "
+               "[--no-images]\n");
 }
 
 std::optional<Options> parse(int argc, char **argv) {
@@ -101,6 +114,10 @@ std::optional<Options> parse(int argc, char **argv) {
     }
     if (arg == "--prewarm") {
       o.prewarm = true;
+      continue;
+    }
+    if (arg == "--no-images") {
+      o.no_images = true;
       continue;
     }
     const char *v = value();
@@ -132,6 +149,8 @@ std::optional<Options> parse(int argc, char **argv) {
         o.check_o1 = true;
       else if (check == "o2")
         o.check_o2 = true;
+      else if (check == "o3")
+        o.check_o3 = true;
       else
         return std::nullopt;
     } else if (arg == "--frames") {
@@ -313,6 +332,30 @@ std::string with_field(std::string record, const std::string &field) {
   return record;
 }
 
+// Spec 002 (DI-18): the pack's overlays in the layer stack, each at the
+// position it was authored at (in increasing order, so every position counts
+// the overlays already placed), the ones without a position on top in pack
+// order — as a frontend that draws the pack must stack them.
+void stack_pack_overlays(
+    const std::vector<ayther::AytherSession::PackOverlay> &overlays,
+    AytherLayerStack &stack) {
+  std::vector<const ayther::AytherSession::PackOverlay *> ordered;
+  for (const auto &overlay : overlays)
+    ordered.push_back(&overlay);
+  std::stable_sort(
+      ordered.begin(), ordered.end(),
+      [](const auto *a, const auto *b) { return a->index < b->index; });
+  for (const auto *overlay : ordered) {
+    const std::size_t at = (std::min)(static_cast<std::size_t>(overlay->index),
+                                      stack.layers().size());
+    const std::uint32_t id = stack.insert_custom(overlay->name.c_str(), at);
+    if (id == 0)
+      continue;
+    (void)stack.set_visible(id, overlay->visible);
+    (void)stack.set_content(id, overlay->content);
+  }
+}
+
 bool write_text(const fs::path &path, const std::string &text) {
   std::ofstream out(path, std::ios::binary);
   out << text;
@@ -374,6 +417,7 @@ int main(int argc, char **argv) try {
   }
   ayther::AytherRenderer renderer;
   AytherLayerStack stack;
+  stack_pack_overlays(session->pack_overlays(), stack);
   // --prewarm (spec 002, BR-091): the preparation prewarms the pack
   // catalog before the first frame, at the take's first frame size.
   std::uint32_t warm_w = 0;
@@ -418,6 +462,13 @@ int main(int argc, char **argv) try {
   int status = 0;
   ayther::probe::O2Frame previous_o2;
   bool have_previous = false;
+  // O3: the previous frame's images, and one row per frame for o3.csv.
+  ayther::probe::RgbImage previous_composed;
+  ayther::probe::RgbImage previous_core;
+  bool have_previous_images = false;
+  std::string o3_csv = "frame,unexplained_blocks,y0,y1,composability,"
+                       "raster_reasons,raster_bands\n";
+  std::uint32_t o3_frames = 0;
 
   for (std::uint32_t f = o.first; f <= o.last; ++f) {
     const ayther::FrameView *fv = session->replay_seek(*recording, f);
@@ -478,10 +529,13 @@ int main(int argc, char **argv) try {
         ayther::probe::core_image(fv->fb_pixels, fv->fb_width, fv->fb_height,
                                   fv->fb_pitch, fv->fb_format);
     char png[40];
-    std::snprintf(png, sizeof(png), "composed_%06u.png", f);
-    bool written = write_png(o.out / png, composed);
-    std::snprintf(png, sizeof(png), "core_%06u.png", f);
-    written = written && write_png(o.out / png, core);
+    bool written = true;
+    if (!o.no_images) {
+      std::snprintf(png, sizeof(png), "composed_%06u.png", f);
+      written = write_png(o.out / png, composed);
+      std::snprintf(png, sizeof(png), "core_%06u.png", f);
+      written = written && write_png(o.out / png, core);
+    }
     if (!written) {
       std::fprintf(stderr, "render_probe: cannot write PNGs of frame %u\n", f);
       status = 1;
@@ -503,6 +557,21 @@ int main(int argc, char **argv) try {
     if (o.settle)
       json = with_field(json, ",\n  \"settle_renders\": " +
                                   std::to_string(settle_renders));
+    // Spec 002 (DI-17): the core's raster reasons and the bands they leave
+    // non-composable.
+    if (fv->raster_reasons != 0) {
+      std::string field =
+          ",\n  \"raster\": {\"reasons\": " +
+          std::to_string(fv->raster_reasons) + ", \"localized\": " +
+          ((fv->scene_dirty & 1U) == 0 ? "true" : "false") + ", \"bands\": [";
+      for (std::uint32_t k = 0; k < fv->raster_band_count; ++k)
+        field += std::string(k ? ", [" : "[") +
+                 std::to_string(fv->raster_bands[k][0]) + ", " +
+                 std::to_string(fv->raster_bands[k][1]) + "]";
+      field += "]}";
+      json = with_field(json, field);
+    }
+    bool finding = false; // written with --no-images too
     if (o.check_o1) {
       // O1: without pack and shaders, at native resolution, the composed
       // image must be the core's framebuffer pixel for pixel.
@@ -534,15 +603,52 @@ int main(int argc, char **argv) try {
       json = with_field(json, field);
       std::printf("render_probe o2 frame=%u violations=%zu\n", f,
                   violations.size());
+      finding = finding || !violations.empty();
       previous_o2 = observer.o2;
       have_previous = true;
+    }
+    if (o.check_o3) {
+      // O3: continuity with the previous frame of the range.
+      ayther::probe::O3Result r;
+      if (have_previous_images)
+        r = ayther::probe::check_o3(previous_composed, composed, previous_core,
+                                    core);
+      json = with_field(json, ",\n  \"o3\": {\"unexplained_blocks\": " +
+                                  std::to_string(r.unexplained_blocks) +
+                                  ", \"y0\": " + std::to_string(r.y0) +
+                                  ", \"y1\": " + std::to_string(r.y1) + "}");
+      if (r.unexplained_blocks > 0) {
+        finding = true;
+        ++o3_frames;
+        std::string bands;
+        for (std::uint32_t k = 0; k < fv->raster_band_count; ++k)
+          bands += (k ? " " : "") + std::to_string(fv->raster_bands[k][0]) +
+                   "-" + std::to_string(fv->raster_bands[k][1]);
+        const std::size_t c = json.find("\"composability\": \"");
+        const std::string composability =
+            c == std::string::npos
+                ? std::string()
+                : json.substr(c + 18, json.find('"', c + 18) - c - 18);
+        o3_csv += std::to_string(f) + "," +
+                  std::to_string(r.unexplained_blocks) + "," +
+                  std::to_string(r.y0) + "," + std::to_string(r.y1) + "," +
+                  composability + "," + std::to_string(fv->raster_reasons) +
+                  "," + bands + "\n";
+        std::printf("render_probe o3 frame=%u unexplained_blocks=%u "
+                    "rows=%d-%d\n",
+                    f, r.unexplained_blocks, r.y0, r.y1);
+      }
+      previous_composed = composed;
+      previous_core = core;
+      have_previous_images = true;
     }
     char name[32];
     std::snprintf(name, sizeof(name), "frame_%06u.json", f);
     if (missing)
       json = with_field(json,
                         ",\n  \"missing_asset\": \"" + missing->asset + "\"");
-    if (!write_text(o.out / name, json)) {
+    if ((!o.no_images || finding || missing) &&
+        !write_text(o.out / name, json)) {
       status = 1;
       break;
     }
@@ -556,6 +662,12 @@ int main(int argc, char **argv) try {
     }
   }
 
+  if (o.check_o3) {
+    if (!write_text(o.out / "o3.csv", o3_csv))
+      status = 1;
+    std::printf("render_probe o3 frames=%u-%u discontinuous=%u\n", o.first,
+                o.last, o3_frames);
+  }
   if (width != 0) {
     renderer.readback_shutdown(ctx);
     renderer.shutdown(ctx);
