@@ -10782,7 +10782,7 @@ std::vector<std::string> AytherSession::catalog_texture_assets() const {
   // Acetatos are textures too. Include both their base sheet and every
   // animation step in pack order; otherwise their first visible frame races
   // the asynchronous decode worker even after a successful pack prewarm.
-  const auto add_layer_asset = [&](const char (&asset)[256]) {
+  const auto add_layer_asset = [&](const char(&asset)[256]) {
     add_name(std::string(asset, ::strnlen(asset, sizeof(asset))));
   };
   for (const PackOverlay &overlay : im.overlays) {

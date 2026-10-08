@@ -141,8 +141,7 @@ int main() try {
       RenderObservationInput input;
       input.frame_known = true;
       input.occurrences = occurrences;
-      const std::string text =
-          ayther::probe::frame_json(1, 1, b.build(input));
+      const std::string text = ayther::probe::frame_json(1, 1, b.build(input));
       const auto parsed = json::parse(text);
       const json::Value *shown = parsed ? parsed->get("occurrences") : nullptr;
       const json::Value *reported_total =
@@ -156,16 +155,15 @@ int main() try {
           reported_total->is(json::Value::Kind::number) &&
           reported_total->number == static_cast<double>(total);
       const bool exact_overflow =
-          expect_overflow
-              ? overflow != nullptr &&
-                    overflow->is(json::Value::Kind::object) &&
-                    overflow->get("rows_total") != nullptr &&
-                    overflow->get("rows_total")->number ==
-                        static_cast<double>(total) &&
-                    overflow->get("limit") != nullptr &&
-                    overflow->get("limit")->number ==
-                        static_cast<double>(ro::max_occurrences)
-              : overflow == nullptr;
+          expect_overflow ? overflow != nullptr &&
+                                overflow->is(json::Value::Kind::object) &&
+                                overflow->get("rows_total") != nullptr &&
+                                overflow->get("rows_total")->number ==
+                                    static_cast<double>(total) &&
+                                overflow->get("limit") != nullptr &&
+                                overflow->get("limit")->number ==
+                                    static_cast<double>(ro::max_occurrences)
+                          : overflow == nullptr;
       check(exact_shape && exact_overflow, message);
     };
     check_limit(ro::max_occurrences, false,

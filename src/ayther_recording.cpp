@@ -175,7 +175,7 @@ destination_lock_identity(const std::filesystem::path &destination) {
                       static_cast<unsigned long long>(hash));
   return identity;
 #else
-  struct stat information{};
+  struct stat information {};
   if (::lstat(destination.c_str(), &information) == 0 &&
       S_ISREG(information.st_mode)) {
     char identity[96]{};
@@ -223,7 +223,7 @@ destination_identity_lock_path(const std::filesystem::path &destination) {
   flags |= O_NOFOLLOW;
 #endif
   const int directory = ::open(root.c_str(), flags);
-  struct stat information{};
+  struct stat information {};
   const bool trusted =
       directory >= 0 && ::fstat(directory, &information) == 0 &&
       S_ISDIR(information.st_mode) && information.st_uid == ::geteuid() &&
@@ -441,7 +441,7 @@ int acquire_lock_file(const std::filesystem::path &path) {
   if (descriptor < 0)
     return -1;
 
-  struct stat information{};
+  struct stat information {};
   if (::fstat(descriptor, &information) != 0 || !S_ISREG(information.st_mode)) {
     (void)::close(descriptor);
     return -1;
@@ -612,10 +612,9 @@ bool read_regular_file(const std::filesystem::path &path,
   bytes.resize(static_cast<std::size_t>(size.QuadPart));
   std::size_t offset = 0;
   while (offset < bytes.size()) {
-    const DWORD chunk =
-        static_cast<DWORD>((std::min)(bytes.size() - offset,
-                                      static_cast<std::size_t>((
-                                          std::numeric_limits<DWORD>::max)())));
+    const DWORD chunk = static_cast<DWORD>((std::min)(
+        bytes.size() - offset,
+        static_cast<std::size_t>((std::numeric_limits<DWORD>::max)())));
     DWORD read = 0;
     if (::ReadFile(file.get(), bytes.data() + offset, chunk, &read, nullptr) ==
             FALSE ||
@@ -693,7 +692,7 @@ bool read_regular_file(const std::filesystem::path &path,
                        std::vector<char> &bytes) {
   bytes.clear();
   UniqueDescriptor file(open_without_following(path, O_RDONLY));
-  struct stat information{};
+  struct stat information {};
   if (file.get() < 0 || ::fstat(file.get(), &information) != 0 ||
       !S_ISREG(information.st_mode))
     return false;
@@ -715,7 +714,7 @@ bool read_regular_file(const std::filesystem::path &path,
       continue;
     }
     if (read == 0) {
-      struct stat final_information{};
+      struct stat final_information {};
       if (::fstat(file.get(), &final_information) != 0 ||
           final_information.st_size != information.st_size ||
           bytes.size() != static_cast<std::size_t>(expected_size))
@@ -788,10 +787,9 @@ bool write_replacement(const std::filesystem::path &destination,
     bool complete = true;
     std::size_t offset = 0;
     while (offset < bytes.size()) {
-      const DWORD chunk = static_cast<DWORD>(
-          (std::min)(bytes.size() - offset,
-                     static_cast<std::size_t>(
-                         (std::numeric_limits<DWORD>::max)())));
+      const DWORD chunk = static_cast<DWORD>((std::min)(
+          bytes.size() - offset,
+          static_cast<std::size_t>((std::numeric_limits<DWORD>::max)())));
       DWORD written = 0;
       if (::WriteFile(file.get(), bytes.data() + offset, chunk, &written,
                       nullptr) == FALSE ||
@@ -882,7 +880,7 @@ bool write_replacement(const std::filesystem::path &destination,
     const int source_error = source_descriptor < 0 ? errno : 0;
     UniqueDescriptor source(source_descriptor);
     const bool destination_exists = source.get() >= 0;
-    struct stat destination_stat{};
+    struct stat destination_stat {};
     if ((!destination_exists && source_error != ENOENT) ||
         (destination_exists && (::fstat(source.get(), &destination_stat) != 0 ||
                                 !S_ISREG(destination_stat.st_mode))))
@@ -936,7 +934,7 @@ bool write_replacement(const std::filesystem::path &destination,
     // Refuse to replace a path that changed after its metadata was captured,
     // or to create over a path that appeared after the initial no-follow open.
     // Cooperating writers cannot race here because they share the sidecar lock.
-    struct stat current_stat{};
+    struct stat current_stat {};
     if (destination_exists) {
       if (::lstat(destination.c_str(), &current_stat) != 0 ||
           !S_ISREG(current_stat.st_mode) ||

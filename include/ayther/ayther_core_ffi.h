@@ -755,7 +755,7 @@ struct AytherSpriteOccurrence {
   int16_t screen_x;       ///< top-left X in screen pixels
   int16_t screen_y;       ///< top-left Y in screen pixels
   uint8_t link; ///< next-slot link, or parsed-list chain position (see above)
-  uint8_t palette;  ///< VDP palette index 0–3
+  uint8_t palette; ///< VDP palette index 0–3
   uint8_t priority; ///< VDP priority bit (0=low,1=high) — metasprite front/back
   uint8_t slot;     ///< SAT slot index 0–79 (Ayther hide-by-hash)
   uint8_t hflip;    ///< VDP h-flip (CU-AN-11: auto-mirror of the HD sheet)

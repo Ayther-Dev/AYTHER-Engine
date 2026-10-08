@@ -48,8 +48,8 @@ std::filesystem::path scenario_rom(const char *stem, const char *tag) {
 const ayther::SceneElement *
 find_element(const std::vector<ayther::SceneElement> &inventory,
              const AytherSpriteOccurrence &occurrence) {
-  const auto found =
-      std::find_if(inventory.begin(), inventory.end(), [&](const auto &element) {
+  const auto found = std::find_if(
+      inventory.begin(), inventory.end(), [&](const auto &element) {
         return element.layer == 3 && element.hash == occurrence.hash &&
                element.slot == occurrence.slot &&
                element.x == occurrence.screen_x &&
@@ -100,24 +100,22 @@ void dense_256_producers_keep_last_identity() {
       pose_top;
   ayther::test::PosePackFixture pack("parsed_sprites_256_pose");
   pack.add_asset("graphics/pose.png",
-                 ayther::test::solid_png(pose_width, pose_height,
-                                         0x00FF00FFU));
+                 ayther::test::solid_png(pose_width, pose_height, 0x00FF00FFU));
   const std::string poses =
-      "[[pose]]\nhashes = [\"" +
-      ayther::test::hash_hex(penultimate.hash) + "\", \"" +
-      ayther::test::hash_hex(last.hash) +
+      "[[pose]]\nhashes = [\"" + ayther::test::hash_hex(penultimate.hash) +
+      "\", \"" + ayther::test::hash_hex(last.hash) +
       "\"]\nasset = \"graphics/pose.png\"\nrel = \"0,0|" +
       std::to_string(last.screen_x - penultimate.screen_x) + "," +
-      std::to_string(last.screen_y - penultimate.screen_y) +
-      "\"\ndims = \"" + std::to_string(penultimate.w_tiles * 8) + "," +
+      std::to_string(last.screen_y - penultimate.screen_y) + "\"\ndims = \"" +
+      std::to_string(penultimate.w_tiles * 8) + "," +
       std::to_string(penultimate.h_tiles * 8) + "|" +
       std::to_string(last.w_tiles * 8) + "," +
       std::to_string(last.h_tiles * 8) + "\"\n";
   std::string error;
   check(pack.bake(poses, error), "the boundary two-member pose pack bakes");
   session.reset();
-  auto packed = ayther::test::open_pose_session(
-      rom.string(), pack.pack_path(), pack.registry_path());
+  auto packed = ayther::test::open_pose_session(rom.string(), pack.pack_path(),
+                                                pack.registry_path());
   check(packed != nullptr && packed->pack().is_valid(),
         "the 256-producer scenario opens with the pose pack");
   if (!packed || !packed->pack().is_valid()) {
@@ -129,9 +127,8 @@ void dense_256_producers_keep_last_identity() {
   check(packed_frame.sprite_sub_count >= 1,
         "the pose containing occurrence 255 is applied");
   bool last_partition_has_exact_chain = false;
-  for (std::uint32_t index = 0;
-       packed_frame.sprite_partitions &&
-       index < packed_frame.sprite_partition_count;
+  for (std::uint32_t index = 0; packed_frame.sprite_partitions &&
+                                index < packed_frame.sprite_partition_count;
        ++index) {
     const ayther::SpritePartition &partition =
         packed_frame.sprite_partitions[index];
@@ -140,10 +137,9 @@ void dense_256_producers_keep_last_identity() {
         last.screen_x < partition.x + static_cast<int>(partition.w) &&
         last.screen_y >= partition.y &&
         last.screen_y < partition.y + static_cast<int>(partition.h);
-    last_partition_has_exact_chain =
-        last_partition_has_exact_chain ||
-        (partition.sub == 0 && covers_last &&
-         partition.chain == expected_chain(255));
+    last_partition_has_exact_chain = last_partition_has_exact_chain ||
+                                     (partition.sub == 0 && covers_last &&
+                                      partition.chain == expected_chain(255));
   }
   check(last_partition_has_exact_chain,
         "pose partitions consume occurrence 255 from the exact uint32 view");
