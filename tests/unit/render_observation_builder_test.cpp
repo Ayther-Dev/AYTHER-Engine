@@ -110,7 +110,7 @@ int main() try {
     in.frame_known = true;
     in.occurrences = occs;
     in.claimed = claimed;
-    in.chain_by_slot = chain;
+    in.chain_by_occurrence = chain;
     in.subs = subs;
     in.pose_sub_count = 1;
     in.pose_owner = owner;
@@ -150,6 +150,34 @@ int main() try {
           "invented");
   }
 
+  // RF-7.2, RF-7.3, RF-7.7: a mid-frame SAT rewrite can publish two
+  // occurrences with the same slot but different link-chain positions. Their
+  // diagnostic identities and replacement members must remain distinct.
+  {
+    const std::array occs{occ(0xD0, 10, 10, 9), occ(0xD1, 30, 10, 9)};
+    const std::array subs{sub("pose.png", 10, 10, 0xD00D)};
+    const std::array<std::uint8_t, 2> claimed{1, 1};
+    const std::array<std::uint8_t, 2> occurrence_chain{7, 31};
+    const std::array<std::uint32_t, 2> owner{0, 0};
+    RenderObservationBuilder builder;
+    RenderObservationInput in;
+    in.frame_known = true;
+    in.occurrences = occs;
+    in.claimed = claimed;
+    in.chain_by_occurrence = occurrence_chain;
+    in.subs = subs;
+    in.pose_sub_count = 1;
+    in.pose_owner = owner;
+    const ro::RenderFrameView &v = builder.build(in);
+    check(v.occurrences[0].id == ro::OccurrenceId{0, 9, 7} &&
+              v.occurrences[1].id == ro::OccurrenceId{1, 9, 31},
+          "RF-7.2: duplicate SAT slots keep their per-occurrence chain rank");
+    check(v.replacements.size() == 1 && v.replacements[0].members.size() == 2 &&
+              v.replacements[0].members[0] == ro::OccurrenceId{0, 9, 7} &&
+              v.replacements[0].members[1] == ro::OccurrenceId{1, 9, 31},
+          "RF-7.3: replacement members keep exact occurrence identities");
+  }
+
   // RF-7.9: draw report outcomes; a report of another frame is ignored.
   {
     const std::array occs{occ(0xA1, 10, 10, 0), occ(0xA2, 18, 10, 1),
@@ -170,7 +198,7 @@ int main() try {
     in.frame_known = true;
     in.occurrences = occs;
     in.claimed = claimed;
-    in.chain_by_slot = chain;
+    in.chain_by_occurrence = chain;
     in.subs = subs;
     in.pose_sub_count = 3;
     in.pose_owner = owner;
@@ -230,7 +258,7 @@ int main() try {
     in.occurrences = occs;
     in.claimed = claimed;
     in.hidden = hidden;
-    in.chain_by_slot = chain;
+    in.chain_by_occurrence = chain;
     in.pose_owner = owner;
     const ro::RenderFrameView &v = builder.build(in);
     check(v.occurrences[0].status ==
@@ -242,21 +270,42 @@ int main() try {
           "a sprite hidden by the author keeps that status");
   }
 
-  // RNF-3: above the limit the lists stop at it and the totals stay real.
+  // RNF-3 / P-11: the exact limit is complete; every excess is bounded while
+  // retaining its real total.
   {
-    std::vector<AytherSpriteOccurrence> occs;
-    for (int i = 0; i < 300; ++i)
-      occs.push_back(occ(static_cast<std::uint64_t>(i + 1),
-                         static_cast<std::int16_t>(i), 0,
-                         static_cast<std::uint8_t>(i % 80)));
+    const auto occurrences = [](std::size_t count) {
+      std::vector<AytherSpriteOccurrence> result;
+      result.reserve(count);
+      for (std::size_t i = 0; i < count; ++i)
+        result.push_back(occ(static_cast<std::uint64_t>(i + 1),
+                             static_cast<std::int16_t>(i), 0,
+                             static_cast<std::uint8_t>(i % 80)));
+      return result;
+    };
     RenderObservationBuilder builder;
     RenderObservationInput in;
     in.frame_known = true;
-    in.occurrences = occs;
-    const ro::RenderFrameView &v = builder.build(in);
-    check(v.occurrences.size() == ro::max_occurrences &&
-              v.occurrences_total == 300,
-          "RNF-3: 300 occurrences -> 256 shown and a total of 300");
+
+    const auto at_limit = occurrences(ro::max_occurrences);
+    in.occurrences = at_limit;
+    const ro::RenderFrameView &exact = builder.build(in);
+    check(exact.occurrences.size() == ro::max_occurrences &&
+              exact.occurrences_total == ro::max_occurrences,
+          "RNF-3/P-11: 256 occurrences are complete without truncation");
+
+    const auto one_over = occurrences(ro::max_occurrences + 1U);
+    in.occurrences = one_over;
+    const ro::RenderFrameView &over = builder.build(in);
+    check(over.occurrences.size() == ro::max_occurrences &&
+              over.occurrences_total == ro::max_occurrences + 1U,
+          "RNF-3/P-11: 257 occurrences -> 256 shown and a total of 257");
+
+    const auto many = occurrences(300U);
+    in.occurrences = many;
+    const ro::RenderFrameView &crowded = builder.build(in);
+    check(crowded.occurrences.size() == ro::max_occurrences &&
+              crowded.occurrences_total == 300U,
+          "RNF-3/P-11: 300 occurrences -> 256 shown and a total of 300");
   }
 
   std::printf("%d failure(s)\n", failures);

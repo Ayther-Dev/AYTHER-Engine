@@ -14,7 +14,9 @@
 #include "ayther_layers.h"   // R-4 (): stack de capas
 #include "ayther_session.h"  // FrameView
 #include "runtime_options.h"
+#include "session/band_carry.h"
 #include "session/frame_composability.h"
+#include "session/raster_bands.h"
 #include "session/texture_residency.h"
 #include "session/vdp_sprite_order.h"
 #include "vulkan_backend/tile_tex_cache.h"
@@ -32,9 +34,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib> // getenv (tope de uploads, )
+#include <cstring>
 #include <filesystem>
 #include <functional>
 #include <limits>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -162,6 +166,10 @@ struct AytherRenderer::FrameScratch {
   std::vector<AytherSpriteSub> overlay_strip;
   std::vector<uint8_t> overlay_alphas;
   std::vector<uint8_t> overlay_tint;
+  // Spec 002 (DI-20): the band blits of a frame.
+  std::vector<uint8_t> band_rows;
+  std::vector<VkImageBlit> band_core_blits;
+  std::vector<VkImageBlit> band_prev_blits;
 };
 
 class AytherRenderer::Impl {
@@ -200,7 +208,44 @@ public:
   size_t layer_row_ = 0; // the layer being drawn
   std::uint64_t draw_frame_ = 0;
   bool draw_hd_ = true;
+  // Spec 002 (DI-20): the previous composed frame and the core's image it
+  // came from. A raster band of the next frame keeps this HD where the core
+  // drew the same pixels. Optional: without it the bands are the core's.
+  VkRenderTarget prev_target_;
+  bool prev_target_ok_ = false;
+  bool prev_valid_ = false; // holds frame `prev_frame_`, in TRANSFER_SRC
+  std::uint64_t prev_frame_ = 0;
+  std::vector<std::uint8_t> prev_fb_;
+  std::int32_t prev_fb_w_ = 0;
+  std::int32_t prev_fb_h_ = 0;
+  std::int32_t prev_fb_bpp_ = 0;
+  std::vector<std::uint8_t> prev_sprite_rows_;
 };
+
+namespace {
+// RETRO_PIXEL_FORMAT_*: 0RGB1555 and RGB565 are 2 bytes, XRGB8888 is 4.
+std::int32_t fb_bytes_per_pixel(int format) { return format == 1 ? 4 : 2; }
+
+// Spec 002 (DI-20): the lines a sprite of the frame covers, original or
+// replacement. The previous HD may hold a sprite where the core does not.
+void mark_sprite_rows(const FrameView &fv, std::vector<std::uint8_t> &rows) {
+  rows.assign(fv.fb_height > 0 ? static_cast<std::size_t>(fv.fb_height) : 0U,
+              0);
+  const auto mark = [&](int top, int height) {
+    const int bottom = top + height;
+    for (int y = (std::max)(top, 0);
+         y < (std::min)(bottom, static_cast<int>(rows.size())); ++y)
+      rows[static_cast<std::size_t>(y)] = 1;
+  };
+  for (uint32_t e = 0; fv.scene && e < fv.scene_count; ++e)
+    if (fv.scene[e].layer == 3)
+      mark(fv.scene[e].y, fv.scene[e].h);
+  for (uint32_t s = 0; fv.sprite_subs && s < fv.sprite_sub_count; ++s) {
+    const AytherSpriteSub &sub = fv.sprite_subs[s];
+    mark(sub.screen_y, sub.h_px ? sub.h_px : sub.h_tiles * 8);
+  }
+}
+} // namespace
 
 AytherRenderer::AytherRenderer() : impl_(std::make_unique<Impl>()) {}
 AytherRenderer::~AytherRenderer() {
@@ -312,6 +357,14 @@ bool AytherRenderer::init(const ayther::engine::VulkanContextView &ctx,
                        "offscreen target init failed");
     return false;
   }
+  impl_->prev_target_ok_ =
+      impl_->prev_target_.init(impl_->context_, canvas_w, canvas_h);
+  impl_->prev_valid_ = false;
+  if (!impl_->prev_target_ok_)
+    ayther::log::write(ayther::log::Severity::Warning, "renderer",
+                       "band_carry_disabled",
+                       "previous-frame target unavailable: raster bands "
+                       "show the core's image");
 
   // HD sprite overlay — renders into the offscreen target. Optional: if the
   // SPIR-V shaders are missing, sprites are skipped (emu+tiles still render).
@@ -347,6 +400,10 @@ bool AytherRenderer::resize(const ayther::engine::VulkanContextView &ctx,
                             uint32_t canvas_w, uint32_t canvas_h) {
   if (!impl_->target_.resize(ctx, canvas_w, canvas_h))
     return false;
+  impl_->prev_valid_ = false;
+  if (impl_->prev_target_ok_)
+    impl_->prev_target_ok_ =
+        impl_->prev_target_.resize(ctx, canvas_w, canvas_h);
   if (impl_->sprite_ok_) // the offscreen view changed — rebuild the sprite
                          // framebuffer
     impl_->sprite_.rebuild(ctx, canvas_w, canvas_h, impl_->target_.view(),
@@ -486,6 +543,9 @@ void AytherRenderer::shutdown(const ayther::engine::VulkanContextView &ctx) {
   impl_->emu_tex_.shutdown(active_context);
   impl_->compare_.shutdown(active_context); //  (no-op si el A/B nunca se abrió)
   impl_->target_.shutdown(active_context);
+  impl_->prev_target_.shutdown(active_context);
+  impl_->prev_target_ok_ = false;
+  impl_->prev_valid_ = false;
   impl_->context_ = {};
 }
 
@@ -549,8 +609,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
   // report keeps HD on, so each replacement reads as discarded and the
   // observation gives frame_not_composable. Spec 002 (A): so is a frame with
   // the display off, which shows the backdrop only.
-  if ((fv.scene_dirty & (session::kDirtyRaster | session::kDirtyDisplayOff)) !=
-      0)
+  if (session::frame_requires_core_image(fv.scene_dirty))
     hd_on = false;
   impl_->draw_rows_.clear();
   impl_->layer_rows_.clear();
@@ -824,9 +883,22 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
   // band is not applied this frame. Its members are drawn as originals, in
   // and out of the band, so the element never shows as original and as
   // replacement at once.
+  // Spec 002 (DI-22): with HD, a band caused only by pattern writes (text,
+  // tiles written in mid-screen) is composed from the frame's final state,
+  // like the rest of the frame: those patterns show at most one frame early.
+  // Without any HD the band stays the core's image, so O1 is unchanged.
+  constexpr uint32_t kPatternReasons =
+      session::kRasterReasonVram | session::kRasterReasonDma;
+  const bool hd_present = pack != nullptr ||
+                          (fv.plane_tile_subs && fv.plane_tile_sub_count > 0) ||
+                          (fv.sprite_subs && fv.sprite_sub_count > 0);
+  const bool compose_bands =
+      hd_on && hd_present && fv.raster_band_count > 0 &&
+      (fv.raster_reasons & session::kRasterReasonVram) != 0 &&
+      (fv.raster_reasons & ~kPatternReasons) == 0;
   auto &band_drop = impl_->scratch_->band_drop;
   band_drop.assign(fv.sprite_sub_count, 0);
-  if (fv.raster_band_count > 0 && fv.sprite_subs) {
+  if (fv.raster_band_count > 0 && fv.sprite_subs && !compose_bands) {
     const uint32_t bands = (std::min)(uint32_t{fv.raster_band_count}, 16U);
     const auto touches = [&](int top, int bottom) {
       for (uint32_t k = 0; k < bands; ++k)
@@ -1910,6 +1982,12 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
       const char *use_asset = astep == 0 ? cc.asset : cc.anim[astep - 1];
       if (!use_asset[0])
         use_asset = cc.asset;
+      // Spec 002 (R6, D22): Custom layers obey the same deterministic
+      // residency rule as every other textured replacement. This also keeps
+      // the draw report truthful: a pending/failed sheet is not reported as
+      // drawn and cannot pop in according to worker timing.
+      if (!resident_now(use_asset, 0))
+        break;
       float h = 0.f;
       if (cc.anchor <= 1) {
         const int plane =
@@ -2187,8 +2265,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
   // of lines drawn with another VDP state. There the frame is the core's
   // image — its originals, never one next to its replacement. The sprite
   // replacements that touch a band were not drawn (band_drop above).
-  if (fv.raster_band_count > 0 && impl_->emu_tex_.is_ready() &&
-      impl_->emu_h_ > 0) {
+  if (fv.raster_band_count > 0 && !compose_bands &&
+      impl_->emu_tex_.is_ready() && impl_->emu_h_ > 0) {
     const uint32_t src_w =
         impl_->emu_w_ ? impl_->emu_w_ : impl_->emu_tex_.width();
     const int32_t bx = static_cast<int32_t>(wide_dx + 0.5f);
@@ -2196,27 +2274,148 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
         logical_w
             ? static_cast<int32_t>(static_cast<float>(src_w) * scene_sx + 0.5f)
             : static_cast<int32_t>(canvas.width);
-    std::array<VkImageBlit, 16> rows{};
-    uint32_t n = 0;
     const uint32_t bands = (std::min)(uint32_t{fv.raster_band_count}, 16U);
-    for (uint32_t k = 0; k < bands; ++k) {
-      const int32_t y0 = fv.raster_bands[k][0];
-      const int32_t y1 = (std::min)(int32_t{fv.raster_bands[k][1]},
-                                    static_cast<int32_t>(impl_->emu_h_));
-      if (y1 <= y0)
-        continue;
+    std::array<session::LineBand, 16> line_bands{};
+    for (uint32_t k = 0; k < bands; ++k)
+      line_bands[k] = {fv.raster_bands[k][0], fv.raster_bands[k][1]};
+    const std::span<const session::LineBand> band_list{line_bands.data(),
+                                                       bands};
+
+    // Spec 002 (DI-20): the previous composed frame is the faithful picture
+    // of the band pixels the core drew as in it — when it is frame k-1, was
+    // composed whole, has the same geometry, and no sprite of either frame
+    // crosses the band (the previous HD may hold a sprite the core moved).
+    session::BandCarry carry;
+    const std::int32_t bpp = fb_bytes_per_pixel(fv.fb_format);
+    if (impl_->prev_valid_ && hd_on && fv.fb_pixels &&
+        fv.frame_index == impl_->prev_frame_ + 1 &&
+        impl_->prev_fb_w_ == static_cast<std::int32_t>(fv.fb_width) &&
+        impl_->prev_fb_h_ == static_cast<std::int32_t>(fv.fb_height) &&
+        impl_->prev_fb_bpp_ == bpp) {
+      std::vector<std::uint8_t> &now_rows = impl_->scratch_->band_rows;
+      mark_sprite_rows(fv, now_rows);
+      bool crossed = false;
+      for (const session::LineBand &b : band_list)
+        for (std::int32_t y = (std::max)(b.y0, 0);
+             !crossed && y < (std::min)(b.y1, impl_->prev_fb_h_); ++y)
+          crossed = now_rows[static_cast<std::size_t>(y)] != 0 ||
+                    impl_->prev_sprite_rows_[static_cast<std::size_t>(y)] != 0;
+      if (!crossed)
+        carry = session::band_carry(
+            {impl_->prev_fb_.data(), impl_->prev_fb_w_, impl_->prev_fb_h_,
+             static_cast<std::size_t>(impl_->prev_fb_w_) * bpp, bpp},
+            {static_cast<const std::uint8_t *>(fv.fb_pixels),
+             static_cast<std::int32_t>(fv.fb_width),
+             static_cast<std::int32_t>(fv.fb_height),
+             static_cast<std::size_t>(fv.fb_pitch), bpp},
+            band_list);
+    }
+
+    const auto dst_x = [&](std::int32_t x) {
+      return bx + static_cast<int32_t>(static_cast<float>(x) * scene_sx + 0.5f);
+    };
+    const auto dst_y = [&](std::int32_t y) {
+      return static_cast<int32_t>(static_cast<float>(y) * scene_sy + 0.5f);
+    };
+    auto &core_rows = impl_->scratch_->band_core_blits;
+    auto &prev_rows = impl_->scratch_->band_prev_blits;
+    core_rows.clear();
+    prev_rows.clear();
+    const auto blit = [](std::int32_t sx0, std::int32_t sy0, std::int32_t sx1,
+                         std::int32_t sy1, std::int32_t dx0, std::int32_t dy0,
+                         std::int32_t dx1, std::int32_t dy1) {
       VkImageBlit r{};
       r.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-      r.srcOffsets[0] = {0, y0, 0};
-      r.srcOffsets[1] = {static_cast<int32_t>(src_w), y1, 1};
+      r.srcOffsets[0] = {sx0, sy0, 0};
+      r.srcOffsets[1] = {sx1, sy1, 1};
       r.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-      r.dstOffsets[0] = {bx, static_cast<int32_t>(y0 * scene_sy + 0.5f), 0};
-      r.dstOffsets[1] = {bx + bw, static_cast<int32_t>(y1 * scene_sy + 0.5f),
-                         1};
-      rows[n++] = r;
+      r.dstOffsets[0] = {dx0, dy0, 0};
+      r.dstOffsets[1] = {dx1, dy1, 1};
+      return r;
+    };
+    if (carry.usable) {
+      for (uint32_t i = 0; i < carry.count; ++i) {
+        const session::CarryRun &run = carry.runs[i];
+        const std::int32_t x0 = dst_x(run.x0);
+        const std::int32_t x1 = dst_x(run.x1);
+        const std::int32_t y0 = dst_y(run.y);
+        const std::int32_t y1 = dst_y(run.y + 1);
+        if (x1 <= x0 || y1 <= y0)
+          continue;
+        if (run.from_previous)
+          prev_rows.push_back(blit(x0, y0, x1, y1, x0, y0, x1, y1));
+        else
+          core_rows.push_back(
+              blit(run.x0, run.y, run.x1, run.y + 1, x0, y0, x1, y1));
+      }
+    } else {
+      for (const session::LineBand &b : band_list) {
+        const int32_t y0 = b.y0;
+        const int32_t y1 =
+            (std::min)(b.y1, static_cast<int32_t>(impl_->emu_h_));
+        if (y1 <= y0)
+          continue;
+        core_rows.push_back(blit(0, y0, static_cast<int32_t>(src_w), y1, bx,
+                                 dst_y(y0), bx + bw, dst_y(y1)));
+      }
     }
-    blit_tex(cmd, impl_->emu_tex_, impl_->target_.image(), rows.data(), n,
-             VK_FILTER_NEAREST);
+    for (const VkImageBlit &r : prev_rows)
+      vkCmdBlitImage(
+          cmd, impl_->prev_target_.image(),
+          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, impl_->target_.image(),
+          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r, VK_FILTER_NEAREST);
+    blit_tex(cmd, impl_->emu_tex_, impl_->target_.image(), core_rows.data(),
+             static_cast<uint32_t>(core_rows.size()), VK_FILTER_NEAREST);
+  }
+
+  // Spec 002 (DI-20): keep this frame for the bands of the next one. Only a
+  // frame composed whole (no band, no whole-frame fallback) is a faithful
+  // HD picture to carry.
+  impl_->prev_valid_ = false;
+  if (impl_->prev_target_ok_ && hd_on && fv.fb_pixels &&
+      (fv.raster_band_count == 0 || compose_bands) && fv.fb_width > 0 &&
+      fv.fb_height > 0) {
+    const std::int32_t bpp = fb_bytes_per_pixel(fv.fb_format);
+    const std::size_t row = static_cast<std::size_t>(fv.fb_width) * bpp;
+    impl_->prev_fb_.resize(row * fv.fb_height);
+    const auto *src = static_cast<const std::uint8_t *>(fv.fb_pixels);
+    for (uint32_t y = 0; y < fv.fb_height; ++y)
+      std::memcpy(impl_->prev_fb_.data() + row * y,
+                  src + static_cast<std::size_t>(fv.fb_pitch) * y, row);
+    impl_->prev_fb_w_ = static_cast<std::int32_t>(fv.fb_width);
+    impl_->prev_fb_h_ = static_cast<std::int32_t>(fv.fb_height);
+    impl_->prev_fb_bpp_ = bpp;
+    mark_sprite_rows(fv, impl_->prev_sprite_rows_);
+    image_barrier(
+        cmd, impl_->target_.image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT);
+    image_barrier(cmd, impl_->prev_target_.image(), VK_IMAGE_LAYOUT_UNDEFINED,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkImageCopy copy{};
+    copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.extent = {canvas.width, canvas.height, 1};
+    vkCmdCopyImage(cmd, impl_->target_.image(),
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   impl_->prev_target_.image(),
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    image_barrier(
+        cmd, impl_->prev_target_.image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT);
+    image_barrier(
+        cmd, impl_->target_.image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT);
+    impl_->prev_frame_ = fv.frame_index;
+    impl_->prev_valid_ = true;
   }
 
   // Spec 002 (C3): texture state of every sprite sub, once its draws are

@@ -42,33 +42,24 @@ int main() try {
   const std::vector<AytherSpriteOccurrence> occs = {occ(2), occ(5), occ(3),
                                                     occ(4), occ(1)};
   const std::vector<std::uint32_t> owner = {0, 0, 1, 1, kNone};
-  std::array<std::uint8_t, 80> chain{};
-  chain.fill(0xFF);
-  chain[1] = 2;
-  chain[2] = 4;
-  chain[3] = 0;
-  chain[4] = 3;
-  chain[5] = 1;
+  std::vector<std::uint8_t> chain = {4, 1, 0, 3, 2};
   std::array<std::uint32_t, 2> anchor{};
   pose_anchors(occs, owner, chain, anchor);
   check(anchor[0] == 1, "RF-8.1: pose A is anchored at its frontmost member "
                         "by chain (slot 5), not by slot (slot 2)");
   check(anchor[1] == 2,
         "RF-8.1: pose B is anchored at its frontmost member (slot 3)");
-  check(chain[occs[anchor[1]].slot] < chain[occs[anchor[0]].slot],
+  check(chain[anchor[1]] < chain[anchor[0]],
         "RF-8.4: B orders in front of A, as the VDP chain draws them");
 
-  // Opposite chain order on the same slots: the anchors follow the chain.
-  chain[2] = 0;
-  chain[3] = 4;
-  chain[4] = 1;
-  chain[5] = 3;
+  // Opposite chain order on the same occurrences: the anchors follow it.
+  chain = {0, 3, 4, 1, 2};
   pose_anchors(occs, owner, chain, anchor);
   check(anchor[0] == 0 && anchor[1] == 3,
         "RF-8.4: with the opposite chain order the anchors swap members");
 
   // Unknown chain: the lowest SAT slot among the members.
-  chain.fill(0xFF);
+  chain.assign(occs.size(), 0xFF);
   pose_anchors(occs, owner, chain, anchor);
   check(anchor[0] == 0 && anchor[1] == 2,
         "unknown chain falls back to the lowest member slot");
@@ -85,6 +76,17 @@ int main() try {
         "RF-8.1: a foreign sprite at slot == area does not anchor the pose");
   check(single_anchor[1] == kNoPoseAnchor,
         "a pose without members has no anchor (no slot from its area)");
+
+  // A slot may be reused during one frame. Depth is attached to the exact
+  // occurrence, not to the first record seen for that SAT slot.
+  const std::vector<AytherSpriteOccurrence> reused = {occ(7), occ(7), occ(8)};
+  const std::vector<std::uint32_t> reused_owner = {0, 0, 1};
+  const std::vector<std::uint8_t> reused_chain = {9, 1, 2};
+  std::array<std::uint32_t, 2> reused_anchor{};
+  pose_anchors(reused, reused_owner, reused_chain, reused_anchor);
+  check(reused_anchor[0] == 1,
+        "RF-8.1/RF-8.4: two distinct occurrences that reuse one slot keep "
+        "their exact chain ranks (9 then 1)");
 
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;

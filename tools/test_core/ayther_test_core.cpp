@@ -56,6 +56,8 @@ constexpr size_t kVdpRegBytes = 32;
 /// two must be the same buffer, not two views that agree by construction.
 constexpr unsigned kSpriteEntryBytes = 10;
 constexpr uint8_t kSpritesPerFrame = 12;
+constexpr uint32_t kDenseParsedSpriteCount = 256;
+constexpr uint32_t kSparseParsedSpriteRecordCount = 260;
 
 /// Chip writes reported per frame. Enough that the read-parity oracle has
 /// something to compare instead of warning that its checks were vacuous.
@@ -132,6 +134,35 @@ uint32_t g_rom_crc32 = 0;
 constexpr char kDisplayScenarioTag[] = "AYTHER-DISPLAY-SCENARIO";
 bool g_display_scenario = false;
 
+// Regression scenario for the observer boundary: the versioned snapshot says
+// that the frame has no parsed sprites while the deprecated memory id retains
+// a non-empty prefix. The ABI answer is authoritative; a consumer that treats
+// nullptr from a zero-sized vector as a read failure will incorrectly expose
+// the stale legacy entries.
+constexpr char kEmptyAbiSpritesScenarioTag[] = "AYTHER-EMPTY-ABI-SPRITES";
+bool g_empty_abi_sprites_scenario = false;
+
+// Parsed-sprite count regressions. The first frame has the full 256 producer
+// capacity. The second has the same 256 producers plus two non-producers and
+// two exact duplicates before producer 255, so its source record lies beyond
+// the legacy uint8_t boundary even though the occurrence array itself is full.
+constexpr char kDenseParsedSpritesScenarioTag[] = "AYTHER-256-PARSED-SPRITES";
+constexpr char kSparseParsedSpritesScenarioTag[] =
+    "AYTHER-SPARSE-PARSED-SPRITES";
+bool g_dense_parsed_sprites_scenario = false;
+bool g_sparse_parsed_sprites_scenario = false;
+std::vector<uint8_t> g_large_parsed_sprites;
+
+#ifndef AYTHER_TEST_CORE_NO_ABI
+// Fault-injection scenarios for the Engine's frame observer. Both fail only
+// on the first settled frame after a known-good one, then recover.
+constexpr char kSnapshotFailureScenarioTag[] = "AYTHER-SNAPSHOT-FAILURE";
+constexpr char kParsedReadFailureScenarioTag[] = "AYTHER-PARSED-READ-FAILURE";
+constexpr uint64_t kObserverFailureFrame = 4;
+bool g_snapshot_failure_scenario = false;
+bool g_parsed_read_failure_scenario = false;
+#endif
+
 // Frame numbers (0-based, the core's own count) of the display scenario.
 // tests/integration/display_enable_session_test.cpp uses the same values.
 constexpr uint64_t kDisplayOffFrame = 20; // r1 0x74 -> 0x34 at line 100
@@ -195,6 +226,29 @@ void reset_state(bool clear_subscriptions) {
   g_display_scenario = g_rom.size() >= sizeof(kDisplayScenarioTag) - 1 &&
                        std::memcmp(g_rom.data(), kDisplayScenarioTag,
                                    sizeof(kDisplayScenarioTag) - 1) == 0;
+  g_empty_abi_sprites_scenario =
+      g_rom.size() >= sizeof(kEmptyAbiSpritesScenarioTag) - 1 &&
+      std::memcmp(g_rom.data(), kEmptyAbiSpritesScenarioTag,
+                  sizeof(kEmptyAbiSpritesScenarioTag) - 1) == 0;
+  g_dense_parsed_sprites_scenario =
+      g_rom.size() >= sizeof(kDenseParsedSpritesScenarioTag) - 1 &&
+      std::memcmp(g_rom.data(), kDenseParsedSpritesScenarioTag,
+                  sizeof(kDenseParsedSpritesScenarioTag) - 1) == 0;
+  g_sparse_parsed_sprites_scenario =
+      g_rom.size() >= sizeof(kSparseParsedSpritesScenarioTag) - 1 &&
+      std::memcmp(g_rom.data(), kSparseParsedSpritesScenarioTag,
+                  sizeof(kSparseParsedSpritesScenarioTag) - 1) == 0;
+#ifndef AYTHER_TEST_CORE_NO_ABI
+  g_snapshot_failure_scenario =
+      g_rom.size() >= sizeof(kSnapshotFailureScenarioTag) - 1 &&
+      std::memcmp(g_rom.data(), kSnapshotFailureScenarioTag,
+                  sizeof(kSnapshotFailureScenarioTag) - 1) == 0;
+  g_parsed_read_failure_scenario =
+      g_rom.size() >= sizeof(kParsedReadFailureScenarioTag) - 1 &&
+      std::memcmp(g_rom.data(), kParsedReadFailureScenarioTag,
+                  sizeof(kParsedReadFailureScenarioTag) - 1) == 0;
+#endif
+  g_large_parsed_sprites.clear();
   if (g_display_scenario) {
     // H32, plane A at 0xC000 and B at 0xE000 (64x32 cells), hscroll at
     // 0xFC00, no window.
@@ -232,6 +286,86 @@ void reset_state(bool clear_subscriptions) {
     g_sub_activation_frame = 0;
   }
 }
+
+constexpr uint8_t large_sprite_chain(uint32_t producer) {
+  return static_cast<uint8_t>((producer * 29U + 7U) % 200U);
+}
+
+void append_parsed_sprite(std::vector<uint8_t> &sprites, int screen_x,
+                          int screen_y, uint16_t attributes, uint8_t slot,
+                          uint8_t chain) {
+  const uint16_t x_raw = static_cast<uint16_t>(screen_x + 128);
+  const uint16_t y_raw = static_cast<uint16_t>(screen_y + 128);
+  sprites.insert(
+      sprites.end(),
+      {static_cast<uint8_t>(y_raw), static_cast<uint8_t>(y_raw >> 8U),
+       static_cast<uint8_t>(x_raw), static_cast<uint8_t>(x_raw >> 8U),
+       static_cast<uint8_t>(attributes), static_cast<uint8_t>(attributes >> 8U),
+       1, 1, slot, chain});
+}
+
+void append_large_sprite_producer(uint32_t producer) {
+  const uint16_t pattern = static_cast<uint16_t>(producer + 1U);
+  const int screen_x = static_cast<int>(producer % 12U) * 16;
+  const int screen_y = static_cast<int>(producer / 12U) * 8;
+  // A real Mega Drive SAT has 80 slots. Counts above 80 come from the same
+  // slots being parsed again after mid-frame rewrites, not from wider ids.
+  const uint8_t slot = static_cast<uint8_t>(producer % 80U);
+  const uint8_t chain = large_sprite_chain(producer);
+  append_parsed_sprite(g_large_parsed_sprites, screen_x, screen_y, pattern,
+                       slot, chain);
+  uint8_t *pattern_bytes = g_state.vram + static_cast<size_t>(pattern) * 32U;
+  // Keep the framebuffer judge neutral: the identity bytes live outside its
+  // sparse sample points, so this scenario tests joins rather than rendering.
+  std::fill_n(pattern_bytes, 32U, uint8_t{0});
+  pattern_bytes[0] = static_cast<uint8_t>(pattern);
+  pattern_bytes[1] = static_cast<uint8_t>(pattern >> 8U);
+}
+
+void populate_large_parsed_sprites() {
+  g_large_parsed_sprites.clear();
+  const bool sparse = g_sparse_parsed_sprites_scenario;
+  const uint32_t expected_records =
+      sparse ? kSparseParsedSpriteRecordCount : kDenseParsedSpriteCount;
+  g_large_parsed_sprites.reserve(static_cast<size_t>(expected_records) *
+                                 kSpriteEntryBytes);
+  for (uint32_t producer = 0; producer < kDenseParsedSpriteCount; ++producer) {
+    if (sparse && producer == 4U)
+      append_parsed_sprite(g_large_parsed_sprites, 8, 8, 0, 250, 90);
+    if (sparse && producer == 8U)
+      append_parsed_sprite(g_large_parsed_sprites, 336, 8, 300, 251, 91);
+    append_large_sprite_producer(producer);
+    if (sparse && (producer == 16U || producer == 32U))
+      append_large_sprite_producer(producer);
+  }
+}
+
+#ifndef AYTHER_TEST_CORE_NO_ABI
+uint32_t abi_parsed_sprite_count() {
+  if (g_empty_abi_sprites_scenario)
+    return 0;
+  if (g_dense_parsed_sprites_scenario || g_sparse_parsed_sprites_scenario)
+    return static_cast<uint32_t>(g_large_parsed_sprites.size() /
+                                 kSpriteEntryBytes);
+  return g_state.sprite_count;
+}
+#endif
+
+const uint8_t *parsed_sprite_data() {
+  return g_dense_parsed_sprites_scenario || g_sparse_parsed_sprites_scenario
+             ? g_large_parsed_sprites.data()
+             : g_state.sprites;
+}
+
+#ifndef AYTHER_TEST_CORE_NO_ABI
+uint32_t parsed_sprite_capacity() {
+  if (g_sparse_parsed_sprites_scenario)
+    return kSparseParsedSpriteRecordCount;
+  if (g_dense_parsed_sprites_scenario)
+    return kDenseParsedSpriteCount;
+  return kSpritesPerFrame;
+}
+#endif
 
 void advance_frame() {
   // Subscriptions requested during the previous frame take effect here, at
@@ -336,28 +470,36 @@ void advance_frame() {
   // stale copy. The frame-varying signals live in RAM, video, and audio,
   // which no two observers read alternately.
   if (subscribed(AYTHER_SUB_SPRITE_CAPTURE)) {
-    g_state.sprite_count = kSpritesPerFrame;
-    for (uint8_t s = 0; s < kSpritesPerFrame; ++s) {
-      uint8_t *entry =
-          g_state.sprites + static_cast<size_t>(s) * kSpriteEntryBytes;
-      const uint32_t seed = g_rom_crc32 + s * 2654435761u;
-      const uint16_t x = static_cast<uint16_t>((seed >> 3) % kWidth);
-      const uint16_t y = static_cast<uint16_t>((seed >> 11) % kHeight);
-      const uint16_t tile = static_cast<uint16_t>((seed >> 17) & 0x07FF);
-      entry[0] = static_cast<uint8_t>(x);
-      entry[1] = static_cast<uint8_t>(x >> 8);
-      entry[2] = static_cast<uint8_t>(y);
-      entry[3] = static_cast<uint8_t>(y >> 8);
-      entry[4] = static_cast<uint8_t>(tile);
-      entry[5] = static_cast<uint8_t>(tile >> 8);
-      entry[6] = static_cast<uint8_t>(s);     // slot
-      entry[7] = 1;                           // size
-      entry[8] = static_cast<uint8_t>(s & 3); // palette
-      entry[9] = 0;
+    if (g_dense_parsed_sprites_scenario || g_sparse_parsed_sprites_scenario) {
+      populate_large_parsed_sprites();
+      // Deprecated id 0x10C cannot represent the ABI count. Saturating it is
+      // deliberate: public legacy probes keep their historical contract.
+      g_state.sprite_count = 255;
+    } else {
+      g_state.sprite_count = kSpritesPerFrame;
+      for (uint8_t s = 0; s < kSpritesPerFrame; ++s) {
+        uint8_t *entry =
+            g_state.sprites + static_cast<size_t>(s) * kSpriteEntryBytes;
+        const uint32_t seed = g_rom_crc32 + s * 2654435761u;
+        const uint16_t x = static_cast<uint16_t>((seed >> 3) % kWidth);
+        const uint16_t y = static_cast<uint16_t>((seed >> 11) % kHeight);
+        const uint16_t tile = static_cast<uint16_t>((seed >> 17) & 0x07FF);
+        entry[0] = static_cast<uint8_t>(x);
+        entry[1] = static_cast<uint8_t>(x >> 8);
+        entry[2] = static_cast<uint8_t>(y);
+        entry[3] = static_cast<uint8_t>(y >> 8);
+        entry[4] = static_cast<uint8_t>(tile);
+        entry[5] = static_cast<uint8_t>(tile >> 8);
+        entry[6] = static_cast<uint8_t>(s);     // slot
+        entry[7] = 1;                           // size
+        entry[8] = static_cast<uint8_t>(s & 3); // palette
+        entry[9] = 0;
+      }
     }
   } else {
     g_state.sprite_count = 0;
     std::memset(g_state.sprites, 0, sizeof(g_state.sprites));
+    g_large_parsed_sprites.clear();
   }
 
   // Chip writes. Gated like the sprites: a core with the standard profile
@@ -530,10 +672,10 @@ bool region_view(uint32_t region_id, RegionView &out) {
            kZ80RamBytes,    0x10F, AYTHER_SUB_VDP_MEMORY};
     return true;
   case AYTHER_REGION_PARSED_SPRITES:
-    out = {g_state.sprites,
+    out = {parsed_sprite_data(),
            kSpriteEntryBytes,
-           kSpritesPerFrame,
-           static_cast<uint32_t>(g_state.sprite_count) * kSpriteEntryBytes,
+           parsed_sprite_capacity(),
+           abi_parsed_sprite_count() * kSpriteEntryBytes,
            0x10B,
            AYTHER_SUB_SPRITE_CAPTURE};
     return true;
@@ -616,6 +758,11 @@ int32_t AYTHER_CALL api_read_region(uint32_t region_id, uint32_t offset,
   // spelled by a caller that does not track generations at all.
   if (expected_generation != AYTHER_GENERATION_ANY &&
       expected_generation != 0 && expected_generation != g_state.frame) {
+    return AYTHER_STATUS_STALE_GENERATION;
+  }
+  if (g_parsed_read_failure_scenario &&
+      g_state.frame == kObserverFailureFrame &&
+      region_id == AYTHER_REGION_PARSED_SPRITES) {
     return AYTHER_STATUS_STALE_GENERATION;
   }
 
@@ -769,6 +916,9 @@ int32_t AYTHER_CALL api_capture_snapshot(ayther_frame_snapshot_v1 *out,
   if (out == nullptr || out_size < sizeof(ayther_frame_snapshot_v1)) {
     return AYTHER_STATUS_INVALID_ARGUMENT;
   }
+  if (g_snapshot_failure_scenario && g_state.frame == kObserverFailureFrame) {
+    return AYTHER_STATUS_BUSY;
+  }
   std::memset(out, 0, sizeof(*out));
   out->struct_size = sizeof(ayther_frame_snapshot_v1);
   out->snapshot_version = 1;
@@ -781,7 +931,7 @@ int32_t AYTHER_CALL api_capture_snapshot(ayther_frame_snapshot_v1 *out,
   // engine a fidelity story that is not true. The scenario's register
   // writes are journaled like a forked core's.
   out->fallback_reasons = g_state.fallback_reasons;
-  out->parsed_sprite_count = g_state.sprite_count;
+  out->parsed_sprite_count = abi_parsed_sprite_count();
   out->audio_write_count = g_state.audio_write_count;
   return AYTHER_STATUS_OK;
 }
@@ -799,7 +949,7 @@ int32_t AYTHER_CALL api_poll_frame_delta(ayther_frame_delta_v1 *out,
   // than the one the consumer is holding.
   out->frame_generation = g_state.frame;
   out->raster_event_count = g_state.raster_event_count;
-  out->parsed_sprite_count = g_state.sprite_count;
+  out->parsed_sprite_count = abi_parsed_sprite_count();
   out->audio_write_count = g_state.audio_write_count;
   out->raster_events_dropped = 0;
   static_assert(sizeof(out->dirty_patterns) == kPatternCount,
@@ -1019,7 +1169,7 @@ RETRO_API void *retro_get_memory_data(unsigned id) {
   case 0x10A:
     return &g_state.audio_write_count;
   case 0x10B:
-    return g_state.sprites;
+    return const_cast<uint8_t *>(parsed_sprite_data());
   case 0x10C:
     return &g_state.sprite_count;
   case 0x10F:
@@ -1046,7 +1196,9 @@ RETRO_API size_t retro_get_memory_size(unsigned id) {
   case 0x10A:
     return sizeof(g_state.audio_write_count);
   case 0x10B:
-    return sizeof(g_state.sprites);
+    return (g_dense_parsed_sprites_scenario || g_sparse_parsed_sprites_scenario)
+               ? g_large_parsed_sprites.size()
+               : sizeof(g_state.sprites);
   case 0x10C:
     return sizeof(g_state.sprite_count);
   case 0x10F:

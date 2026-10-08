@@ -1825,7 +1825,7 @@ bool AudioPlayer::play_oneshot_asset_file(
 
 void AudioPlayer::prewarm_asset_file(const std::string &path) {
   if (!path.empty())
-    get_wav_disk(path); // decodifica + cachea (no necesita device)
+    (void)asset_ready_disk(path); // decodifica, convierte y cachea
 }
 
 bool AudioPlayer::set_sfx_gain_by_key(uint64_t key, float gain) {
@@ -1908,6 +1908,10 @@ HdMixPcm AudioPlayer::get_mix_pcm(const WavEntry *wav,
   SDL_free(conv);
   mix_cache_[cache_key] = pcm;
   return pcm;
+}
+
+bool AudioPlayer::mix_ready(const std::string &key) const noexcept {
+  return mix_cache_.find(key) != mix_cache_.end();
 }
 
 double AudioPlayer::asset_duration_seconds(const std::string &abs_path) {
@@ -2693,7 +2697,9 @@ bool AudioPlayer::asset_ready_disk(const std::string &abs_path) {
   if (abs_path.empty())
     return false;
   const WavEntry *w = get_wav_disk(abs_path);
-  return w && !w->pcm.empty();
+  // Spec 002 (D-6b): ready means ready to mix; converting here keeps the
+  // first key-on from resampling a whole track on its frame.
+  return w && !w->pcm.empty() && get_mix_pcm(w, abs_path) != nullptr;
 }
 
 bool AudioPlayer::asset_ready_pack(AyArchive *pack,
@@ -2701,7 +2707,7 @@ bool AudioPlayer::asset_ready_pack(AyArchive *pack,
   if (!pack || asset_path.empty())
     return false;
   const WavEntry *w = get_wav(pack, asset_path);
-  return w && !w->pcm.empty();
+  return w && !w->pcm.empty() && get_mix_pcm(w, asset_path) != nullptr;
 }
 
 const char *AudioPlayer::asset_error_name(const std::string &path) const {

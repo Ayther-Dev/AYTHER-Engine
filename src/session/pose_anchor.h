@@ -18,19 +18,21 @@ inline constexpr std::uint32_t kNoPoseAnchor = UINT32_MAX;
 /// For each pose substitution `s < anchor.size()`, the index of its anchor
 /// occurrence, or kNoPoseAnchor. `owner[i]` is the pose substitution that
 /// claimed occurrence `i` (any value >= anchor.size() means none).
-/// `chain_by_slot[slot]` is the link-chain position of a SAT slot (0xFF =
-/// unknown).
+/// `chain_by_occurrence[i]` is the link-chain position of occurrence `i`
+/// (0xFF = unknown). It is deliberately not indexed by SAT slot: a slot can
+/// be reused by distinct parsed records within one frame.
 ///
 /// The anchor is the frontmost member: the lowest chain position, which the
 /// VDP draws in front; an unknown chain sorts behind every known one, and a
 /// tie falls to the lowest SAT slot.
 inline void pose_anchors(std::span<const AytherSpriteOccurrence> occs,
                          std::span<const std::uint32_t> owner,
-                         std::span<const std::uint8_t> chain_by_slot,
+                         std::span<const std::uint8_t> chain_by_occurrence,
                          std::span<std::uint32_t> anchor) {
-  const auto depth = [&](const AytherSpriteOccurrence &o) {
+  const auto depth = [&](std::size_t index) {
+    const AytherSpriteOccurrence &o = occs[index];
     const unsigned chain =
-        o.slot < chain_by_slot.size() ? chain_by_slot[o.slot] : 0xFFU;
+        index < chain_by_occurrence.size() ? chain_by_occurrence[index] : 0xFFU;
     return (chain << 8U) | o.slot;
   };
   for (std::uint32_t &a : anchor)
@@ -40,7 +42,7 @@ inline void pose_anchors(std::span<const AytherSpriteOccurrence> occs,
     if (s >= anchor.size())
       continue;
     std::uint32_t &a = anchor[s];
-    if (a == kNoPoseAnchor || depth(occs[i]) < depth(occs[a]))
+    if (a == kNoPoseAnchor || depth(i) < depth(a))
       a = static_cast<std::uint32_t>(i);
   }
 }

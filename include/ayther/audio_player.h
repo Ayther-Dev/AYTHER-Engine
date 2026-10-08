@@ -599,6 +599,9 @@ public:
   };
   AssetCacheObservation
   observe_asset_cache(const std::string &path) const noexcept;
+  /// Spec 002 (D-6b): whether `key` is already converted to the mixer's
+  /// format, so starting it does not resample the whole track.
+  bool mix_ready(const std::string &key) const noexcept;
 
   /// HD start attempts that FAILED with the asset already ready (creating or
   /// binding the SDL stream) — the rare class; asset failures show up in
@@ -743,9 +746,10 @@ public:
   void append_initial_snapshot(
       ayther::engine::audio_observation::AudioInitialSnapshot &snapshot) const;
 
-  ayther::engine::audio_observation::AudioHdVoicesState
-  hd_voices_state() const {
-    return hd_mixer_.voice_state();
+  ayther::engine::audio_observation::AudioHdVoicesState hd_voices_state(
+      std::vector<ayther::engine::audio_observation::AudioHdSharedPcmAsset>
+          *shared = nullptr) const {
+    return hd_mixer_.voice_state(shared);
   }
 
   ayther::engine::audio_observation::AudioHdRestoreCode

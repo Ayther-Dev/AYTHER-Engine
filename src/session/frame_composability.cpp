@@ -70,8 +70,14 @@ FrameComposability classify_frame(const FrameComposabilityInput &in) noexcept {
   out.scene_dirty = static_cast<std::uint8_t>(
       (in.raster > 0 ? kDirtyRaster : 0) | (in.layer_dim ? kDirtyDim : 0) |
       (hscroll || vscroll ? kDirtyScroll : 0) |
-      (display_off ? kDirtyDisplayOff : 0));
-  if (in.raster > 0)
+      (display_off ? kDirtyDisplayOff : 0) |
+      (!in.parsed_sprites_complete ? kDirtyIncompleteSpriteCapture : 0) |
+      (!in.geometry_current ? kDirtyGeometryPending : 0));
+  if (!in.parsed_sprites_complete)
+    out.reason = Composability::other;
+  else if (!in.geometry_current)
+    out.reason = Composability::other;
+  else if (in.raster > 0)
     out.reason = Composability::raster_split;
   else if (display_off)
     out.reason = Composability::other;

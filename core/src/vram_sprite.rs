@@ -17,18 +17,12 @@
 // ## SAT entry layout (8 bytes, big-endian words)
 //
 //   Word 0:  bits 9-0  = Y screen position (–128 offset, so 0x80 = top)
-//   Word 1:  bits 13-8 = height (2b) | width (2b) | link (7b)
-//            Encoded as: (height-1)<<10 | (width-1)<<8 | link
-//            The actual layout documented by Sega:
-//              [15:8] = Y[8:0] (sign-extended) — only [8:0] matter
-//              [7:4]  = height-1 in tiles (0-3 = 1-4 tiles)
-//              [3:0]  = link   (index of next sprite, 0 = end of chain)
-//   Word 1 (second byte): width-1 in tiles packed differently…
+//   Word 1:  bits 11-10 = width-1, bits 9-8 = height-1, bits 6-0 = link
+//            Encoded as: (width-1)<<10 | (height-1)<<8 | link
 //
 //   The actual byte layout per Sega MD hardware manual:
 //     Byte 0: Y[8] (MSB)     Byte 1: Y[7:0]       ← 9-bit signed Y
-//     Byte 2: HH SS LL LL LL LL LL  where HH = height-1 (2b),
-//             SS = size (actually: bits [7:4] = H (2b) + W (2b))
+//     Byte 2: 0000 WW HH  where WW = width-1 and HH = height-1
 //     Byte 3: Link (7 bits: index of next sprite in chain)
 //     Byte 4: P R HF VF palette[1:0] tile_hi[10]
 //             (P=priority, R=reserved, HF=hflip, VF=vflip, tile MSBs)
@@ -700,13 +694,13 @@ impl SpriteHasher {
             // el escaneo SAT de tools/mode3_spike (vrd16), validada contra ROM.
             let rdw = |o: usize| -> u16 { (entry[o] as u16) | ((entry[o + 1] as u16) << 8) };
             let w0 = rdw(0); // Y (bits 9:0)
-            let w1 = rdw(2); // vsize (11:10) · hsize (9:8) · link (6:0)
+            let w1 = rdw(2); // width (11:10) · height (9:8) · link (6:0)
             let w2 = rdw(4); // pri (15) · pal (14:13) · vflip (12) · hflip (11) · tile (10:0)
             let w3 = rdw(6); // X (bits 8:0)
 
             let screen_y = (w0 & 0x3FF) as i16 - SPRITE_COORD_OFFSET;
-            let h = (((w1 >> 10) & 0x3) as u8) + 1; // alto en tiles (1..4)
-            let w = (((w1 >> 8) & 0x3) as u8) + 1; // ancho en tiles (1..4)
+            let w = (((w1 >> 10) & 0x3) as u8) + 1; // ancho en tiles (1..4)
+            let h = (((w1 >> 8) & 0x3) as u8) + 1; // alto en tiles (1..4)
             let priority = ((w2 >> 15) & 0x1) as u8;
             let palette = ((w2 >> 13) & 0x3) as u8;
             let vflip = (w2 & 0x1000) != 0;
@@ -759,16 +753,13 @@ impl SpriteHasher {
     }
 
     /// Process the list of sprites the VDP actually PARSED this frame, captured by
-    /// the fork in `parse_satb` (id 0x10B). Each record is 8 bytes: yr(u16 LE) ·
-    /// xr(u16) · attr(u16) · w(u8) · h(u8), already deduped by (yr,xr,attr). This is
-    /// the authoritative "what was drawn" source — robust to the SAT being rewritten
-    /// mid-frame / its base swapped (e.g. Aladdin's Sega-logo genie, where reading
-    /// the SAT at frame-end shows only placeholders). Tiles are hashed from `vram`.
-    /// Empty `data` → returns 0 (the engine falls back to single-base autodetect).
-    /// Records are 10 bytes: `{yr: u16, xr: u16, attr: u16, w: u8, h: u8,
+    /// the fork in `parse_satb` (id 0x10B). Records are 10 bytes:
+    /// `{yr: u16, xr: u16, attr: u16, w: u8, h: u8,
     /// sat_idx: u8, chain_pos: u8}`. `sat_idx` is the actual SAT entry index used
     /// by the suppression mask, not the record-list position. `chain_pos` is the
-    /// VDP link-chain draw priority, with smaller values in front.
+    /// VDP link-chain draw priority, with smaller values in front. This is the
+    /// authoritative "what was drawn" source and is robust to a SAT rewritten or
+    /// rebased mid-frame. Tiles are hashed from `vram`. Empty `data` returns 0.
     pub fn process_parsed_sprites(&mut self, data: &[u8], vram: &[u8]) -> u32 {
         self.last_occurrences.clear();
         let mut new_this_frame = 0u32;
@@ -959,12 +950,12 @@ impl SpriteHasher {
             // Words LE del buffer del fork (ver process_vram): reconstruyen los
             // words big-endian del 68k.
             let rdw = |o: usize| -> u16 { (e[o] as u16) | ((e[o + 1] as u16) << 8) };
-            let w1 = rdw(2); // vsize (11:10) · hsize (9:8) · link (6:0)
+            let w1 = rdw(2); // width (11:10) · height (9:8) · link (6:0)
 
             let screen_y = (rdw(0) & 0x3FF) as i16 - SPRITE_COORD_OFFSET;
             let screen_x = (rdw(6) & 0x1FF) as i16 - SPRITE_COORD_OFFSET;
-            let h = (((w1 >> 10) & 0x3) as i16 + 1) * 8;
-            let w = (((w1 >> 8) & 0x3) as i16 + 1) * 8;
+            let w = (((w1 >> 10) & 0x3) as i16 + 1) * 8;
+            let h = (((w1 >> 8) & 0x3) as i16 + 1) * 8;
 
             // On a 320×224 (H40) frame with one tile of slack — covers H32 too.
             if screen_x > -w && screen_x < 336 && screen_y > -h && screen_y < 240 {
@@ -2950,7 +2941,7 @@ mod tests {
         wr16(
             &mut vram,
             e + 2,
-            (((h - 1) as u16) << 10) | (((w - 1) as u16) << 8),
+            (((w - 1) as u16) << 10) | (((h - 1) as u16) << 8),
         ); // link = 0
         wr16(&mut vram, e + 4, tile_idx as u16 & 0x7FF); // sin flips
         wr16(&mut vram, e + 6, (x + SPRITE_COORD_OFFSET) as u16 & 0x1FF);
@@ -3016,8 +3007,9 @@ mod tests {
 
         let e = SAT_BASE_H40;
         wr16(&mut vram, e, (100i16 + SPRITE_COORD_OFFSET) as u16); // Y = 100
-        // Word 1: vsize (11:10) = 1 → h=2 · hsize (9:8) = 2 → w=3 · link = 0.
-        wr16(&mut vram, e + 2, (1u16 << 10) | (2u16 << 8));
+        // Word 1 (Genesis Plus GX): width (11:10) = 2 → w=3 ·
+        // height (9:8) = 1 → h=2 · link = 0.
+        wr16(&mut vram, e + 2, (2u16 << 10) | (1u16 << 8));
         // Word 2: priority (15) = 1 · palette (14:13) = 2 · hflip (11) = 1 · tile.
         wr16(
             &mut vram,
@@ -3031,8 +3023,8 @@ mod tests {
         let o = &h.last_occurrences()[0];
         assert_eq!(o.screen_x, 120, "X (word 3, offset -128)");
         assert_eq!(o.screen_y, 100, "Y (word 0, offset -128)");
-        assert_eq!(o.w_tiles, 3, "width  = word1[9:8] + 1");
-        assert_eq!(o.h_tiles, 2, "height = word1[11:10] + 1");
+        assert_eq!(o.w_tiles, 3, "width  = word1[11:10] + 1");
+        assert_eq!(o.h_tiles, 2, "height = word1[9:8] + 1");
         assert_eq!(o.palette, 2, "palette = word2[14:13]");
         assert_eq!(o.priority, 1, "priority = word2[15]");
         assert_eq!(o.hflip, 1, "hflip = word2[11]");
@@ -6000,14 +5992,72 @@ mod tests {
 
     // -- Spec 002, BR-094 (R5, RF-9.1): the parsed list ----------------------
 
-    /// One 10-byte parsed record: screen (x, y), tile, size, SAT slot, chain.
-    fn parsed_record(x: i16, y: i16, tile: u16, w: u8, h: u8, slot: u8, chain: u8) -> Vec<u8> {
+    /// One 10-byte parsed record: screen (x, y), attributes, size, SAT slot, chain.
+    fn parsed_record(x: i16, y: i16, attr: u16, w: u8, h: u8, slot: u8, chain: u8) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&((y + 128) as u16).to_le_bytes());
         out.extend_from_slice(&((x + 128) as u16).to_le_bytes());
-        out.extend_from_slice(&tile.to_le_bytes());
+        out.extend_from_slice(&attr.to_le_bytes());
         out.extend_from_slice(&[w, h, slot, chain]);
         out
+    }
+
+    #[test]
+    fn parsed_record_matches_final_sat_for_asymmetric_sprite() {
+        let mut vram = vec![0u8; 65536];
+        let tile_idx = 5usize;
+        for (i, byte) in vram[tile_idx * VRAM_TILE_BYTES..(tile_idx + 6) * VRAM_TILE_BYTES]
+            .iter_mut()
+            .enumerate()
+        {
+            *byte = (i as u8).wrapping_mul(29).wrapping_add(7);
+        }
+
+        let attr = (1u16 << 15) | (2u16 << 13) | (1u16 << 12) | (1u16 << 11) | 5;
+        let entry = SAT_BASE_H40;
+        wr16(&mut vram, entry, (100i16 + SPRITE_COORD_OFFSET) as u16);
+        wr16(&mut vram, entry + 2, (2u16 << 10) | (1u16 << 8));
+        wr16(&mut vram, entry + 4, attr);
+        wr16(&mut vram, entry + 6, (120i16 + SPRITE_COORD_OFFSET) as u16);
+
+        let mut final_sat = SpriteHasher::new();
+        final_sat.process_vram(&vram, SAT_BASE_H40);
+        let final_occurrence = &final_sat.last_occurrences()[0];
+
+        let mut parsed = SpriteHasher::new();
+        parsed.process_parsed_sprites(&parsed_record(120, 100, attr, 3, 2, 0, 0), &vram);
+        let parsed_occurrence = &parsed.last_occurrences()[0];
+
+        assert_eq!(
+            (
+                final_occurrence.hash,
+                final_occurrence.anim_group_id,
+                final_occurrence.w_tiles,
+                final_occurrence.h_tiles,
+                final_occurrence.screen_x,
+                final_occurrence.screen_y,
+                final_occurrence.link,
+                final_occurrence.palette,
+                final_occurrence.priority,
+                final_occurrence.slot,
+                final_occurrence.hflip,
+                final_occurrence.vflip,
+            ),
+            (
+                parsed_occurrence.hash,
+                parsed_occurrence.anim_group_id,
+                parsed_occurrence.w_tiles,
+                parsed_occurrence.h_tiles,
+                parsed_occurrence.screen_x,
+                parsed_occurrence.screen_y,
+                parsed_occurrence.link,
+                parsed_occurrence.palette,
+                parsed_occurrence.priority,
+                parsed_occurrence.slot,
+                parsed_occurrence.hflip,
+                parsed_occurrence.vflip,
+            )
+        );
     }
 
     #[test]

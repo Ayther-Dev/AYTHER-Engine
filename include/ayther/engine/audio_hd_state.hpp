@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -125,6 +126,14 @@ struct AudioHdPcmAssetState {
 
   friend bool operator==(const AudioHdPcmAssetState &,
                          const AudioHdPcmAssetState &) = default;
+};
+
+/// Spec 002 (D-6b): one active voice's source PCM, shared with the mixer
+/// instead of copied. Produced by the shared export of `AudioHdVoicesState`,
+/// whose matching `pcm_assets` entry then carries the identity only.
+struct AudioHdSharedPcmAsset {
+  std::uint64_t identity = 0;
+  std::shared_ptr<const std::vector<std::int16_t>> samples;
 };
 
 struct AudioHdVoiceState {

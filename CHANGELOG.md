@@ -168,6 +168,40 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Spec 002 (D-6b): `AytherSession::audio_hd_voices_state` gains an overload
+  that hands out each voice's source PCM by shared ownership instead of
+  copying it; a replay checkpoint no longer copies a stage's music.
+- Spec 002 (D-6b): a prewarmed HD audio asset is also converted to the
+  mixer's format, so the first key-on of a long track no longer stalls the
+  frame that starts it (Golden Axe, 35 ms at the start of stage 1).
+- Spec 002 (DI-21): raster bands are bounded by the core's recomposition from
+  its final state, so a first palette write or an hscroll frame without exact
+  line state no longer flashes the whole picture to the originals (Golden Axe,
+  before the third wave).
+- Spec 002 (DI-22): with HD, a band caused only by pattern writes is composed
+  in HD; the original dialog box no longer shows dark blocks inside the HD box
+  when the text page changes.
+- Spec 002 (DI-20): a raster band no longer shows a strip of the original
+  background across the HD one. A band pixel the core drew as in the previous
+  frame keeps that frame's composed HD; only the changed pixels and their
+  neighbours show the core's image (Golden Axe, the «Go to Turtle Town» box).
+- Spec 002 (O1, RF-3.5): the first write of a frame to a horizontal-scroll
+  word that already carries its final value now bands the lines above it that
+  read that entry, since the core only journals changing writes; the frame-
+  scoped LINE_STATE records are validated against their descriptor before
+  they localize any band (Golden Axe, frame 4757).
+- Spec 002 (O1, RF-10.3): in a raster frame with VRAM or DMA writes, a scene
+  sprite whose final SAT entry no longer matches its occurrence bands its
+  lines, so the edge of the previous screen's sprites no longer shows below a
+  band (Golden Axe, frame 647, title to menu).
+- Spec 002 (RF-3.6, RF-5.2): a valid empty or large PARSED_SPRITES snapshot is
+  authoritative, scene inventory joins each occurrence to its exact parsed SAT
+  record, and a failed snapshot or PARSED_SPRITES read fails the frame closed
+  instead of reusing the previous frame's state.
+- Spec 002 (RNF-5): `AytherRecording::patch_name` replaces an existing take on
+  Windows (`ReplaceFileW`), closes the temporary file before publishing it and
+  removes it on failure; the writer lock identifies a destination by its
+  filesystem object, so path aliases and hard links serialize together.
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take
   with the same count kept the previous ones; any change of the events now

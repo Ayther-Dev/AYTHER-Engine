@@ -20,7 +20,7 @@
 //     nunca tuvo un «es SMS → fallback siempre», asi que solo hay que seguir
 //     confiando en la mascara.
 //  2. `v_counter` del journal = primera linea que VE el cambio (N+1). El
-//     Engine no lo usa.
+//     Engine lo usa para localizar las bandas raster afectadas.
 //  3. `recompose_multilayer` con eventos de CRAM cambia de salida (la nueva es
 //     la correcta, pixel-perfect). Medido con abi_multilayer.
 //
@@ -568,9 +568,11 @@ typedef struct ayther_journal_event_v1
   uint16_t v_counter;   /* linea en que ocurrio                        */
   uint16_t reason;      /* AYTHER_RASTER_REASON_* del core             */
   uint16_t address;     /* segun el motivo: REG = numero de registro;   */
-                        /* CRAM = indice de entrada (0-63); VSRAM =      */
-                        /* byte par; HSCROLL = direccion de VRAM ()  */
-  uint16_t data;        /* los 16 bits que el bus puso                 */
+                        /* CRAM = indice de entrada (0-63). VSRAM y      */
+                        /* HSCROLL son word-shaped, pero las rutas       */
+                        /* Z80/DMA legadas pueden publicar un byte y su  */
+                        /* direccion exacta: no hay campo width.         */
+  uint16_t data;        /* palabra, o byte en esas rutas legadas         */
 } ayther_journal_event_v1;
 
 typedef struct ayther_journal_v1

@@ -3,11 +3,13 @@
 // in mid-screen, the authoring dim, per-line hscroll and per-column vscroll,
 // and a clean frame. The scene_dirty bits the renderer reads come from the
 // same computation.
+#include "session/emulation_observer.h"
 #include "session/frame_composability.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -31,6 +33,8 @@ struct Frame {
   std::vector<std::uint8_t> vsram = std::vector<std::uint8_t>(80, 0);
   std::uint32_t raster = 0;
   bool dim = false;
+  bool parsed_sprites_complete = true;
+  bool geometry_current = true;
 
   Frame() {
     regs[1] = 0x74; // the display is on (bit 6)
@@ -50,6 +54,8 @@ struct Frame {
     FrameComposabilityInput in;
     in.raster = raster;
     in.layer_dim = dim;
+    in.parsed_sprites_complete = parsed_sprites_complete;
+    in.geometry_current = geometry_current;
     in.vram = vram;
     in.vdp_regs = regs;
     in.vsram = vsram;
@@ -65,6 +71,49 @@ int main() try {
     const FrameComposability c = Frame{}.classify();
     check(c.reason == Composability::composable && c.scene_dirty == 0,
           "RF-10.1: a clean frame is composable");
+  }
+  {
+    Frame f;
+    f.geometry_current = false;
+    const FrameComposability c = f.classify();
+    check(c.reason == Composability::other && c.scene_dirty != 0,
+          "RF-10.1/O1: GEOMETRY_PENDING makes the emitted frame "
+          "non-composable even without raster writes or sprites");
+    check(ayther::session::frame_requires_core_image(c.scene_dirty),
+          "RF-10.1/O1: the renderer shows the complete core image while "
+          "VDP_REGS describe the following geometry");
+  }
+  {
+    ayther_frame_snapshot_v1 snapshot{};
+    snapshot.parsed_sprite_count = 128;
+    snapshot.overflow_flags = AYTHER_OVERFLOW_PARSED_SPRITES;
+    check(!ayther::session::parsed_sprite_capture_complete(snapshot),
+          "RF-8.1/RF-9.1/O1: a 128-record PARSED_SPRITES snapshot with "
+          "overflow is explicitly incomplete");
+
+    Frame f;
+    f.parsed_sprites_complete = false;
+    const FrameComposability c = f.classify();
+    check(c.reason == Composability::other &&
+              (c.scene_dirty &
+               ayther::session::kDirtyIncompleteSpriteCapture) != 0,
+          "RF-8.1/RF-9.1/O1: incomplete parsed sprites force the complete "
+          "core frame with no HD composition");
+    check(ayther::session::frame_requires_core_image(c.scene_dirty),
+          "RF-10.1/O1: the renderer gate consumes the incomplete-capture "
+          "dirty bit");
+
+    std::uint8_t truncated_prefix = 0xA5;
+    using Observer = ayther::session::EmulationObserver;
+    const Observer::ParsedSpritesView legacy{&truncated_prefix, 128, false,
+                                             true};
+    const Observer::ParsedSpritesView incomplete_abi{nullptr, 0, true, false};
+    const auto selected = Observer::prefer_snapshot_parsed_sprites(
+        std::optional{incomplete_abi}, legacy);
+    check(selected.abi && !selected.complete && selected.data == nullptr &&
+              selected.count == 0,
+          "RF-8.1/RF-9.1/O1: an authoritative empty/incomplete ABI view "
+          "never falls back to the 128-record legacy prefix");
   }
   {
     Frame f;

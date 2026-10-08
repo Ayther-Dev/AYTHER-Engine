@@ -3184,8 +3184,9 @@ pub struct AytherSpriteOccurrence {
     pub screen_x: i16,
     /// Vertical screen position in pixels.
     pub screen_y: i16,
-    /// SAT chain link.
-    pub link: u8, // SAT link field (metasprite grouping hint)
+    /// Source-dependent SAT order metadata: the final-VRAM scan reports the
+    /// next-slot link, while the parsed-list scan reports captured chain rank.
+    pub link: u8,
     /// VDP palette line.
     pub palette: u8, // VDP palette index 0–3
     /// VDP priority bit.
@@ -3310,10 +3311,13 @@ pub unsafe extern "C" fn ayther_sprite_hasher_process_vram(
 }
 
 /// Process the sprites the VDP actually parsed this frame (the fork captures them in
-/// parse_satb — AYTHER_MEMORY_PARSED_SPRITES). `sprites` is `count` records of 8
-/// bytes each (yr/xr/attr u16 LE + w/h u8). The authoritative "what was drawn"
-/// source — robust to mid-frame SAT rewrites/base swaps (Aladdin's Sega-logo genie).
-/// Tiles hashed from `vram`. count == 0 → returns 0 (caller falls back).
+/// parse_satb — AYTHER_MEMORY_PARSED_SPRITES). `sprites` is `count` records of
+/// 10 bytes each: yr/xr/attr u16 LE + w/h/sat_idx/chain_pos u8. The caller must
+/// provide at least `count * 10` readable bytes. This is the authoritative
+/// "what was drawn" source, robust to mid-frame SAT rewrites/base swaps
+/// (Aladdin's Sega-logo genie). Tiles are hashed from `vram`. A zero count is
+/// an authoritative empty frame and returns 0; it does not request a fallback
+/// scan of the final SAT.
 #[unsafe(no_mangle)]
 /// # Safety
 ///

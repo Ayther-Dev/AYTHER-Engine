@@ -713,10 +713,14 @@ uint32_t ayther_sprite_hasher_process_vram(AytherSpriteHasher *h,
 
 /// Process the sprites the VDP actually parsed this frame (the fork captures
 /// them in parse_satb — AYTHER_MEMORY_PARSED_SPRITES, id 0x10B). `sprites` =
-/// `count` records of 8 bytes each (yr/xr/attr u16 LE + w/h u8). Authoritative
-/// "what was drawn", robust to mid-frame SAT rewrites/base swaps (Aladdin's
-/// Sega-logo genie). Tiles hashed from `vram`. count == 0 → returns 0 (caller
-/// falls back to autodetect).
+/// `count` records of AYTHER_PARSED_SPRITE_RECORD_SIZE bytes each:
+/// yr/xr/attr u16 LE + w/h/sat_idx/chain_pos u8. The caller must provide at
+/// least `count * AYTHER_PARSED_SPRITE_RECORD_SIZE` readable bytes.
+/// Authoritative "what was drawn", robust to mid-frame SAT rewrites/base
+/// swaps (Aladdin's Sega-logo genie). Tiles are hashed from `vram`.
+/// count == 0 is an authoritative empty frame and returns 0; the caller must
+/// not reinterpret it as a request to scan the final SAT.
+#define AYTHER_PARSED_SPRITE_RECORD_SIZE 10u
 uint32_t ayther_sprite_hasher_process_sprites(AytherSpriteHasher *h,
                                               const uint8_t *sprites,
                                               size_t count, const uint8_t *vram,
@@ -739,8 +743,9 @@ uint32_t ayther_sprite_hasher_unique_count(const AytherSpriteHasher *h);
 ///                non-zero = xxHash3-64 of the sorted set of sibling frame
 ///                hashes that cycle at the same SAT slot over a 64-frame
 ///                rolling window.
-/// link:    SAT link field (index of next sprite in the chain, 0–127) — the
-///          strongest metasprite grouping hint.
+/// link:    source-dependent SAT order metadata. The final-VRAM fallback
+///          reports the next-slot link field (0–127); the authoritative parsed
+///          list reports the zero-based chain position captured by the core.
 /// palette: VDP palette index 0–3 — secondary grouping hint.
 struct AytherSpriteOccurrence {
   uint64_t hash;
@@ -749,8 +754,8 @@ struct AytherSpriteOccurrence {
   uint8_t h_tiles;        ///< sprite height in tiles (1–4)
   int16_t screen_x;       ///< top-left X in screen pixels
   int16_t screen_y;       ///< top-left Y in screen pixels
-  uint8_t link;           ///< SAT link field (metasprite grouping hint)
-  uint8_t palette;        ///< VDP palette index 0–3
+  uint8_t link; ///< next-slot link, or parsed-list chain position (see above)
+  uint8_t palette;  ///< VDP palette index 0–3
   uint8_t priority; ///< VDP priority bit (0=low,1=high) — metasprite front/back
   uint8_t slot;     ///< SAT slot index 0–79 (Ayther hide-by-hash)
   uint8_t hflip;    ///< VDP h-flip (CU-AN-11: auto-mirror of the HD sheet)

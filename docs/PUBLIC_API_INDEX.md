@@ -549,7 +549,7 @@ _The installed header (`include/ayther/engine/audio_fact_queue.hpp`) carries the
 
 ## engine/audio_hd_state.hpp
 
-**Declares:** `AudioHdDetectorWindowsState`, `AudioHdFiredRequestState`, `AudioHdLearnedSignatureState`, `AudioHdNextAnchorState`, `AudioHdPcmAssetState`, `AudioHdPendingAudioState`, `AudioHdPendingBatchState`, `AudioHdPendingOriginalState`, `AudioHdRequestsPendingState`, `AudioHdRequestState`, `AudioHdRestoreResult`, `AudioHdStateHeader`, `AudioHdStateValidation`, `AudioHdStateVersion`, `AudioHdVoicesState`, `AudioHdVoiceState`, `AudioHdWindowState`, `kAudioHdStateVersion`
+**Declares:** `AudioHdDetectorWindowsState`, `AudioHdFiredRequestState`, `AudioHdLearnedSignatureState`, `AudioHdNextAnchorState`, `AudioHdPcmAssetState`, `AudioHdPendingAudioState`, `AudioHdPendingBatchState`, `AudioHdPendingOriginalState`, `AudioHdRequestsPendingState`, `AudioHdRequestState`, `AudioHdRestoreResult`, `AudioHdSharedPcmAsset`, `AudioHdStateHeader`, `AudioHdStateValidation`, `AudioHdStateVersion`, `AudioHdVoicesState`, `AudioHdVoiceState`, `AudioHdWindowState`, `kAudioHdStateVersion`
 
 _The installed header (`include/ayther/engine/audio_hd_state.hpp`) carries the full documentation of every symbol._
 
