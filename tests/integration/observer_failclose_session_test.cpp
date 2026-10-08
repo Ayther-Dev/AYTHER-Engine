@@ -84,14 +84,13 @@ void parsed_sprite_read_failure_is_authoritative() {
   if (!session)
     return;
 
-  const ayther::FrameView *frame = nullptr;
   for (int i = 0; i < 3; ++i)
-    frame = &session->step();
+    (void)session->step();
   std::uint8_t count = 0;
   check(session->parsed_sprites_raw(&count) != nullptr && count != 0,
         "a valid preceding ABI frame publishes parsed sprites");
 
-  frame = &session->step();
+  const ayther::FrameView *frame = &session->step();
   count = 0xFF;
   const std::uint8_t *sprites = session->parsed_sprites_raw(&count);
   check(frame->sprite_occ_count == 0,

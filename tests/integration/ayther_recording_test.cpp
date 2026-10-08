@@ -855,6 +855,8 @@ int main() {
 #if !defined(_WIN32)
     const fs::path identity_lock_before_env_change =
         ayther::recording_detail::destination_identity_lock_path(serialized);
+    // The test owns the process environment while it swaps TMPDIR.
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
     const char *original_tmpdir_value = std::getenv("TMPDIR");
     const bool had_tmpdir = original_tmpdir_value != nullptr;
     const std::string original_tmpdir =
@@ -862,14 +864,17 @@ int main() {
     const fs::path alternate_tmpdir = test_directory / "alternate-tmp";
     std::error_code tmpdir_error;
     (void)fs::create_directory(alternate_tmpdir, tmpdir_error);
-    CHECK(!tmpdir_error && ::setenv("TMPDIR", alternate_tmpdir.c_str(), 1) == 0,
+    CHECK(!tmpdir_error &&
+              // NOLINTNEXTLINE(concurrency-mt-unsafe)
+              ::setenv("TMPDIR", alternate_tmpdir.c_str(), 1) == 0,
           "RNF-5: preparar TMPDIR alternativo para identidad de lock");
     const fs::path identity_lock_after_env_change =
         ayther::recording_detail::destination_identity_lock_path(serialized);
     if (had_tmpdir)
-      (void)::setenv("TMPDIR", original_tmpdir.c_str(), 1);
+      (void)::setenv("TMPDIR", // NOLINT(concurrency-mt-unsafe)
+                     original_tmpdir.c_str(), 1);
     else
-      (void)::unsetenv("TMPDIR");
+      (void)::unsetenv("TMPDIR"); // NOLINT(concurrency-mt-unsafe)
     CHECK(identity_lock_after_env_change == identity_lock_before_env_change,
           "RNF-5: el lock POSIX es independiente de TMPDIR entre procesos");
 #endif
