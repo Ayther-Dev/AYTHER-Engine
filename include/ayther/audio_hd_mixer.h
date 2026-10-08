@@ -657,7 +657,11 @@ public:
 
   /// Copies all active voices and their shared PCM without advancing a cursor
   /// or invoking an observer. PCM identities are local to this state object.
-  ayther::engine::audio_observation::AudioHdVoicesState voice_state() const {
+  /// With `shared`, each asset's PCM is handed out there instead of copied
+  /// (spec 002, D-6b) and its `pcm_assets` entry keeps the identity only.
+  ayther::engine::audio_observation::AudioHdVoicesState voice_state(
+      std::vector<ayther::engine::audio_observation::AudioHdSharedPcmAsset>
+          *shared = nullptr) const {
     namespace obs = ayther::engine::audio_observation;
     obs::AudioHdVoicesState state;
     state.started = started_;
@@ -684,8 +688,12 @@ public:
           identities.emplace(voice.pcm.get(), identity);
       if (inserted)
         used_identities.insert(entry->second);
-      if (inserted)
+      if (inserted && shared != nullptr) {
+        state.pcm_assets.push_back({entry->second, {}});
+        shared->push_back({entry->second, voice.pcm});
+      } else if (inserted) {
         state.pcm_assets.push_back({entry->second, *voice.pcm});
+      }
       state.voices.push_back({
           voice.occurrence,
           voice.cause_producer,

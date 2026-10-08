@@ -233,6 +233,10 @@ struct SceneElement {
   /// 2-cell column vscroll) — drawn only inside [clip_x0, clip_x1) ×
   /// [clip_y0, clip_y1), screen px. clip_x1 <= clip_x0 = no clip.
   int16_t clip_x0 = 0, clip_y0 = 0, clip_x1 = 0, clip_y1 = 0;
+  /// Sprite only: 0 when cumulative parsed-SAT evidence observed the same
+  /// identity at different chain ranks. `chain` still drives normal depth;
+  /// this appended field only prevents final-SAT raster authorization.
+  uint8_t raster_identity_known = 1;
 };
 
 // R-4: identity of a HIDDEN element of the inventory — (layer, hash), not the
@@ -312,10 +316,12 @@ struct FrameView {
   /// (classic E1 behaviour, grey tint).
   const uint8_t *sprite_sub_tint = nullptr;
   /// C8 (z-order between overlapping HD): SAT slot 0-79 per sub, parallel to
-  /// sprite_subs (the lowest slot among the occurrences overlapping the sub =
-  /// the frontmost member). The renderer draws the subs by DESCENDING slot
-  /// (frontmost last) to respect sprite-vs-sprite occlusion. 255 = no
-  /// overlapping occurrence (at the back).
+  /// sprite_subs. A pose uses the slot of its exact frontmost member by parsed
+  /// link-chain rank (ranks are occurrence-scoped because a slot can be reused
+  /// within a frame); a per-sprite sub uses its exact occurrence or the lowest
+  /// overlapping slot. The renderer draws the subs by DESCENDING slot
+  /// (frontmost last) to respect sprite-vs-sprite occlusion. 255 = no matching
+  /// occurrence (at the back).
   const uint8_t *sprite_sub_slot = nullptr;
   /// VDP PRIORITY bit per sub (0/1), parallel to sprite_subs — that of the
   /// exact occurrence, or that of the frontmost of the bbox. The hardware
@@ -448,7 +454,12 @@ struct FrameView {
   /// bit2 = per-line/per-cell hscroll with real variation (sub-tile shear not
   /// modelled until the pipeline draws strips — R-7); bit3 = the display is
   /// off at the end of the frame (VDP register 1, bit 6; spec 002): the
-  /// frame is the core's image, without HD.
+  /// frame is the core's image, without HD; bit4 = the core truncated its
+  /// parsed-sprite capture, so the scene inventory is incomplete and the
+  /// frame is likewise shown entirely from the core; bit5 = VDP_REGS already
+  /// describes the next geometry while this framebuffer still uses the
+  /// emitted viewport (`AYTHER_SYSTEM_GEOMETRY_PENDING`), so the two states
+  /// must not be composed together.
   uint8_t scene_dirty = 0;
   /// Spec 002 (DI-17): the core's raster fallback reasons of the frame
   /// (AYTHER_RASTER_REASON_* bits; 0 = no write in mid-screen).
@@ -1557,10 +1568,14 @@ public:
   /// column, LE words, A low) — null without the fork. A passive read.
   const uint8_t *vsram(size_t *size) const;
   /// RAW list of the sprites the VDP parsed this frame (the fork's ids
-  /// 0x10B/0x10C): 8-byte entries {yr u16, xr u16, attr u16, w u8, h u8} (raw
-  /// SAT values: yr/xr with a +128 offset; attr = tile|flips|pal|pri). The
-  /// authoritative source of "what the VDP drew" (robust to mid-frame SAT
-  /// rewrites). count = entries. nullptr if the core does not expose it.
+  /// 0x10B/0x10C): 10-byte entries {yr u16, xr u16, attr u16, w u8, h u8,
+  /// sat_idx u8, chain_pos u8}, with the three u16 fields normalized to
+  /// little-endian (raw SAT values: yr/xr with a +128 offset; attr =
+  /// tile|flips|pal|pri). The authoritative source of "what the VDP
+  /// drew" (robust to mid-frame SAT rewrites). count = entries. A valid empty
+  /// ABI list returns nullptr/count=0; an overflowed or unreadable ABI list
+  /// does the same, marks the frame non-composable and never falls back to a
+  /// legacy prefix. A core without the source also returns nullptr/count=0.
   /// Diagnostics/probes.
   const uint8_t *parsed_sprites_raw(uint8_t *count) const;
 
@@ -2513,6 +2528,12 @@ public:
   /// Copies active HD voices, including shared source PCM, cursor and mixer
   /// parameters. It does not mix or consume samples.
   engine::audio_observation::AudioHdVoicesState audio_hd_voices_state() const;
+  /// Spec 002 (D-6b): the same voices without copying their source PCM. Each
+  /// `pcm_assets` entry keeps its identity and order with no samples; `shared`
+  /// receives the mixer's PCM for each, in that order, by shared ownership.
+  engine::audio_observation::AudioHdVoicesState audio_hd_voices_state(
+      std::vector<engine::audio_observation::AudioHdSharedPcmAsset> &shared)
+      const;
 
   /// Replaces active HD voices after validating the compatible state header
   /// and complete voice payload. Rejection leaves existing voices unchanged.
@@ -2577,8 +2598,8 @@ public:
   engine::PackView pack() const noexcept;
   /// Spec 002 (R6, BR-091): the textures the active pack's catalogs can draw
   /// — every pose asset and variant, every per-sprite asset, then every plane
-  /// set and sequence-step asset, and every panorama and screen asset, each
-  /// once.
+  /// set and sequence-step asset, every panorama and screen asset, and every
+  /// overlay base/animation texture, each once.
   /// What the preparation prewarms (AytherRenderer::prewarm_textures).
   std::vector<std::string> catalog_texture_assets() const;
   /// Spec 002 (R9, BR-115): what the session holds that a pack can define —

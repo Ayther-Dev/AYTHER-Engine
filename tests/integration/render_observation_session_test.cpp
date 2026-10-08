@@ -131,6 +131,14 @@ int main() try {
   // RF-7.3: a pose made of two occurrences of one frame. The test core's VRAM
   // changes every frame, so the frame is produced twice from the same saved
   // state: once to read its occurrences, once with the pose installed.
+  // The test core reports GEOMETRY_PENDING until its geometry settles, and
+  // such a frame is never composable. The reasons below that depend on a
+  // composable frame are therefore checked once the geometry has settled.
+  check(first.scene_dirty != 0 &&
+            recorder.last.composability != ro::Composability::composable,
+        "RF-10.1: a frame with GEOMETRY_PENDING is not composable");
+  for (int frame = 0; frame < 3 && session->step().scene_dirty != 0; ++frame)
+    session->publish_render_observation(nullptr);
   std::vector<std::uint8_t> state;
   check(static_cast<bool>(session->serialize(state)),
         "the state before the frame is saved");
@@ -149,6 +157,8 @@ int main() try {
   check(again.sprite_occ_count >= 2 && again.sprite_occs[0].hash == a.hash &&
             again.sprite_occs[1].hash == b.hash,
         "the same frame is produced again");
+  check(again.scene_dirty == 0,
+        "the repeated frame has a settled geometry and is composable");
   session->publish_render_observation(nullptr);
   check(recorder.last.members.size() == 1 && recorder.last.kinds[0] == "pose",
         "RF-7.3: the pose is one replacement");

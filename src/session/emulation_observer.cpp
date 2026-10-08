@@ -2,9 +2,11 @@
 #include "log.h"
 
 #include "runtime_options.h"
+#include "session/parsed_sprite_join.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 namespace ayther::session {
 
@@ -19,6 +21,32 @@ namespace {
 #define AYTHER_OBSERVER_LEGACY_BEGIN
 #define AYTHER_OBSERVER_LEGACY_END
 #endif
+
+void normalize_native_sprites(const ayther_sprite_v1 *sprites, uint32_t count,
+                              std::vector<uint8_t> &out) {
+  out.resize(static_cast<size_t>(count) * kParsedSpriteRecordSize);
+  for (uint32_t index = 0; index < count; ++index) {
+    const auto bytes = parsed_sprite_le_bytes(sprites[index]);
+    std::copy(bytes.begin(), bytes.end(),
+              out.begin() +
+                  static_cast<size_t>(index) * kParsedSpriteRecordSize);
+  }
+}
+
+void normalize_legacy_sprites(const uint8_t *bytes, uint32_t count,
+                              std::vector<uint8_t> &out) {
+  out.resize(static_cast<size_t>(count) * kParsedSpriteRecordSize);
+  for (uint32_t index = 0; index < count; ++index) {
+    ayther_sprite_v1 native{};
+    std::memcpy(&native,
+                bytes + static_cast<size_t>(index) * kParsedSpriteRecordSize,
+                sizeof(native));
+    const auto normalized = parsed_sprite_le_bytes(native);
+    std::copy(normalized.begin(), normalized.end(),
+              out.begin() +
+                  static_cast<size_t>(index) * kParsedSpriteRecordSize);
+  }
+}
 
 } // namespace
 
@@ -102,8 +130,18 @@ bool EmulationObserver::mirror_enabled() {
 
 void EmulationObserver::refresh(RetroRunner &runner) {
   snapshot_ok_ = false;
+  system_ok_ = false;
+  system_current_for_frame_ = !runner.has_ayther_v1();
+  vram_.clear();
+  cram_.clear();
+  regs_.clear();
+  vsram_.clear();
   sprites_.clear();
+  sprite_bytes_le_.clear();
+  legacy_sprite_bytes_le_.clear();
   sprite_count_ = 0;
+  sprite_cache_valid_ = false;
+  sprite_cache_complete_ = false;
   audio_.clear();
   if (!mirror_enabled() || !runner.has_ayther_v1() ||
       !runner.capture_frame_snapshot(snapshot_).ok()) {
@@ -111,6 +149,7 @@ void EmulationObserver::refresh(RetroRunner &runner) {
   }
 
   system_ok_ = runner.read_system_v1(system_).ok();
+  system_current_for_frame_ = system_ok_;
   if (system_ok_ && !system_logged_ && system_.vdp_mode != 0) {
     system_logged_ = true;
     ayther::log::write(
@@ -210,34 +249,85 @@ EmulationObserver::audio_writes(RetroRunner &runner,
 EmulationObserver::ParsedSpritesView
 EmulationObserver::parsed_sprites(RetroRunner &runner) {
   if (snapshot_ok_) {
+    if (!parsed_sprite_capture_complete(snapshot_)) {
+      sprites_.clear();
+      sprite_bytes_le_.clear();
+      sprite_count_ = 0;
+      sprite_cache_valid_ = true;
+      sprite_cache_complete_ = false;
+      if (!sprites_overflow_warned_) {
+        sprites_overflow_warned_ = true;
+        ayther::log::write(
+            ayther::log::Severity::Warning, "session",
+            "parsed_sprites_capture_overflow",
+            "PARSED_SPRITES capture overflowed; the truncated prefix is "
+            "discarded and HD composition is disabled for the frame");
+      }
+      return {nullptr, 0, true, false};
+    }
     sprites_.resize(snapshot_.parsed_sprite_count);
     const auto result = runner.read_parsed_sprites_v1(
         sprites_.data(), static_cast<uint32_t>(sprites_.size()), snapshot_);
     if (result.ok()) {
       sprite_count_ = result.count;
-      return {reinterpret_cast<const uint8_t *>(sprites_.data()), result.count,
-              true};
+      normalize_native_sprites(sprites_.data(), result.count, sprite_bytes_le_);
+      sprite_cache_valid_ = true;
+      sprite_cache_complete_ = true;
+      return {sprite_bytes_le_.empty() ? nullptr : sprite_bytes_le_.data(),
+              result.count, true, true};
     }
-    if (result.status == AYTHER_STATUS_NOT_SUBSCRIBED && !sprites_warned_) {
+    if (!sprites_warned_) {
       sprites_warned_ = true;
-      ayther::log::write(ayther::log::Severity::Warning, "session",
-                         "sprite_capture_sin_suscripcion",
-                         "SPRITE_CAPTURE sin suscripcion — "
-                         "los sprites siguen por el camino legacy");
+      ayther::log::write(
+          ayther::log::Severity::Warning, "session",
+          "sprite_capture_lectura_fallo",
+          "PARSED_SPRITES ABI fallo (status=%d) — el frame queda "
+          "incompleto sin usar memoria legacy",
+          result.status);
     }
+    sprites_.clear();
+    sprite_bytes_le_.clear();
+    sprite_count_ = 0;
+    sprite_cache_valid_ = true;
+    sprite_cache_complete_ = false;
+    return {nullptr, 0, true, false};
   }
   AYTHER_OBSERVER_LEGACY_BEGIN
-  return {runner.parsed_sprites(), runner.parsed_sprite_count(), false};
+  const uint8_t *legacy = runner.parsed_sprites();
+  const uint32_t legacy_count = runner.parsed_sprite_count();
   AYTHER_OBSERVER_LEGACY_END
+  if (legacy == nullptr || legacy_count == 0) {
+    legacy_sprite_bytes_le_.clear();
+    return {nullptr, 0, false, true};
+  }
+  normalize_legacy_sprites(legacy, legacy_count, legacy_sprite_bytes_le_);
+  return {legacy_sprite_bytes_le_.data(), legacy_count, false, true};
 }
 
-const uint8_t *
-EmulationObserver::cached_parsed_sprites(uint8_t *count) const noexcept {
-  if (!snapshot_ok_ || !sprite_count_)
-    return nullptr;
-  if (count)
-    *count = static_cast<uint8_t>((std::min)(sprite_count_, 255u));
-  return reinterpret_cast<const uint8_t *>(sprites_.data());
+std::optional<EmulationObserver::ParsedSpritesView>
+EmulationObserver::cached_parsed_sprites() const noexcept {
+  if (!snapshot_ok_ || !sprite_cache_valid_)
+    return std::nullopt;
+  return ParsedSpritesView{sprite_count_ ? sprite_bytes_le_.data() : nullptr,
+                           sprite_count_, true, sprite_cache_complete_};
+}
+
+EmulationObserver::ParsedSpritesView
+EmulationObserver::cached_or_legacy_parsed_sprites(
+    const RetroRunner &runner) const {
+  const auto cached = cached_parsed_sprites();
+  ParsedSpritesView legacy{};
+  if (!cached) {
+    AYTHER_OBSERVER_LEGACY_BEGIN
+    const uint8_t *data = runner.parsed_sprites();
+    const uint32_t count = runner.parsed_sprite_count();
+    AYTHER_OBSERVER_LEGACY_END
+    if (data != nullptr && count != 0) {
+      normalize_legacy_sprites(data, count, legacy_sprite_bytes_le_);
+      legacy = {legacy_sprite_bytes_le_.data(), count, false, true};
+    }
+  }
+  return prefer_snapshot_parsed_sprites(cached, legacy);
 }
 
 bool EmulationObserver::mark_raster_overflow_logged() noexcept {

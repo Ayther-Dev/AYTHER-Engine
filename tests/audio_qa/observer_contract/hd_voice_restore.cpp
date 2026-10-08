@@ -101,6 +101,26 @@ bool restores_one_voice_without_output(const std::filesystem::path &rom_path) {
       !session.audio_initial_snapshot().pending_audio.empty())
     return false;
 
+  // Spec 002 (RF-4.6, D-6b): a checkpoint every 60 frames copied the whole
+  // source PCM of each active voice (a stage's music is ~21 MB) and delayed
+  // that frame. The shared export keeps each asset's identity in order with
+  // no samples and hands out the mixer's own PCM, without copying it.
+  std::vector<obs::AudioHdSharedPcmAsset> shared;
+  const auto light = session.audio_hd_voices_state(shared);
+  std::vector<obs::AudioHdSharedPcmAsset> shared_again;
+  (void)session.audio_hd_voices_state(shared_again);
+  if (light.pcm_assets.size() != 1 || light.pcm_assets.front().identity != 17 ||
+      !light.pcm_assets.front().samples.empty() || shared.size() != 1 ||
+      shared.front().identity != 17 || !shared.front().samples ||
+      *shared.front().samples != expected.pcm_assets.front().samples ||
+      shared_again.size() != 1 ||
+      shared_again.front().samples.get() != shared.front().samples.get())
+    return false;
+  auto rebuilt = light;
+  rebuilt.pcm_assets.front().samples = *shared.front().samples;
+  if (rebuilt != captured)
+    return false;
+
   auto invalid = expected;
   invalid.voices.front().source_position = 32;
   if (session.restore_audio_hd_voices(header, "voice-state-1", invalid).code !=

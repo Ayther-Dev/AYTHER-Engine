@@ -1,7 +1,8 @@
 // FNV-1a digest of a FrameView's content for spec 002 tests (contracts.md C3
 // and C4): two frames with the same digest drew the same thing. Pointers are
 // followed, not hashed; the measured clocks (emu_fps, tile_ms, sprite_ms,
-// audio_ms, drc_ratio, fps_timing) are left out because they are not content.
+// audio_ms, drc_ratio) are left out because they are not content. fps_timing
+// is included because the renderer uses it to position animated overlays.
 #pragma once
 
 #include <ayther/ayther_session.h>
@@ -56,6 +57,61 @@ inline void add_subs(Digest &d, const AytherSpriteSub *subs,
   }
 }
 
+inline void add_tile_subs(Digest &d, const AytherTileSub *subs,
+                          std::uint32_t count) {
+  d.value(count);
+  for (std::uint32_t i = 0; subs != nullptr && i < count; ++i) {
+    const AytherTileSub &s = subs[i];
+    d.text(s.asset_path, sizeof(s.asset_path));
+    d.value(s.tile_x);
+    d.value(s.tile_y);
+  }
+}
+
+inline void add_sprite_partitions(Digest &d, const SpritePartition *parts,
+                                  std::uint32_t count) {
+  d.value(count);
+  for (std::uint32_t i = 0; parts != nullptr && i < count; ++i) {
+    const SpritePartition &part = parts[i];
+    d.value(part.sub);
+    d.value(part.x);
+    d.value(part.y);
+    d.value(part.w);
+    d.value(part.h);
+    d.value(part.chain);
+  }
+}
+
+inline void add_anim_frames(Digest &d, const AnimHdFrame *frames,
+                            std::uint32_t count) {
+  d.value(count);
+  for (std::uint32_t i = 0; frames != nullptr && i < count; ++i) {
+    const AnimHdFrame &frame = frames[i];
+    d.text(frame.asset, sizeof(frame.asset));
+    d.value(frame.dst_x);
+    d.value(frame.dst_y);
+    d.value(frame.dst_w);
+    d.value(frame.dst_h);
+    d.value(frame.src_x);
+    d.value(frame.src_y);
+    d.value(frame.src_w);
+    d.value(frame.src_h);
+  }
+}
+
+inline void add_video_plane(Digest &d, const void *pixels, std::uint32_t stride,
+                            std::uint32_t width, std::uint32_t height) {
+  const bool present = pixels != nullptr;
+  d.value(present);
+  if (!present)
+    return;
+  const auto *row = static_cast<const std::uint8_t *>(pixels);
+  for (std::uint32_t y = 0; y < height; ++y) {
+    d.bytes(row, width);
+    row += stride;
+  }
+}
+
 template <typename T>
 void add_array(Digest &d, const T *data, std::size_t count) {
   d.value(count);
@@ -68,24 +124,50 @@ void add_array(Digest &d, const T *data, std::size_t count) {
 inline std::uint64_t scene_digest(const FrameView &v) {
   Digest d;
   d.value(v.frame_index);
+  d.value(v.fps_timing);
   d.value(v.fb_width);
   d.value(v.fb_height);
   d.value(v.fb_pitch);
   d.value(v.fb_format);
   if (v.fb_pixels != nullptr)
     d.bytes(v.fb_pixels, static_cast<std::size_t>(v.fb_pitch) * v.fb_height);
-  d.value(v.tile_sub_count);
+  add_tile_subs(d, v.tile_subs, v.tile_sub_count);
   add_subs(d, v.sprite_subs, v.sprite_sub_count);
   const std::uint32_t n_sub = v.sprite_subs ? v.sprite_sub_count : 0;
   add_array(d, v.sprite_sub_flips, v.sprite_sub_flips ? n_sub : 0);
   add_array(d, v.sprite_sub_tint, v.sprite_sub_tint ? n_sub * 3U : 0);
   add_array(d, v.sprite_sub_slot, v.sprite_sub_slot ? n_sub : 0);
   add_array(d, v.sprite_sub_prio, v.sprite_sub_prio ? n_sub : 0);
+  add_sprite_partitions(d, v.sprite_partitions, v.sprite_partition_count);
   add_subs(d, v.plane_tile_subs, v.plane_tile_sub_count);
+  const std::uint32_t n_plane_sub =
+      v.plane_tile_subs ? v.plane_tile_sub_count : 0;
+  add_array(d, v.plane_tile_flips, v.plane_tile_flips ? n_plane_sub : 0);
+  add_array(d, v.plane_tile_sub_tint,
+            v.plane_tile_sub_tint ? n_plane_sub * 3U : 0);
   d.value(v.plane_tile_sub_hi);
   add_subs(d, v.entity_subs, v.entity_sub_count);
+  add_anim_frames(d, v.anim_frames, v.anim_frame_count);
   add_subs(d, v.screen_subs, v.screen_sub_count);
   add_subs(d, v.panorama_subs, v.panorama_sub_count);
+  const std::uint32_t n_panorama_sub =
+      v.panorama_subs ? v.panorama_sub_count : 0;
+  add_array(d, v.panorama_sub_tint,
+            v.panorama_sub_tint ? n_panorama_sub * 3U : 0);
+  d.value(v.panorama_plane);
+  d.value(v.video_y_stride);
+  d.value(v.video_u_stride);
+  d.value(v.video_v_stride);
+  d.value(v.video_w);
+  d.value(v.video_h);
+  d.value(v.video_seq);
+  d.value(v.video_plane_mask);
+  d.value(v.video_front);
+  const std::uint32_t chroma_width = v.video_w / 2U + v.video_w % 2U;
+  const std::uint32_t chroma_height = v.video_h / 2U + v.video_h % 2U;
+  add_video_plane(d, v.video_y, v.video_y_stride, v.video_w, v.video_h);
+  add_video_plane(d, v.video_u, v.video_u_stride, chroma_width, chroma_height);
+  add_video_plane(d, v.video_v, v.video_v_stride, chroma_width, chroma_height);
   d.value(v.sprite_occ_count);
   for (std::uint32_t i = 0; v.sprite_occs != nullptr && i < v.sprite_occ_count;
        ++i) {
@@ -118,6 +200,7 @@ inline std::uint64_t scene_digest(const FrameView &v) {
     d.value(e.priority);
     d.value(e.slot);
     d.value(e.chain);
+    d.value(e.raster_identity_known);
     d.value(e.sub_kind);
     d.value(e.hidden);
     d.value(e.claimed);
@@ -126,13 +209,22 @@ inline std::uint64_t scene_digest(const FrameView &v) {
     d.value(e.fx_outline);
     d.value(e.fx_enhance);
     d.value(e.fx_enhance_k);
+    d.value(e.owner);
     d.value(e.sub);
+    d.value(e.clip_x0);
+    d.value(e.clip_y0);
+    d.value(e.clip_x1);
+    d.value(e.clip_y1);
   }
   add_array(d, v.scene_vram, v.scene_vram ? v.scene_vram_size : 0);
   add_array(d, v.scene_cram, v.scene_cram ? v.scene_cram_size : 0);
   d.value(v.scene_backdrop);
   d.value(v.scene_left_blank);
   d.value(v.scene_dirty);
+  d.value(v.raster_reasons);
+  d.value(v.raster_band_count);
+  for (std::uint32_t i = 0; i < v.raster_band_count && i < 16; ++i)
+    d.bytes(v.raster_bands[i], sizeof(v.raster_bands[i]));
   d.value(v.tile_occ_count);
   d.value(v.plane_tile_occ_count);
   d.value(v.plane_cell_count);
@@ -141,11 +233,16 @@ inline std::uint64_t scene_digest(const FrameView &v) {
   d.value(v.plane_w_count);
   d.bytes(v.plane_hscroll, sizeof(v.plane_hscroll));
   d.bytes(v.plane_vscroll, sizeof(v.plane_vscroll));
+  d.value(v.vs_two_cell);
   d.bytes(v.plane_vscroll_col, sizeof(v.plane_vscroll_col));
   d.bytes(v.plane_cam_x, sizeof(v.plane_cam_x));
   d.bytes(v.plane_cam_y, sizeof(v.plane_cam_y));
   d.value(v.plane_cam_valid);
+  d.value(v.wide_w);
   d.value(v.screen_match_id);
+  d.value(v.screen_presence_count);
+  for (std::uint32_t i = 0; i < v.screen_presence_count && i < 8U; ++i)
+    d.value(v.screen_presence_ids[i]);
   d.value(v.kinematic_id);
   d.value(v.kinematic_step);
   d.value(v.audio_mute_mask);

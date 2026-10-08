@@ -6,12 +6,13 @@
 //                     core v1.7.4 752a6ff7; integration contract:
 //                     docs/EMULATOR_EXTENSION_ABI.md)
 //
-// COPIA ENTERA desde 1.9 (2026-08-26; 1.10 el mismo dia). Hasta 1.3-r2 se traia un recorte «solo
-// lo que se consume»; con seis versiones aditivas encima (SYSTEM, controles en
-// Mode 4, LINE_STATE, observabilidad, SPRITE_OUTCOME, Z80_RAM) el recorte ya
-// no ahorra nada y esconde lo que hay para descubrir. Declarar un tipo NO es
-// consumirlo: lo que el Engine LEE lo dicen sus suscripciones (pide solo los
-// bits que consume, no AYTHER_SUB_ALL) y sus chequeos de capability.
+// COPIA ENTERA desde 1.9 (2026-08-26; 1.10 el mismo dia). Hasta 1.3-r2 se traia
+// un recorte «solo lo que se consume»; con seis versiones aditivas encima
+// (SYSTEM, controles en Mode 4, LINE_STATE, observabilidad, SPRITE_OUTCOME,
+// Z80_RAM) el recorte ya no ahorra nada y esconde lo que hay para descubrir.
+// Declarar un tipo NO es consumirlo: lo que el Engine LEE lo dicen sus
+// suscripciones (pide solo los bits que consume, no AYTHER_SUB_ALL) y sus
+// chequeos de capability.
 //
 // Three semantic changes from 1.3 to 1.9 did not change signatures; see
 // docs/EMULATOR_EXTENSION_ABI.md#semantic-changes-through-abi-110:
@@ -20,7 +21,7 @@
 //     nunca tuvo un «es SMS → fallback siempre», asi que solo hay que seguir
 //     confiando en la mascara.
 //  2. `v_counter` del journal = primera linea que VE el cambio (N+1). El
-//     Engine no lo usa.
+//     Engine lo usa para localizar las bandas raster afectadas.
 //  3. `recompose_multilayer` con eventos de CRAM cambia de salida (la nueva es
 //     la correcta, pixel-perfect). Medido con abi_multilayer.
 //
@@ -53,10 +54,10 @@
 //
 // 2026-08-24, ABI 1.2: la MULTICAPA SE MUDO AL DESCRIPTOR. El simbolo suelto
 // `ayther_recompose_multilayer` ya no se exporta en el perfil standard, asi que
-// resolverlo con GetProcAddress devuelve NULL contra un core >= 1.2 y la feature
-// queda muda SIN un error a la vista. Se resuelve con AYTHER_IFACE_HAS y se cae
-// al export suelto para los cores 1.0/1.1, que siguen valiendo: la ABI es
-// aditiva y nada obliga a actualizar el binario.
+// resolverlo con GetProcAddress devuelve NULL contra un core >= 1.2 y la
+// feature queda muda SIN un error a la vista. Se resuelve con AYTHER_IFACE_HAS
+// y se cae al export suelto para los cores 1.0/1.1, que siguen valiendo: la ABI
+// es aditiva y nada obliga a actualizar el binario.
 //
 //  (2026-08-12): el AUDIO_EVENT sube a schema 2 — el key-on de PCM ahora
 // lleva `st`/`ls`, que es lo unico que dice QUE SAMPLE suena (env es volumen y
@@ -64,8 +65,8 @@
 // PCM deja de mezclar las dos ramas de la union y usa {reg,data} siempre. Este
 // es el camino por el que entra el chip PCM de Sega CD al detector, que sigue
 // siendo el DUENO de la identidad: el core da los HECHOS (st, ls, fd, env, pan)
-// y `audio_event.rs` calcula la firma, igual que con FM y PSG. Ver el comentario
-// de la union para el empaquetado exacto.
+// y `audio_event.rs` calcula la firma, igual que con FM y PSG. Ver el
+// comentario de la union para el empaquetado exacto.
 // ---------------------------------------------------------------------------
 /*
  * AYTHER public core interface
@@ -77,8 +78,8 @@
 #ifndef AYTHER_API_H
 #define AYTHER_API_H
 
+#include <stddef.h> /* offsetof, para AYTHER_IFACE_HAS */
 #include <stdint.h>
-#include <stddef.h>   /* offsetof, para AYTHER_IFACE_HAS */
 
 #ifdef __cplusplus
 extern "C" {
@@ -91,19 +92,19 @@ extern "C" {
 #endif
 
 #if defined(AYTHER_CORE_EXPORTS)
-#  if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
-#    if defined(__GNUC__)
-#      define AYTHER_API __attribute__((__dllexport__))
-#    else
-#      define AYTHER_API __declspec(dllexport)
-#    endif
-#  elif defined(__GNUC__) && (__GNUC__ >= 4)
-#    define AYTHER_API __attribute__((__visibility__("default")))
-#  else
-#    define AYTHER_API
-#  endif
+#if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
+#if defined(__GNUC__)
+#define AYTHER_API __attribute__((__dllexport__))
 #else
-#  define AYTHER_API
+#define AYTHER_API __declspec(dllexport)
+#endif
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
+#define AYTHER_API __attribute__((__visibility__("default")))
+#else
+#define AYTHER_API
+#endif
+#else
+#define AYTHER_API
 #endif
 
 #define AYTHER_ABI_VERSION_1_0 UINT32_C(0x00010000)
@@ -111,8 +112,8 @@ extern "C" {
  * descriptor. Es un cambio ADITIVO: el descriptor es uno solo y `struct_size`
  * dice hasta dónde llega, así que un cliente compilado contra 1.0 lo sigue
  * usando sin cambios — pide 1.0, recibe este mismo puntero y nunca lee más allá
- * de su propio sizeof. La regla para el cliente es "major igual, minor >= el que
- * necesito", no "version == la mía". */
+ * de su propio sizeof. La regla para el cliente es "major igual, minor >= el
+ * que necesito", no "version == la mía". */
 #define AYTHER_ABI_VERSION_1_1 UINT32_C(0x00010001)
 /* 1.2 (): `recompose_multilayer` entra al descriptor. Era el unico simbolo
  * AYTHER exportado ademas de `ayther_get_interface`, y contradecia el principio
@@ -203,8 +204,10 @@ extern "C" {
 #define AYTHER_ABI_VERSION_MAJOR_LATEST 1
 #define AYTHER_ABI_VERSION_MINOR_LATEST 10
 #define AYTHER__STR2(x) #x
-#define AYTHER__STR(x)  AYTHER__STR2(x)
-#define AYTHER_ABI_VERSION_LATEST_STR    AYTHER__STR(AYTHER_ABI_VERSION_MAJOR_LATEST) "."    AYTHER__STR(AYTHER_ABI_VERSION_MINOR_LATEST)
+#define AYTHER__STR(x) AYTHER__STR2(x)
+#define AYTHER_ABI_VERSION_LATEST_STR                                          \
+  AYTHER__STR(AYTHER_ABI_VERSION_MAJOR_LATEST)                                 \
+  "." AYTHER__STR(AYTHER_ABI_VERSION_MINOR_LATEST)
 
 #define AYTHER_ABI_VERSION_MAJOR(v) ((uint32_t)(v) >> 16)
 #define AYTHER_ABI_VERSION_MINOR(v) ((uint32_t)(v) & UINT32_C(0xFFFF))
@@ -216,18 +219,17 @@ extern "C" {
  * unsupported version returns NULL. A missing symbol identifies a stock or
  * pre-ABI AYTHER core and must be treated as zero capabilities. */
 
-enum ayther_status
-{
-  AYTHER_STATUS_OK                = 0,
-  AYTHER_STATUS_INVALID_ARGUMENT  = -1,
-  AYTHER_STATUS_NOT_FOUND         = -2,
-  AYTHER_STATUS_BUFFER_TOO_SMALL  = -3,
-  AYTHER_STATUS_OUT_OF_BOUNDS     = -4,
-  AYTHER_STATUS_READ_ONLY         = -5,
-  AYTHER_STATUS_STALE_GENERATION  = -6,
-  AYTHER_STATUS_BUSY              = -7,
-  AYTHER_STATUS_UNSUPPORTED       = -8,
-  AYTHER_STATUS_NOT_SUBSCRIBED    = -9,
+enum ayther_status {
+  AYTHER_STATUS_OK = 0,
+  AYTHER_STATUS_INVALID_ARGUMENT = -1,
+  AYTHER_STATUS_NOT_FOUND = -2,
+  AYTHER_STATUS_BUFFER_TOO_SMALL = -3,
+  AYTHER_STATUS_OUT_OF_BOUNDS = -4,
+  AYTHER_STATUS_READ_ONLY = -5,
+  AYTHER_STATUS_STALE_GENERATION = -6,
+  AYTHER_STATUS_BUSY = -7,
+  AYTHER_STATUS_UNSUPPORTED = -8,
+  AYTHER_STATUS_NOT_SUBSCRIBED = -9,
   /* : `frame_delta_since` pidio una generacion que ya salio del ring.
      El `out` viene con TODO marcado sucio, que es la respuesta correcta y
      conservadora: no se sabe que cambio, asi que hay que asumir que todo.
@@ -242,14 +244,13 @@ enum ayther_status
      no hacia absolutamente nada. Un exito que no hace nada es peor que un
      error: el frontend cree que oculto el sprite y dibuja su reemplazo encima
      del original. */
-  AYTHER_STATUS_UNSUPPORTED_MODE  = -11
+  AYTHER_STATUS_UNSUPPORTED_MODE = -11
 };
 
 /* Motivos INTERNOS del recompositor. Sus valores colisionan con los de
  * `ayther_status` (-1..-4), asi que no se devuelven crudos por la ABI: el
  * wrapper los traduce a los AYTHER_STATUS_RC_* de abajo. */
-enum ayther_recompose_error
-{
+enum ayther_recompose_error {
   AYTHER_RC_ERR_NOT_MODE5 = -1,
   AYTHER_RC_ERR_INTERLACE2 = -2,
   AYTHER_RC_ERR_NTSC_FILTER = -3,
@@ -271,87 +272,81 @@ enum ayther_recompose_error
  * los `AYTHER_RC_ERR_*` internos ocupan -1..-4. Un frontend que solo compara
  * contra AYTHER_STATUS_OK no nota la diferencia; el que quiera el motivo, lo
  * tiene. Los valores son ADITIVOS: nunca se devolvieron antes. */
-enum ayther_recompose_status
-{
-  AYTHER_STATUS_RC_NOT_MODE5      = -20,
-  AYTHER_STATUS_RC_INTERLACE2     = -21,
-  AYTHER_STATUS_RC_NTSC_FILTER    = -22,
+enum ayther_recompose_status {
+  AYTHER_STATUS_RC_NOT_MODE5 = -20,
+  AYTHER_STATUS_RC_INTERLACE2 = -21,
+  AYTHER_STATUS_RC_NTSC_FILTER = -22,
   AYTHER_STATUS_RC_INVALID_PARAMS = -23,
   AYTHER_STATUS_RC_JOURNAL_OVERFLOW = -24
 };
 
-enum ayther_endianness
-{
-  AYTHER_ENDIAN_LITTLE = 1,
-  AYTHER_ENDIAN_BIG    = 2
-};
+enum ayther_endianness { AYTHER_ENDIAN_LITTLE = 1, AYTHER_ENDIAN_BIG = 2 };
 
 /* Capabilities are additive. Unknown bits must be ignored. */
-#define AYTHER_CAP_LEGACY_MEMORY       (UINT64_C(1) << 0)
-#define AYTHER_CAP_REGION_QUERY        (UINT64_C(1) << 1)
-#define AYTHER_CAP_REGION_READ         (UINT64_C(1) << 2)
-#define AYTHER_CAP_CONTROL_WRITE       (UINT64_C(1) << 3)
-#define AYTHER_CAP_FRAME_SNAPSHOT      (UINT64_C(1) << 4)
-#define AYTHER_CAP_PARSED_SPRITES_V1   (UINT64_C(1) << 5)
-#define AYTHER_CAP_AUDIO_WRITES_V1     (UINT64_C(1) << 6)
-#define AYTHER_CAP_RASTER_FALLBACK_V1  (UINT64_C(1) << 7)
-#define AYTHER_CAP_RECOMPOSE_V1        (UINT64_C(1) << 8)
-#define AYTHER_CAP_AUDIO_PROBE_V1      (UINT64_C(1) << 9)
-#define AYTHER_CAP_SUBSCRIPTIONS_V1    (UINT64_C(1) << 10)
-#define AYTHER_CAP_FRAME_DELTA_V1      (UINT64_C(1) << 11)
-#define AYTHER_CAP_RECOMPOSE_STATS_V1  (UINT64_C(1) << 12)
-#define AYTHER_CAP_ATTRIBUTION_V1      (UINT64_C(1) << 13)
+#define AYTHER_CAP_LEGACY_MEMORY (UINT64_C(1) << 0)
+#define AYTHER_CAP_REGION_QUERY (UINT64_C(1) << 1)
+#define AYTHER_CAP_REGION_READ (UINT64_C(1) << 2)
+#define AYTHER_CAP_CONTROL_WRITE (UINT64_C(1) << 3)
+#define AYTHER_CAP_FRAME_SNAPSHOT (UINT64_C(1) << 4)
+#define AYTHER_CAP_PARSED_SPRITES_V1 (UINT64_C(1) << 5)
+#define AYTHER_CAP_AUDIO_WRITES_V1 (UINT64_C(1) << 6)
+#define AYTHER_CAP_RASTER_FALLBACK_V1 (UINT64_C(1) << 7)
+#define AYTHER_CAP_RECOMPOSE_V1 (UINT64_C(1) << 8)
+#define AYTHER_CAP_AUDIO_PROBE_V1 (UINT64_C(1) << 9)
+#define AYTHER_CAP_SUBSCRIPTIONS_V1 (UINT64_C(1) << 10)
+#define AYTHER_CAP_FRAME_DELTA_V1 (UINT64_C(1) << 11)
+#define AYTHER_CAP_RECOMPOSE_STATS_V1 (UINT64_C(1) << 12)
+#define AYTHER_CAP_ATTRIBUTION_V1 (UINT64_C(1) << 13)
 /* : el delta dejo de consumirse al leerlo y hay historial por generacion.
    Sin este bit, `poll_frame_delta` vacia el bitmap al leerlo y un segundo
    lector del mismo frame recibe cero. */
 #define AYTHER_CAP_FRAME_DELTA_SINCE_V1 (UINT64_C(1) << 14)
 /* .B: descriptor de sistema. Sin este bit, saber en que modo esta el VDP
    exige decodificar VDP_REGS del lado del consumidor. */
-#define AYTHER_CAP_SYSTEM_V1           (UINT64_C(1) << 15)
+#define AYTHER_CAP_SYSTEM_V1 (UINT64_C(1) << 15)
 /* : los controles de render funcionan tambien en Mode 4 (SMS/GG/PBC).
    Mientras este bit NO este, los controles que dependen de Mode 5 -- supresion
    de sprites, peel, supresion por celda de plano-- devuelven
    AYTHER_STATUS_UNSUPPORTED_MODE en Mode 4 en vez de aceptar y no hacer nada.
    Lo que SI funciona en los dos modos: la mascara de sprites de layer_mask,
    layer_dim y todos los controles de audio. */
-#define AYTHER_CAP_MODE4_CONTROLS      (UINT64_C(1) << 16)
+#define AYTHER_CAP_MODE4_CONTROLS (UINT64_C(1) << 16)
 /* : estado de render por scanline (registros/scroll y CRAM por linea). */
-#define AYTHER_CAP_LINE_STATE_V1       (UINT64_C(1) << 17)
+#define AYTHER_CAP_LINE_STATE_V1 (UINT64_C(1) << 17)
 /* .A/D/E: contenido del journal, hashes por frame y paleta resuelta. Van
    juntas en un bit porque llegan juntas y ninguna tiene sentido sin la ABI
    1.7; separarlas seria prometer que una puede faltar, y no puede. */
-#define AYTHER_CAP_OBSERVABILITY_V1    (UINT64_C(1) << 18)
+#define AYTHER_CAP_OBSERVABILITY_V1 (UINT64_C(1) << 18)
 /* .C: por que gano o perdio cada sprite. */
-#define AYTHER_CAP_SPRITE_OUTCOME_V1   (UINT64_C(1) << 19)
+#define AYTHER_CAP_SPRITE_OUTCOME_V1 (UINT64_C(1) << 19)
 
 /* Observation and control work is opt-in. A requested mask becomes active at
  * the beginning of the next frame; unknown bits are rejected. */
-#define AYTHER_SUB_VDP_MEMORY       (UINT32_C(1) << 0)
-#define AYTHER_SUB_SPRITE_CAPTURE   (UINT32_C(1) << 1)
-#define AYTHER_SUB_RENDER_CONTROLS  (UINT32_C(1) << 2)
-#define AYTHER_SUB_RASTER_TRACKING  (UINT32_C(1) << 3)
-#define AYTHER_SUB_AUDIO_WRITES     (UINT32_C(1) << 4)
-#define AYTHER_SUB_RECOMPOSITION    (UINT32_C(1) << 5)
-#define AYTHER_SUB_AUDIO_EVENTS     (UINT32_C(1) << 6)
+#define AYTHER_SUB_VDP_MEMORY (UINT32_C(1) << 0)
+#define AYTHER_SUB_SPRITE_CAPTURE (UINT32_C(1) << 1)
+#define AYTHER_SUB_RENDER_CONTROLS (UINT32_C(1) << 2)
+#define AYTHER_SUB_RASTER_TRACKING (UINT32_C(1) << 3)
+#define AYTHER_SUB_AUDIO_WRITES (UINT32_C(1) << 4)
+#define AYTHER_SUB_RECOMPOSITION (UINT32_C(1) << 5)
+#define AYTHER_SUB_AUDIO_EVENTS (UINT32_C(1) << 6)
 /* : buffer de atribucion por pixel. Bit propio y no parte de RENDER_CONTROLS
- * porque su costo es de otro orden -un byte por pixel por frame- y un consumidor
- * que solo oculta capas no tiene por que pagarlo. */
-#define AYTHER_SUB_ATTRIBUTION      (UINT32_C(1) << 7)
+ * porque su costo es de otro orden -un byte por pixel por frame- y un
+ * consumidor que solo oculta capas no tiene por que pagarlo. */
+#define AYTHER_SUB_ATTRIBUTION (UINT32_C(1) << 7)
 /* : el estado por scanline. Bit propio y no parte de VDP_MEMORY porque el
    costo es de otro orden -- una copia por LINEA y no una lectura por frame-, y
    quien quiere el mapa de celdas no necesariamente quiere pagar la CRAM. */
-#define AYTHER_SUB_LINE_STATE       (UINT32_C(1) << 8)
-#define AYTHER_SUB_LINE_CRAM        (UINT32_C(1) << 9)
-#define AYTHER_SUB_LINE_CELLS       (UINT32_C(1) << 10)
+#define AYTHER_SUB_LINE_STATE (UINT32_C(1) << 8)
+#define AYTHER_SUB_LINE_CRAM (UINT32_C(1) << 9)
+#define AYTHER_SUB_LINE_CELLS (UINT32_C(1) << 10)
 /* .D: los hashes son lo unico de esta tanda que CUESTA -- unos 100 KB
    recorridos por frame-, asi que es lo unico que se suscribe aparte. El
    journal y la paleta ya se mantienen para otra cosa: cobrarles una
    suscripcion propia seria cobrar por trabajo que ya esta hecho. */
-#define AYTHER_SUB_FRAME_HASH       (UINT32_C(1) << 11)
-#define AYTHER_SUB_ALL              UINT32_C(0xFFF)
+#define AYTHER_SUB_FRAME_HASH (UINT32_C(1) << 11)
+#define AYTHER_SUB_ALL UINT32_C(0xFFF)
 
-enum ayther_region_id
-{
+enum ayther_region_id {
   AYTHER_REGION_VRAM = 1,
   AYTHER_REGION_CRAM,
   AYTHER_REGION_VDP_REGS,
@@ -395,33 +390,32 @@ enum ayther_region_id
 
 /* Deprecated compatibility IDs. New frontends should use region IDs and the
  * functions in ayther_interface_v1 instead of mutable direct pointers. */
-enum ayther_legacy_memory_id
-{
-  AYTHER_LEGACY_MEMORY_VRAM                  = 0x003,
-  AYTHER_LEGACY_MEMORY_CRAM                  = 0x100,
-  AYTHER_LEGACY_MEMORY_VDP_REGS              = 0x101,
-  AYTHER_LEGACY_MEMORY_LAYER_MASK            = 0x102,
-  AYTHER_LEGACY_MEMORY_SPRITE_SUPPRESS       = 0x103,
-  AYTHER_LEGACY_MEMORY_TILE_SUPPRESS         = 0x104,
-  AYTHER_LEGACY_MEMORY_PLANE_TILE_SUPPRESS   = 0x105,
+enum ayther_legacy_memory_id {
+  AYTHER_LEGACY_MEMORY_VRAM = 0x003,
+  AYTHER_LEGACY_MEMORY_CRAM = 0x100,
+  AYTHER_LEGACY_MEMORY_VDP_REGS = 0x101,
+  AYTHER_LEGACY_MEMORY_LAYER_MASK = 0x102,
+  AYTHER_LEGACY_MEMORY_SPRITE_SUPPRESS = 0x103,
+  AYTHER_LEGACY_MEMORY_TILE_SUPPRESS = 0x104,
+  AYTHER_LEGACY_MEMORY_PLANE_TILE_SUPPRESS = 0x105,
   AYTHER_LEGACY_MEMORY_PLANE_SUPPRESS_ACTIVE = 0x106,
-  AYTHER_LEGACY_MEMORY_VSRAM                 = 0x107,
-  AYTHER_LEGACY_MEMORY_LAYER_DIM             = 0x108,
-  AYTHER_LEGACY_MEMORY_AUDIO_WRITES          = 0x109,
-  AYTHER_LEGACY_MEMORY_AUDIO_WRITE_COUNT     = 0x10A,
-  AYTHER_LEGACY_MEMORY_PARSED_SPRITES        = 0x10B,
-  AYTHER_LEGACY_MEMORY_PARSED_SPRITE_COUNT   = 0x10C,
-  AYTHER_LEGACY_MEMORY_AUDIO_MUTE            = 0x10D,
-  AYTHER_LEGACY_MEMORY_RASTER_DIRTY          = 0x10E,
+  AYTHER_LEGACY_MEMORY_VSRAM = 0x107,
+  AYTHER_LEGACY_MEMORY_LAYER_DIM = 0x108,
+  AYTHER_LEGACY_MEMORY_AUDIO_WRITES = 0x109,
+  AYTHER_LEGACY_MEMORY_AUDIO_WRITE_COUNT = 0x10A,
+  AYTHER_LEGACY_MEMORY_PARSED_SPRITES = 0x10B,
+  AYTHER_LEGACY_MEMORY_PARSED_SPRITE_COUNT = 0x10C,
+  AYTHER_LEGACY_MEMORY_AUDIO_MUTE = 0x10D,
+  AYTHER_LEGACY_MEMORY_RASTER_DIRTY = 0x10E,
   /*  (ABI 1.9): RAM del Z80, 8 KB. */
-  AYTHER_LEGACY_MEMORY_Z80_RAM               = 0x10F
+  AYTHER_LEGACY_MEMORY_Z80_RAM = 0x10F
 };
 
-#define AYTHER_REGION_ACCESS_READ          (UINT32_C(1) << 0)
+#define AYTHER_REGION_ACCESS_READ (UINT32_C(1) << 0)
 #define AYTHER_REGION_ACCESS_CONTROL_WRITE (UINT32_C(1) << 1)
-#define AYTHER_REGION_FRAME_SCOPED         (UINT32_C(1) << 2)
-#define AYTHER_REGION_NATIVE_ENDIAN        (UINT32_C(1) << 3)
-#define AYTHER_REGION_DEPRECATED_LEGACY    (UINT32_C(1) << 4)
+#define AYTHER_REGION_FRAME_SCOPED (UINT32_C(1) << 2)
+#define AYTHER_REGION_NATIVE_ENDIAN (UINT32_C(1) << 3)
+#define AYTHER_REGION_DEPRECATED_LEGACY (UINT32_C(1) << 4)
 /* : la region se entrega en el layout INTERNO word-swapped del emulador en
  * hosts little-endian: el byte logico `off` vive en `off ^ 1`. Aplica a VRAM y
  * a la Work RAM legacy. Estaba documentado en prosa y en ningun lado del
@@ -430,10 +424,10 @@ enum ayther_legacy_memory_id
  * que se lee como un bug del frontend. No es lo mismo que la ausencia de
  * NATIVE_ENDIAN: eso habla del orden de los campos multi-byte, esto del orden
  * de los BYTES dentro de la memoria emulada. */
-#define AYTHER_REGION_WORD_SWAPPED_LE      (UINT32_C(1) << 5)
+#define AYTHER_REGION_WORD_SWAPPED_LE (UINT32_C(1) << 5)
 
-#define AYTHER_LAYOUT_RAW_V1         UINT32_C(1)
-#define AYTHER_LAYOUT_SPRITE_V1      UINT32_C(1)
+#define AYTHER_LAYOUT_RAW_V1 UINT32_C(1)
+#define AYTHER_LAYOUT_SPRITE_V1 UINT32_C(1)
 #define AYTHER_LAYOUT_AUDIO_WRITE_V1 UINT32_C(1)
 /* Bumped to 2: PCM events moved off the `voice` arm and gained st/ls (see the
  * union comment on ayther_audio_event_v1). Every event carries this in its
@@ -445,9 +439,9 @@ enum ayther_legacy_memory_id
  * orden que el framebuffer (fila 0 primero, `width` bytes por fila).
  *
  * Existe porque hoy el frontend deduce esto recomponiendo el frame varias veces
- * con distintas mascaras y diffeando: N pasadas de render para una respuesta que
- * el VDP ya conoce mientras dibuja. Con esto, "que asset reemplaza este pixel"
- * se contesta leyendo un byte.
+ * con distintas mascaras y diffeando: N pasadas de render para una respuesta
+ * que el VDP ya conoce mientras dibuja. Con esto, "que asset reemplaza este
+ * pixel" se contesta leyendo un byte.
  *
  *   bits 7-6  capa: 0 = backdrop, 1 = Plano B, 2 = Plano A, 3 = Window
  *   bit  5    prioridad de la celda de fondo que gano
@@ -459,13 +453,13 @@ enum ayther_legacy_memory_id
  * comparando valores: dos capas pueden producir el mismo byte y ahi comparar da
  * una respuesta arbitraria. */
 #define AYTHER_LAYOUT_ATTRIBUTION_V1 UINT32_C(1)
-#define AYTHER_LAYOUT_SYSTEM_V1      UINT32_C(1)
-#define AYTHER_LAYOUT_LINE_REGS_V1   UINT32_C(1)
-#define AYTHER_LAYOUT_LINE_CRAM_V1   UINT32_C(1)
-#define AYTHER_LAYOUT_LINE_CELLS_V1  UINT32_C(1)
-#define AYTHER_LAYOUT_JOURNAL_V1     UINT32_C(1)
-#define AYTHER_LAYOUT_FRAME_HASH_V1  UINT32_C(1)
-#define AYTHER_LAYOUT_PALETTE_V1     UINT32_C(1)
+#define AYTHER_LAYOUT_SYSTEM_V1 UINT32_C(1)
+#define AYTHER_LAYOUT_LINE_REGS_V1 UINT32_C(1)
+#define AYTHER_LAYOUT_LINE_CRAM_V1 UINT32_C(1)
+#define AYTHER_LAYOUT_LINE_CELLS_V1 UINT32_C(1)
+#define AYTHER_LAYOUT_JOURNAL_V1 UINT32_C(1)
+#define AYTHER_LAYOUT_FRAME_HASH_V1 UINT32_C(1)
+#define AYTHER_LAYOUT_PALETTE_V1 UINT32_C(1)
 #define AYTHER_LAYOUT_SPR_OUTCOME_V1 UINT32_C(1)
 
 /* AYTHER (): el estado de render POR SCANLINE, capturado del lado de la
@@ -483,27 +477,25 @@ enum ayther_legacy_memory_id
  * (x,y) de la pantalla" a "este tile del plano A", que es lo que un pipeline de
  * sustitucion HD necesita para keyear un asset.
  */
-typedef struct ayther_line_regs_v1
-{
-  uint16_t xscroll_a, xscroll_b;   /* ya resueltos desde la tabla de hscroll */
-  uint16_t yscroll_a, yscroll_b;   /* VSRAM[0..1]                            */
-  uint16_t ntab, ntbb, ntwb;       /* bases de las name tables, resueltas    */
-  uint16_t hscb, satb;             /* bases de hscroll y de la SAT           */
-  uint8_t  reg1, reg7, reg11, reg12, reg13, reg16, reg17, reg18;
-  uint8_t  clip_a_start, clip_a_end, clip_w_start, clip_w_end;
-  uint8_t  flags;                  /* AYTHER_LINE_* de abajo                 */
-  uint8_t  reserved0;
+typedef struct ayther_line_regs_v1 {
+  uint16_t xscroll_a, xscroll_b; /* ya resueltos desde la tabla de hscroll */
+  uint16_t yscroll_a, yscroll_b; /* VSRAM[0..1]                            */
+  uint16_t ntab, ntbb, ntwb;     /* bases de las name tables, resueltas    */
+  uint16_t hscb, satb;           /* bases de hscroll y de la SAT           */
+  uint8_t reg1, reg7, reg11, reg12, reg13, reg16, reg17, reg18;
+  uint8_t clip_a_start, clip_a_end, clip_w_start, clip_w_end;
+  uint8_t flags; /* AYTHER_LINE_* de abajo                 */
+  uint8_t reserved0;
 } ayther_line_regs_v1;
 
 /* La linea se dibujo con el plano A recortado por la ventana. */
-#define AYTHER_LINE_WINDOW_ACTIVE  UINT8_C(0x01)
+#define AYTHER_LINE_WINDOW_ACTIVE UINT8_C(0x01)
 /* La linea se dibujo con vscroll por columna (reg 11 bit 2). */
 #define AYTHER_LINE_VSCROLL_COLUMN UINT8_C(0x02)
 
 /* Cabecera comun de las regiones por linea: el consumidor tiene que poder
    interpretar el buffer sin adivinar cuantas lineas trae ni de que frame es. */
-typedef struct ayther_line_header_v1
-{
+typedef struct ayther_line_header_v1 {
   uint32_t struct_size;      /* tamanio de esta cabecera                     */
   uint32_t entry_size;       /* tamanio de cada entrada que sigue            */
   uint32_t lines;            /* entradas validas                             */
@@ -531,17 +523,17 @@ typedef struct ayther_line_header_v1
  * renderer los calcula una vez. Guardarlos por columna seria repetir 21 veces
  * el mismo byte.
  */
-#define AYTHER_LINE_CELL_COLUMNS 21   /* 21 x 16 px cubre H40 con el preambulo */
+/* 21 x 16 px cubre H40 con el preambulo */
+#define AYTHER_LINE_CELL_COLUMNS 21
 
-typedef struct ayther_line_cells_v1
-{
+typedef struct ayther_line_cells_v1 {
   uint32_t name_a[AYTHER_LINE_CELL_COLUMNS];
   uint32_t name_b[AYTHER_LINE_CELL_COLUMNS];
   uint32_t name_w[AYTHER_LINE_CELL_COLUMNS];
-  uint8_t  row_a, row_b, row_w;   /* fila dentro del tile, en pixeles      */
-  uint8_t  shift_a, shift_b;      /* desplazamiento fino de la linea (0-15) */
-  uint8_t  cols_a, cols_b, cols_w;
-  uint8_t  reserved0;
+  uint8_t row_a, row_b, row_w; /* fila dentro del tile, en pixeles      */
+  uint8_t shift_a, shift_b;    /* desplazamiento fino de la linea (0-15) */
+  uint8_t cols_a, cols_b, cols_w;
+  uint8_t reserved0;
 } ayther_line_cells_v1;
 
 /* .A: el journal raster del frame, entero.
@@ -563,22 +555,22 @@ typedef struct ayther_line_cells_v1
  */
 #define AYTHER_JOURNAL_MAX_EVENTS 256
 
-typedef struct ayther_journal_event_v1
-{
-  uint16_t v_counter;   /* linea en que ocurrio                        */
-  uint16_t reason;      /* AYTHER_RASTER_REASON_* del core             */
-  uint16_t address;     /* segun el motivo: REG = numero de registro;   */
-                        /* CRAM = indice de entrada (0-63); VSRAM =      */
-                        /* byte par; HSCROLL = direccion de VRAM ()  */
-  uint16_t data;        /* los 16 bits que el bus puso                 */
+typedef struct ayther_journal_event_v1 {
+  uint16_t v_counter; /* linea en que ocurrio                        */
+  uint16_t reason;    /* AYTHER_RASTER_REASON_* del core             */
+  uint16_t address;   /* segun el motivo: REG = numero de registro;   */
+                      /* CRAM = indice de entrada (0-63). VSRAM y      */
+                      /* HSCROLL son word-shaped, pero las rutas       */
+                      /* Z80/DMA legadas pueden publicar un byte y su  */
+                      /* direccion exacta: no hay campo width.         */
+  uint16_t data;      /* palabra, o byte en esas rutas legadas         */
 } ayther_journal_event_v1;
 
-typedef struct ayther_journal_v1
-{
+typedef struct ayther_journal_v1 {
   uint32_t layout_version;
   uint32_t struct_size;
-  uint32_t count;       /* eventos validos en `events`                 */
-  uint32_t dropped;     /* eventos que no entraron (0 = journal completo) */
+  uint32_t count;   /* eventos validos en `events`                 */
+  uint32_t dropped; /* eventos que no entraron (0 = journal completo) */
   ayther_journal_event_v1 events[AYTHER_JOURNAL_MAX_EVENTS];
 } ayther_journal_v1;
 
@@ -599,13 +591,12 @@ typedef struct ayther_journal_v1
  * frontend puede recalcularlo y comparar. `frame_index` dice de que frame
  * son: leer la region dos veces en el mismo frame da lo mismo.
  */
-typedef struct ayther_frame_hash_v1
-{
+typedef struct ayther_frame_hash_v1 {
   uint32_t layout_version;
   uint32_t struct_size;
   uint64_t frame_index;
-  uint64_t video_hash;  /* pixeles emitidos, viewport w*h              */
-  uint64_t audio_hash;  /* samples entregados en el frame              */
+  uint64_t video_hash; /* pixeles emitidos, viewport w*h              */
+  uint64_t audio_hash; /* samples entregados en el frame              */
   uint64_t vram_hash;
   uint64_t cram_hash;
   uint64_t vsram_hash;
@@ -658,24 +649,25 @@ typedef struct ayther_frame_hash_v1
 #define AYTHER_SPRITE_SAT_SLOTS 80
 
 /* Entro en la lista de la linea al menos una vez. */
-#define AYTHER_SPR_OUT_PARSED        UINT8_C(0x01)
+#define AYTHER_SPR_OUT_PARSED UINT8_C(0x01)
 /* Llego al bucle de dibujo al menos una vez. */
-#define AYTHER_SPR_OUT_DRAWN         UINT8_C(0x02)
+#define AYTHER_SPR_OUT_DRAWN UINT8_C(0x02)
 /* Descartado por el limite de sprites POR LINEA (16 en H32, 20 en H40). */
-#define AYTHER_SPR_OUT_DROP_LINE     UINT8_C(0x04)
+#define AYTHER_SPR_OUT_DROP_LINE UINT8_C(0x04)
 /* Descartado por el presupuesto de PIXELES de la linea. */
-#define AYTHER_SPR_OUT_DROP_PIXEL    UINT8_C(0x08)
+#define AYTHER_SPR_OUT_DROP_PIXEL UINT8_C(0x08)
 /* Tapado por la mascara de sprites: alguno anterior estaba en x=0. */
-#define AYTHER_SPR_OUT_MASKED_X0     UINT8_C(0x10)
+#define AYTHER_SPR_OUT_MASKED_X0 UINT8_C(0x10)
 /* Suprimido por el frontend con la mascara 0x103. Se distingue de los
    descartes del hardware a proposito: "no se dibujo porque vos lo pediste"
    y "no se dibujo porque el VDP no daba" son respuestas distintas. */
-#define AYTHER_SPR_OUT_SUPPRESSED    UINT8_C(0x20)
+#define AYTHER_SPR_OUT_SUPPRESSED UINT8_C(0x20)
 
 /* La CRAM no cambio en todo el frame: solo la entrada 0 es significativa. */
-#define AYTHER_LINES_CRAM_UNIFORM   UINT32_C(0x01)
-/* Alguna linea no se lleno -- un renderer sin hooks-, y el buffer tiene huecos. */
-#define AYTHER_LINES_OVERFLOW       UINT32_C(0x02)
+#define AYTHER_LINES_CRAM_UNIFORM UINT32_C(0x01)
+/* Alguna linea no se lleno -- un renderer sin hooks-, y el buffer tiene huecos.
+ */
+#define AYTHER_LINES_OVERFLOW UINT32_C(0x02)
 
 /* AYTHER (.B): descriptor del sistema emulado.
  *
@@ -698,30 +690,30 @@ typedef struct ayther_frame_hash_v1
    usa el viewport tal cual. */
 #define AYTHER_SYSTEM_GEOMETRY_PENDING UINT8_C(0x01)
 
-#define AYTHER_SYSTEM_HW_SG      0x01
+#define AYTHER_SYSTEM_HW_SG 0x01
 #define AYTHER_SYSTEM_HW_MARKIII 0x10
-#define AYTHER_SYSTEM_HW_SMS     0x20
-#define AYTHER_SYSTEM_HW_SMS2    0x21
-#define AYTHER_SYSTEM_HW_GG      0x40
-#define AYTHER_SYSTEM_HW_GGMS    0x41
-#define AYTHER_SYSTEM_HW_MD      0x80
-#define AYTHER_SYSTEM_HW_PBC     0x81
-#define AYTHER_SYSTEM_HW_PICO    0x82
-#define AYTHER_SYSTEM_HW_MCD     0x84
+#define AYTHER_SYSTEM_HW_SMS 0x20
+#define AYTHER_SYSTEM_HW_SMS2 0x21
+#define AYTHER_SYSTEM_HW_GG 0x40
+#define AYTHER_SYSTEM_HW_GGMS 0x41
+#define AYTHER_SYSTEM_HW_MD 0x80
+#define AYTHER_SYSTEM_HW_PBC 0x81
+#define AYTHER_SYSTEM_HW_PICO 0x82
+#define AYTHER_SYSTEM_HW_MCD 0x84
 
-typedef struct ayther_system_v1
-{
+typedef struct ayther_system_v1 {
   uint32_t struct_size;
   uint32_t layout_version;
 
-  uint8_t  system_hw;        /* SYSTEM_* del core                         */
-  uint8_t  region_pal;       /* 1 = PAL (313 lineas), 0 = NTSC            */
-  uint8_t  vdp_mode;         /* 4 o 5; 0 si el VDP todavia no eligio      */
-  uint8_t  interlace;        /* 0 = progresivo, 1 = interlace 1, 2 = im2  */
+  uint8_t system_hw;  /* SYSTEM_* del core                         */
+  uint8_t region_pal; /* 1 = PAL (313 lineas), 0 = NTSC            */
+  uint8_t vdp_mode;   /* 4 o 5; 0 si el VDP todavia no eligio      */
+  uint8_t interlace;  /* 0 = progresivo, 1 = interlace 1, 2 = im2  */
 
-  uint8_t  h40;              /* 1 = el frame EMITIDO mide 320 px (== viewport_w); reg 12 puede ir un frame adelante: ver flags */
-  uint8_t  shadow_highlight; /* 1 = S/H activo (reg 12 bit 3)             */
-  uint16_t lines_per_frame;  /* 262 NTSC / 313 PAL                        */
+  uint8_t h40; /* 1 = el frame EMITIDO mide 320 px (== viewport_w); reg 12 puede
+                  ir un frame adelante: ver flags */
+  uint8_t shadow_highlight; /* 1 = S/H activo (reg 12 bit 3)             */
+  uint16_t lines_per_frame; /* 262 NTSC / 313 PAL                        */
 
   /* Viewport del frame emitido, en pixeles, incluido el overscan que el
      build entrega. Es el mismo rectangulo que describe ATTRIBUTION.
@@ -738,33 +730,33 @@ typedef struct ayther_system_v1
      que dar y valen cero, con `viewport_w/h` ya incluyendo los bordes. */
   uint16_t viewport_x, viewport_y, viewport_w, viewport_h;
 
-  uint32_t cpu_clock;        /* Hz del 68000 (o del Z80 en 8 bits)        */
-  uint32_t master_clock;     /* Hz del oscilador maestro                  */
+  uint32_t cpu_clock;    /* Hz del 68000 (o del Z80 en 8 bits)        */
+  uint32_t master_clock; /* Hz del oscilador maestro                  */
 
-  uint8_t  fm_core;          /* 0 = MAME (ym2612), 1 = Nuked (ym3438)     */
-  uint8_t  psg_present;
-  uint8_t  pcm_present;      /* RF5C164 del Mega CD                       */
-  uint8_t  flags;            /* AYTHER_SYSTEM_* (1.10); antes reservado, siempre 0 */
+  uint8_t fm_core; /* 0 = MAME (ym2612), 1 = Nuked (ym3438)     */
+  uint8_t psg_present;
+  uint8_t pcm_present; /* RF5C164 del Mega CD                       */
+  uint8_t flags;       /* AYTHER_SYSTEM_* (1.10); antes reservado, siempre 0 */
 
-  uint32_t rom_crc32;        /* crc32 del archivo cargado                 */
+  uint32_t rom_crc32; /* crc32 del archivo cargado                 */
   uint32_t rom_bytes;
 } ayther_system_v1;
 
-#define AYTHER_ATTRIB_LAYER_MASK     UINT8_C(0xC0)
-#define AYTHER_ATTRIB_LAYER_SHIFT    6
+#define AYTHER_ATTRIB_LAYER_MASK UINT8_C(0xC0)
+#define AYTHER_ATTRIB_LAYER_SHIFT 6
 #define AYTHER_ATTRIB_LAYER_BACKDROP 0
-#define AYTHER_ATTRIB_LAYER_PLANE_B  1
-#define AYTHER_ATTRIB_LAYER_PLANE_A  2
-#define AYTHER_ATTRIB_LAYER_WINDOW   3
-#define AYTHER_ATTRIB_PRIORITY       UINT8_C(0x20)
-#define AYTHER_ATTRIB_PALETTE_MASK   UINT8_C(0x18)
-#define AYTHER_ATTRIB_PALETTE_SHIFT  3
-#define AYTHER_ATTRIB_SH_MASK        UINT8_C(0x06)
-#define AYTHER_ATTRIB_SH_SHIFT       1
-#define AYTHER_ATTRIB_SH_NORMAL      0
-#define AYTHER_ATTRIB_SH_SHADOW      1
-#define AYTHER_ATTRIB_SH_HIGHLIGHT   2
-#define AYTHER_ATTRIB_SPRITE         UINT8_C(0x01)
+#define AYTHER_ATTRIB_LAYER_PLANE_B 1
+#define AYTHER_ATTRIB_LAYER_PLANE_A 2
+#define AYTHER_ATTRIB_LAYER_WINDOW 3
+#define AYTHER_ATTRIB_PRIORITY UINT8_C(0x20)
+#define AYTHER_ATTRIB_PALETTE_MASK UINT8_C(0x18)
+#define AYTHER_ATTRIB_PALETTE_SHIFT 3
+#define AYTHER_ATTRIB_SH_MASK UINT8_C(0x06)
+#define AYTHER_ATTRIB_SH_SHIFT 1
+#define AYTHER_ATTRIB_SH_NORMAL 0
+#define AYTHER_ATTRIB_SH_SHADOW 1
+#define AYTHER_ATTRIB_SH_HIGHLIGHT 2
+#define AYTHER_ATTRIB_SPRITE UINT8_C(0x01)
 
 /* Un sprite que el parser vio, con el MISMO layout en Mode 5 y en Mode 4.
  *
@@ -797,8 +789,7 @@ typedef struct ayther_system_v1
  * Native-endian in-process layout. Multi-byte fields use host endianness as
  * reported by ayther_interface_v1.host_endianness. Pointers are never stored
  * in captured data. */
-typedef struct ayther_sprite_v1
-{
+typedef struct ayther_sprite_v1 {
   uint16_t yr;
   uint16_t xr;
   uint16_t attr;
@@ -808,24 +799,21 @@ typedef struct ayther_sprite_v1
   uint8_t chain_pos;
 } ayther_sprite_v1;
 
-typedef struct ayther_audio_write_v1
-{
+typedef struct ayther_audio_write_v1 {
   uint32_t cycle;
   uint16_t addr;
   uint8_t data;
   uint8_t chip;
 } ayther_audio_write_v1;
 
-enum ayther_audio_source_v1
-{
-  AYTHER_AUDIO_SOURCE_FM  = 0,
+enum ayther_audio_source_v1 {
+  AYTHER_AUDIO_SOURCE_FM = 0,
   AYTHER_AUDIO_SOURCE_PSG = 1,
   AYTHER_AUDIO_SOURCE_DAC = 2,
   AYTHER_AUDIO_SOURCE_PCM = 3
 };
 
-enum ayther_audio_event_type_v1
-{
+enum ayther_audio_event_type_v1 {
   AYTHER_AUDIO_EVENT_RAW_WRITE = 0,
   AYTHER_AUDIO_EVENT_NOTE_ON,
   AYTHER_AUDIO_EVENT_NOTE_OFF,
@@ -839,8 +827,7 @@ enum ayther_audio_event_type_v1
   AYTHER_AUDIO_EVENT_FRAME
 };
 
-typedef struct ayther_audio_voice_v1
-{
+typedef struct ayther_audio_voice_v1 {
   uint8_t op_tl[4];
   uint8_t op_ar[4];
   uint8_t op_dr[4];
@@ -888,17 +875,17 @@ typedef struct ayther_audio_voice_v1
 /* The direct `event.reg` / `event.voice` field names are part of the published
  * source contract. C11 and MSVC support the anonymous aggregate layout used to
  * preserve those names; Clang and GCC accept it as an extension in C++. Keep
- * the exception scoped to this one ABI type so project warnings remain errors. */
+ * the exception scoped to this one ABI type so project warnings remain errors.
+ */
 #if defined(__clang__)
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#  pragma clang diagnostic ignored "-Wnested-anon-types"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
 #elif defined(__GNUC__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wpedantic"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
-typedef struct ayther_audio_event_v1
-{
+typedef struct ayther_audio_event_v1 {
   uint64_t t_global;
   uint32_t t_frame;
   uint32_t t_cycles;
@@ -920,9 +907,9 @@ typedef struct ayther_audio_event_v1
   };
 } ayther_audio_event_v1;
 #if defined(__clang__)
-#  pragma clang diagnostic pop
+#pragma clang diagnostic pop
 #elif defined(__GNUC__)
-#  pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 
 #define AYTHER_AUDIO_TRANSPORT_CALLBACK_ACTIVE (UINT32_C(1) << 0)
@@ -931,8 +918,7 @@ typedef struct ayther_audio_event_v1
 /* Values are a concurrent snapshot. `capacity` is the effective number of
  * events (one slot is reserved by the SPSC full/empty protocol). The dropped
  * counter saturates at UINT32_MAX instead of wrapping. */
-typedef struct ayther_audio_transport_stats_v1
-{
+typedef struct ayther_audio_transport_stats_v1 {
   uint32_t struct_size;
   uint32_t transport_version;
   uint32_t event_size;
@@ -943,8 +929,7 @@ typedef struct ayther_audio_transport_stats_v1
   uint32_t flags;
 } ayther_audio_transport_stats_v1;
 
-typedef struct ayther_region_info_v1
-{
+typedef struct ayther_region_info_v1 {
   uint32_t struct_size;
   uint32_t region_id;
   uint32_t data_version;
@@ -956,13 +941,12 @@ typedef struct ayther_region_info_v1
 } ayther_region_info_v1;
 
 #define AYTHER_SNAPSHOT_CONTENT_LOADED (UINT32_C(1) << 0)
-#define AYTHER_SNAPSHOT_FRAME_ACTIVE   (UINT32_C(1) << 1)
+#define AYTHER_SNAPSHOT_FRAME_ACTIVE (UINT32_C(1) << 1)
 
 #define AYTHER_OVERFLOW_PARSED_SPRITES (UINT32_C(1) << 0)
-#define AYTHER_OVERFLOW_AUDIO_WRITES   (UINT32_C(1) << 1)
+#define AYTHER_OVERFLOW_AUDIO_WRITES (UINT32_C(1) << 1)
 
-typedef struct ayther_frame_snapshot_v1
-{
+typedef struct ayther_frame_snapshot_v1 {
   uint32_t struct_size;
   uint32_t snapshot_version;
   uint64_t snapshot_generation;
@@ -975,8 +959,7 @@ typedef struct ayther_frame_snapshot_v1
   uint32_t reserved0;
 } ayther_frame_snapshot_v1;
 
-typedef struct ayther_subscription_state_v1
-{
+typedef struct ayther_subscription_state_v1 {
   uint32_t struct_size;
   uint32_t state_version;
   uint32_t supported_mask;
@@ -986,36 +969,35 @@ typedef struct ayther_subscription_state_v1
   uint64_t activation_frame;
 } ayther_subscription_state_v1;
 
-typedef int32_t (AYTHER_CALL *ayther_query_region_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_query_region_v1_fn)(
     uint32_t region_id, ayther_region_info_v1 *out, uint32_t out_size);
 
-typedef int32_t (AYTHER_CALL *ayther_read_region_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_read_region_v1_fn)(
     uint32_t region_id, uint32_t offset, void *out, uint32_t byte_count,
     uint64_t expected_generation, uint64_t *actual_generation);
 
-typedef int32_t (AYTHER_CALL *ayther_write_control_v1_fn)(
-    uint32_t region_id, uint32_t offset, const void *data,
-    uint32_t byte_count, uint64_t expected_generation,
-    uint64_t *new_generation);
+typedef int32_t(AYTHER_CALL *ayther_write_control_v1_fn)(
+    uint32_t region_id, uint32_t offset, const void *data, uint32_t byte_count,
+    uint64_t expected_generation, uint64_t *new_generation);
 
-typedef int32_t (AYTHER_CALL *ayther_capture_snapshot_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_capture_snapshot_v1_fn)(
     ayther_frame_snapshot_v1 *out, uint32_t out_size);
 
-typedef int32_t (AYTHER_CALL *ayther_recompose_frame_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_recompose_frame_v1_fn)(
     uint16_t *out_pixels, uint32_t pixel_capacity, uint32_t flags,
     uint32_t *out_width, uint32_t *out_height);
 
-typedef int32_t (AYTHER_CALL *ayther_poll_audio_events_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_poll_audio_events_v1_fn)(
     ayther_audio_event_v1 *out, uint32_t event_capacity,
     uint32_t *out_event_count);
 
-typedef int32_t (AYTHER_CALL *ayther_get_audio_transport_stats_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_get_audio_transport_stats_v1_fn)(
     ayther_audio_transport_stats_v1 *out, uint32_t out_size);
 
-typedef int32_t (AYTHER_CALL *ayther_get_subscriptions_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_get_subscriptions_v1_fn)(
     ayther_subscription_state_v1 *out, uint32_t out_size);
 
-typedef int32_t (AYTHER_CALL *ayther_set_subscriptions_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_set_subscriptions_v1_fn)(
     uint32_t requested_mask);
 
 /* : cuantos frames de historial guarda el ring. Ocho es suficiente para
@@ -1023,8 +1005,7 @@ typedef int32_t (AYTHER_CALL *ayther_set_subscriptions_v1_fn)(
    repinta a 30 Hz sobre 60-- recupere sin perder nada, y son 16 KB. */
 #define AYTHER_FRAME_DELTA_HISTORY 8
 
-typedef struct ayther_frame_delta_v1
-{
+typedef struct ayther_frame_delta_v1 {
   uint32_t struct_size;
   uint32_t delta_version;
   uint64_t frame_generation;
@@ -1040,7 +1021,7 @@ typedef struct ayther_frame_delta_v1
   uint8_t dirty_patterns[2048];
 } ayther_frame_delta_v1;
 
-typedef int32_t (AYTHER_CALL *ayther_poll_frame_delta_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_poll_frame_delta_v1_fn)(
     ayther_frame_delta_v1 *out, uint32_t out_size);
 
 /* : todo lo ensuciado DESDE `generation_from` inclusive, OR-eando el ring.
@@ -1050,10 +1031,11 @@ typedef int32_t (AYTHER_CALL *ayther_poll_frame_delta_v1_fn)(
  * consumidor que no lee todos los frames -- y antes no tenia forma de pedirlo
  * sin perder informacion.
  *
- * Si `generation_from` ya salio del ring devuelve AYTHER_STATUS_DELTA_HISTORY_LOST
- * con todo marcado sucio: conservador a proposito, porque la alternativa es
- * devolver un subconjunto y que el consumidor crea que vio todo. */
-typedef int32_t (AYTHER_CALL *ayther_frame_delta_since_v1_fn)(
+ * Si `generation_from` ya salio del ring devuelve
+ * AYTHER_STATUS_DELTA_HISTORY_LOST con todo marcado sucio: conservador a
+ * proposito, porque la alternativa es devolver un subconjunto y que el
+ * consumidor crea que vio todo. */
+typedef int32_t(AYTHER_CALL *ayther_frame_delta_since_v1_fn)(
     uint64_t generation_from, ayther_frame_delta_v1 *out, uint32_t out_size);
 
 /* : estado observable de los caches de recomposición.
@@ -1064,8 +1046,7 @@ typedef int32_t (AYTHER_CALL *ayther_frame_delta_since_v1_fn)(
  * frontend cree no haber tocado nada: si la huella cambió, algo escribió una
  * máscara — posiblemente por el puntero mutable legacy, que no pasa por
  * `write_control` y por eso no mueve `snapshot_generation`. */
-typedef struct ayther_recompose_stats_v1
-{
+typedef struct ayther_recompose_stats_v1 {
   uint32_t struct_size;
   uint32_t reserved0;
   uint64_t single_calls;
@@ -1075,17 +1056,15 @@ typedef struct ayther_recompose_stats_v1
   uint64_t controls_fingerprint;
 } ayther_recompose_stats_v1;
 
-typedef int32_t (AYTHER_CALL *ayther_get_recompose_stats_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_get_recompose_stats_v1_fn)(
     ayther_recompose_stats_v1 *out, uint32_t out_size);
 
-typedef int32_t (AYTHER_CALL *ayther_recompose_multilayer_v1_fn)(
+typedef int32_t(AYTHER_CALL *ayther_recompose_multilayer_v1_fn)(
     uint16_t *out_bg_a, uint16_t *out_bg_b, uint16_t *out_window,
-    uint16_t *out_sprites, uint16_t *out_composite,
-    uint32_t pixel_capacity, uint32_t flags,
-    uint32_t *out_width, uint32_t *out_height);
+    uint16_t *out_sprites, uint16_t *out_composite, uint32_t pixel_capacity,
+    uint32_t flags, uint32_t *out_width, uint32_t *out_height);
 
-typedef struct ayther_interface_v1
-{
+typedef struct ayther_interface_v1 {
   uint32_t abi_version;
   uint32_t struct_size;
   uint64_t capabilities;
@@ -1126,15 +1105,15 @@ typedef struct ayther_interface_v1
 
 /* Un campo opcional es legible sólo si el descriptor llega hasta él. Esta es la
  * comprobación que reemplaza a `abi_version == la mía`. */
-#define AYTHER_IFACE_HAS(iface, field) \
-  ((iface)->struct_size >= (offsetof(ayther_interface_v1, field) + \
+#define AYTHER_IFACE_HAS(iface, field)                                         \
+  ((iface)->struct_size >= (offsetof(ayther_interface_v1, field) +             \
                             sizeof(((const ayther_interface_v1 *)0)->field)))
 
 typedef const ayther_interface_v1 *(AYTHER_CALL *ayther_get_interface_fn)(
     uint32_t requested_version);
 
-AYTHER_API const ayther_interface_v1 *AYTHER_CALL ayther_get_interface(
-    uint32_t requested_version);
+AYTHER_API const ayther_interface_v1 *AYTHER_CALL
+ayther_get_interface(uint32_t requested_version);
 
 /* DEPRECADO (). Desde ABI 1.2 esta funcion vive en el descriptor como
  * `recompose_multilayer` y hay que resolverla por ahi, con `AYTHER_IFACE_HAS`.
@@ -1144,9 +1123,8 @@ AYTHER_API const ayther_interface_v1 *AYTHER_CALL ayther_get_interface(
 #ifdef AYTHER_LEGACY_PROFILE
 AYTHER_API int32_t AYTHER_CALL ayther_recompose_multilayer(
     uint16_t *out_bg_a, uint16_t *out_bg_b, uint16_t *out_window,
-    uint16_t *out_sprites, uint16_t *out_composite,
-    uint32_t pixel_capacity, uint32_t flags,
-    uint32_t *out_width, uint32_t *out_height);
+    uint16_t *out_sprites, uint16_t *out_composite, uint32_t pixel_capacity,
+    uint32_t flags, uint32_t *out_width, uint32_t *out_height);
 #endif
 
 #ifdef __cplusplus

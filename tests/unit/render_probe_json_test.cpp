@@ -8,6 +8,7 @@
 #include "render_frame_contract.h"
 #include "session/render_observation_builder.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -89,7 +90,7 @@ int main() try {
   in.occurrences = occs;
   in.claimed = claimed;
   in.hidden = hidden;
-  in.chain_by_slot = chain;
+  in.chain_by_occurrence = chain;
   in.subs = subs;
   in.pose_sub_count = 1;
   in.pose_owner = owner;
@@ -119,7 +120,8 @@ int main() try {
             has(record, "\"status\": \"hidden_by_author\""),
         "RF-7.2: each status, with its reason when known");
 
-  // A frame without sprites: empty lists. Above the limit: overflow.
+  // A frame without sprites: empty lists. RNF-3 / P-11: the exact limit is
+  // complete, while 257 and 300 rows are bounded with their real total.
   {
     RenderObservationInput empty;
     empty.frame_known = true;
@@ -128,16 +130,48 @@ int main() try {
               has(ayther::probe::frame_json(0, 0, b.build(empty)),
                   "\"occurrences\": []"),
           "RF-7.8: a frame without sprites has an empty list");
-    std::vector<AytherSpriteOccurrence> many;
-    for (int i = 0; i < 300; ++i)
-      many.push_back(occ(static_cast<std::uint64_t>(i + 1),
-                         static_cast<std::int16_t>(i), 0));
-    RenderObservationInput big;
-    big.frame_known = true;
-    big.occurrences = many;
-    const std::string text = ayther::probe::frame_json(1, 1, b.build(big));
-    check(errors_of(text).empty() && has(text, "\"rows_total\": 300"),
-          "RNF-3: above the limit the record reports the overflow");
+    const auto check_limit = [&](std::size_t total, bool expect_overflow,
+                                 const char *message) {
+      std::vector<AytherSpriteOccurrence> occurrences;
+      occurrences.reserve(total);
+      for (std::size_t i = 0; i < total; ++i)
+        occurrences.push_back(occ(static_cast<std::uint64_t>(i + 1),
+                                  static_cast<std::int16_t>(i),
+                                  static_cast<std::uint8_t>(i % 80)));
+      RenderObservationInput input;
+      input.frame_known = true;
+      input.occurrences = occurrences;
+      const std::string text = ayther::probe::frame_json(1, 1, b.build(input));
+      const auto parsed = json::parse(text);
+      const json::Value *shown = parsed ? parsed->get("occurrences") : nullptr;
+      const json::Value *reported_total =
+          parsed ? parsed->get("occurrences_total") : nullptr;
+      const json::Value *overflow = parsed ? parsed->get("overflow") : nullptr;
+      const bool exact_shape =
+          errors_of(text).empty() && shown != nullptr &&
+          shown->is(json::Value::Kind::array) &&
+          shown->items.size() == std::min(total, ro::max_occurrences) &&
+          reported_total != nullptr &&
+          reported_total->is(json::Value::Kind::number) &&
+          reported_total->number == static_cast<double>(total);
+      const bool exact_overflow =
+          expect_overflow ? overflow != nullptr &&
+                                overflow->is(json::Value::Kind::object) &&
+                                overflow->get("rows_total") != nullptr &&
+                                overflow->get("rows_total")->number ==
+                                    static_cast<double>(total) &&
+                                overflow->get("limit") != nullptr &&
+                                overflow->get("limit")->number ==
+                                    static_cast<double>(ro::max_occurrences)
+                          : overflow == nullptr;
+      check(exact_shape && exact_overflow, message);
+    };
+    check_limit(ro::max_occurrences, false,
+                "RNF-3/P-11: 256 rows are complete without overflow");
+    check_limit(ro::max_occurrences + 1U, true,
+                "RNF-3/P-11: 257 rows report 256 shown and total 257");
+    check_limit(300U, true,
+                "RNF-3/P-11: 300 rows report 256 shown and total 300");
   }
 
   // The validator rejects records that break the contract.

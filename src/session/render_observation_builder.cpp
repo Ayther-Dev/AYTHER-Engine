@@ -98,11 +98,10 @@ RenderObservationBuilder::build(const RenderObservationInput &in) {
     const std::size_t first = members_.size();
     for (std::size_t i = 0; i < n_occ; ++i)
       if (owner_[i] == s)
-        members_.push_back({static_cast<std::uint16_t>(i),
-                            in.occurrences[i].slot,
-                            in.occurrences[i].slot < in.chain_by_slot.size()
-                                ? in.chain_by_slot[in.occurrences[i].slot]
-                                : std::uint8_t{0xFF}});
+        members_.push_back(
+            {static_cast<std::uint16_t>(i), in.occurrences[i].slot,
+             i < in.chain_by_occurrence.size() ? in.chain_by_occurrence[i]
+                                               : std::uint8_t{0xFF}});
     r.members = std::span<const ro::OccurrenceId>(members_).subspan(
         first, members_.size() - first);
     if (draw_known && s < in.draw->replacements.size()) {
@@ -122,8 +121,8 @@ RenderObservationBuilder::build(const RenderObservationInput &in) {
     const AytherSpriteOccurrence &o = in.occurrences[i];
     ro::OccurrenceView &v = occurrences_[i];
     v.id = {static_cast<std::uint16_t>(i), o.slot,
-            o.slot < in.chain_by_slot.size() ? in.chain_by_slot[o.slot]
-                                             : std::uint8_t{0xFF}};
+            i < in.chain_by_occurrence.size() ? in.chain_by_occurrence[i]
+                                              : std::uint8_t{0xFF}};
     v.identity_hash = o.hash;
     v.x = o.screen_x;
     v.y = o.screen_y;

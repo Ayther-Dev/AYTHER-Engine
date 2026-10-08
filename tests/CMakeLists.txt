@@ -316,6 +316,27 @@ target_compile_definitions(ayther_render_observation_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_render_observation_session_test ayther_test_core)
 
+# A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
+# the deprecated memory ids retain a stale non-empty prefix.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/parsed_sprites_empty_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_parsed_sprites_empty_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_parsed_sprites_empty_session_test ayther_test_core)
+
+# A negotiated observer fails closed per frame. Snapshot and parsed-sprite
+# read failures are injected by the ABI test core; the stock build proves that
+# a core with no AYTHER interface keeps the legacy path.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/observer_failclose_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_observer_failclose_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+    AYTHER_STOCK_CORE_PATH="$<TARGET_FILE:ayther_test_core_stock>")
+add_dependencies(ayther_observer_failclose_session_test
+    ayther_test_core ayther_test_core_stock)
+
 # Spec 002 (RNF-2): the render observation neither changes the frame nor slows
 # down its production; it measures the cost against the DA-2 budgets.
 ayther_add_native_test(
@@ -357,6 +378,7 @@ set_tests_properties(ayther.integration.visual_state_roundtrip_all_frames
 # trusted synthetic pack.
 foreach(_ayther_fix_test IN ITEMS pose_anchor_test pose_membership_paths_test
         pose_partition_session_test
+        parsed_sprites_large_session_test
         framebuffer_judge_test
         scroll_tables_test
         pack_removal_test
@@ -599,6 +621,15 @@ if(AYTHER_BUILD_GPU_TESTS)
     target_compile_definitions(ayther_raster_band_test PRIVATE
         AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     set_tests_properties(ayther.renderer.raster_band_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
+    # Spec 002, DI-20: unchanged band pixels keep the previous frame's HD.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/band_carry_gpu_test.cpp" renderer)
+    target_link_libraries(ayther_band_carry_gpu_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_band_carry_gpu_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.band_carry_gpu_test PROPERTIES
         LABELS "engine;native;renderer;gpu")
     # Spec 002, DI-18: the draw report lists the stack's layers and overlays.
     ayther_add_native_test(

@@ -354,13 +354,22 @@ RetroRunner::AytherReadResult
 RetroRunner::read_parsed_sprites_v1(ayther_sprite_v1 *out, uint32_t max,
                                     const ayther_frame_snapshot_v1 &s) const {
   AytherReadResult r;
-  if (!ayther_api_ || !out)
+  if (!ayther_api_ ||
+      !(ayther_api_->capabilities & AYTHER_CAP_PARSED_SPRITES_V1))
     return r;
   // (std::min) entre parentesis: windows.h define min como MACRO y la
   // llamada sin parentesis no compila.
   const uint32_t n = (std::min)(max, s.parsed_sprite_count);
+  if (s.parsed_sprite_count == 0) {
+    r.status = AYTHER_STATUS_OK;
+    r.generation = s.snapshot_generation;
+    return r;
+  }
+  if (!out)
+    return r;
   if (n == 0) {
     r.status = AYTHER_STATUS_OK;
+    r.generation = s.snapshot_generation;
     return r;
   }
 

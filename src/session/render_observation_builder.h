@@ -27,8 +27,10 @@ struct RenderObservationInput {
   std::span<const std::uint8_t> claimed;
   /// Per occurrence, hidden on purpose by an authoring tool (empty = none).
   std::span<const std::uint8_t> hidden;
-  /// Per SAT slot (0..79), the link-chain position (0xFF = unknown).
-  std::span<const std::uint8_t> chain_by_slot;
+  /// Per occurrence, the link-chain position (0xFF = unknown). This cannot be
+  /// keyed by SAT slot: a core may publish more than one draw occurrence for
+  /// a slot that was rewritten during the frame.
+  std::span<const std::uint8_t> chain_by_occurrence;
   /// The frame's substitutions: pose substitutions first, then per-sprite.
   std::span<const AytherSpriteSub> subs;
   std::uint32_t pose_sub_count = 0;

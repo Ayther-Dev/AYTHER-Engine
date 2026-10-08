@@ -98,6 +98,11 @@ int main() {
         "write extensionless WAV");
   check(p.asset_ready_disk("extensionless_audio_fixture"),
         "extensionless WAV decodes from its header");
+  // Spec 002 (RF-4.6, D-6b; Toma 3 frame 1366): a prewarmed asset is also
+  // converted to the mixer's format, so its first key-on does not resample a
+  // whole track on the frame that starts it.
+  check(p.mix_ready("extensionless_audio_fixture"),
+        "D-6b: a ready disk asset is already in the mixer's format");
   std::ifstream tone_file("extensionless_audio_fixture", std::ios::binary);
   const std::vector<uint8_t> tone{std::istreambuf_iterator<char>{tone_file},
                                   {}};
@@ -132,6 +137,8 @@ int main() {
   check(pack != nullptr, "open signed audio fixture");
   check(p.asset_ready_pack(pack, asset_id),
         "content-addressed WAV in pack is playable");
+  check(p.mix_ready(asset_id),
+        "D-6b: a ready pack asset is already in the mixer's format");
   check(p.play_event_hd(pack, asset_id, false, 0x388, 100),
         "start extensionless pack audio");
   check(p.hd_voice_count() > 0, "HD mixer has a playing voice");

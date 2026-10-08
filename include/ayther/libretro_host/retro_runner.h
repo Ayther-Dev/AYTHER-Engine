@@ -234,7 +234,7 @@ public:
       AYTHER_SUB_VDP_MEMORY | AYTHER_SUB_SPRITE_CAPTURE |
       AYTHER_SUB_RENDER_CONTROLS | AYTHER_SUB_RASTER_TRACKING |
       AYTHER_SUB_AUDIO_WRITES | AYTHER_SUB_RECOMPOSITION |
-      AYTHER_SUB_AUDIO_EVENTS;
+      AYTHER_SUB_AUDIO_EVENTS | AYTHER_SUB_LINE_STATE;
 
   /// Bits of `fallback_reasons` (snapshot) / 0x10E (legacy). `> 0` still
   /// means "fallback" to every consumer; these two

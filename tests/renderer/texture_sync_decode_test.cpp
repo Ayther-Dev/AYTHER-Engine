@@ -103,6 +103,12 @@ Seen seen_at(const std::uint8_t *bgra, Spot at) {
   return Seen::black;
 }
 
+bool blue_at(const std::uint8_t *bgra, Spot at) {
+  const std::size_t i =
+      ((static_cast<std::size_t>(at.y) + 8) * kW + at.x + 8) * 4;
+  return bgra[i] > 200 && bgra[i + 1] < 60 && bgra[i + 2] < 60;
+}
+
 } // namespace
 
 int main() try {
@@ -256,6 +262,39 @@ int main() try {
               renderer.sprite_texture_state(entity_png) == TS::ready,
           "RNF-1: panorama, screen and entity textures are resident on their "
           "first frame");
+  }
+
+  // 2c. A Custom layer (pack Acetato) obeys the same deterministic-residency
+  // contract. It must not report itself drawn while its cold texture is still
+  // pending, nor pop into a later frame according to worker timing.
+  {
+    const std::string overlay_png = (dir / "overlay.png").string();
+    std::vector<std::uint8_t> blue(16 * 16 * 4, 0);
+    for (std::size_t i = 0; i < blue.size(); i += 4) {
+      blue[i + 2] = 255;
+      blue[i + 3] = 255;
+    }
+    if (stbi_write_png(overlay_png.c_str(), 16, 16, 4, blue.data(), 16 * 4) ==
+        0)
+      return 1;
+    AytherLayerStack overlay_stack;
+    const std::uint32_t id = overlay_stack.insert_custom(
+        "cold overlay", overlay_stack.layers().size());
+    AytherLayerContent content{};
+    std::snprintf(content.asset, sizeof(content.asset), "%s",
+                  overlay_png.c_str());
+    content.img_w = 16;
+    content.img_h = 16;
+    content.fit = 1;
+    check(overlay_stack.set_content(id, content),
+          "the cold Custom layer is configured");
+    const std::uint8_t *overlay_pixels =
+        renderer.export_frame(ctx, fv, nullptr, true, &overlay_stack);
+    using TS = ayther::AytherRenderer::TextureState;
+    check(renderer.sprite_texture_state(overlay_png) == TS::ready &&
+              overlay_pixels != nullptr && blue_at(overlay_pixels, {140, 104}),
+          "RNF-1: a cold Custom layer is resident and visible on its first "
+          "frame");
   }
 
   // 3. The asynchronous mode (authoring) still exists: pending first.

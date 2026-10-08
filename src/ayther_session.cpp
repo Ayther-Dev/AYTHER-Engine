@@ -51,6 +51,7 @@
 #include "session/emulation_observer.h"
 #include "session/frame_composability.h"
 #include "session/pack_runtime.h"
+#include "session/parsed_sprite_join.h"
 #include "session/plane_bands.h"
 #include "session/plane_set_match.h"
 #include "session/plane_set_order.h"
@@ -59,6 +60,7 @@
 #include "session/pose_anchor.h"
 #include "session/pose_depth.h"
 #include "session/raster_bands.h"
+#include "session/raster_line_state.h"
 #include "session/recording_controller.h"
 #include "session/render_observation_builder.h"
 #include "session/sprite_line_limits.h"
@@ -1047,34 +1049,23 @@ const FrameView &AytherSession::produce_frame() {
   // disparos HD detectados tras run_frame se colocan en este offset, no al
   // principio del bloque (que en catch-up acumula varios frames).
   im.audio.mark_frame_boundary(im.frame_index);
-  // Spec 002 (A): the registers the previous frame ended with. The lines
-  // drawn before a register's first write in mid-screen use that value, so a
-  // one-shot write (the display turned off) touches them (raster_bands.h).
-  im.raster_prev_regs_n = 0;
-  {
-    const size_t abi = im.runner.abi_region_bytes(AYTHER_REGION_VDP_REGS);
-    const size_t n = abi ? abi : im.runner.vdp_regs_size();
-    if (n > 0 && n <= im.raster_prev_regs.size() &&
-        im.runner
-            .read_region_v1(AYTHER_REGION_VDP_REGS, im.raster_prev_regs.data(),
-                            static_cast<uint32_t>(n), AYTHER_GENERATION_ANY)
-            .ok())
-      im.raster_prev_regs_n = n;
-  }
   im.runner.run_frame();            // fires the video + audio callbacks
   im.verify_ayther_subscriptions(); // E-2 (): una sola vez
-  im.refresh_abi_mirror();          // E-3 (): VDP por la ABI, 1 vez/frame
+  im.runner.set_audio_mute_v1(0);   // la re-sim bare corre sin mute
+  // R-5: sin applies de supresión no hay restores — el core corre siempre
+  // con el frame completo (los canales 0x102-0x106 quedaron inertes).
+  if (im.layer_dim_want)
+    im.runner.set_layer_dim_v1(0); // la re-sim bare corre sin dim
+  // Capture only after restoring output-only controls. Both setters advance
+  // the ABI generation; capturing before them made later frame-scoped journal
+  // and LINE_STATE reads stale even though they described this same frame.
+  im.refresh_abi_mirror(); // E-3 (): VDP por la ABI, 1 vez/frame
   // Spec 002 (A): display enable (register 1, bit 6) at the end of the frame.
   {
     const uint8_t *de_regs = im.regs_ptr();
     im.display_on = de_regs == nullptr || im.runner.vdp_regs_size() < 2 ||
                     (de_regs[1] & 0x40) != 0;
   }
-  im.runner.set_audio_mute_v1(0); // la re-sim bare corre sin mute
-  // R-5: sin applies de supresión no hay restores — el core corre siempre
-  // con el frame completo (los canales 0x102-0x106 quedaron inertes).
-  if (im.layer_dim_want)
-    im.runner.set_layer_dim_v1(0); // la re-sim bare corre sin dim
 
   // -- Gather occurrences --------------------------------------------------
   const auto t_audio = clk::now();
@@ -2064,8 +2055,8 @@ const FrameView &AytherSession::produce_frame() {
       // viene vacía (core stock) → fallback al autodetect single-base por VRAM.
       // E-3 (): con ABI, la lista viene por read_region validada
       // contra la generación del snapshot; sin ABI, del puntero de
-      // siempre. El hasher espera entradas de 10 bytes en los dos casos
-      // — `ayther_sprite_v1` ES ese layout, así que no hay conversión.
+      // siempre. El observer normaliza los campos u16 nativos de la ABI y del
+      // fallback a los 10 bytes little-endian que el hasher consume.
       static_assert(sizeof(ayther_sprite_v1) == 10,
                     "el hasher lee entradas de 10 bytes");
       const auto observed_sprites = im.observer.parsed_sprites(im.runner);
@@ -2080,6 +2071,10 @@ const FrameView &AytherSession::produce_frame() {
       // parches y sus recortes negros. El fallback a VRAM queda para lo
       // que siempre fue suyo: cores sin la capacidad (stock).
       if (observed_sprites.abi || (psp && pn > 0)) {
+        // An ABI overflow is authoritative only about its incompleteness. Feed
+        // an empty frame to clear previous occurrences; never hash its prefix
+        // and never fall back to the final SAT, which cannot recover sprites
+        // parsed before a mid-frame rewrite.
         ayther_sprite_hasher_process_sprites(im.sprite_hasher.get(), psp, pn,
                                              vram, vsz);
       } else {
@@ -2341,9 +2336,10 @@ const FrameView &AytherSession::produce_frame() {
             // viewport y VDP_REGS hablan de dos frames distintos, y
             // ese frame no se cose — mezclar las dos geometrías es
             // exactamente lo que el flag vino a impedir.
-            const bool geo_pending = im.observer.system_available() &&
-                                     (im.observer.system().flags &
-                                      AYTHER_SYSTEM_GEOMETRY_PENDING) != 0;
+            const bool geo_pending = !im.observer.system_current_for_frame() ||
+                                     (im.observer.system_available() &&
+                                      (im.observer.system().flags &
+                                       AYTHER_SYSTEM_GEOMETRY_PENDING) != 0);
             if (!im.bg_scene_cut && !geo_pending) {
               // h40 lo dice SYSTEM cuando el core lo da (ABI 1.5):
               // la decodificación de reg 12 ya se corrigió una vez
@@ -4142,17 +4138,22 @@ const FrameView &AytherSession::produce_frame() {
     // members through pose_owner. No member on screen → 255 (behind), never
     // a slot taken from the area of the pose.
     {
-      std::array<uint8_t, 80> chain_by_slot;
-      chain_by_slot.fill(0xFF);
-      uint8_t rn = 0;
-      const uint8_t *rp = parsed_sprites_raw(&rn);
-      for (uint8_t i = 0; rp && i < rn; ++i) {
-        const uint8_t sat = rp[(size_t)i * 10 + 8];
-        if (sat < chain_by_slot.size() && chain_by_slot[sat] == 0xFF)
-          chain_by_slot[sat] = rp[(size_t)i * 10 + 9];
-      }
-      session::pose_anchors({im.sprite_occs, n_sprite_occs},
-                            {im.pose_owner, n_sprite_occs}, chain_by_slot,
+      const auto parsed_view =
+          im.observer.cached_or_legacy_parsed_sprites(im.runner);
+      const std::span<const uint8_t> parsed_bytes =
+          parsed_view.data
+              ? std::span<const uint8_t>(
+                    parsed_view.data, static_cast<size_t>(parsed_view.count) *
+                                          session::kParsedSpriteRecordSize)
+              : std::span<const uint8_t>{};
+      const auto parsed = session::canonical_parsed_sprites(parsed_bytes);
+      const std::span<const AytherSpriteOccurrence> pose_occurrences =
+          std::span<const AytherSpriteOccurrence>(im.sprite_occs,
+                                                  n_sprite_occs);
+      const auto chain_by_occurrence =
+          session::parsed_sprite_chain_ranks(parsed, pose_occurrences);
+      session::pose_anchors(pose_occurrences, {im.pose_owner, n_sprite_occs},
+                            chain_by_occurrence,
                             {im.pose_anchor, n_claimed_subs});
       // Spec 002 (R2, RF-8.3): the depth parts of each pose replacement with
       // two or more members on screen (session/pose_depth.h) — each part at
@@ -4166,7 +4167,7 @@ const FrameView &AytherSession::produce_frame() {
             const AytherSpriteOccurrence &oc = im.sprite_occs[o];
             boxes.push_back(session::DepthBox{
                 oc.screen_x, oc.screen_y, oc.w_tiles * 8, oc.h_tiles * 8,
-                oc.slot < chain_by_slot.size() ? chain_by_slot[oc.slot]
+                o < chain_by_occurrence.size() ? chain_by_occurrence[o]
                                                : (uint8_t)0xFF});
           }
         if (boxes.size() < 2)
@@ -4876,6 +4877,12 @@ const FrameView &AytherSession::produce_frame() {
       session::FrameComposabilityInput fc;
       fc.raster = raster;
       fc.layer_dim = im.layer_dim_want;
+      fc.parsed_sprites_complete =
+          im.observer.parsed_sprites_complete_for_frame();
+      fc.geometry_current =
+          im.observer.system_current_for_frame() &&
+          (!im.observer.system_available() ||
+           session::raster_state_matches_emitted_frame(im.observer.system()));
       if (v.scene_vram)
         fc.vram = {v.scene_vram, v.scene_vram_size};
       if (regs3)
@@ -4903,34 +4910,84 @@ const FrameView &AytherSession::produce_frame() {
       // the whole frame non-composable.
       v.raster_reasons = raster;
       v.raster_band_count = 0;
+      const bool raster_state_is_current = fc.geometry_current;
       // Spec 002 (A): a frame that ends with the display off is the core's
       // image whole (frame_composability.cpp); it has no bands.
       if ((composability.scene_dirty & session::kDirtyRaster) != 0 &&
           (composability.scene_dirty & session::kDirtyDisplayOff) == 0 &&
-          im.observer.snapshot_available() && v.scene_vram && regs3 &&
-          v.scene_cram && vsr) {
+          raster_state_is_current && im.observer.snapshot_available() &&
+          v.scene_vram && regs3 && v.scene_cram && vsr) {
+        const auto &frame_snapshot = im.observer.snapshot();
         ayther_journal_v1 journal{};
-        const auto read =
-            im.runner.read_region_v1(AYTHER_REGION_RASTER_JOURNAL, &journal,
-                                     sizeof(journal), AYTHER_GENERATION_ANY);
-        if (read.status == AYTHER_STATUS_OK &&
-            journal.count <= AYTHER_JOURNAL_MAX_EVENTS) {
+        const auto read = im.runner.read_region_v1(
+            AYTHER_REGION_RASTER_JOURNAL, &journal, sizeof(journal),
+            frame_snapshot.snapshot_generation);
+        if (session::raster_journal_is_coherent(
+                read.status, read.generation,
+                frame_snapshot.snapshot_generation, journal)) {
           std::array<session::RasterEvent, AYTHER_JOURNAL_MAX_EVENTS> events{};
           for (uint32_t i = 0; i < journal.count; ++i)
             events[i] = {journal.events[i].v_counter, journal.events[i].reason,
                          journal.events[i].address, journal.events[i].data};
+          std::vector<uint8_t> line_state_bytes;
+          std::array<session::RasterLineLayout, 1024> line_layouts{};
+          std::span<const session::RasterLineLayout> exact_line_layouts;
+          const ayther_interface_v1 *line_api = im.runner.ayther_api();
+          if ((raster & session::kRasterReasonHscroll) != 0 &&
+              line_api != nullptr &&
+              (line_api->capabilities & AYTHER_CAP_LINE_STATE_V1) != 0 &&
+              (im.observer.requested_subscriptions() & AYTHER_SUB_LINE_STATE) !=
+                  0 &&
+              line_api->region_info_size >= sizeof(ayther_region_info_v1) &&
+              AYTHER_IFACE_HAS(line_api, query_region) &&
+              line_api->query_region != nullptr) {
+            ayther_region_info_v1 line_state_info{};
+            line_state_info.struct_size = sizeof(line_state_info);
+            const int32_t line_query = line_api->query_region(
+                AYTHER_REGION_LINE_REGS, &line_state_info,
+                sizeof(line_state_info));
+            const size_t line_state_size = line_state_info.byte_size;
+            const size_t max_line_state_size =
+                sizeof(ayther_line_header_v1) +
+                line_layouts.size() * sizeof(ayther_line_regs_v1);
+            if (line_query == AYTHER_STATUS_OK &&
+                session::line_state_region_is_compatible(line_state_info,
+                                                         v.fb_height) &&
+                line_state_size <= max_line_state_size) {
+              line_state_bytes.resize(line_state_size);
+              const auto line_read = im.runner.read_region_v1(
+                  AYTHER_REGION_LINE_REGS, line_state_bytes.data(),
+                  static_cast<uint32_t>(line_state_bytes.size()),
+                  frame_snapshot.snapshot_generation);
+              if (session::frame_region_read_is_coherent(
+                      line_read.status, line_read.generation,
+                      frame_snapshot.snapshot_generation)) {
+                const auto parsed = session::parse_raster_line_layouts(
+                    line_state_bytes, frame_snapshot.frame_generation,
+                    v.fb_height, line_layouts);
+                if (parsed)
+                  exact_line_layouts = std::span{line_layouts}.first(*parsed);
+              }
+            }
+          }
           const session::RasterFinalState final_state{
               {regs3, rsz3},
               {v.scene_cram, v.scene_cram_size},
               {vsr, impl_->runner.vsram_size()},
               {v.scene_vram, v.scene_vram_size},
-              {im.raster_prev_regs.data(), im.raster_prev_regs_n}};
+              im.observer.system_available()
+                  ? session::raster_identity_vdp_mode(im.observer.system())
+                  : std::uint8_t{0},
+              im.observer.system_available() ? im.observer.system().interlace
+                                             : std::uint8_t{0},
+              exact_line_layouts};
           // Pattern writes are not journaled: their lines are the ones where
           // the core's image differs from the frame it recomposes from its
-          // final state.
+          // final state. DI-21: the same comparison bounds every raster band,
+          // so it is taken for any raster reason.
           std::span<const uint8_t> diff_lines;
           const ayther_interface_v1 *api = im.runner.ayther_api();
-          if ((raster & session::kRasterReasonVram) != 0 && api != nullptr &&
+          if (raster != 0 && api != nullptr &&
               (api->capabilities & AYTHER_CAP_RECOMPOSE_V1) != 0 &&
               AYTHER_IFACE_HAS(api, recompose_frame) &&
               api->recompose_frame != nullptr && v.fb_pixels != nullptr &&
@@ -4951,9 +5008,33 @@ const FrameView &AytherSession::produce_frame() {
               diff_lines = im.raster_diff_lines;
             }
           }
+          std::array<session::RasterSprite, kMaxSpriteOccs> raster_sprites{};
+          std::size_t raster_sprite_count = 0;
+          for (uint32_t i = 0; v.scene && i < v.scene_count &&
+                               raster_sprite_count < raster_sprites.size();
+               ++i) {
+            const SceneElement &element = v.scene[i];
+            if (element.layer != 3 || element.slot >= 80)
+              continue;
+            raster_sprites[raster_sprite_count++] = session::RasterSprite{
+                element.slot,
+                element.x,
+                element.y,
+                static_cast<uint8_t>((element.w + 7U) / 8U),
+                static_cast<uint8_t>((element.h + 7U) / 8U),
+                static_cast<uint16_t>((element.pattern & 0x07FFU) |
+                                      ((element.flips & 0x01U) << 11U) |
+                                      ((element.flips & 0x02U) << 11U) |
+                                      ((element.palette & 0x03U) << 13U) |
+                                      ((element.priority & 0x01U) << 15U)),
+                element.chain,
+                element.raster_identity_known != 0 && element.chain != 0xFF,
+                element.hidden == 0};
+          }
           const session::RasterBands bands = session::raster_bands(
               raster, std::span{events}.first(journal.count), journal.dropped,
-              final_state, (int)v.fb_height, diff_lines);
+              final_state, (int)v.fb_height, diff_lines,
+              std::span{raster_sprites}.first(raster_sprite_count));
           uint32_t covered = 0;
           for (uint32_t k = 0; k < bands.count; ++k)
             covered += bands.bands[k].y1 - bands.bands[k].y0;
@@ -5017,12 +5098,22 @@ void AytherSession::publish_render_observation(
   const uint32_t n =
       (std::min<uint32_t>)(v.sprite_occs ? v.sprite_occ_count : 0,
                            kMaxSpriteOccs);
-  // Link-chain position by SAT slot, from the scene the frame published.
-  std::array<uint8_t, 80> chain;
-  chain.fill(0xFF);
-  for (uint32_t e = 0; v.scene && e < v.scene_count; ++e)
-    if (v.scene[e].layer == 3 && v.scene[e].slot < chain.size())
-      chain[v.scene[e].slot] = v.scene[e].chain;
+  // Exact link-chain position for each draw occurrence. A slot can be
+  // rewritten and drawn more than once during a frame, so deriving this from
+  // the filtered scene by slot loses identity (and even made the diagnostic
+  // differ between pack/no-pack runs).
+  const auto parsed_view =
+      im.observer.cached_or_legacy_parsed_sprites(im.runner);
+  const std::span<const uint8_t> parsed_bytes =
+      parsed_view.data
+          ? std::span<const uint8_t>(parsed_view.data,
+                                     static_cast<size_t>(parsed_view.count) *
+                                         session::kParsedSpriteRecordSize)
+          : std::span<const uint8_t>{};
+  const auto parsed = session::canonical_parsed_sprites(parsed_bytes);
+  const std::span<const AytherSpriteOccurrence> occurrences{v.sprite_occs, n};
+  const auto chain_by_occurrence =
+      session::parsed_sprite_chain_ranks(parsed, occurrences);
   // Hidden on purpose: by hash (Lab channel) or by SAT slot (Edit eye).
   im.render_hidden.assign(n, 0);
   for (uint32_t i = 0; i < n; ++i) {
@@ -5039,7 +5130,7 @@ void AytherSession::publish_render_observation(
   in.occurrences = {v.sprite_occs, n};
   in.claimed = {im.sprite_claimed, n};
   in.hidden = im.render_hidden;
-  in.chain_by_slot = chain;
+  in.chain_by_occurrence = chain_by_occurrence;
   in.subs = {v.sprite_subs, v.sprite_subs ? v.sprite_sub_count : 0u};
   in.pose_sub_count = (std::min)(im.n_pose_subs, v.sprite_sub_count);
   in.pose_owner = {im.pose_owner, n};
@@ -8962,13 +9053,11 @@ const uint8_t *AytherSession::vsram(size_t *size) const {
 const uint8_t *AytherSession::parsed_sprites_raw(uint8_t *count) const {
   // E-5: con ABI, el espejo que produce_frame ya leyó por read_region; sin
   // ABI, el puntero del core.
-  if (const uint8_t *cached = impl_->observer.cached_parsed_sprites(count))
-    return cached;
-  AYTHER_LEGACY_READ_BEGIN
+  const auto selected =
+      impl_->observer.cached_or_legacy_parsed_sprites(impl_->runner);
   if (count)
-    *count = impl_->runner.parsed_sprite_count();
-  return impl_->runner.parsed_sprites();
-  AYTHER_LEGACY_READ_END
+    *count = static_cast<uint8_t>((std::min)(selected.count, 255U));
+  return selected.data;
 }
 
 void *AytherSession::core_export(const char *name) const {
@@ -9145,38 +9234,35 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
 
   // SAT parseada cruda (10 bytes/entrada: yr,xr,attr u16 LE + w,h,sat_idx,
   // chain_pos u8) — patrón + orden REAL de dibujo entre sprites (chain).
-  struct Raw {
-    uint16_t xr, yr, attr;
-    uint8_t sat_idx, chain;
-  };
-  uint8_t rn = 0;
-  const uint8_t *rp = parsed_sprites_raw(&rn);
-  std::vector<Raw> raw;
-  raw.reserve(rn);
-  for (uint8_t i = 0; rp && i < rn; ++i) {
-    const uint8_t *p = rp + (size_t)i * 10;
-    Raw r;
-    r.yr = (uint16_t)(p[0] | (p[1] << 8));
-    r.xr = (uint16_t)(p[2] | (p[3] << 8));
-    r.attr = (uint16_t)(p[4] | (p[5] << 8));
-    r.sat_idx = p[8];
-    r.chain = p[9];
-    raw.push_back(r);
-  }
-  // occ → entrada de la SAT parseada: por slot; si el slot se reescribió a
-  // mitad de frame (entradas duplicadas), desempata la posición.
-  auto raw_of = [&](const AytherSpriteOccurrence &oc) -> const Raw * {
-    const Raw *best = nullptr;
-    for (const Raw &r : raw) {
-      if (r.sat_idx != oc.slot)
-        continue;
-      if (!best)
-        best = &r;
-      if ((int)r.xr - 128 == (int)oc.screen_x &&
-          (int)r.yr - 128 == (int)oc.screen_y)
-        return &r;
-    }
-    return best;
+  // Canonicalizar con el mismo contrato que process_parsed_sprites es lo que
+  // permite un join por orden incluso si un slot y una posición se reutilizan
+  // a mitad del frame con otro patrón.
+  const auto parsed_view =
+      im.observer.cached_or_legacy_parsed_sprites(im.runner);
+  const std::span<const uint8_t> raw_bytes =
+      parsed_view.data
+          ? std::span<const uint8_t>(parsed_view.data,
+                                     static_cast<size_t>(parsed_view.count) *
+                                         session::kParsedSpriteRecordSize)
+          : std::span<const uint8_t>{};
+  const std::vector<session::ParsedSpriteRecord> raw =
+      session::canonical_parsed_sprites(raw_bytes);
+  const std::span<const AytherSpriteOccurrence> occurrences =
+      v.sprite_occs ? std::span<const AytherSpriteOccurrence>(
+                          v.sprite_occs, v.sprite_occ_count)
+                    : std::span<const AytherSpriteOccurrence>{};
+  const auto raw_join = session::join_parsed_sprites(raw, occurrences);
+  std::unordered_map<const AytherSpriteOccurrence *,
+                     const session::ParsedSpriteRecord *>
+      raw_by_occurrence;
+  raw_by_occurrence.reserve(raw_join.size());
+  for (size_t index = 0; index < raw_join.size(); ++index)
+    if (raw_join[index])
+      raw_by_occurrence.emplace(&v.sprite_occs[index], &raw[*raw_join[index]]);
+  auto raw_of = [&](const AytherSpriteOccurrence &oc)
+      -> const session::ParsedSpriteRecord * {
+    const auto found = raw_by_occurrence.find(&oc);
+    return found == raw_by_occurrence.end() ? nullptr : found->second;
   };
 
   // Joins de subs HD ya resueltos: sprite_subs por slot SAT (el array
@@ -9223,8 +9309,8 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
   std::stable_sort(
       chain_order.begin(), chain_order.end(),
       [&](const AytherSpriteOccurrence *a, const AytherSpriteOccurrence *b) {
-        const Raw *ra = raw_of(*a);
-        const Raw *rb = raw_of(*b);
+        const session::ParsedSpriteRecord *ra = raw_of(*a);
+        const session::ParsedSpriteRecord *rb = raw_of(*b);
         return (ra ? ra->chain : 255) < (rb ? rb->chain : 255);
       });
   // Spec 002 (R5, BR-096, RF-9.4): only what the VDP draws on some line —
@@ -9236,11 +9322,10 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
   if (!chain_order.empty() && !raw.empty()) {
     std::vector<session::ParsedSprite> parsed(raw.size());
     for (size_t k = 0; k < raw.size(); ++k) {
-      const uint8_t *p = rp + k * 10;
-      parsed[k].x_raw = (int16_t)(raw[k].xr & 0x1FF);
-      parsed[k].y = (int16_t)((int)(raw[k].yr & 0x1FF) - 128);
-      parsed[k].w_tiles = std::max<uint8_t>(p[6], 1);
-      parsed[k].h_tiles = std::max<uint8_t>(p[7], 1);
+      parsed[k].x_raw = static_cast<int16_t>(raw[k].x_raw & 0x1FFU);
+      parsed[k].y = raw[k].screen_y();
+      parsed[k].w_tiles = raw[k].width_tiles();
+      parsed[k].h_tiles = raw[k].height_tiles();
       parsed[k].chain = raw[k].chain;
     }
     const bool no_limit =
@@ -9249,7 +9334,8 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
         parsed, (int)v.fb_height,
         session::line_limits_for(v.fb_width, no_limit));
     for (const AytherSpriteOccurrence *oc : chain_order)
-      if (const Raw *r = raw_of(*oc); r && drawn[(size_t)(r - raw.data())] == 0)
+      if (const session::ParsedSpriteRecord *r = raw_of(*oc);
+          r && drawn[static_cast<size_t>(r - raw.data())] == 0)
         fully_masked.insert(oc);
   }
 
@@ -9614,25 +9700,28 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
     std::stable_sort(
         grp.begin(), grp.end(),
         [&](const AytherSpriteOccurrence *a, const AytherSpriteOccurrence *b) {
-          const Raw *ra = raw_of(*a);
-          const Raw *rb = raw_of(*b);
+          const session::ParsedSpriteRecord *ra = raw_of(*a);
+          const session::ParsedSpriteRecord *rb = raw_of(*b);
           return (ra ? ra->chain : 255) > (rb ? rb->chain : 255);
         });
     for (const AytherSpriteOccurrence *oc : grp) {
-      const Raw *r = raw_of(*oc);
+      const session::ParsedSpriteRecord *r = raw_of(*oc);
       SceneElement e;
       e.hash = oc->hash;
       e.x = oc->screen_x;
       e.y = oc->screen_y;
       e.w = (uint8_t)(oc->w_tiles * 8);
       e.h = (uint8_t)(oc->h_tiles * 8);
-      e.pattern = r ? (uint16_t)(r->attr & 0x7FF) : 0;
+      e.pattern = r ? r->pattern() : 0;
       e.palette = oc->palette;
       e.flips = (uint8_t)((oc->hflip ? 1 : 0) | (oc->vflip ? 2 : 0));
       e.layer = 3;
       e.priority = pri;
       e.slot = oc->slot;
-      e.chain = r ? r->chain : 0xFF;
+      const session::ParsedSpriteSceneIdentity identity =
+          session::parsed_sprite_scene_identity(r);
+      e.chain = identity.chain;
+      e.raster_identity_known = identity.raster_identity_known ? 1 : 0;
       const size_t oidx = static_cast<size_t>(oc - v.sprite_occs);
       const uint32_t pose_owner =
           oidx < kMaxSpriteOccs ? im.pose_owner[oidx] : session::kNoPoseOwner;
@@ -10464,6 +10553,14 @@ AytherSession::audio_hd_voices_state() const {
   return impl_->audio.hd_voices_state();
 }
 
+engine::audio_observation::AudioHdVoicesState
+AytherSession::audio_hd_voices_state(
+    std::vector<engine::audio_observation::AudioHdSharedPcmAsset> &shared)
+    const {
+  shared.clear();
+  return impl_->audio.hd_voices_state(&shared);
+}
+
 engine::audio_observation::AudioHdRestoreResult
 AytherSession::restore_audio_hd_voices(
     const engine::audio_observation::AudioHdStateHeader &header,
@@ -10627,7 +10724,7 @@ AytherSession::PackDerivedState AytherSession::pack_derived_state() const {
 
 std::vector<std::string> AytherSession::catalog_texture_assets() const {
   // Spec 002 (R6, BR-091): poses first (catalog order), then per-sprite,
-  // then plane sets and their sequences.
+  // plane sets and their sequences, panoramas, screens and overlays.
   std::vector<std::string> out;
   char name[512];
   const auto add = [&](size_t len) {
@@ -10682,6 +10779,18 @@ std::vector<std::string> AytherSession::catalog_texture_assets() const {
   std::sort(ids.begin(), ids.end());
   for (const uint64_t id : ids)
     add_name(im.screens.at(id).asset);
+  // Acetatos are textures too. Include both their base sheet and every
+  // animation step in pack order; otherwise their first visible frame races
+  // the asynchronous decode worker even after a successful pack prewarm.
+  const auto add_layer_asset = [&](const char(&asset)[256]) {
+    add_name(std::string(asset, ::strnlen(asset, sizeof(asset))));
+  };
+  for (const PackOverlay &overlay : im.overlays) {
+    add_layer_asset(overlay.content.asset);
+    const uint8_t frames = (std::min)(overlay.content.anim_count, uint8_t{3});
+    for (uint8_t i = 0; i < frames; ++i)
+      add_layer_asset(overlay.content.anim[i]);
+  }
   return out;
 }
 const uint8_t *AytherSession::work_ram() const noexcept {

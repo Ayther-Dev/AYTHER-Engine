@@ -131,7 +131,8 @@ int main() try {
   fv.scene_cram = cram.data();
   fv.scene_cram_size = cram.size();
   fv.scene_dirty = 0; // the session localized the raster writes
-  fv.raster_reasons = 1U << 6;
+  // A palette write (DI-22 composes pattern-only bands in HD).
+  fv.raster_reasons = 1U << 1;
   fv.raster_band_count = 1;
   fv.raster_bands[0][0] = 0;
   fv.raster_bands[0][1] = 112;

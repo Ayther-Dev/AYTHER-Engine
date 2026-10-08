@@ -15,6 +15,7 @@
 #include "ayther_components_toml.h"
 #include "pose_pack_fixture.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
@@ -99,20 +100,28 @@ int main() try {
   ayther::test::PosePackFixture pack("overlay_gate");
   pack.add_asset("graphics/nubes.png",
                  ayther::test::solid_png(16, 16, 0xFFFFFFFFU));
+  pack.add_asset("graphics/nubes-2.png",
+                 ayther::test::solid_png(16, 16, 0xFFEEEEFFU));
+  pack.add_asset("graphics/nubes-3.png",
+                 ayther::test::solid_png(16, 16, 0xFFDDDDFFU));
   const std::string elements =
       ayther::bake_elements_toml({screen}, {}, {}, {}, {}, {});
   pack.add_asset("elements.toml",
                  std::vector<std::uint8_t>(elements.begin(), elements.end()));
-  const std::string acetatos = "[[acetato]]\n"
-                               "name = \"Nubes\"\n"
-                               "index = 1\n"
-                               "visible = true\n"
-                               "asset = \"graphics/nubes.png\"\n"
-                               "img_w = 16\n"
-                               "img_h = 16\n"
-                               "tile_mode = 1\n"
-                               "screen = \"0x4451c3dce705076d\"\n"
-                               "gate = \"presencia\"\n";
+  const std::string acetatos =
+      "[[acetato]]\n"
+      "name = \"Nubes\"\n"
+      "index = 1\n"
+      "visible = true\n"
+      "asset = \"graphics/nubes.png\"\n"
+      "img_w = 16\n"
+      "img_h = 16\n"
+      "tile_mode = 1\n"
+      "frames = "
+      "\"graphics/nubes-2.png|graphics/nubes-3.png|graphics/nubes.png\"\n"
+      "ticks = 4\n"
+      "screen = \"0x4451c3dce705076d\"\n"
+      "gate = \"presencia\"\n";
   pack.add_asset("acetatos.toml",
                  std::vector<std::uint8_t>(acetatos.begin(), acetatos.end()));
   std::string error;
@@ -129,6 +138,15 @@ int main() try {
             overlays[0].content.gate_presence != 0 &&
             overlays[0].content.has_screen(kCuadro),
         "the Acetato is gated by presence on the Cuadro");
+  const auto texture_assets = s->catalog_texture_assets();
+  const auto occurrences = [&](const char *asset) {
+    return std::count(texture_assets.begin(), texture_assets.end(), asset);
+  };
+  check(occurrences("graphics/nubes.png") == 1 &&
+            occurrences("graphics/nubes-2.png") == 1 &&
+            occurrences("graphics/nubes-3.png") == 1,
+        "BR-185: prewarm catalogs every overlay texture and deduplicates the "
+        "base asset reused by its animation");
   const ayther::FrameView *fv = run_to(*s, kFrame);
   bool present = false;
   for (std::uint32_t i = 0; fv && i < fv->screen_presence_count; ++i)

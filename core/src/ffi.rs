@@ -114,8 +114,9 @@ pub mod ffi {
         screen_x: i16,
         /// Vertical screen position in pixels.
         screen_y: i16,
-        /// SAT chain link.
-        link: u8, // SAT link field (metasprite grouping hint, R1.5)
+        /// Source-dependent SAT order metadata: next-slot link for a
+        /// final-VRAM scan, or captured chain rank for a parsed-list scan.
+        link: u8,
         /// VDP palette line.
         palette: u8, // VDP palette index 0–3 (R1.5)
         /// VDP priority bit.

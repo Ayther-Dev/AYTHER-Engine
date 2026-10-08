@@ -6,6 +6,7 @@
 foreach(_source IN ITEMS
         animation_phase_test.cpp
         audio_bus_balance_test.cpp
+        band_carry_test.cpp
         capabilities_test.cpp
         audio_fade_test.cpp
         audio_match_rule_test.cpp
@@ -17,6 +18,7 @@ foreach(_source IN ITEMS
         decode_limits_test.cpp
         failure_escalation_test.cpp
         frame_composability_test.cpp
+        frame_view_digest_test.cpp
         log_test.cpp
         loop_region_test.cpp
         music_sequence_model_test.cpp
@@ -56,6 +58,7 @@ foreach(_source IN ITEMS
         pano_bands_test.cpp
         panorama_cover_test.cpp
         parallax_bands_test.cpp
+        parsed_sprite_join_test.cpp
         plane_set_match_test.cpp
         plane_set_order_test.cpp
         plane_bands_test.cpp
