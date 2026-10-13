@@ -5848,6 +5848,12 @@ void AytherSession::set_subsystems_enabled_mask(uint32_t mask) noexcept {
   // vuelve en este mismo instante (hd_can_sound).
   if (hd_audio_was_open && !im.hd_audio_gate_open())
     im.stop_hd_voices();
+  // …y volver a abrir la compuerta reanuda lo que quedó vivo con el offset
+  // del reloj emulado, como volver de una pausa: la Secuencia en curso no
+  // tiene otro key-on hasta su próximo anclaje, y sin esto el original seguía
+  // sonando hasta entonces.
+  else if (!hd_audio_was_open && im.hd_audio_gate_open())
+    im.resume_live_instances();
 }
 
 // -- Perfiles de remasterización () -------------------------------------
