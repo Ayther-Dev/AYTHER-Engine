@@ -1754,8 +1754,11 @@ struct AytherSession::Impl {
   /// Secuencia ()—, así que el gate es el PAR: con los dos apagados no
   /// hay audio HD. Con uno solo apagado no se puede decidir de qué bus es
   /// este sonido, y apagar el que no era sería peor que no apagar nada.
+  bool hd_audio_gate_open() const {
+    return sub_on(Subsystem::Music) || sub_on(Subsystem::Sfx);
+  }
   bool hd_can_sound(uint64_t key, const std::string &asset) {
-    if (!sub_on(Subsystem::Music) && !sub_on(Subsystem::Sfx))
+    if (!hd_audio_gate_open())
       return false;
     if (hd_failed_keys.count(key))
       return false;
@@ -1763,6 +1766,31 @@ struct AytherSession::Impl {
       return true;
     note_asset_failure(key, asset);
     return false;
+  }
+
+  /// Cerrar la compuerta de hd_can_sound devuelve el original en el acto,
+  /// así que el HD que YA suena tiene que callarse en el mismo momento —
+  /// incluido el que guarda la instantánea de una pausa (stop_sfx_by_key la
+  /// descarta) —, o se oyen los dos: el perfil «Original» elegido desde el
+  /// menú de pausa reanudaba la música HD encima de la del juego. Las
+  /// instancias lógicas quedan: si la compuerta se reabre, la reanudación
+  /// las levanta desde el offset del reloj emulado. Mismo recorrido que
+  /// set_bus_muted, sin filtrar por bus.
+  void stop_hd_voices() {
+    for (const auto &sq : audio_seq_subs) {
+      audio.stop_sfx_by_key(sq.key);
+      audio.stop_event(sq.key);
+    }
+    for (const auto &[sig, asset] : audio_event_assign) {
+      (void)asset;
+      audio.stop_sfx_by_key(sig);
+      audio.stop_event(sig);
+    }
+    for (const auto &[key, li] : audio_live_inst) {
+      (void)li;
+      audio.stop_sfx_by_key(key);
+      audio.stop_event(key);
+    }
   }
 
   // -- : ESCALADA tras fallos repetidos --------------------------------

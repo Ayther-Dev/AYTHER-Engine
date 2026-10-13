@@ -168,6 +168,11 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Turning HD audio off mid-session (`set_subsystem_enabled` or
+  `set_subsystems_enabled_mask`, as the «Original» profile of the pause menu
+  does) now stops the HD voices already playing, including the one a pause
+  snapshot keeps. The original audio came back at once while the HD music
+  went on, so both played together.
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take
   with the same count kept the previous ones; any change of the events now

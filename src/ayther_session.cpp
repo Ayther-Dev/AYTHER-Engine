@@ -5826,10 +5826,8 @@ bool AytherSession::hd_enabled() const noexcept { return impl_->hd_enabled; }
 // -- Routing original/HD por subsistema () ------------------------------
 void AytherSession::set_subsystem_enabled(Subsystem s, bool on) noexcept {
   const uint32_t bit = subsystem_bit(s);
-  if (on)
-    impl_->subsystems_on |= bit;
-  else
-    impl_->subsystems_on &= ~bit;
+  set_subsystems_enabled_mask(on ? (impl_->subsystems_on | bit)
+                                 : (impl_->subsystems_on & ~bit));
 }
 
 bool AytherSession::subsystem_enabled(Subsystem s) const noexcept {
@@ -5843,7 +5841,13 @@ uint32_t AytherSession::subsystems_enabled_mask() const noexcept {
 }
 
 void AytherSession::set_subsystems_enabled_mask(uint32_t mask) noexcept {
-  impl_->subsystems_on = mask & ((1u << kSubsystemCount) - 1u);
+  Impl &im = *impl_;
+  const bool hd_audio_was_open = im.hd_audio_gate_open();
+  im.subsystems_on = mask & ((1u << kSubsystemCount) - 1u);
+  // Apagar el audio HD A MITAD tiene que callar lo que ya suena: el original
+  // vuelve en este mismo instante (hd_can_sound).
+  if (hd_audio_was_open && !im.hd_audio_gate_open())
+    im.stop_hd_voices();
 }
 
 // -- Perfiles de remasterización () -------------------------------------
