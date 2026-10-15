@@ -5612,6 +5612,61 @@ pub unsafe extern "C" fn ayther_audio_event_set_initial_active(
     }
 }
 
+/// Copy the detector's YM2612 register shadow (`FM_REGISTER_COUNT` = 512 bytes:
+/// bank 0 then bank 1) into `out`. Returns the bytes written, or 0 when `ptr` or
+/// `out` is null or `cap` is smaller than the shadow. The session captures it
+/// when a take starts recording so the replay can seed it later.
+#[unsafe(no_mangle)]
+/// # Safety
+///
+/// The caller must uphold the crate-level FFI safety contract documented at the
+/// crate root, including all pointer, buffer, lifetime, and ownership requirements.
+pub unsafe extern "C" fn ayther_audio_event_fm_registers(
+    ptr: *const audio_event::AudioEventDetector,
+    out: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: The caller upholds the pointer, lifetime, and ownership invariants
+    // documented for this FFI function.
+    unsafe {
+        if ptr.is_null() || out.is_null() || cap < audio_event::FM_REGISTER_COUNT {
+            return 0;
+        }
+        let regs = (*ptr).fm_registers();
+        std::ptr::copy_nonoverlapping(regs.as_ptr(), out, audio_event::FM_REGISTER_COUNT);
+        audio_event::FM_REGISTER_COUNT
+    }
+}
+
+/// Seed the detector's YM2612 register shadow with `len` == 512 bytes (bank 0
+/// then bank 1): the patches the game loaded before this detector or take
+/// started. Only the shadow changes; key states and events are untouched. A
+/// later `reset` discards it. Returns false (and changes nothing) when `ptr` or
+/// `regs` is null or `len` is not exactly 512.
+#[unsafe(no_mangle)]
+/// # Safety
+///
+/// The caller must uphold the crate-level FFI safety contract documented at the
+/// crate root, including all pointer, buffer, lifetime, and ownership requirements.
+pub unsafe extern "C" fn ayther_audio_event_seed_fm_registers(
+    ptr: *mut audio_event::AudioEventDetector,
+    regs: *const u8,
+    len: usize,
+) -> bool {
+    // SAFETY: The caller upholds the pointer, lifetime, and ownership invariants
+    // documented for this FFI function.
+    unsafe {
+        if ptr.is_null() || regs.is_null() || len != audio_event::FM_REGISTER_COUNT {
+            return false;
+        }
+        let slice = std::slice::from_raw_parts(regs, audio_event::FM_REGISTER_COUNT);
+        let mut seed = [0u8; audio_event::FM_REGISTER_COUNT];
+        seed.copy_from_slice(slice);
+        (*ptr).seed_fm_registers(&seed);
+        true
+    }
+}
+
 /// Destroy an AudioEventDetector.
 #[unsafe(no_mangle)]
 /// # Safety

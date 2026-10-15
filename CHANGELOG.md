@@ -35,6 +35,17 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `.arp` v9: a take now carries the audio event detector's YM2612 register
+  shadow at record start (`AytherRecording::audio_fm_regs`, 512 bytes, empty
+  for older files or a session without a detector). `record_start` fills it
+  from the live detector, `analyze_audio_events` and `replay_seek` seed their
+  detectors from it, and `split_recording` / `crop_recording` give each
+  half the shadow of its own cut point (rebuilt from the cached write log).
+  `AytherSession::audio_fm_registers` / `seed_audio_fm_registers` expose the
+  same two steps to hosts that restore a take with `unserialize` and drive
+  `step` themselves. FFI: `ayther_audio_event_fm_registers` and
+  `ayther_audio_event_seed_fm_registers`. The detector facts gain the
+  `seed_fm_registers` operation with the FNV-1a identity of the seeded bytes.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions
@@ -168,6 +179,73 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- HD mixer: a `continue_playback` retrigger now extends the continued voice
+  to the end and cut of the NEW window. It kept the old window's, so a looping
+  Sequence whose window outlasts its step (Golden Axe «The Battle»: span 576,
+  window 577) lost its HD one frame after every other pass as a `window_cut`,
+  the original played until the next pass and the HD then started from zero
+  — the restart and the leaked original heard on the character-select screen.
+  `audio_qa_continue_extends_window` pins it.
+- Anchoring: an in-step restart (Rule 5) now needs the WHOLE opening — the
+  trigger and every other head signature starting on the same frame, with
+  nothing the Sequence claims still sounding from the previous frame — instead
+  of a head quorum. Wilderness (Golden Axe) repeats three of its five opening
+  notes every few bars; each repeat re-anchored the Sequence inside its step,
+  cut the HD loop and started it again from zero. `seq_anchor_frame_decided`
+  gained a `sustained` input; the live pack and authored paths feed it from
+  the detector, the table and the old signature pass none.
+- HD mixer: a predecessor already fading out (window cut, restart anchor) no
+  longer absorbs a `continue_playback` retrigger as a continuation. The
+  retrigger starts a new voice (`restart`) while the old one drains. Before,
+  the restart anchor cut the music and the rising edge of the same frame
+  "continued" the dying voice: silence until the next anchor, then the track
+  from the beginning.
+- The audio detector read the YM2612 operator registers in slot order
+  (S1, S3, S2, S4) as if they were operator order: in algorithm 4 the Total
+  Level of operator 2 (a carrier) counted as timbre and that of operator 3 (a
+  modulator) as volume, so a game fading its carriers changed the instrument
+  on every note and the velocity followed the wrong operator. Instrument
+  identities of algorithm-4 patches change with this fix; `match =
+  "instrument"` rules authored on such a patch need their instrument re-read.
+  `AytherSession::kAudioEventAlgo` is now 2, so a frontend cache of analysed
+  events (the Lab's `.audioevents` sidecar) is re-analysed instead of feeding
+  a bake the old signatures: a pack baked from such a cache has member
+  signatures the live detector never produces, its hi-hat plays as a stranger
+  under the HD and can cut the loop as a replacement.
+- An original event that an assigned sound effect explains (its trigger, a
+  head or a member of its sequence) no longer counts as another track taking
+  over a channel of an exclusive music sequence: the game lent the channel to
+  the effect. The second voice of Golden Axe's character-select effect cut
+  «The Battle» HD loop and re-armed its anchor, and the intro then re-anchored
+  on the loop's hi-hat.
+- A sequence window learns the instruments of the members it sees; an event
+  with one of them is the member at another volume (the signature hashes the
+  carrier TL, the instrument does not): muted like the member, never a
+  replacement, and in live authoring it keeps the window alive. A fade by the
+  game left the original audible under the HD and ended the HD by absence.
+
+- Sequence anchoring (`audio_seq_anchor.h`): on a frame tie, a Sequence that
+  lists another candidate's signature now anchors before the one it claims,
+  ahead of the "most specific" rule; continuation of a looping Sequence is
+  tested at its step ("step reached, window alive") instead of "window ends
+  exactly here", which never held when the HD asset outlasts the loop; and an
+  occurrence inside the step that is the whole opening (trigger plus head
+  quorum) re-anchors as a restart instead of being ignored as internal. Golden
+  Axe «The Battle», 2026-10-14: the intro's hi-hat is a loop head, so at the
+  intro→loop boundary the intro (fewer members) anchored first and replaced
+  the loop on the music bus — the HD intro restarted at every pass — and the
+  jump to the loop start on the character screen was ignored, leaving the HD
+  out of phase until its window expired. The session cuts the running HD of a
+  Sequence that re-anchors as a restart so the new window starts clean.
+- FM signatures of a take that starts with the music already playing now
+  match the authored ones. The detector hashes instrument and pitch from its
+  own register shadow at key-on, and a game loads its patches once per song:
+  a take recorded mid-song never saw those writes, so every such channel
+  hashed the same all-zero instrument and none of its signatures matched
+  (Golden Axe «The Battle», 2026-10-14: five of six channels, the HD loop
+  never anchored, and the same music recorded from before its first note
+  matched everything). Takes recorded from this version seed the detector;
+  older takes keep the old behaviour until re-recorded.
 - Turning HD audio back on (`set_subsystems_enabled_mask` reopening the Music
   or Sfx gate, as switching the pause-menu profile back from «Original» does)
   now resumes the live HD instances at the emulated-clock offset, the same

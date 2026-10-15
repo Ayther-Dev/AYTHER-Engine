@@ -52,5 +52,32 @@ int main() {
         "an empty detector frame is not treated as a terminal signal",
         failures);
 
+  // Golden Axe, 2026-10-14: the character-select effect plays two voices; its
+  // second one (a head of the effect's sequence) lands on a channel of «The
+  // Battle». An assigned effect explains it: the music is not being replaced.
+  {
+    using ayther::EffectSequenceSignatures;
+    constexpr std::uint64_t select = 0x4f1319bbc451f494ULL;
+    constexpr std::array<std::uint64_t, 2> select_head{select,
+                                                       0x7cc32ee34f5e304fULL};
+    constexpr std::array<std::uint64_t, 1> select_members{
+        0x5184082c2610a017ULL};
+    const std::array effects{EffectSequenceSignatures{
+        select, std::span{select_head}, std::span{select_members}}};
+    check(ayther::explained_by_effect_sequence(0x7cc32ee34f5e304fULL, effects),
+          "the second voice of the select effect is explained by its sequence",
+          failures);
+    check(ayther::explained_by_effect_sequence(0x5184082c2610a017ULL, effects),
+          "a member of the select effect is explained by its sequence",
+          failures);
+    check(ayther::explained_by_effect_sequence(select, effects),
+          "the trigger of the select effect is explained by its sequence",
+          failures);
+    check(!ayther::explained_by_effect_sequence(0x47414d454f564552ULL, effects),
+          "Game Over music is explained by no effect", failures);
+    check(!ayther::explained_by_effect_sequence(0x7cc32ee34f5e304fULL, {}),
+          "without assigned effects nothing is explained", failures);
+  }
+
   return failures == 0 ? 0 : 1;
 }

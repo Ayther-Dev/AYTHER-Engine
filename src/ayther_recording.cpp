@@ -33,6 +33,9 @@
 //   --- v8 (algo de hash de sprites) ---
 //   u32 hash_algo        (kSpriteHashAlgo con que se capturó la historia; <v8 =
 //   0)
+//   --- v9 (sombra de registros FM del detector al inicio de la toma) ---
+//   u32 fm_regs_size     (0 = sin sombra, o 512)
+//   fm_regs_size × u8    banco 0 (0x000-0x0FF) y banco 1 (0x100-0x1FF)
 // ---------------------------------------------------------------------------
 #include "ayther_recording.h"
 #include "log.h"
@@ -245,7 +248,7 @@ namespace {
 
 constexpr char kMagic[4] = {'A', 'R', 'P', '1'};
 constexpr uint32_t kVersion =
-    8; // v8: + hash_algo (algoritmo de la historia de sprites)
+    9; // v9: + sombra de registros FM del detector al inicio de la toma
 constexpr int kZstdLevel = 9; // takes are saved rarely — favour ratio
 constexpr std::size_t kMaxRecordingBytes = 64U * 1024U * 1024U;
 constexpr std::size_t kMaxInitialStateBytes = 64U * 1024U * 1024U;
@@ -1020,9 +1023,11 @@ bool AytherRecording::save(const std::string &path) const {
     previous_keyframe = keyframe.frame;
     first_keyframe = false;
   }
+  const bool fm_regs_valid =
+      audio_fm_regs.empty() || audio_fm_regs.size() == kAudioFmRegisterBytes;
   if (empty() || inputs.size() > kMaxRecordingFrames ||
       initial_state.size() > kMaxInitialStateBytes || !text_sizes_valid ||
-      !histories_valid || !trim_valid || !keyframes_valid) {
+      !histories_valid || !trim_valid || !keyframes_valid || !fm_regs_valid) {
     ayther::log::write(ayther::log::Severity::Warning, "recording",
                        "refuse_save_invalid_take",
                        "refuse to save empty, oversized or invalid take");
@@ -1124,6 +1129,12 @@ bool AytherRecording::save(const std::string &path) const {
 
   // v8: algoritmo de hash con que se capturó la historia de sprites.
   put_u32(f, hash_algo);
+
+  // v9: sombra de registros FM del detector al inicio de la toma (0 o 512).
+  put_u32(f, static_cast<uint32_t>(audio_fm_regs.size()));
+  if (!audio_fm_regs.empty())
+    f.write(reinterpret_cast<const char *>(audio_fm_regs.data()),
+            audio_fm_regs.size());
 
   if (!f.good()) {
     ayther::log::write(ayther::log::Severity::Error, "recording",
@@ -1346,6 +1357,20 @@ std::optional<AytherRecording> AytherRecording::load(const std::string &path) {
     rec.hash_algo = 0;
     if (version >= 8U && !cursor.read_u32(rec.hash_algo))
       return std::nullopt;
+
+    // v9: sombra de registros FM (0 = ausente, o exactamente 512 bytes).
+    if (version >= 9U) {
+      std::uint32_t fm_regs_size = 0;
+      if (!cursor.read_u32(fm_regs_size) ||
+          (fm_regs_size != 0U &&
+           fm_regs_size != AytherRecording::kAudioFmRegisterBytes) ||
+          fm_regs_size > cursor.remaining())
+        return std::nullopt;
+      rec.audio_fm_regs.resize(fm_regs_size);
+      if (fm_regs_size != 0U &&
+          !cursor.read_bytes(rec.audio_fm_regs.data(), fm_regs_size))
+        return std::nullopt;
+    }
     if (!cursor.empty())
       return std::nullopt;
 
@@ -1401,12 +1426,17 @@ bool AytherRecording::decompress_keyframe(size_t idx,
 // slice — sub-toma [begin, end) rebasada a 0 (Fase C: dividir tomas)
 // ---------------------------------------------------------------------------
 AytherRecording AytherRecording::slice(uint32_t begin, uint32_t end,
-                                       std::vector<uint8_t> state) const {
+                                       std::vector<uint8_t> state,
+                                       std::vector<uint8_t> fm_regs) const {
   AytherRecording r;
   r.game_id = game_id;
   r.name = name;           // el caller renombra el tail
   r.hash_algo = hash_algo; // la sub-toma hereda el algo de su historia
   r.initial_state = std::move(state);
+  // v9: la sombra FM va con el savestate del mismo punto. Un tamaño que no
+  // es 0 ni 512 no se hereda: save() lo rechazaría.
+  if (fm_regs.size() == kAudioFmRegisterBytes)
+    r.audio_fm_regs = std::move(fm_regs);
   r.inputs.assign(inputs.begin() + begin, inputs.begin() + end);
   if (stats.size() >= end) // stats parciales -> se omiten
     r.stats.assign(stats.begin() + begin, stats.begin() + end);

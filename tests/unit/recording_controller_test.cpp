@@ -65,6 +65,22 @@ int main() {
     controller.capture_input();
     check(controller.frame_count() == 0, "a stopped controller ignores new input");
 
+    check(recording.audio_fm_regs.empty(),
+          "a take recorded without a detector has no FM shadow");
+
+    std::vector<uint8_t> shadow(ayther::AytherRecording::kAudioFmRegisterBytes,
+                                0x42);
+    controller.start({6}, shadow);
+    controller.capture_input();
+    const ayther::AytherRecording seeded = controller.take("game-id");
+    check(seeded.audio_fm_regs == shadow,
+          "take carries the FM shadow given at start");
+
+    controller.start({7}, std::vector<uint8_t>(3, 1));
+    controller.capture_input();
+    check(controller.take("game-id").audio_fm_regs.empty(),
+          "a shadow that is not 512 bytes is not a shadow");
+
     std::printf("recording_controller_test: %s\n", failures == 0 ? "PASS" : "FAIL");
     return failures == 0 ? 0 : 1;
 }

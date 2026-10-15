@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -590,6 +591,62 @@ int main() {
           "slice: sprite_hashes del rango");
     CHECK((s.hash_offsets == std::vector<uint32_t>{0, 1, 2}),
           "slice: sprite CSR rebasado");
+  }
+
+  // v9: sombra de registros FM del detector al inicio de la toma.
+  {
+    AytherRecording seeded = make_rec();
+    seeded.audio_fm_regs.assign(AytherRecording::kAudioFmRegisterBytes, 0);
+    for (size_t i = 0; i < seeded.audio_fm_regs.size(); ++i)
+      seeded.audio_fm_regs[i] = static_cast<uint8_t>((i * 7u) ^ 0x5Au);
+    const fs::path p = test_directory / "fm-regs.arp";
+    CHECK(seeded.save(p.string()), "v9: save() con sombra FM");
+    const auto l = AytherRecording::load(p.string());
+    CHECK(l.has_value(), "v9: load() con sombra FM");
+    if (l) {
+      CHECK(l->audio_fm_regs == seeded.audio_fm_regs,
+            "v9: la sombra FM vuelve byte a byte");
+      CHECK(l->inputs == seeded.inputs, "v9: el resto de la toma intacto");
+    }
+    // Sin sombra: load devuelve vacío (mismo contrato que una toma pre-v9).
+    CHECK(a.audio_fm_regs.empty() && loaded && loaded->audio_fm_regs.empty(),
+          "v9: toma sin sombra → audio_fm_regs vacío tras load");
+    // Un tamaño que no es 0 ni 512 no es una sombra: save() lo rechaza.
+    AytherRecording odd = make_rec();
+    odd.audio_fm_regs.assign(7, 1);
+    CHECK(!odd.save((test_directory / "fm-regs-odd.arp").string()),
+          "v9: save() rechaza una sombra de tamaño inválido");
+    // Un archivo que declara 513 bytes de sombra falla cerrado.
+    {
+      std::vector<char> image;
+      std::ifstream in(p, std::ios::binary);
+      image.assign(std::istreambuf_iterator<char>(in), {});
+      const size_t size_pos =
+          image.size() - AytherRecording::kAudioFmRegisterBytes - 4;
+      image[size_pos] = static_cast<char>(0x01);
+      image[size_pos + 1] = static_cast<char>(0x02);
+      const fs::path bad = test_directory / "fm-regs-bad.arp";
+      std::ofstream(bad, std::ios::binary).write(image.data(), image.size());
+      CHECK(!AytherRecording::load(bad.string()),
+            "v9: load() rechaza una sombra que no mide 0 ni 512");
+      std::error_code ec;
+      fs::remove(bad, ec);
+    }
+    // slice: la cabeza hereda la sombra que se le pasa; la cola, la suya.
+    const AytherRecording head =
+        seeded.slice(0, 2, seeded.initial_state, seeded.audio_fm_regs);
+    CHECK(head.audio_fm_regs == seeded.audio_fm_regs,
+          "v9: slice() conserva la sombra del arranque");
+    std::vector<uint8_t> tail_regs(AytherRecording::kAudioFmRegisterBytes, 9);
+    const AytherRecording tail =
+        seeded.slice(1, 3, seeded.initial_state, tail_regs);
+    CHECK(tail.audio_fm_regs == tail_regs,
+          "v9: slice() toma la sombra de su propio punto de corte");
+    const AytherRecording unknown = seeded.slice(1, 3, seeded.initial_state);
+    CHECK(unknown.audio_fm_regs.empty(),
+          "v9: slice() sin sombra conocida deja la cola sin sembrar");
+    std::error_code ec;
+    fs::remove(p, ec);
   }
 
   // Toma sin audio CSR (formato viejo): load no debe romperse, audio vacío.

@@ -29,10 +29,32 @@
 //     trigger.
 //
 //  4. Frame tie (two Sequences start on the SAME frame): CONTINUATION wins
-//     first—a looping Sequence whose window expires on that frame continues
-//     ("always keep the one already playing unless it ended or the events
-//     changed"). Next comes the most SPECIFIC Sequence (fewest member
+//     first—a looping Sequence whose step ends on that frame while its window
+//     is still alive continues ("always keep the one already playing unless it
+//     ended or the events changed"; the window may outlast the step when the
+//     HD asset is longer than the loop, so the test is "step reached", not
+//     "window ends exactly here"). Next, a CLAIMER wins over the Sequence it
+//     claims: when A lists B's candidate signature as trigger or member and B
+//     does not list A's, A anchors first and its fresh window claims B. Golden
+//     Axe, 2026-10-14: the intro's hi-hat is one of the loop's six head
+//     signatures; at the intro→loop boundary both fired, the intro (fewer
+//     members) was taken as "more specific", anchored first, and replaced the
+//     loop that had just started — the HD intro played again at every loop
+//     pass. Only then comes the most SPECIFIC Sequence (fewest member
 //     signatures), then ID as a deterministic tie-breaker.
+//
+//  5. RESTART (2026-10-14, Golden Axe title→selection): an occurrence inside
+//     the current step is internal and ignored — a loop's own bars repeat its
+//     signatures — UNLESS it is the WHOLE opening: the trigger AND every other
+//     head signature start together before the step is due, and nothing the
+//     Sequence claims is still sounding from an earlier frame. That is the
+//     game jumping back to the start of the music (screen change, retry), not
+//     a bar of the loop, so the Sequence re-anchors there and its step
+//     restarts. A head quorum was not enough: Wilderness repeats three of its
+//     five opening notes every few bars, and each repeat cut the HD loop and
+//     started it again from zero. A lone trigger inside the step stays internal
+//     (the intro's hi-hat recurs three times inside the intro), as does a
+//     Sequence without a head.
 //
 // Events are traversed in ascending `start_frame` order. The detector does NOT
 // return them sorted (it emits them per channel), so the table applies a stable
@@ -77,6 +99,32 @@ inline bool seq_sub_claims(const SeqAnchorSub &claimer, uint64_t sig) {
     return true;
   return std::find(claimer.signatures.begin(), claimer.signatures.end(), sig) !=
          claimer.signatures.end();
+}
+
+/// Is this frame the WHOLE opening of `s` (Rule 5)? The trigger and every
+/// other head signature start now (`sigs`), the head has at least one
+/// signature besides the trigger (a lone trigger recurs inside its own bars),
+/// and no signature the Sequence claims is still sounding from an earlier
+/// frame (`sustained`: active now and already active last frame).
+inline bool seq_whole_opening(const SeqAnchorSub &s,
+                              std::span<const uint64_t> sigs,
+                              std::span<const uint64_t> sustained) {
+  if (std::find(sigs.begin(), sigs.end(), s.trigger_signature) == sigs.end())
+    return false;
+  size_t others = 0;
+  for (const uint64_t head : s.head) {
+    if (head == s.trigger_signature)
+      continue;
+    ++others;
+    if (std::find(sigs.begin(), sigs.end(), head) == sigs.end())
+      return false;
+  }
+  if (others == 0)
+    return false;
+  for (const uint64_t sig : sustained)
+    if (seq_sub_claims(s, sig))
+      return false;
+  return true;
 }
 
 /// Priority on a frame tie (without continuation): the most specific one.
@@ -250,13 +298,15 @@ struct SeqAnchorFrameView {
 /// ONE frame: given the signatures that START at `f` (key-ons), decides which
 /// substitutions anchor (in priority order) and updates `st`. It serves replay
 /// (the table) and live playback (the detector rising edge) — one single
-/// criterion.
+/// criterion. `sustained` = signatures sounding at `f` that already sounded
+/// at `f - 1`; only Rule 5 reads them (empty where no voice state exists).
 /// The synchronous visitor must return void, be noexcept, and not reenter,
 /// mutate inputs/state, perform I/O, block, or retain the borrowed view.
 /// Observation adds no searches or storage proportional to the visit count.
 template <class Visit, class Decide, class Finish>
 inline std::vector<size_t>
 seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
+                         std::span<const uint64_t> sustained,
                          const std::vector<SeqAnchorSub> &subs,
                          std::vector<SeqAnchorState> &st, Visit &&visit,
                          Decide &&decide, Finish &&finish) {
@@ -282,6 +332,16 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
   std::vector<uint8_t> trig_hit(subs.size(), 0);
   if (st.size() != subs.size())
     st.assign(subs.size(), SeqAnchorState{});
+  // Rule 5: inside the step, only the WHOLE opening counts — the game
+  // restarted the music. Counted before the gate so the gate can let it
+  // through.
+  std::vector<uint8_t> restart(subs.size(), 0);
+  for (size_t i = 0; i < subs.size(); ++i) {
+    const SeqAnchorSub &sq = subs[i];
+    if (!sq.enabled || f >= st[i].next_free)
+      continue;
+    restart[i] = seq_whole_opening(sq, sigs, sustained);
+  }
   size_t input_index = 0;
   for (const uint64_t sig : sigs) {
     for (size_t i = 0; i < subs.size(); ++i) {
@@ -292,7 +352,7 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
         visit(std::as_const(observation));
         continue;
       }
-      if (f < st[i].next_free) {
+      if (f < st[i].next_free && !restart[i]) {
         observation.stage = SeqAnchorCandidateStage::internal;
         visit(std::as_const(observation));
         continue; // internal occurrence
@@ -354,13 +414,31 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
   order.resize(cand.size());
   for (size_t k = 0; k < order.size(); ++k)
     order[k] = k;
-  auto continues = [&](size_t i) { // looping and its window expires here
-    return subs[i].looping && st[i].open && st[i].win_end == f;
+  // Rule 4: continuation = looping, open, its step is due and its window has
+  // not ended (the window may outlast the step: duration >= span).
+  auto continues = [&](size_t i) {
+    return subs[i].looping && st[i].open && f >= st[i].next_free &&
+           f <= st[i].win_end;
+  };
+  // Rule 4: a claimer (lists another candidate's signature, is listed by
+  // none) anchors before the candidates it claims.
+  auto claimer = [&](size_t k) {
+    bool claims = false, claimed = false;
+    for (size_t m = 0; m < cand.size(); ++m) {
+      if (m == k)
+        continue;
+      claims = claims || seq_sub_claims(subs[cand[k]], cand_sig[m]);
+      claimed = claimed || seq_sub_claims(subs[cand[m]], cand_sig[k]);
+    }
+    return claims && !claimed;
   };
   std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
     const bool ca = continues(cand[a]), cb = continues(cand[b]);
     if (ca != cb)
       return ca;
+    const bool ka = claimer(a), kb = claimer(b);
+    if (ka != kb)
+      return ka;
     return seq_sub_before(subs[cand[a]], subs[cand[b]]);
   });
   for (const size_t k : order) {
@@ -395,6 +473,19 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
                            : SeqAnchorResolutionResult::selected,
           anchored.size()});
   return anchored;
+}
+
+/// Without voice state (the table, tests): Rule 5 relies on the whole head.
+template <class Visit, class Decide, class Finish>
+inline std::vector<size_t>
+seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
+                         const std::vector<SeqAnchorSub> &subs,
+                         std::vector<SeqAnchorState> &st, Visit &&visit,
+                         Decide &&decide, Finish &&finish) {
+  return seq_anchor_frame_decided(f, sigs, std::span<const uint64_t>{}, subs,
+                                  st, std::forward<Visit>(visit),
+                                  std::forward<Decide>(decide),
+                                  std::forward<Finish>(finish));
 }
 
 template <class Visit>
