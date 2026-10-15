@@ -168,6 +168,11 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Turning HD audio back on (`set_subsystems_enabled_mask` reopening the Music
+  or Sfx gate, as switching the pause-menu profile back from «Original» does)
+  now resumes the live HD instances at the emulated-clock offset, the same
+  path as returning from a pause or from the assets bypass. Before, the
+  original music kept playing until the sequence re-anchored.
 - Turning HD audio off mid-session (`set_subsystem_enabled` or
   `set_subsystems_enabled_mask`, as the «Original» profile of the pause menu
   does) now stops the HD voices already playing, including the one a pause
