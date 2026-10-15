@@ -241,21 +241,34 @@ public:
     for (auto it = voices_.rbegin(); it != voices_.rend(); ++it)
       if (it->key == key) {
         matched_key = true;
+        // A predecessor already fading out was stopped on purpose (window
+        // cut, restart anchor): it cannot carry a continuation. Golden Axe,
+        // 2026-10-14: the restart anchor cut Wilderness and the rising edge
+        // of the same frame "continued" the dying voice — nothing played
+        // until the next anchor, then the track started from zero.
+        const bool draining = it->fade_left > 0;
+        const bool continues =
+            it->pcm == pcm && !draining &&
+            repeat_policy == ayther::RepeatPolicy::continue_playback;
         if (result) {
           result->action =
-              it->pcm == pcm
-                  ? repeat_policy == ayther::RepeatPolicy::continue_playback
-                        ? StartAction::continue_playback
-                    : repeat_policy == ayther::RepeatPolicy::overlap
-                        ? StartAction::overlap
-                        : StartAction::restart
-                  : StartAction::replace;
+              it->pcm == pcm ? continues ? StartAction::continue_playback
+                               : repeat_policy == ayther::RepeatPolicy::overlap
+                                   ? StartAction::overlap
+                                   : StartAction::restart
+                             : StartAction::replace;
           result->previous_occurrence = it->occurrence;
           result->previous_cause_producer = it->cause_producer;
           result->previous_cause_sequence = it->cause_sequence;
         }
-        if (it->pcm == pcm &&
-            repeat_policy == ayther::RepeatPolicy::continue_playback) {
+        if (continues) {
+          // The continuation is a new pass of the same voice: it lives
+          // until the NEW window ends. Keeping the old end cut the voice
+          // one frame after every other loop pass of Golden Axe «The
+          // Battle» (span 576, window 577): silence and the original
+          // until the next pass, which then started from zero.
+          it->end_frame = end_frame;
+          it->cut_frame = cut_frame;
           if (result)
             result->new_occurrence = it->occurrence;
           return true;

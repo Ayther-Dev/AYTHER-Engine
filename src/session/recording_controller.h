@@ -17,7 +17,11 @@ class RecordingController {
 public:
     void set_input(uint16_t buttons) noexcept { input_ = buttons; }
 
-    void start(std::vector<uint8_t> initial_state);
+    /// `fm_regs` is the audio event detector's YM2612 shadow at this same
+    /// instant (512 bytes, or empty when there is no detector): the take
+    /// carries it so replay and analysis can seed their detectors (.arp v9).
+    void start(std::vector<uint8_t> initial_state,
+               std::vector<uint8_t> fm_regs = {});
     void stop() noexcept { active_ = false; }
 
     [[nodiscard]] bool active() const noexcept { return active_; }
@@ -37,6 +41,7 @@ private:
     bool active_ = false;
     uint16_t input_ = 0;
     std::vector<uint8_t> initial_state_;
+    std::vector<uint8_t> fm_regs_;
     std::vector<uint16_t> inputs_;
     std::vector<FrameStat> stats_;
     std::vector<uint64_t> sprite_hashes_;

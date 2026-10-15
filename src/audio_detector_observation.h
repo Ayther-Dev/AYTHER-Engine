@@ -3,6 +3,7 @@
 #include "audio_input_observation.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace ayther::audio_qa {
 
@@ -12,6 +13,7 @@ enum class DetectorAction {
   process_frame,
   set_pal,
   set_initial_active,
+  seed_fm_registers,
   finish,
   clear_closed
 };
@@ -71,6 +73,8 @@ inline std::string_view name(DetectorAction action) noexcept {
     return "set_pal";
   case DetectorAction::set_initial_active:
     return "set_initial_active";
+  case DetectorAction::seed_fm_registers:
+    return "seed_fm_registers";
   case DetectorAction::finish:
     return "finish";
   case DetectorAction::clear_closed:
@@ -126,12 +130,18 @@ public:
     const bool process = operation.action == DetectorAction::process_frame;
     const bool parameter =
         operation.action == DetectorAction::set_pal ||
-        operation.action == DetectorAction::set_initial_active;
+        operation.action == DetectorAction::set_initial_active ||
+        operation.action == DetectorAction::seed_fm_registers;
     const bool input_valid = valid(operation.input);
+    // set_pal: 0/1 · set_initial_active: channel mask · seed_fm_registers:
+    // FNV-1a identity of the 512 seeded bytes (any value).
+    const std::uint64_t parameter_limit =
+        operation.action == DetectorAction::set_pal ? 1ULL
+        : operation.action == DetectorAction::set_initial_active
+            ? 65535ULL
+            : (std::numeric_limits<std::uint64_t>::max)();
     const bool parameter_valid =
-        operation.parameter &&
-        *operation.parameter <=
-            (operation.action == DetectorAction::set_pal ? 1ULL : 65535ULL);
+        operation.parameter && *operation.parameter <= parameter_limit;
     const bool complete =
         (fresh || (previous_ && history_complete_)) &&
         (!process || (input_valid && operation.detector_frame)) &&

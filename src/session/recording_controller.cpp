@@ -4,16 +4,20 @@
 
 namespace ayther::session {
 
-void RecordingController::start(std::vector<uint8_t> initial_state) {
-    initial_state_ = std::move(initial_state);
-    inputs_.clear();
-    stats_.clear();
-    sprite_hashes_.clear();
-    sprite_offsets_.assign(1, 0);
-    audio_hashes_.clear();
-    audio_offsets_.assign(1, 0);
-    keyframes_.clear();
-    active_ = true;
+void RecordingController::start(std::vector<uint8_t> initial_state,
+                                std::vector<uint8_t> fm_regs) {
+  initial_state_ = std::move(initial_state);
+  fm_regs_ = fm_regs.size() == AytherRecording::kAudioFmRegisterBytes
+                 ? std::move(fm_regs)
+                 : std::vector<uint8_t>{};
+  inputs_.clear();
+  stats_.clear();
+  sprite_hashes_.clear();
+  sprite_offsets_.assign(1, 0);
+  audio_hashes_.clear();
+  audio_offsets_.assign(1, 0);
+  keyframes_.clear();
+  active_ = true;
 }
 
 void RecordingController::capture_input() {
@@ -44,6 +48,7 @@ AytherRecording RecordingController::take(std::string game_id) {
     AytherRecording recording;
     recording.game_id = std::move(game_id);
     recording.initial_state = initial_state_;
+    recording.audio_fm_regs = fm_regs_;
     recording.inputs = inputs_;
     recording.stats = stats_;
     recording.sprite_hashes = sprite_hashes_;

@@ -37,4 +37,31 @@ sequence_presence(const std::uint64_t sequence_signature,
                      : SequencePresence::no_relevant_activity;
 }
 
+/// The signatures an assigned sound EFFECT owns: its trigger and the head and
+/// member signatures of its sequence.
+struct EffectSequenceSignatures {
+  std::uint64_t trigger{};
+  std::span<const std::uint64_t> head;
+  std::span<const std::uint64_t> members;
+};
+
+/// An original event an assigned effect explains is not a replacement of an
+/// exclusive sequence: the game lent the channel to the sound effect, and the
+/// music comes back when it ends. Golden Axe, 2026-10-14: the second voice of
+/// the character-select effect — a head of its sequence, never an assigned
+/// signature itself — landed on a channel of «The Battle» and cut its HD loop.
+[[nodiscard]] inline bool explained_by_effect_sequence(
+    const std::uint64_t signature,
+    const std::span<const EffectSequenceSignatures> effects) noexcept {
+  for (const auto &effect : effects) {
+    if (effect.trigger == signature ||
+        std::find(effect.head.begin(), effect.head.end(), signature) !=
+            effect.head.end() ||
+        std::find(effect.members.begin(), effect.members.end(), signature) !=
+            effect.members.end())
+      return true;
+  }
+  return false;
+}
+
 } // namespace ayther

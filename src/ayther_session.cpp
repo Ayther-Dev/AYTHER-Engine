@@ -888,6 +888,19 @@ const FrameView &AytherSession::produce_frame() {
         constexpr uint32_t kSeqTriggerLateMax = 32; // = kFastForwardMax
         uint32_t &fired = im.audio_seq_fired[sq.key];
         if (fired != best_start + 1) {
+          // Regla 5 (audio_seq_anchor.h): una ventana que arranca ANTES de
+          // que venza el paso de la anterior es un REINICIO del juego, no
+          // la pasada siguiente. El HD que venía sonando se corta para que
+          // el disparo de abajo arranque desde 0; en la pasada normal el
+          // bus exclusivo lo continúa sin corte, como siempre.
+          if (fired != 0) {
+            const uint32_t prev_start = fired - 1;
+            const uint32_t step =
+                sq.span_frames ? sq.span_frames : sq.duration_frames;
+            if (best_start > prev_start && best_start < prev_start + step &&
+                im.audio_enabled && im.audio.stop_sfx_by_key(sq.key))
+              ++im.hd_cut;
+          }
           fired = best_start + 1;
           // Solo REPRODUCIENDO — en pausa/scrub marca sin sonar.
           // Entrada TARDÍA (> catch-up máx): el play arrancó DENTRO
@@ -1311,6 +1324,17 @@ const FrameView &AytherSession::produce_frame() {
     // La política del router decide las voces de ESTE frame con esta foto
     // (live_voice_replaced) — el voice_tick corre más abajo en el mismo
     // produce, así que el key-on recién detectado ya la tiene.
+    // Signatures sounding now that already sounded last frame: not a key-on
+    // of this frame. Rule 5 of the anchoring reads them to tell the whole
+    // opening of a Sequence from a bar that repeats it.
+    std::vector<uint64_t> sustained;
+    for (uint32_t i = 0; i < na; ++i)
+      for (const AytherAudioActive &prev : im.live_active)
+        if (prev.signature == act[i].signature &&
+            prev.channel == act[i].channel && prev.chip == act[i].chip) {
+          sustained.push_back(act[i].signature);
+          break;
+        }
     im.live_active.assign(act, act + na);
     // Ventanas de SECUENCIA vigentes (Mezclar): expirar las cumplidas y
     // acumular el mute. : si la firma trae MEMBERS, el mute es
@@ -1319,6 +1343,27 @@ const FrameView &AytherSession::produce_frame() {
     // cae al range-mute de la máscara de canales.
     uint32_t win_mask = 0;
     std::array<ActiveAudioSignature, 64> active_signatures{};
+    // : the assigned sound EFFECTS of the catalog with the signatures of
+    // their sequences — an original event one of them explains is the game
+    // lending a channel to the effect, not another track taking over.
+    std::vector<EffectSequenceSignatures> effect_sequences;
+    if (na)
+      for (const auto &[key, asset] : im.audio_event_assign) {
+        if (asset.empty())
+          continue;
+        const auto category = im.playback_policy_of(key).category;
+        if (category == AudioCategory::music ||
+            category == AudioCategory::ambient)
+          continue;
+        EffectSequenceSignatures effect{key, {}, {}};
+        if (const auto hd = im.audio_event_head.find(key);
+            hd != im.audio_event_head.end())
+          effect.head = hd->second;
+        if (const auto ms = im.audio_event_members.find(key);
+            ms != im.audio_event_members.end())
+          effect.members = ms->second;
+        effect_sequences.push_back(effect);
+      }
     for (uint32_t i = 0; i < na; ++i) {
       const auto assigned = im.audio_event_assign.find(act[i].signature);
       bool replacement_candidate = true;
@@ -1327,6 +1372,9 @@ const FrameView &AytherSession::produce_frame() {
             im.playback_policy_of(act[i].signature).category;
         replacement_candidate = active_category == AudioCategory::music ||
                                 active_category == AudioCategory::ambient;
+      } else if (explained_by_effect_sequence(act[i].signature,
+                                              effect_sequences)) {
+        replacement_candidate = false;
       }
       active_signatures[i] = ActiveAudioSignature{
           act[i].signature, chan_bit(act[i].chip, act[i].channel),
@@ -1337,7 +1385,7 @@ const FrameView &AytherSession::produce_frame() {
         im.audio_seq_windows.erase(im.audio_seq_windows.begin() +
                                    static_cast<std::ptrdiff_t>(k));
       } else {
-        const Impl::SeqWindow &w = im.audio_seq_windows[k];
+        Impl::SeqWindow &w = im.audio_seq_windows[k];
         // : si el HD de esta ventana ya no puede sonar (el arranque
         // falló tras abrirla, o el asset se rompió), la ventana deja de
         // silenciar el original — queda viva solo como bookkeeping.
@@ -1355,9 +1403,37 @@ const FrameView &AytherSession::produce_frame() {
         const auto category = im.playback_policy_of(w.sig).category;
         const bool exclusive = category == AudioCategory::music ||
                                category == AudioCategory::ambient;
+        // : a member that fades keeps its timbre and changes its signature
+        // (the signature hashes the carrier TL). The window learns the
+        // instruments of the members it sees; an event with one of them is
+        // the member at another volume — muted, never a replacement. Golden
+        // Axe, 2026-10-14: the game fades the carriers of «The Battle»'s
+        // hi-hat on the character-select screen, one TL step every six
+        // frames, and every note of the fade was a stranger.
+        std::array<ActiveAudioSignature, 64> window_active = active_signatures;
+        std::array<bool, 64> variant{};
+        for (uint32_t i = 0; i < na; ++i) {
+          const uint64_t asig = act[i].signature;
+          const uint64_t inst = act[i].instrument;
+          const bool member =
+              asig == w.sig ||
+              std::find(members.begin(), members.end(), asig) != members.end();
+          if (member) {
+            if (inst && std::find(w.member_instruments.begin(),
+                                  w.member_instruments.end(),
+                                  inst) == w.member_instruments.end())
+              w.member_instruments.push_back(inst);
+            continue;
+          }
+          variant[i] = inst && std::find(w.member_instruments.begin(),
+                                         w.member_instruments.end(),
+                                         inst) != w.member_instruments.end();
+          if (variant[i])
+            window_active[i].replacement_candidate = false;
+        }
         if (exclusive &&
             sequence_presence(w.sig, members, w.mask,
-                              std::span{active_signatures}.first(na)) ==
+                              std::span{window_active}.first(na)) ==
                 SequencePresence::replacement_active) {
           // An original, non-member event has taken over a channel owned by
           // this exclusive sequence. It is an observable replacement, not a
@@ -1373,7 +1449,7 @@ const FrameView &AytherSession::produce_frame() {
         if (mit != im.audio_event_members.end() && !mit->second.empty()) {
           for (uint32_t i = 0; i < na; ++i) {
             const uint64_t asig = act[i].signature;
-            if (asig != w.sig &&
+            if (asig != w.sig && !variant[i] &&
                 std::find(mit->second.begin(), mit->second.end(), asig) ==
                     mit->second.end())
               continue;
@@ -1466,11 +1542,28 @@ const FrameView &AytherSession::produce_frame() {
         const auto finish = [&](const SeqAnchorResolutionView &value) noexcept {
           sequence_selection = trace(value);
         };
-        for (const size_t k :
-             seq_anchor_frame_decided(static_cast<uint32_t>(im.frame_index),
-                                      sigs, view, st, visit, decide, finish)) {
-          anchor_now.insert(view[k].key);
-          im.audio_event_seq_next[view[k].key] = st[k].next_free;
+        for (const size_t k : seq_anchor_frame_decided(
+                 static_cast<uint32_t>(im.frame_index), sigs, sustained, view,
+                 st, visit, decide, finish)) {
+          const uint64_t key = view[k].key;
+          anchor_now.insert(key);
+          // Regla 5 (audio_seq_anchor.h): un ancla ANTES del paso previsto
+          // es el juego volviendo al inicio de la música. El HD que venía
+          // sonando ya no corresponde: se corta con su ventana e instancia
+          // para que el flanco de este frame lo arranque limpio desde 0 (si
+          // no, el bus exclusivo lo daría por «continuar»).
+          if (const auto nx = im.audio_event_seq_next.find(key);
+              nx != im.audio_event_seq_next.end() &&
+              im.frame_index < nx->second) {
+            if (im.audio_enabled && im.audio.stop_sfx_by_key(key))
+              ++im.hd_cut;
+            im.audio_live_inst.erase(key);
+            im.audio_live_prev.erase(key);
+            std::erase_if(
+                im.audio_seq_windows,
+                [key](const Impl::SeqWindow &w) { return w.sig == key; });
+          }
+          im.audio_event_seq_next[key] = st[k].next_free;
           if (sequence_selection)
             anchor_selections.insert_or_assign(view[k].key,
                                                *sequence_selection);
@@ -1500,7 +1593,7 @@ const FrameView &AytherSession::produce_frame() {
           // La ventana guarda la firma AUTORADA: su mantenimiento
           // consulta el catálogo (assign/members/readiness).
           im.audio_seq_windows.push_back(
-              Impl::SeqWindow{wend, wmask, asig, im.frame_index});
+              Impl::SeqWindow{wend, wmask, asig, im.frame_index, {}});
           // : con members el frame de apertura solo mutea el
           // bit del disparador (los demás miembros se evalúan por
           // actividad en los frames siguientes).
@@ -1856,7 +1949,7 @@ const FrameView &AytherSession::produce_frame() {
       };
       const auto anchors =
           seq_anchor_frame_decided(static_cast<uint32_t>(im.frame_index), sigs,
-                                   view, st, trace, trace, finish);
+                                   sustained, view, st, trace, trace, finish);
       im.qa_sequence_complete = im.qa_sequence_complete && trace.complete();
       for (const size_t i : anchors) {
         const AudioSeqSub &sq = im.audio_seq_subs[i];
@@ -1872,8 +1965,12 @@ const FrameView &AytherSession::produce_frame() {
           else
             ++k;
         im.audio_live_seq_win.push_back(
-            Impl::LiveSeqWin{sq.key, im.frame_index + sq.duration_frames,
-                             im.frame_index, sq.channel_mask, im.frame_index});
+            Impl::LiveSeqWin{sq.key,
+                             im.frame_index + sq.duration_frames,
+                             im.frame_index,
+                             sq.channel_mask,
+                             im.frame_index,
+                             {}});
         // : instancia lógica de la Secuencia — vive con su ventana
         // (el corte por ausencia/expiración la cierra explícitamente).
         im.audio_live_inst[sq.key] =
@@ -1915,18 +2012,33 @@ const FrameView &AytherSession::produce_frame() {
         }
       bool member_on = false;
       if (sq)
-        for (uint32_t i = 0; i < na && !member_on; ++i)
-          member_on = act[i].signature == sq->trigger_signature ||
-                      std::find(sq->signatures.begin(), sq->signatures.end(),
-                                act[i].signature) != sq->signatures.end() ||
-                      //  F3: con regla, cualquier voz del timbre
-                      // del disparador mantiene viva la ventana — los
-                      // miembros variantes no están en la lista
-                      // exacta y el corte por ausencia (~1 s) mataba
-                      // el HD anclado por variante a mitad de camino.
-                      (sq->match_rule != AudioMatchRule::kExact &&
-                       sq->match_instrument && act[i].instrument &&
-                       act[i].instrument == sq->match_instrument);
+        for (uint32_t i = 0; i < na && !member_on; ++i) {
+          const bool exact =
+              act[i].signature == sq->trigger_signature ||
+              std::find(sq->signatures.begin(), sq->signatures.end(),
+                        act[i].signature) != sq->signatures.end();
+          //  F3: con regla, cualquier voz del timbre
+          // del disparador mantiene viva la ventana — los
+          // miembros variantes no están en la lista
+          // exacta y el corte por ausencia (~1 s) mataba
+          // el HD anclado por variante a mitad de camino.
+          const bool rule = sq->match_rule != AudioMatchRule::kExact &&
+                            sq->match_instrument && act[i].instrument &&
+                            act[i].instrument == sq->match_instrument;
+          // : un miembro que se funde cambia de firma (lleva el TL del
+          // portador) pero no de timbre — sigue siendo el miembro.
+          if (exact && act[i].instrument &&
+              std::find(w.member_instruments.begin(),
+                        w.member_instruments.end(),
+                        act[i].instrument) == w.member_instruments.end())
+            w.member_instruments.push_back(act[i].instrument);
+          const bool variant =
+              act[i].instrument &&
+              std::find(w.member_instruments.begin(),
+                        w.member_instruments.end(),
+                        act[i].instrument) != w.member_instruments.end();
+          member_on = exact || rule || variant;
+        }
       if (member_on)
         w.last_seen = im.frame_index;
       const bool gone = !sq; // ojo cerrado / HD quitado (sub excluida)
@@ -7207,7 +7319,9 @@ void AytherSession::record_start() {
   Impl &im = *impl_;
   std::vector<uint8_t> initial_state;
   if (im.runner.serialize(initial_state)) {
-    im.recording.start(std::move(initial_state));
+    // .arp v9: la sombra FM del detector en vivo acompaña al savestate, para
+    // que replay y análisis identifiquen los patches que la toma ya no ve.
+    im.recording.start(std::move(initial_state), im.live_fm_registers());
   } else {
     im.recording.stop();
     ayther::log::write(ayther::log::Severity::Error, "session",
@@ -7228,6 +7342,15 @@ size_t AytherSession::recorded_frames() const noexcept {
 AytherRecording AytherSession::take_recording() {
   Impl &im = *impl_;
   return im.recording.take(game_id());
+}
+
+std::vector<uint8_t> AytherSession::audio_fm_registers() const {
+  return impl_->live_fm_registers();
+}
+
+bool AytherSession::seed_audio_fm_registers(const std::vector<uint8_t> &regs) {
+  Impl &im = *impl_;
+  return im.seed_detector(im.audio_live_det, im.qa_live_detector, regs);
 }
 
 // Captura un keyframe RAW del estado vivo en replay_keys[key] si cae en
@@ -7506,6 +7629,11 @@ const FrameView *AytherSession::replay_seek(const AytherRecording &rec,
     im.replay_pos = -1;
     return nullptr;
   }
+  // La sombra FM del detector en vivo acompaña al estado restaurado (.arp
+  // v9): la de la toma en 0, o la reconstruida con el caché de escrituras en
+  // un keyframe. Sin dato, el detector sigue como hasta ahora.
+  im.seed_detector(im.audio_live_det, im.qa_live_detector,
+                   im.fm_registers_at(rec, start));
   for (uint32_t i = start; i < target; ++i) {
     im.runner.set_input(0, rec.inputs[i]);
     im.runner.run_frame(); // bare, rápido y silencioso
@@ -7589,6 +7717,11 @@ uint32_t AytherSession::analyze_audio_events(const AytherRecording &rec) {
                                    {},
                                    active0});
   }
+  // .arp v9: los patches que el juego cargó ANTES de la toma. Sin la sombra el
+  // detector hashea registros en cero y las firmas de esos canales no son las
+  // autorizadas (ver Impl::fm_registers_at).
+  im.seed_detector(im.audio_event_det, im.qa_analysis_detector,
+                   rec.audio_fm_regs);
 
   const bool prev_quiet = im.replay_quiet;
   im.replay_quiet = true; // el análisis no debe sonar
@@ -8805,6 +8938,8 @@ AytherSession::replay_seek_chunk(const AytherRecording &rec, uint32_t frame,
       r.done = true;
       return r;
     }
+    im.seed_detector(im.audio_live_det, im.qa_live_detector,
+                     im.fm_registers_at(rec, startF)); // .arp v9
     im.replay_rec = &rec;
     im.replay_pos = -1; // máquina a media cadena bare
     im.chunk = {&rec, true, target, startF, startF};
@@ -8989,8 +9124,11 @@ bool AytherSession::split_recording(const AytherRecording &rec, uint32_t frame,
   std::vector<uint8_t> st;
   if (!im.runner.serialize(st) || st.empty())
     return false;
-  head = rec.slice(0, frame, rec.initial_state);
-  tail = rec.slice(frame, rec.frame_count(), std::move(st));
+  // .arp v9: cada mitad lleva la sombra FM de su propio arranque (la del tail
+  // sale del caché de escrituras que el seek de arriba acaba de extender).
+  head = rec.slice(0, frame, rec.initial_state, rec.audio_fm_regs);
+  tail = rec.slice(frame, rec.frame_count(), std::move(st),
+                   im.fm_registers_at(rec, frame));
   return true;
 }
 
@@ -9002,7 +9140,7 @@ bool AytherSession::crop_recording(const AytherRecording &rec, uint32_t begin,
   if (rec.empty() || begin >= end || end > rec.frame_count())
     return false;
   if (begin == 0) {
-    out = rec.slice(0, end, rec.initial_state);
+    out = rec.slice(0, end, rec.initial_state, rec.audio_fm_regs);
     return true;
   }
   if (!replay_seek(rec, begin - 1))
@@ -9010,7 +9148,8 @@ bool AytherSession::crop_recording(const AytherRecording &rec, uint32_t begin,
   std::vector<uint8_t> st;
   if (!im.runner.serialize(st) || st.empty())
     return false;
-  out = rec.slice(begin, end, std::move(st));
+  out = rec.slice(begin, end, std::move(st),
+                  im.fm_registers_at(rec, begin)); // .arp v9
   return true;
 }
 
@@ -10485,16 +10624,22 @@ AytherSession::restore_audio_hd_detector_windows(
       if (window.kind == obs::AudioHdWindowKind::sequence) {
         if (window.signature == 0 || window.key != window.signature)
           return {obs::AudioHdRestoreCode::invalid_window, header_result};
-        sequence_windows.push_back({window.end_frame, window.channel_mask,
-                                    window.signature, window.start_frame});
+        sequence_windows.push_back({window.end_frame,
+                                    window.channel_mask,
+                                    window.signature,
+                                    window.start_frame,
+                                    {}});
       } else if (window.kind == obs::AudioHdWindowKind::live_sequence) {
         if (window.key == 0 || window.signature != 0 ||
             window.last_seen_frame < window.start_frame ||
             window.last_seen_frame > window.end_frame)
           return {obs::AudioHdRestoreCode::invalid_window, header_result};
-        live_windows.push_back({window.key, window.end_frame,
-                                window.start_frame, window.channel_mask,
-                                window.last_seen_frame});
+        live_windows.push_back({window.key,
+                                window.end_frame,
+                                window.start_frame,
+                                window.channel_mask,
+                                window.last_seen_frame,
+                                {}});
       } else {
         return {obs::AudioHdRestoreCode::invalid_window, header_result};
       }
