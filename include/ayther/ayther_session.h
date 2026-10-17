@@ -229,9 +229,12 @@ struct SceneElement {
   /// hides the original only while that replacement's texture is resident.
   int16_t owner = -1;
   int32_t sub = -1; ///< index into the corresponding subs array (-1 = none)
-  /// Spec 002 (R8): plane cell placed for one scroll BAND (per-line hscroll ×
-  /// 2-cell column vscroll) — drawn only inside [clip_x0, clip_x1) ×
-  /// [clip_y0, clip_y1), screen px. clip_x1 <= clip_x0 = no clip.
+  /// Drawn only inside [clip_x0, clip_x1) × [clip_y0, clip_y1), screen px;
+  /// clip_x1 <= clip_x0 = no clip. Spec 002 (R8): plane cell placed for one
+  /// scroll BAND (per-line hscroll × 2-cell column vscroll). Spec 002 (R5):
+  /// sprite the VDP draws on only some of its lines (per-line sprite/pixel
+  /// limit, x = 0 mask) — clipped to those rows over the whole width; the
+  /// HD it anchors is clipped the same way.
   int16_t clip_x0 = 0, clip_y0 = 0, clip_x1 = 0, clip_y1 = 0;
   /// Sprite only: 0 when cumulative parsed-SAT evidence observed the same
   /// identity at different chain ranks. `chain` still drives normal depth;

@@ -28,6 +28,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A sprite the VDP draws on only some of its lines — the per-line sprite and
+  pixel limits or the x = 0 mask cut it part-way down — was composed whole.
+  The scene now clips its element, and the HD it anchors, to the rows the VDP
+  draws (`SceneElement::clip_*`, `session::drawn_rows`). Sonic 1's title
+  spends the pixel budget of lines 104-199 on sprites parked off screen so
+  Sonic rises from behind the emblem; the composed frame drew his body over
+  the "SONIC" ribbon.
+
 - `ayther_recording.h` is now an installed public header and
   `AytherRecording::abi_size()` reports the struct size compiled into the
   library. The Lab consumed a vendored rc.6 copy of that header because the

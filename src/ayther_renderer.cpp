@@ -1053,6 +1053,25 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
     bool batch_sprites = false;
     // Spec 002 (R8): the scroll band of the batch (emu px; x1 <= x0 = none).
     int16_t batch_clip[4] = {0, 0, 0, 0};
+    // The clip of an element in canvas px: a scroll band (R8) or the rows the
+    // VDP draws a sprite on (R5). false = no clip (x1 <= x0).
+    auto clip_rect = [&](const int16_t clip[4], VkRect2D &out) -> bool {
+      if (clip[2] <= clip[0])
+        return false;
+      const int32_t x0 = (int32_t)std::lround(clip[0] * scene_sx + wide_dx);
+      const int32_t x1 = (int32_t)std::lround(clip[2] * scene_sx + wide_dx);
+      const int32_t y0 = (int32_t)std::lround(clip[1] * scene_sy);
+      const int32_t y1 = (int32_t)std::lround(clip[3] * scene_sy);
+      out = {{x0, y0},
+             {(uint32_t)(x1 > x0 ? x1 - x0 : 0),
+              (uint32_t)(y1 > y0 ? y1 - y0 : 0)}};
+      return true;
+    };
+    VkRect2D elem_clip_rect{};
+    auto element_clip = [&](const SceneElement &e) -> const VkRect2D * {
+      const int16_t c[4] = {e.clip_x0, e.clip_y0, e.clip_x1, e.clip_y1};
+      return clip_rect(c, elem_clip_rect) ? &elem_clip_rect : nullptr;
+    };
     auto flush_quads = [&]() {
       if (scene_quads.empty())
         return;
@@ -1065,18 +1084,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
                     VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
       VkRect2D band{};
-      const bool banded = batch_clip[2] > batch_clip[0];
-      if (banded) {
-        const int32_t x0 =
-            (int32_t)std::lround(batch_clip[0] * scene_sx + wide_dx);
-        const int32_t x1 =
-            (int32_t)std::lround(batch_clip[2] * scene_sx + wide_dx);
-        const int32_t y0 = (int32_t)std::lround(batch_clip[1] * scene_sy);
-        const int32_t y1 = (int32_t)std::lround(batch_clip[3] * scene_sy);
-        band = {{x0, y0},
-                {(uint32_t)(x1 > x0 ? x1 - x0 : 0),
-                 (uint32_t)(y1 > y0 ? y1 - y0 : 0)}};
-      }
+      const bool banded = clip_rect(batch_clip, band);
       impl_->indexed_.draw_cells(ctx, cmd, scene_quads.data(),
                                  scene_quads.size(), canvas.width,
                                  canvas.height, scene_scissor, batch_sprites,
@@ -1086,7 +1094,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
     // Spec 002 (R2, RF-8.3): a sprite sub anchored in the scene, drawn at
     // depth `z` — or, when the session published depth parts for it, part by
     // part, each at the depth of the member it covers (pose_depth.h).
-    auto draw_anchored_sub = [&](uint32_t si, float z) {
+    auto draw_anchored_sub = [&](uint32_t si, float z, const VkRect2D *clip) {
       const AytherSpriteSub &sub = fv.sprite_subs[si];
       auto &parts = impl_->scratch_->part_subs;
       auto &part_z = impl_->scratch_->part_z;
@@ -1134,14 +1142,16 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
             emu_w, emu_h,
             fv.sprite_sub_flips ? fv.sprite_sub_flips + si : nullptr,
             fv.sprite_sub_tint ? fv.sprite_sub_tint + si * 3 : nullptr,
-            fv.sprite_sub_slot ? fv.sprite_sub_slot + si : nullptr);
+            fv.sprite_sub_slot ? fv.sprite_sub_slot + si : nullptr, nullptr, 0,
+            clip);
       } else {
         mark_sprite_draw(si, ro::DrawOutcome::partitioned);
         impl_->sprite_.set_depth(part_z.data());
-        impl_->sprite_.draw(
-            ctx, cmd, impl_->target_.image(), parts.data(),
-            (uint32_t)parts.size(), pack, emu_w, emu_h, part_flips.data(),
-            fv.sprite_sub_tint ? part_tint.data() : nullptr, nullptr);
+        impl_->sprite_.draw(ctx, cmd, impl_->target_.image(), parts.data(),
+                            (uint32_t)parts.size(), pack, emu_w, emu_h,
+                            part_flips.data(),
+                            fv.sprite_sub_tint ? part_tint.data() : nullptr,
+                            nullptr, nullptr, 0, clip);
       }
       impl_->sprite_.set_depth(nullptr);
     };
@@ -1232,7 +1242,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
         flush_quads();
         mark_sprite_draw((uint32_t)e.sub, ro::DrawOutcome::in_pass);
         impl_->sprite_.set_dim(dim_spr, op_spr);
-        draw_anchored_sub((uint32_t)e.sub, sprite_z); // R3/R2
+        draw_anchored_sub((uint32_t)e.sub, sprite_z, element_clip(e)); // R3/R2
       }
       if (hd_replaces && !impl_->checker_) {
         // El HD reemplaza al elemento. Si este es el ANCLA de un sub de
@@ -1241,7 +1251,8 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
           flush_quads();
           mark_sprite_draw((uint32_t)e.sub, ro::DrawOutcome::in_pass);
           impl_->sprite_.set_dim(dim_spr, op_spr);
-          draw_anchored_sub((uint32_t)e.sub, sprite_z); // R3/R2
+          draw_anchored_sub((uint32_t)e.sub, sprite_z,
+                            element_clip(e)); // R3/R2
         }
         // Ídem para un tile de plano de ALTA prioridad: su HD va en el
         // z de la cadena, no en la lane PlaneTilesHi — un sprite pri-1

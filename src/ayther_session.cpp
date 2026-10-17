@@ -9450,8 +9450,9 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
   // 0, después de al menos uno con x≠0 en esa línea, enmascara a los que
   // siguen en la cadena. El enmascarado en TODAS sus líneas visibles no se
   // emite (lo que no gana no se emite — R-1: «se modela», Sonic 2 la usa).
-  // El enmascarado PARCIAL se emite entero (divergencia rara y acotada; el
-  // presupuesto de píxeles por línea NO se replica — decisión de R-1).
+  // El enmascarado PARCIAL —y el que el presupuesto de píxeles
+  // o el límite de sprites de la línea corta a mitad de altura— se emite
+  // RECORTADO a las filas que el VDP sí dibuja (clip del elemento).
   std::vector<const AytherSpriteOccurrence *> chain_order;
   for (uint32_t i = 0; i < v.sprite_occ_count; ++i)
     chain_order.push_back(&v.sprite_occs[i]);
@@ -9468,6 +9469,13 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
   // the WHOLE parsed list: the mask sprites and the ones off screen count
   // toward the line even though they are not occurrences.
   std::unordered_set<const AytherSpriteOccurrence *> fully_masked;
+  // Spec 002 (R5): the rows [y0, y1) the VDP draws a PARTIALLY drawn sprite
+  // on — the scene clips its element, and the HD it anchors, to them. Sonic
+  // 1's title spends the line pixel budget on parked sprites from line 104
+  // down, so Sonic is cut there while he rises behind the emblem.
+  std::unordered_map<const AytherSpriteOccurrence *,
+                     std::pair<int16_t, int16_t>>
+      sprite_row_clip;
   if (!chain_order.empty() && !raw.empty()) {
     std::vector<session::ParsedSprite> parsed(raw.size());
     for (size_t k = 0; k < raw.size(); ++k) {
@@ -9479,13 +9487,19 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
     }
     const bool no_limit =
         im.runner.core_option("genesis_plus_gx_no_sprite_limit") == "enabled";
-    const std::vector<uint8_t> drawn = session::drawn_on_some_line(
-        parsed, (int)v.fb_height,
-        session::line_limits_for(v.fb_width, no_limit));
-    for (const AytherSpriteOccurrence *oc : chain_order)
-      if (const session::ParsedSpriteRecord *r = raw_of(*oc);
-          r && drawn[static_cast<size_t>(r - raw.data())] == 0)
+    const std::vector<session::SpriteDrawnRows> rows =
+        session::drawn_rows(parsed, (int)v.fb_height,
+                            session::line_limits_for(v.fb_width, no_limit));
+    for (const AytherSpriteOccurrence *oc : chain_order) {
+      const session::ParsedSpriteRecord *r = raw_of(*oc);
+      if (!r)
+        continue;
+      const size_t k = static_cast<size_t>(r - raw.data());
+      if (rows[k].visible && !rows[k].drawn())
         fully_masked.insert(oc);
+      else if (rows[k].partial(parsed[k], (int)v.fb_height))
+        sprite_row_clip.emplace(oc, std::make_pair(rows[k].y0, rows[k].y1));
+    }
   }
 
   // ---- : el FRAMEBUFFER como juez de qué sprite se dibujó ------------
@@ -9867,6 +9881,14 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
       e.layer = 3;
       e.priority = pri;
       e.slot = oc->slot;
+      // Spec 002 (R5): drawn by the VDP on only some of its lines (per-line
+      // sprite/pixel limit, x = 0 mask) — the compose clips it to those rows.
+      if (auto rc = sprite_row_clip.find(oc); rc != sprite_row_clip.end()) {
+        e.clip_x0 = INT16_MIN;
+        e.clip_x1 = INT16_MAX;
+        e.clip_y0 = rc->second.first;
+        e.clip_y1 = rc->second.second;
+      }
       const session::ParsedSpriteSceneIdentity identity =
           session::parsed_sprite_scene_identity(r);
       e.chain = identity.chain;
