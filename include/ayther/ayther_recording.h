@@ -159,6 +159,17 @@ struct AytherRecording {
   /// Load a `.arp` file. Returns std::nullopt on any error (bad magic,
   /// truncated, decompression failure).
   static std::optional<AytherRecording> load(const std::string &path);
+
+  /// `sizeof(AytherRecording)` as compiled INTO the engine library. A frontend
+  /// that compiles this struct from another copy of the header (the Lab kept a
+  /// vendored rc.6 copy while the package did not ship this file) reads every
+  /// field at the wrong offset once a member is added — frame_count() comes
+  /// back 0 and a take silently "does not open" (2026-10-17, audio_fm_regs).
+  /// Compare it with your own sizeof at start-up and refuse to run on mismatch.
+  static std::size_t abi_size() noexcept;
 };
+
+/// Marks that AytherRecording::abi_size() exists (frontends guard the check).
+#define AYTHER_RECORDING_ABI_SIZE 1
 
 } // namespace ayther

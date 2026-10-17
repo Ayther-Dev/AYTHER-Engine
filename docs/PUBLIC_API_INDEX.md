@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 60 headers
+## The 61 headers
 
 | header | what it provides |
 |---|---|
@@ -23,6 +23,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_core_ffi.h`](#ayther_core_ffih) | Installed public header. |
 | [`ayther_layers.h`](#ayther_layersh) | Installed public header. |
 | [`ayther_mode3.h`](#ayther_mode3h) | Installed public header. |
+| [`ayther_recording.h`](#ayther_recordingh) | Installed public header. |
 | [`ayther_renderer.h`](#ayther_rendererh) | Installed public header. |
 | [`ayther_result.h`](#ayther_resulth) | Installed public header. |
 | [`ayther_sdk_version.h`](#ayther_sdk_versionh) | Installed public header. |
@@ -386,6 +387,34 @@ SpriteSubstitutor/metasprite flow and publishes results through FrameView.
 **Declares:** `ayther`, `EntityInstance`, `Mode3Resolver`
 
 _The installed header (`include/ayther/ayther_mode3.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="ayther_recordingh"></a>
+
+## ayther_recording.h
+
+ayther_recording.h — deterministic gameplay recording (.arp).  Ayther R7.
+
+An Ayther Replay Package is NOT a video: it is the deterministic *input* to
+the Lab. A recording = an initial savestate + the per-frame input stream.
+Replaying = restore the state and re-inject the inputs → the exact same
+gameplay, frame for frame, scrubbable (see lab.md §4, lab-engine-split §7).
+
+  take.arp = game_id + name
+           + initial savestate (zstd-compressed on disk)
+           + input stream (one RetroPad bitmask per frame)
+
+The occurrence history ({slot,hash,anim_group} per frame) + trim marks land
+in R7b; this is the recording/replay foundation.
+
+In memory the initial state is kept RAW (ready to unserialize); compression
+happens only at save() time. The motor (AytherSession) records into this and
+replays from it via replay_seek().
+
+**Declares:** `ayther`, `AytherRecording`, `FrameStat`
+
+_The installed header (`include/ayther/ayther_recording.h`) carries the full documentation of every symbol._
 
 ---
 

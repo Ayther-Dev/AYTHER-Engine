@@ -17,6 +17,7 @@ ayther_result.h
 ayther_sdk.h
 ayther_sdk_version.h
 ayther_session.h
+ayther_recording.h
 log.h
 engine/audio_fact_queue.hpp
 engine/audio_hd_state.hpp

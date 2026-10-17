@@ -1476,4 +1476,8 @@ AytherRecording AytherRecording::slice(uint32_t begin, uint32_t end,
   return r;
 }
 
+std::size_t AytherRecording::abi_size() noexcept {
+  return sizeof(AytherRecording);
+}
+
 } // namespace ayther

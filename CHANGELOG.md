@@ -26,6 +26,15 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   intro now anchors in sync instead of being claimed by the loop the fading
   title had just reached, and the 0.9 s gap before the loop is gone.
 
+### Fixed
+
+- `ayther_recording.h` is now an installed public header and
+  `AytherRecording::abi_size()` reports the struct size compiled into the
+  library. The Lab consumed a vendored rc.6 copy of that header because the
+  package did not ship it; when `audio_fm_regs` was added (2026-10-14) every
+  field shifted and a loaded take read back `frame_count() == 0`, so takes
+  silently failed to open in any Lab built against a newer engine.
+
 ### Security
 
 - Added explicit production pack trust registries with Ed25519 signer identity,
