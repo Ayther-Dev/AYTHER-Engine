@@ -1051,14 +1051,30 @@ impl AudioEventDetector {
     /// Firma del canal FM: hash del "patch" (4 operadores) + registros de
     /// frecuencia/algoritmo del canal, en el momento del key-on. Estable para el
     /// mismo SFX (los mismos parámetros de instrumento + nota).
+    ///
+    /// SIN el Total Level de los operadores PORTADORES (`kAudioEventAlgo` 3,
+    /// 2026-10-17): ese TL es el volumen, no la identidad. Golden Axe atenúa la
+    /// música en las transiciones título→selección y selección→stage mientras
+    /// la canción sigue sonando; con el TL dentro del hash cada nota del fundido
+    /// era «otra firma», la apertura del loop llegaba irreconocible y la única
+    /// firma intacta (el hi-hat) anclaba la Secuencia equivocada. El volumen
+    /// sigue saliendo por `velocity`. El TL de un modulador es timbre y se queda.
     fn fm_signature(&self, ch: usize) -> u64 {
         let bank = if ch < 3 { 0 } else { 0x100 };
         let idx = ch % 3;
+        let carriers = FM_CARRIERS[(self.fm_regs[bank + 0xB0 + idx] & 7) as usize];
         let mut h = mix(mix(FNV_SEED, CHIP_FM), ch as u8);
         // Registros de operador del canal: 0x30,0x34,…,0x9C con (reg & 3) == idx.
         let mut base = 0x30;
         while base <= 0x9C {
-            h = mix(h, self.fm_regs[bank + base + idx]);
+            // 0x40 = Total Level. Se salta sólo en los portadores (mismo mapeo
+            // slot→operador que `fm_instrument`).
+            let slot = (base - 0x30) / 4; // +0,+4,+8,+12 → S1,S3,S2,S4
+            let op = FM_SLOT_OPERATOR[slot % 4];
+            let is_tl = (base & 0xF0) == 0x40;
+            if !(is_tl && carriers & (1 << op) != 0) {
+                h = mix(h, self.fm_regs[bank + base + idx]);
+            }
             base += 4;
         }
         // Registros por canal: frecuencia (0xA0/0xA4), FB/algoritmo (0xB0), L/R/AMS/FMS (0xB4).
@@ -3162,6 +3178,88 @@ mod velocity_and_instrument_tests {
             "menos TL = más fuerte: {loud} tendría que ser > {quiet}"
         );
         assert_eq!(loud, 127, "TL 0 es el máximo de la escala MIDI");
+    }
+
+    /// La FIRMA tampoco cambia con el volumen (kAudioEventAlgo 3). Un fundido
+    /// del juego (TL del portador subiendo nota a nota) tiene que seguir
+    /// produciendo la firma autorada: es lo que reconoce cabezas y disparadores.
+    #[test]
+    fn volume_does_not_change_signature() {
+        let signature_for_carrier_tl = |carrier_tl: u8| -> u64 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 0);
+            set_tl(&mut w, 0, 20); // modulador: timbre
+            set_tl(&mut w, 3, carrier_tl); // portador: volumen
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].signature
+        };
+        assert_eq!(
+            signature_for_carrier_tl(0),
+            signature_for_carrier_tl(64),
+            "el TL del PORTADOR es volumen: no debe cambiar la firma"
+        );
+    }
+
+    /// Y el TL de un MODULADOR sí parte la firma: sin este caso, el de arriba
+    /// pasaría también con una firma que ignore todos los TL.
+    #[test]
+    fn modulator_timbre_changes_signature() {
+        let signature_for_modulator_tl = |modulator_tl: u8| -> u64 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 0);
+            set_tl(&mut w, 0, modulator_tl);
+            set_tl(&mut w, 3, 10);
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].signature
+        };
+        assert_ne!(
+            signature_for_modulator_tl(0),
+            signature_for_modulator_tl(64),
+            "el TL de un MODULADOR es timbre: la firma tiene que cambiar"
+        );
+    }
+
+    /// En el algoritmo 4 los portadores son S2 y S4 (bits 1 y 3 en orden de
+    /// OPERADOR, slots +8 y +12 en orden de REGISTRO): el TL del slot +8 es
+    /// volumen y el del slot +4 (S3, modulador) es timbre. Mismo mapeo que
+    /// `algorithm_4_velocity_reads_carrier_slots`.
+    #[test]
+    fn algorithm_4_signature_skips_carrier_slots_only() {
+        let signature_for = |slot: usize, tl: u8| -> u64 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 4);
+            set_tl(&mut w, slot, tl);
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].signature
+        };
+        assert_eq!(
+            signature_for(2, 0),
+            signature_for(2, 96),
+            "slot +8 = S2, portador"
+        );
+        assert_ne!(
+            signature_for(1, 0),
+            signature_for(1, 96),
+            "slot +4 = S3, modulador"
+        );
     }
 
     // -----------------------------------------------------------------------

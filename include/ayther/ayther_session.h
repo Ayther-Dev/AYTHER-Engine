@@ -1077,7 +1077,10 @@ public:
   /// kAudioEventAlgo. A null pointer or zero count clears the events.
   void set_audio_events(const AytherAudioEvent *events, uint32_t count);
   /// Detector-output revision used to invalidate frontend event caches.
-  static constexpr uint32_t kAudioEventAlgo = 2;
+  /// 3 (2026-10-17): the FM signature no longer hashes the carrier operators'
+  /// Total Level, so a game fade keeps the authored signature. Signatures
+  /// authored under 2 must be re-derived from their takes.
+  static constexpr uint32_t kAudioEventAlgo = 3;
 
   // -- Per-event audio substitution (C-A3b) ---------------------------------
   // It assigns an HD asset to an event SIGNATURE: ALL events with that

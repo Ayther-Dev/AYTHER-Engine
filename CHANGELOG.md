@@ -7,6 +7,17 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The FM audio-event signature no longer hashes the Total Level of carrier
+  operators (`kAudioEventAlgo` 3). A game fade used to turn every note into a
+  new signature, so sequence heads and triggers went unrecognised while the
+  music was being attenuated (Golden Axe title→select transition). Carrier
+  level still reaches the event as `velocity`. Signatures authored under
+  revision 2 must be re-derived from their takes; frontend event caches keyed
+  by `kAudioEventAlgo` invalidate themselves.
+
+
 ### Security
 
 - Added explicit production pack trust registries with Ed25519 signer identity,
