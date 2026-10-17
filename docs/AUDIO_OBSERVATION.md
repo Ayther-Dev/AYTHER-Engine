@@ -621,8 +621,10 @@ no_applicable_candidate. La selección exacta se identifica como exact_lookup y
 no inventa un recorrido amplio.
 
 El anclaje de secuencias conserva quorum_rejected,
-claimed_by_open_sequence y selected dentro del mismo recorrido que muta el
-estado. sequence_candidate_decision identifica cuadro, entrada, sustitución,
+claimed_by_open_sequence, selected y contradicted_open_sequence (regla 6: la
+ventana abierta que se cerró porque el disparador de otra secuencia llegó en
+un desfase que sus ocurrencias autorizadas no predicen) dentro del mismo
+recorrido que muta el estado. sequence_candidate_decision identifica cuadro, entrada, sustitución,
 firma y sustitución relacionada cuando existe. sequence_selection cierra cada
 cuadro con no_candidate, no_selection o selected y la cantidad real de anclajes.
 Los hechos comparten la consulta y la identidad de sustitución con las visitas;

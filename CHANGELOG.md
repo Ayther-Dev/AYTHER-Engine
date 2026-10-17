@@ -17,6 +17,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   revision 2 must be re-derived from their takes; frontend event caches keyed
   by `kAudioEventAlgo` invalidate themselves.
 
+- Sequence anchoring rule 6, CONTRADICTION (`audio_seq_anchor.h`): on a frame
+  where none of an open music/ambience Sequence's claimed signatures is still
+  sounding and the frame carries the whole opening of another exclusive
+  Sequence, the open window closes and that opening anchors — the game cut
+  this music and started that one. Live paths only (voice state); effects
+  neither contradict nor get contradicted. Golden Axe: the selection screen's
+  intro now anchors in sync instead of being claimed by the loop the fading
+  title had just reached, and the 0.9 s gap before the loop is gone.
 
 ### Security
 

@@ -56,6 +56,27 @@
 //     (the intro's hi-hat recurs three times inside the intro), as does a
 //     Sequence without a head.
 //
+//  6. CONTRADICTION (2026-10-17, Golden Axe title→selection, detector
+//     revision 3): the game reaches the loop point of "The Battle" while the
+//     title fades out, so the Loop anchors; 55 frames later the selection
+//     screen restarts the music from the INTRO, whose lone hi-hat trigger is a
+//     member of the open Loop and was simply claimed — the HD kept playing the
+//     loop over the game's intro and ended 55 frames early. Rule 5 cannot see
+//     it: the Intro has no other head. Timing cannot either: with revision 3
+//     the lead notes that differed only by volume share one signature and the
+//     Loop has it 54 frames into a pass. What gives the restart away is the
+//     VOICE STATE: the driver cut every voice one frame earlier, so nothing
+//     the Loop claims is still sounding, while inside a loop bar the bass
+//     sustains. So an OPEN exclusive Sequence is contradicted on a frame where
+//     none of its claimed signatures is sustained from the previous frame AND
+//     the frame carries the whole opening of ANOTHER enabled exclusive
+//     Sequence (its trigger and every other head signature; a lone trigger is
+//     a whole opening when the head is empty). The window closes on that frame
+//     and the frame resolves as if it had never been open, so the Intro
+//     anchors in sync and its step ends exactly where the loop begins. Only
+//     with voice state (live paths); the table relies on the whole head.
+//     Effects never contradict music and are never contradicted.
+//
 // Events are traversed in ascending `start_frame` order. The detector does NOT
 // return them sorted (it emits them per channel), so the table applies a stable
 // sort. The same traversal drives playback, bare-frame muting, and export
@@ -64,6 +85,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -84,6 +106,9 @@ struct SeqAnchorSub {
   bool looping = false;             ///< looping HD (continuation)
   std::vector<uint64_t> signatures; ///< member signatures
   std::vector<uint64_t> head;       ///< signatures starting with the trigger
+  /// Rule 6 runs between EXCLUSIVE Sequences only (music / ambience): an
+  /// effect that borrows a music signature never closes the music window.
+  bool exclusive = true;
 };
 
 /// How many head signatures are needed to anchor without the trigger?
@@ -99,6 +124,25 @@ inline bool seq_sub_claims(const SeqAnchorSub &claimer, uint64_t sig) {
     return true;
   return std::find(claimer.signatures.begin(), claimer.signatures.end(), sig) !=
          claimer.signatures.end();
+}
+
+/// Rule 6: is this frame the opening of `s` — its trigger and every other
+/// head signature start now, and nothing it claims is sustained? Unlike Rule
+/// 5's whole opening, a lone trigger counts when the head is empty: here the
+/// question is not "did MY music restart" but "did ANOTHER music start".
+inline bool seq_opening_now(const SeqAnchorSub &s,
+                            std::span<const uint64_t> sigs,
+                            std::span<const uint64_t> sustained) {
+  if (std::find(sigs.begin(), sigs.end(), s.trigger_signature) == sigs.end())
+    return false;
+  for (const uint64_t head : s.head)
+    if (head != s.trigger_signature &&
+        std::find(sigs.begin(), sigs.end(), head) == sigs.end())
+      return false;
+  for (const uint64_t sig : sustained)
+    if (seq_sub_claims(s, sig))
+      return false;
+  return true;
 }
 
 /// Is this frame the WHOLE opening of `s` (Rule 5)? The trigger and every
@@ -169,6 +213,10 @@ enum class SeqAnchorDecisionResult : uint8_t {
   quorum_rejected,
   claimed_by_open_sequence,
   selected,
+  /// Rule 6: this Sequence's OPEN window was closed on this frame because
+  /// none of its voices was sustained and `candidate_signature` opened another
+  /// exclusive Sequence (`related_sub_index`).
+  contradicted_open_sequence,
 };
 
 struct SeqAnchorDecisionView {
@@ -257,6 +305,8 @@ public:
           value.candidate_signature, value.input_index, owner);
       break;
     }
+    case SeqAnchorDecisionResult::contradicted_open_sequence:
+      break; // the window that closed, not a verdict on a trigger route
     }
   }
 
@@ -306,10 +356,14 @@ struct SeqAnchorFrameView {
 template <class Visit, class Decide, class Finish>
 inline std::vector<size_t>
 seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
-                         std::span<const uint64_t> sustained,
+                         std::optional<std::span<const uint64_t>> voice_state,
                          const std::vector<SeqAnchorSub> &subs,
                          std::vector<SeqAnchorState> &st, Visit &&visit,
                          Decide &&decide, Finish &&finish) {
+  // `voice_state` = the signatures sounding at `f` that already sounded at
+  // `f - 1`; nullopt = no voice state (the table), which switches Rule 6 off.
+  const std::span<const uint64_t> sustained =
+      voice_state ? *voice_state : std::span<const uint64_t>{};
   static_assert(
       std::is_nothrow_invocable_v<Visit &, const SeqAnchorCandidateView &>);
   static_assert(
@@ -341,6 +395,47 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
     if (!sq.enabled || f >= st[i].next_free)
       continue;
     restart[i] = seq_whole_opening(sq, sigs, sustained);
+  }
+  // Rule 6 (voice state only): an OPEN exclusive Sequence is contradicted on
+  // a frame where none of its claimed signatures is sustained and the frame
+  // carries the whole opening of ANOTHER enabled exclusive Sequence — the
+  // game cut this music and started that one. The window closes here and the
+  // frame resolves as if it had never been open.
+  if (voice_state) {
+    for (size_t j = 0; j < subs.size(); ++j) {
+      const SeqAnchorSub &sq = subs[j];
+      if (!sq.enabled || !sq.exclusive || !st[j].open)
+        continue;
+      if (f < st[j].win_start || f >= st[j].win_end)
+        continue;
+      bool voices_alive = false;
+      for (const uint64_t sig : sustained)
+        if (seq_sub_claims(sq, sig)) {
+          voices_alive = true;
+          break;
+        }
+      if (voices_alive)
+        continue;
+      size_t other = subs.size();
+      for (size_t i = 0; i < subs.size() && other == subs.size(); ++i)
+        if (i != j && subs[i].enabled && subs[i].exclusive &&
+            seq_opening_now(subs[i], sigs, sustained))
+          other = i;
+      if (other == subs.size())
+        continue;
+      size_t trigger_input = 0;
+      for (const uint64_t sig : sigs) {
+        if (sig == subs[other].trigger_signature)
+          break;
+        ++trigger_input;
+      }
+      st[j].open = false;
+      st[j].win_end = f;
+      st[j].next_free = f;
+      restart[j] = 0;
+      decide({f, j, sq.key, subs[other].trigger_signature, trigger_input,
+              SeqAnchorDecisionResult::contradicted_open_sequence, other});
+    }
   }
   size_t input_index = 0;
   for (const uint64_t sig : sigs) {
@@ -482,7 +577,7 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
                          const std::vector<SeqAnchorSub> &subs,
                          std::vector<SeqAnchorState> &st, Visit &&visit,
                          Decide &&decide, Finish &&finish) {
-  return seq_anchor_frame_decided(f, sigs, std::span<const uint64_t>{}, subs,
+  return seq_anchor_frame_decided(f, sigs, std::nullopt, subs,
                                   st, std::forward<Visit>(visit),
                                   std::forward<Decide>(decide),
                                   std::forward<Finish>(finish));

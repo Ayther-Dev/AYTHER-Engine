@@ -77,8 +77,8 @@ bool formation() {
 bool duplicates_and_claims() {
   using Stage = ayther::SeqAnchorCandidateStage;
   std::vector<ayther::SeqAnchorSub> subs(2);
-  subs[0] = {10, 7, 10, 0, true, false, {7, 8, 9}, {7, 8}};
-  subs[1] = {20, 8, 10, 0, true, false, {7, 8}, {7, 8}};
+  subs[0] = {10, 7, 10, 0, true, false, {7, 8, 9}, {7, 8}, true};
+  subs[1] = {20, 8, 10, 0, true, false, {7, 8}, {7, 8}, true};
   std::vector<ayther::SeqAnchorState> state;
   auto plain = state;
   Visits visits;
@@ -115,8 +115,8 @@ bool empty_and_continuation() {
   if (!ayther::seq_anchor_frame_observed(0, {7}, subs, state, visits).empty() ||
       !state.empty() || visits.count != 0)
     return false;
-  subs = {{10, 7, 5, 0, true, false, {7}, {7}},
-          {20, 7, 5, 0, true, true, {7, 8}, {7}}};
+  subs = {{10, 7, 5, 0, true, false, {7}, {7}, true},
+          {20, 7, 5, 0, true, true, {7, 8}, {7}, true}};
   state = {{}, {5, 0, 5, true}};
   auto plain = state;
   const auto observed =
@@ -134,8 +134,8 @@ bool actual_decisions() {
   using Result = ayther::SeqAnchorDecisionResult;
   using Terminal = ayther::SeqAnchorResolutionResult;
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 99, 10, 0, true, false, {7, 8, 9}, {7, 8, 9}},
-      {20, 7, 10, 0, true, false, {7, 8}, {7}},
+      {10, 99, 10, 0, true, false, {7, 8, 9}, {7, 8, 9}, true},
+      {20, 7, 10, 0, true, false, {7, 8}, {7}, true},
   };
   std::vector<ayther::SeqAnchorState> state;
   auto plain = state;
@@ -180,8 +180,8 @@ bool actual_decisions() {
   decisions = {};
   state = {{10, 0, 10, true}, {}};
   const std::vector<ayther::SeqAnchorSub> claimed{
-      {10, 99, 10, 0, true, false, {7}, {99}},
-      {20, 7, 10, 0, true, false, {7}, {7}},
+      {10, 99, 10, 0, true, false, {7}, {99}, true},
+      {20, 7, 10, 0, true, false, {7}, {7}, true},
   };
   const auto none = ayther::seq_anchor_frame_decided(5, {7}, claimed, state,
                                                      visits, decide, finish);

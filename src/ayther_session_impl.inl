@@ -1308,6 +1308,12 @@ struct AytherSession::Impl {
       const auto hd = audio_event_head.find(sig);
       if (hd != audio_event_head.end())
         a.head = hd->second;
+      {
+        // Rule 6 runs between exclusive Sequences (music / ambience) only.
+        const auto category = playback_policy_of(sig).category;
+        a.exclusive = category == AudioCategory::music ||
+                      category == AudioCategory::ambient;
+      }
       v.push_back(std::move(a));
     }
     std::sort(v.begin(), v.end(),
@@ -3558,6 +3564,11 @@ struct AytherSession::Impl {
       v.enabled = !s.asset.empty();
       v.signatures = s.signatures;
       v.head = s.head_signatures;
+      {
+        const auto category = playback_policy_of(s.trigger_signature).category;
+        v.exclusive = category == AudioCategory::music ||
+                      category == AudioCategory::ambient;
+      }
       v.looping = s.looping;
       subs.push_back(std::move(v));
     }
