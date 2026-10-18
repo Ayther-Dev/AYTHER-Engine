@@ -21,7 +21,7 @@ toml = "0.8"
 mlua = { version = "0.9", features = ["lua54", "vendored"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 notify     = "6"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 ed25519-dalek = { version = "2.0", features = ["rand_core"] }
 sha2 = "0.10"
 rustysynth = "1"
