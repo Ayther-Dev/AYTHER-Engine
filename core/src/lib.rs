@@ -75,7 +75,7 @@ pub const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// This counter is independent from [`RELEASE_VERSION`] and changes only when
 /// that ABI contract changes.
-pub const CORE_C_ABI_REVISION: u32 = 7;
+pub const CORE_C_ABI_REVISION: u32 = 8;
 
 use audio_hasher::{AudioHasher, AudioOccurrence, AudioSubstitutor};
 use vram_sprite::{SpriteHasher, SpriteSubstitutor};
@@ -4383,6 +4383,28 @@ pub unsafe extern "C" fn ayther_palette_signature(
             return 0;
         }
         vram_sprite::palette_signature(std::slice::from_raw_parts(words, n as usize), line, slots)
+    }
+}
+/// Computes the sprite identity of pattern bytes gathered in VRAM (host) order.
+///
+/// `bytes` holds `n` bytes, `n` a multiple of 32 (the w×h tiles of the sprite,
+/// contiguous from its base tile). The result equals the hash the sprite
+/// detector assigns to that sprite (`AytherRecording::kSpriteHashAlgo`). Returns
+/// 0 for a null pointer, `n == 0` or `n` not a multiple of 32. Spec 007: lets a
+/// frontend verify a stored element record against its identity.
+#[unsafe(no_mangle)]
+/// # Safety
+///
+/// The caller must uphold the crate-level FFI safety contract documented at the
+/// crate root, including all pointer, buffer, lifetime, and ownership requirements.
+pub unsafe extern "C" fn ayther_sprite_pattern_hash(bytes: *const u8, n: u32) -> u64 {
+    // SAFETY: The caller upholds the pointer, lifetime, and ownership invariants
+    // documented for this FFI function.
+    unsafe {
+        if bytes.is_null() || n == 0 || !n.is_multiple_of(32) {
+            return 0;
+        }
+        identity_kat::sprite_pattern_hash(std::slice::from_raw_parts(bytes, n as usize))
     }
 }
 /// Sets the visible display area for the active video mode.

@@ -9127,6 +9127,7 @@ bool AytherSession::split_recording(const AytherRecording &rec, uint32_t frame,
   // .arp v9: cada mitad lleva la sombra FM de su propio arranque (la del tail
   // sale del caché de escrituras que el seek de arriba acaba de extender).
   head = rec.slice(0, frame, rec.initial_state, rec.audio_fm_regs);
+  head.take_id = rec.take_id; // spec 007: la head ES la toma; la tail, otra
   tail = rec.slice(frame, rec.frame_count(), std::move(st),
                    im.fm_registers_at(rec, frame));
   return true;
@@ -9141,6 +9142,7 @@ bool AytherSession::crop_recording(const AytherRecording &rec, uint32_t begin,
     return false;
   if (begin == 0) {
     out = rec.slice(0, end, rec.initial_state, rec.audio_fm_regs);
+    out.take_id = rec.take_id; // spec 007: recortar no cambia la identidad
     return true;
   }
   if (!replay_seek(rec, begin - 1))
@@ -9150,6 +9152,7 @@ bool AytherSession::crop_recording(const AytherRecording &rec, uint32_t begin,
     return false;
   out = rec.slice(begin, end, std::move(st),
                   im.fm_registers_at(rec, begin)); // .arp v9
+  out.take_id = rec.take_id; // spec 007: recortar no cambia la identidad
   return true;
 }
 

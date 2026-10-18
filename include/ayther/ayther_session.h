@@ -1551,7 +1551,8 @@ public:
   /// (the state PRE-frame `frame` — replay_seek+serialize would leave it
   /// post-frame). It CLOBBERS the live emulator state: the caller must re-seek
   /// afterwards. false if frame==0, frame>=frame_count() or the
-  /// (de)serialisation fails.
+  /// (de)serialisation fails. The head keeps `rec.take_id` (it is the same
+  /// take); the tail has take_id 0 for the caller to assign (spec 007).
   bool split_recording(const AytherRecording &rec, uint32_t frame,
                        AytherRecording &head, AytherRecording &tail);
 
@@ -1559,7 +1560,7 @@ public:
   /// With begin>0 it re-simulates to capture the initial savestate (the same
   /// post-frame path as split_recording) and CLOBBERS the live emulator state:
   /// the caller must re-seek afterwards. false if the range is invalid or the
-  /// (de)serialisation fails.
+  /// (de)serialisation fails. `out` keeps `rec.take_id` (spec 007).
   bool crop_recording(const AytherRecording &rec, uint32_t begin, uint32_t end,
                       AytherRecording &out);
 

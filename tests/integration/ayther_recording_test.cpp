@@ -621,8 +621,9 @@ int main() {
       std::vector<char> image;
       std::ifstream in(p, std::ios::binary);
       image.assign(std::istreambuf_iterator<char>(in), {});
+      // v10: the 8-byte take id follows the shadow.
       const size_t size_pos =
-          image.size() - AytherRecording::kAudioFmRegisterBytes - 4;
+          image.size() - 8 - AytherRecording::kAudioFmRegisterBytes - 4;
       image[size_pos] = static_cast<char>(0x01);
       image[size_pos + 1] = static_cast<char>(0x02);
       const fs::path bad = test_directory / "fm-regs-bad.arp";
@@ -1082,6 +1083,83 @@ int main() {
           "RNF-5: una publicación completa no deja artefactos exclusivos");
     fs::remove(legacy_temporary, ec);
     fs::remove(concurrent, ec);
+  }
+
+  // Spec 007 (RF-3.1, RF-3.2): v10 carries the take id as the trailing 8
+  // bytes; v8/v9 files load 0 and patch_take_id upgrades them in place.
+  {
+    AytherRecording t = make_rec();
+    t.take_id = 0x0123456789ABCDEFULL;
+    const fs::path v10 = test_directory / "take_id_v10.arp";
+    CHECK(t.save(v10.string()), "v10: guardar con take_id");
+    auto back = AytherRecording::load(v10.string());
+    CHECK(back && back->take_id == 0x0123456789ABCDEFULL,
+          "v10: take_id round-trip");
+    auto peeked = AytherRecording::peek_take_id(v10.string());
+    CHECK(peeked && *peeked == 0x0123456789ABCDEFULL,
+          "v10: peek_take_id lee el id sin descomprimir");
+
+    // A v9 image is the v10 one without its trailing id, version stamped 9.
+    std::vector<char> bytes = read_bytes(v10);
+    CHECK(bytes.size() > 24, "v10: bytes del fixture");
+    std::vector<char> v9_bytes(bytes.begin(), bytes.end() - 8);
+    CHECK(write_u32_le(v9_bytes, 4, 9U), "v9: sellar versión 9");
+    const fs::path v9 = test_directory / "take_id_v9.arp";
+    CHECK(write_bytes(v9, v9_bytes), "v9: escribir fixture");
+    auto old = AytherRecording::load(v9.string());
+    CHECK(old && old->take_id == 0 && old->inputs == t.inputs,
+          "v9: carga con take_id 0 y el resto intacto");
+    peeked = AytherRecording::peek_take_id(v9.string());
+    CHECK(peeked && *peeked == 0, "v9: peek_take_id = 0");
+
+    CHECK(AytherRecording::patch_take_id(v9.string(), 0xFEEDULL),
+          "v9: patch_take_id sube a v10");
+    auto patched = AytherRecording::load(v9.string());
+    CHECK(patched && patched->take_id == 0xFEEDULL &&
+              patched->inputs == t.inputs &&
+              patched->sprite_hashes == t.sprite_hashes &&
+              patched->audio_hashes == t.audio_hashes &&
+              patched->initial_state == t.initial_state &&
+              patched->hash_algo == t.hash_algo,
+          "v9→v10: el id se lee y nada más cambia");
+    std::uint32_t version = 0;
+    const std::vector<char> after = read_bytes(v9);
+    CHECK(read_u32_le(after, 4, version) && version == 10U,
+          "v9→v10: versión sellada 10");
+
+    const std::vector<char> before_noop = read_bytes(v9);
+    CHECK(AytherRecording::patch_take_id(v9.string(), 0xFEEDULL) &&
+              read_bytes(v9) == before_noop,
+          "patch_take_id con el mismo id es un no-op");
+    CHECK(AytherRecording::patch_take_id(v9.string(), 0xBEEFULL),
+          "v10: patch_take_id cambia el id");
+    patched = AytherRecording::load(v9.string());
+    CHECK(patched && patched->take_id == 0xBEEFULL &&
+              read_bytes(v9).size() == before_noop.size(),
+          "v10: el id cambia sin crecer el archivo");
+
+    // v8 = v9 without the FM shadow size (make_rec has no shadow → u32 0).
+    std::vector<char> v8_bytes(v9_bytes.begin(), v9_bytes.end() - 4);
+    CHECK(write_u32_le(v8_bytes, 4, 8U), "v8: sellar versión 8");
+    const fs::path v8 = test_directory / "take_id_v8.arp";
+    CHECK(write_bytes(v8, v8_bytes), "v8: escribir fixture");
+    CHECK(AytherRecording::patch_take_id(v8.string(), 0x88ULL),
+          "v8: patch_take_id agrega la sombra vacía y el id");
+    auto from_v8 = AytherRecording::load(v8.string());
+    CHECK(from_v8 && from_v8->take_id == 0x88ULL &&
+              from_v8->audio_fm_regs.empty() && from_v8->inputs == t.inputs,
+          "v8→v10: carga con id y sin sombra FM");
+
+    const AytherRecording tail = t.slice(1, 3, t.initial_state);
+    CHECK(tail.take_id == 0, "slice: la cola nace sin id");
+
+    const fs::path junk = test_directory / "junk.arp";
+    CHECK(write_bytes(junk, std::vector<char>{'n', 'o', 'p', 'e'}),
+          "peek: escribir basura");
+    CHECK(!AytherRecording::peek_take_id(junk.string()),
+          "peek: un archivo que no es toma da nullopt");
+    CHECK(!AytherRecording::patch_take_id(junk.string(), 1),
+          "patch: un archivo que no es toma se rechaza");
   }
 
   std::error_code ec;

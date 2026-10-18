@@ -967,6 +967,11 @@ void ayther_pose_sub_set_cram(PoseSetSubstitutor *p, const uint16_t *words,
 /// capturing the variant (authoring and runtime cannot diverge).
 uint64_t ayther_palette_signature(const uint16_t *words, uint32_t n,
                                   uint8_t line, uint16_t slots);
+/// Sprite identity of `n` pattern bytes in VRAM (host) order — `n` a multiple
+/// of 32, the w×h tiles contiguous from the base tile. The SAME hash the
+/// sprite detector assigns (AytherRecording::kSpriteHashAlgo); spec 007 uses
+/// it to verify a stored element record. 0 for NULL, 0 or a non-multiple of 32.
+uint64_t ayther_sprite_pattern_hash(const uint8_t *bytes, uint32_t n);
 /// Clears every live pose override (it does not touch the pack catalogue).
 void ayther_pose_sub_clear_overrides(PoseSetSubstitutor *p);
 /// VISIBLE display area according to the live video mode (the frame's fb;

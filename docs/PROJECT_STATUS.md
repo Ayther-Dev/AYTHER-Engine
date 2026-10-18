@@ -80,7 +80,7 @@ The policy and bump rules are recorded in
 | Axis | Current value | Meaning | Status |
 |---|---:|---|---|
 | AYTHER release | `0.1.0` | Cargo, CMake, vcpkg, SDK headers/library, pack validation, and Lua | Unified and cross-language tested |
-| Flat C ABI revision | `7` | Value returned by `ayther_core_version()` | Adds explicit trusted pack open without changing existing layouts |
+| Flat C ABI revision | `8` | Value returned by `ayther_core_version()` | Adds `ayther_sprite_pattern_hash()` (spec 007) without changing existing layouts |
 | Pack manifest schema | `2` | Highest schema accepted and written | Independent format revision |
 | Emulator extension ABI | `1.10` | AYTHER-aware libretro core negotiation | Independent major/minor protocol |
 | SDK C API revision | `1` | `AYTHER_SDK_C_API_VERSION` | Independent facade revision |

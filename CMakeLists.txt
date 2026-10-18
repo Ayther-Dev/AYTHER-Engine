@@ -182,6 +182,8 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/ayther_background_export.cpp
     src/ayther_components_toml.cpp
     src/ayther_config.cpp
+    src/ayther_element_record.cpp
+    src/ayther_element_scene.cpp
     src/ayther_mode3.cpp
     src/ayther_recording.cpp
     src/ayther_renderer.cpp

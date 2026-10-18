@@ -8,6 +8,8 @@ audio_asset_level.h
 audio_match_rule.h
 audio_playback_policy.h
 ayther_components_toml.h
+ayther_element_record.h
+ayther_element_scene.h
 ayther_animation.h
 ayther_audio_events.h
 ayther_layers.h

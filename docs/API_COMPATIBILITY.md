@@ -83,7 +83,7 @@ destructors are non-throwing.
 | Axis | Current value | Contract |
 |---|---:|---|
 | AYTHER release | `0.1.0` | shared by Cargo, CMake, vcpkg, SDK, engine validation, and Lua |
-| Flat C ABI revision | `7` | independent counter returned by `ayther_core_version()` |
+| Flat C ABI revision | `8` | independent counter returned by `ayther_core_version()` |
 | Pack schema | `2` | manifest metadata grammar understood by the reader/writer |
 | Pack container format | `1` | physical `.ay` envelope and root-layout capability |
 | Emulator extension ABI | `1.10` | independently negotiated core protocol |
@@ -110,6 +110,17 @@ Flat C ABI revision 7 adds `ayther_pack_open_trusted()` so production hosts can
 provide a public-key registry explicitly. Existing entry points and layouts are
 unchanged; callers of the new symbol must relink against a revision-7 core.
 
+Flat C ABI revision 8 adds `ayther_sprite_pattern_hash()`, the sprite identity
+of pattern bytes gathered by the caller (spec 007, element records). Existing
+entry points and layouts are unchanged; callers of the new symbol must relink
+against a revision-8 core.
+
+The take recording format (`AytherRecording`, `.arp`) is version 10: it
+appends the take's stable id (`take_id`) and adds `patch_take_id()` and
+`peek_take_id()`. Version 9 and older files load with `take_id = 0`. The C++
+struct gained a member, so `AytherRecording::abi_size()` changes and a
+frontend must rebuild against the headers of the Engine it links.
+
 ## Compatibility window
 
 The window is the span of other versions a given build interoperates with. It
@@ -119,7 +130,7 @@ what the code actually enforces rather than as an intention.
 | Axis | This build accepts | This build produces | Enforced by |
 | --- | --- | --- | --- |
 | AYTHER release | itself only | `0.1.0` | nothing; there is no cross-release check |
-| Flat C ABI | the revision it was compiled against | revision `7` | `ayther_core_version()`, checked by the caller |
+| Flat C ABI | the revision it was compiled against | revision `8` | `ayther_core_version()`, checked by the caller |
 | Pack manifest schema | any schema `<= 2` | schema `2` | `archive_vfs.rs`, rejecting a larger declared schema |
 | Pack container format | any format `<= 1` | format `1` | `archive_vfs.rs`, rejecting a larger declared format |
 | Emulator extension ABI | major `1`, minor `<= 10` | negotiates the highest common minor | `ayther_get_interface` negotiation |

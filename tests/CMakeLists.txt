@@ -532,6 +532,16 @@ if(AYTHER_BUILD_GPU_TESTS)
         AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     set_tests_properties(ayther.renderer.sprite_flip_uv_test PROPERTIES
         LABELS "engine;native;renderer;gpu")
+    # Spec 007 (RF-5.1): element records composed by Vulkan == the CPU.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/renderer/element_scene_gpu_test.cpp"
+        renderer)
+    target_link_libraries(ayther_element_scene_gpu_test PRIVATE
+        SDL3::SDL3 GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    target_compile_definitions(ayther_element_scene_gpu_test PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ayther.renderer.element_scene_gpu_test PROPERTIES
+        LABELS "engine;native;renderer;gpu")
     # Spec 002, BR-091 (R6): the preparation prewarms the pack catalog.
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/renderer/pack_prewarm_test.cpp"

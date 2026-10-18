@@ -61,17 +61,29 @@ pub const VRAM_TILE_BYTES: usize = 32;
 /// contribute 64 zero indexes so partial VRAM captures remain deterministic.
 pub fn sprite_hash(vram: &[u8], tile_idx: usize, w: u8, h: u8) -> u64 {
     let total = w as usize * h as usize;
-    let mut buf = Vec::with_capacity(total * 64);
+    let mut raw = Vec::with_capacity(total * VRAM_TILE_BYTES);
     for t in 0..total {
         let off = (tile_idx + t) * VRAM_TILE_BYTES;
         if off + VRAM_TILE_BYTES > vram.len() {
-            buf.extend_from_slice(&[0u8; 64]);
+            raw.extend_from_slice(&[0u8; VRAM_TILE_BYTES]);
             continue;
         }
-        for &byte in &vram[off..off + VRAM_TILE_BYTES] {
-            buf.push((byte >> 4) & 0x0F);
-            buf.push(byte & 0x0F);
-        }
+        raw.extend_from_slice(&vram[off..off + VRAM_TILE_BYTES]);
+    }
+    sprite_pattern_hash(&raw)
+}
+
+/// The sprite hash of pattern bytes already gathered in VRAM (host) order:
+/// `w * h * 32` bytes, tiles contiguous from the base tile. Each byte expands
+/// to its high and low colour index before XXH3-64, exactly as `sprite_hash`
+/// does from a VRAM slice. Spec 007 exposes it through
+/// `ayther_sprite_pattern_hash` so a frontend can verify a stored pattern
+/// against the identity it was captured under.
+pub fn sprite_pattern_hash(raw: &[u8]) -> u64 {
+    let mut buf = Vec::with_capacity(raw.len() * 2);
+    for &byte in raw {
+        buf.push((byte >> 4) & 0x0F);
+        buf.push(byte & 0x0F);
     }
     xxh3_64(&buf)
 }
@@ -217,6 +229,27 @@ mod tests {
     ///
     /// Si este test falla, la pregunta NO es «qué número hay que actualizar»:
     /// es «qué identidad cambió y cuántos packs publicados acaba de romper».
+    /// `sprite_pattern_hash` over the gathered bytes is the same identity as
+    /// `sprite_hash` over the VRAM slice (spec 007: the FFI reproduces it).
+    #[test]
+    fn pattern_hash_matches_sprite_hash() {
+        let vram = synthetic_vram(4096);
+        assert_eq!(
+            sprite_pattern_hash(&vram[0..32]),
+            sprite_hash(&vram, 0, 1, 1)
+        );
+        assert_eq!(
+            sprite_pattern_hash(&vram[3 * 32..19 * 32]),
+            sprite_hash(&vram, 3, 4, 4)
+        );
+        assert_eq!(sprite_pattern_hash(&vram[0..32]), 0x4157_3b47_53ea_aeb4);
+        // Nibble order matters: 0x12 and 0x21 are different pixels.
+        assert_ne!(
+            sprite_pattern_hash(&[0x12; 32]),
+            sprite_pattern_hash(&[0x21; 32])
+        );
+    }
+
     #[test]
     fn hashes_match_published_values() {
         let vram = synthetic_vram(4096);
