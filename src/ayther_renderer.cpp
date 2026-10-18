@@ -6,6 +6,7 @@
 // player main loop). Leaves the offscreen in its public shader-read handoff
 // layout for the frontend to sample or transition temporarily for presentation.
 // ---------------------------------------------------------------------------
+#include "ayther_element_scene.h"
 #include "ayther_env.h"
 #include "log.h"
 #include <ayther/ayther_renderer.h>
@@ -2635,6 +2636,17 @@ AytherRenderer::export_frame(const ayther::engine::VulkanContextView &ctx,
   // La memoria puede no ser HOST_COHERENT: invalidar antes de leer.
   vmaInvalidateAllocation(ctx.allocator(), impl_->rb_alloc_, 0, VK_WHOLE_SIZE);
   return static_cast<const uint8_t *>(impl_->rb_map_);
+}
+
+const uint8_t *
+AytherRenderer::export_elements(const ayther::engine::VulkanContextView &ctx,
+                                const ElementScene &scene,
+                                ayther::engine::PackView pack, bool hd_on) {
+  const VkExtent2D e = impl_->target_.extent();
+  if (e.width != scene.width || e.height != scene.height)
+    return nullptr;
+  const FrameView fv = scene.frame_view();
+  return export_frame(ctx, fv, pack, hd_on);
 }
 
 const uint8_t *

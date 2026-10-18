@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 61 headers
+## The 63 headers
 
 | header | what it provides |
 |---|---|
@@ -21,6 +21,8 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_audio_events.h`](#ayther_audio_eventsh) | Installed public header. |
 | [`ayther_components_toml.h`](#ayther_components_tomlh) | Installed public header. |
 | [`ayther_core_ffi.h`](#ayther_core_ffih) | Installed public header. |
+| [`ayther_element_record.h`](#ayther_element_recordh) | Installed public header. |
+| [`ayther_element_scene.h`](#ayther_element_sceneh) | Installed public header. |
 | [`ayther_layers.h`](#ayther_layersh) | Installed public header. |
 | [`ayther_mode3.h`](#ayther_mode3h) | Installed public header. |
 | [`ayther_recording.h`](#ayther_recordingh) | Installed public header. |
@@ -318,9 +320,79 @@ The SDK's C API is `ayther_sdk.h` —that is the surface designed for C, pack
 reading included— and this is a shared contract header in C++.
 The `pack_read` example exposed it, by trying to use it from C.
 
-**Declares:** `AudioEventGate`, `AyArchive`, `ayther_apply_rom_patch`, `ayther_asset_id`, `ayther_asset_id_bytes`, `ayther_audio_evdet_event_count`, `ayther_audio_evdet_flush`, `ayther_audio_evdet_free`, `ayther_audio_evdet_get_events`, `ayther_audio_evdet_push`, `ayther_audio_evdet_set_split_on_reattack`, `ayther_audio_event_active`, `ayther_audio_event_clear_events`, `ayther_audio_event_count`, `ayther_audio_event_finish`, `ayther_audio_event_fm_registers`, `ayther_audio_event_free`, `ayther_audio_event_get`, `ayther_audio_event_process_frame`, `ayther_audio_event_process_frame_ex`, `ayther_audio_event_reset`, `ayther_audio_event_seed_fm_registers`, `ayther_audio_event_set_initial_active`, `ayther_audio_event_set_pal`, `ayther_audio_event_state_frame`, `ayther_audio_event_state_restore`, `ayther_audio_event_state_size`, `ayther_audio_event_state_write`, `ayther_audio_events_format`, `ayther_audio_events_parse`, `ayther_audio_events_parse_observed`, `ayther_audio_gate_eval`, `ayther_audio_gate_free`, `ayther_audio_hasher_end_tick`, `ayther_audio_hasher_free`, `ayther_audio_hasher_get_occurrences`, `ayther_audio_hasher_process_batch`, `ayther_audio_hasher_unique_count`, `ayther_audio_sub_add_event_override`, `ayther_audio_sub_add_override`, `ayther_audio_sub_catalog_len`, `ayther_audio_sub_clear_event_overrides`, `ayther_audio_sub_clear_overrides`, `ayther_audio_sub_event_catalog_len`, `ayther_audio_sub_free`, `ayther_audio_sub_load_pack`, `ayther_audio_sub_resolve`, `ayther_audio_sub_resolve_events`, `ayther_bg_stitcher_animated_cells`, `ayther_bg_stitcher_bounds`, `ayther_bg_stitcher_cell_count`, `ayther_bg_stitcher_conflicts`, `ayther_bg_stitcher_free`, `ayther_bg_stitcher_get`, `ayther_bg_stitcher_observe`, `ayther_chan_bit`, `ayther_chan_index`, `ayther_compat_free`, `ayther_compat_grade`, `ayther_compat_unverified_count`, `ayther_core_version`, `ayther_credits_assets`, `ayther_credits_count`, `ayther_credits_free`, `ayther_game_profile_assign`, `ayther_game_profile_entities`, `ayther_game_profile_free`, `ayther_game_profile_kind_count`, `ayther_game_profile_kind_name`, `ayther_game_profile_kind_of_id`, `ayther_geo_tween_duration`, `ayther_geo_tween_free`, `ayther_geo_tween_sample`, `ayther_instruments_soundfonts`, `ayther_is_rom_patch`, `ayther_manifest_schema_supported`, `ayther_pack_builder_add_bytes`, `ayther_pack_builder_add_file`, `ayther_pack_builder_count`, `ayther_pack_builder_finish`, `ayther_pack_builder_free`, `ayther_pack_close`, `ayther_pack_declares_systems`, `ayther_pack_default_profile`, `ayther_pack_entry_count`, `ayther_pack_entry_name`, `ayther_pack_entry_streamable`, `ayther_pack_file_size`, `ayther_pack_format_supported`, `ayther_pack_profile_count`, `ayther_pack_profile_index`, `ayther_pack_profile_muted_buses`, `ayther_pack_profile_systems`, `ayther_pack_read`, `ayther_pack_read_range`, `ayther_pack_report_count`, `ayther_pack_report_free`, `ayther_pack_report_has_errors`, `ayther_pack_report_severity`, `ayther_pack_schema`, `ayther_pack_set_region`, `ayther_pack_set_tier`, `ayther_pack_set_tier_for_height`, `ayther_pack_systems`, `ayther_pack_tiers`, `ayther_pack_watcher_free`, `ayther_pack_watcher_poll`, `ayther_palette_signature`, `ayther_pose_sub_add_override`, `ayther_pose_sub_add_override_variants`, `ayther_pose_sub_catalog_asset`, `ayther_pose_sub_catalog_asset_count`, `ayther_pose_sub_clear_overrides`, `ayther_pose_sub_free`, `ayther_pose_sub_load_pack`, `ayther_pose_sub_resolve`, `ayther_pose_sub_resolve_owned`, `ayther_pose_sub_set_cram`, `ayther_pose_sub_set_screen`, `ayther_pose_sub_signature_state_restore`, `ayther_pose_sub_signature_state_size`, `ayther_pose_sub_signature_state_validate`, `ayther_pose_sub_signature_state_write`, `ayther_rom_patch_error`, `ayther_script_free`, `ayther_script_get_audio_overrides`, `ayther_script_get_shader_params`, `ayther_script_get_sprite_overrides`, `ayther_script_get_tile_overrides`, `ayther_script_load_string`, `ayther_script_on_frame`, `ayther_script_on_frame_count`, `ayther_script_set_pack`, `ayther_script_update_audio`, `ayther_script_update_sprites`, `ayther_script_update_tiles`, `ayther_scroll_unwrapper_free`, `ayther_scroll_unwrapper_last_step`, `ayther_scroll_unwrapper_push`, `ayther_sf2_all_notes_off`, `ayther_sf2_bake`, `ayther_sf2_control`, `ayther_sf2_free`, `ayther_sf2_list_presets`, `ayther_sf2_note_off`, `ayther_sf2_note_on`, `ayther_sf2_preset_list`, `ayther_sf2_program`, `ayther_sf2_render`, `ayther_sf2_trim_cache`, `ayther_sha256_hex`, `ayther_sonic_read_velocity`, `ayther_sonic_read_xy`, `ayther_soundfont_normalize_file`, `ayther_sprite_hasher_clip_count`, `ayther_sprite_hasher_free`, `ayther_sprite_hasher_get_clip`, `ayther_sprite_hasher_get_occurrences`, `ayther_sprite_hasher_grouper_state_restore`, `ayther_sprite_hasher_grouper_state_size`, `ayther_sprite_hasher_grouper_state_validate`, `ayther_sprite_hasher_grouper_state_write`, `ayther_sprite_hasher_process_sprites`, `ayther_sprite_hasher_process_vram`, `ayther_sprite_hasher_reset_animation_grouper`, `ayther_sprite_hasher_unique_count`, `ayther_sprite_sub_add_override`, `ayther_sprite_sub_add_override_ref`, `ayther_sprite_sub_catalog_asset`, `ayther_sprite_sub_clear_overrides`, `ayther_sprite_sub_free`, `ayther_sprite_sub_load_pack`, `ayther_sprite_sub_resolve`, `ayther_subsystem_count`, `ayther_tile_brightness_factor`, `ayther_tile_hasher_dump_toml`, `ayther_tile_hasher_free`, `ayther_tile_hasher_get_occurrences`, `ayther_tile_hasher_process_frame`, `ayther_tile_hasher_unique_count`, `ayther_tile_mean_level`, `ayther_tile_shape_hash`, `ayther_tile_sub_add_override`, `ayther_tile_sub_begin_frame`, `ayther_tile_sub_clear_overrides`, `ayther_tile_sub_free`, `ayther_tile_sub_load_pack`, `ayther_tile_sub_load_pack_named`, `ayther_tile_sub_lookup`, `ayther_tile_sub_resolve`, `ayther_tween_begin_frame`, `ayther_tween_clear`, `ayther_tween_clear_overrides`, `ayther_tween_free`, `ayther_tween_load_pack`, `ayther_tween_resolve`, `ayther_tween_set_override`, `ayther_tween_state_restore`, `ayther_tween_state_size`, `ayther_tween_state_validate`, `ayther_tween_state_write`, `ayther_widescreen_gate_eval`, `ayther_widescreen_gate_free`, `AytherAnimFrame`, `AytherAudioActive`, `AytherAudioActiveSub`, `AytherAudioCatalogObservation`, `AytherAudioEvent`, `AytherAudioEventDetector`, `AytherAudioEventSub`, `AytherAudioHasher`, `AytherAudioOccurrence`, `AytherAudioOverride`, `AytherAudioSub`, `AytherAudioSubstitutor`, `AytherAudioWrite`, `AytherBatchEventDetector`, `AytherBgStitcher`, `AytherCompat`, `AytherCredits`, `AytherEventSub`, `AytherGameProfile`, `AytherGeometricTween`, `AytherPackBuilder`, `AytherPackReport`, `AytherPackWatcher`, `AytherPcmEvent`, `AytherScriptEnv`, `AytherScrollUnwrapper`, `AytherSf2`, `AytherShaderParams`, `AytherSpriteHasher`, `AytherSpriteOccurrence`, `AytherSpriteOverride`, `AytherSpriteSub`, `AytherSpriteSubstitutor`, `AytherTileHasher`, `AytherTileOccurrence`, `AytherTileOverride`, `AytherTileSub`, `AytherTileSubstitutor`, `AytherTransform`, `PoseSetSubstitutor`, `struct`, `TweenPlayer`, `WidescreenGate`
+**Declares:** `AudioEventGate`, `AyArchive`, `ayther_apply_rom_patch`, `ayther_asset_id`, `ayther_asset_id_bytes`, `ayther_audio_evdet_event_count`, `ayther_audio_evdet_flush`, `ayther_audio_evdet_free`, `ayther_audio_evdet_get_events`, `ayther_audio_evdet_push`, `ayther_audio_evdet_set_split_on_reattack`, `ayther_audio_event_active`, `ayther_audio_event_clear_events`, `ayther_audio_event_count`, `ayther_audio_event_finish`, `ayther_audio_event_fm_registers`, `ayther_audio_event_free`, `ayther_audio_event_get`, `ayther_audio_event_process_frame`, `ayther_audio_event_process_frame_ex`, `ayther_audio_event_reset`, `ayther_audio_event_seed_fm_registers`, `ayther_audio_event_set_initial_active`, `ayther_audio_event_set_pal`, `ayther_audio_event_state_frame`, `ayther_audio_event_state_restore`, `ayther_audio_event_state_size`, `ayther_audio_event_state_write`, `ayther_audio_events_format`, `ayther_audio_events_parse`, `ayther_audio_events_parse_observed`, `ayther_audio_gate_eval`, `ayther_audio_gate_free`, `ayther_audio_hasher_end_tick`, `ayther_audio_hasher_free`, `ayther_audio_hasher_get_occurrences`, `ayther_audio_hasher_process_batch`, `ayther_audio_hasher_unique_count`, `ayther_audio_sub_add_event_override`, `ayther_audio_sub_add_override`, `ayther_audio_sub_catalog_len`, `ayther_audio_sub_clear_event_overrides`, `ayther_audio_sub_clear_overrides`, `ayther_audio_sub_event_catalog_len`, `ayther_audio_sub_free`, `ayther_audio_sub_load_pack`, `ayther_audio_sub_resolve`, `ayther_audio_sub_resolve_events`, `ayther_bg_stitcher_animated_cells`, `ayther_bg_stitcher_bounds`, `ayther_bg_stitcher_cell_count`, `ayther_bg_stitcher_conflicts`, `ayther_bg_stitcher_free`, `ayther_bg_stitcher_get`, `ayther_bg_stitcher_observe`, `ayther_chan_bit`, `ayther_chan_index`, `ayther_compat_free`, `ayther_compat_grade`, `ayther_compat_unverified_count`, `ayther_core_version`, `ayther_credits_assets`, `ayther_credits_count`, `ayther_credits_free`, `ayther_game_profile_assign`, `ayther_game_profile_entities`, `ayther_game_profile_free`, `ayther_game_profile_kind_count`, `ayther_game_profile_kind_name`, `ayther_game_profile_kind_of_id`, `ayther_geo_tween_duration`, `ayther_geo_tween_free`, `ayther_geo_tween_sample`, `ayther_instruments_soundfonts`, `ayther_is_rom_patch`, `ayther_manifest_schema_supported`, `ayther_pack_builder_add_bytes`, `ayther_pack_builder_add_file`, `ayther_pack_builder_count`, `ayther_pack_builder_finish`, `ayther_pack_builder_free`, `ayther_pack_close`, `ayther_pack_declares_systems`, `ayther_pack_default_profile`, `ayther_pack_entry_count`, `ayther_pack_entry_name`, `ayther_pack_entry_streamable`, `ayther_pack_file_size`, `ayther_pack_format_supported`, `ayther_pack_profile_count`, `ayther_pack_profile_index`, `ayther_pack_profile_muted_buses`, `ayther_pack_profile_systems`, `ayther_pack_read`, `ayther_pack_read_range`, `ayther_pack_report_count`, `ayther_pack_report_free`, `ayther_pack_report_has_errors`, `ayther_pack_report_severity`, `ayther_pack_schema`, `ayther_pack_set_region`, `ayther_pack_set_tier`, `ayther_pack_set_tier_for_height`, `ayther_pack_systems`, `ayther_pack_tiers`, `ayther_pack_watcher_free`, `ayther_pack_watcher_poll`, `ayther_palette_signature`, `ayther_pose_sub_add_override`, `ayther_pose_sub_add_override_variants`, `ayther_pose_sub_catalog_asset`, `ayther_pose_sub_catalog_asset_count`, `ayther_pose_sub_clear_overrides`, `ayther_pose_sub_free`, `ayther_pose_sub_load_pack`, `ayther_pose_sub_resolve`, `ayther_pose_sub_resolve_owned`, `ayther_pose_sub_set_cram`, `ayther_pose_sub_set_screen`, `ayther_pose_sub_signature_state_restore`, `ayther_pose_sub_signature_state_size`, `ayther_pose_sub_signature_state_validate`, `ayther_pose_sub_signature_state_write`, `ayther_rom_patch_error`, `ayther_script_free`, `ayther_script_get_audio_overrides`, `ayther_script_get_shader_params`, `ayther_script_get_sprite_overrides`, `ayther_script_get_tile_overrides`, `ayther_script_load_string`, `ayther_script_on_frame`, `ayther_script_on_frame_count`, `ayther_script_set_pack`, `ayther_script_update_audio`, `ayther_script_update_sprites`, `ayther_script_update_tiles`, `ayther_scroll_unwrapper_free`, `ayther_scroll_unwrapper_last_step`, `ayther_scroll_unwrapper_push`, `ayther_sf2_all_notes_off`, `ayther_sf2_bake`, `ayther_sf2_control`, `ayther_sf2_free`, `ayther_sf2_list_presets`, `ayther_sf2_note_off`, `ayther_sf2_note_on`, `ayther_sf2_preset_list`, `ayther_sf2_program`, `ayther_sf2_render`, `ayther_sf2_trim_cache`, `ayther_sha256_hex`, `ayther_sonic_read_velocity`, `ayther_sonic_read_xy`, `ayther_soundfont_normalize_file`, `ayther_sprite_hasher_clip_count`, `ayther_sprite_hasher_free`, `ayther_sprite_hasher_get_clip`, `ayther_sprite_hasher_get_occurrences`, `ayther_sprite_hasher_grouper_state_restore`, `ayther_sprite_hasher_grouper_state_size`, `ayther_sprite_hasher_grouper_state_validate`, `ayther_sprite_hasher_grouper_state_write`, `ayther_sprite_hasher_process_sprites`, `ayther_sprite_hasher_process_vram`, `ayther_sprite_hasher_reset_animation_grouper`, `ayther_sprite_hasher_unique_count`, `ayther_sprite_pattern_hash`, `ayther_sprite_sub_add_override`, `ayther_sprite_sub_add_override_ref`, `ayther_sprite_sub_catalog_asset`, `ayther_sprite_sub_clear_overrides`, `ayther_sprite_sub_free`, `ayther_sprite_sub_load_pack`, `ayther_sprite_sub_resolve`, `ayther_subsystem_count`, `ayther_tile_brightness_factor`, `ayther_tile_hasher_dump_toml`, `ayther_tile_hasher_free`, `ayther_tile_hasher_get_occurrences`, `ayther_tile_hasher_process_frame`, `ayther_tile_hasher_unique_count`, `ayther_tile_mean_level`, `ayther_tile_shape_hash`, `ayther_tile_sub_add_override`, `ayther_tile_sub_begin_frame`, `ayther_tile_sub_clear_overrides`, `ayther_tile_sub_free`, `ayther_tile_sub_load_pack`, `ayther_tile_sub_load_pack_named`, `ayther_tile_sub_lookup`, `ayther_tile_sub_resolve`, `ayther_tween_begin_frame`, `ayther_tween_clear`, `ayther_tween_clear_overrides`, `ayther_tween_free`, `ayther_tween_load_pack`, `ayther_tween_resolve`, `ayther_tween_set_override`, `ayther_tween_state_restore`, `ayther_tween_state_size`, `ayther_tween_state_validate`, `ayther_tween_state_write`, `ayther_widescreen_gate_eval`, `ayther_widescreen_gate_free`, `AytherAnimFrame`, `AytherAudioActive`, `AytherAudioActiveSub`, `AytherAudioCatalogObservation`, `AytherAudioEvent`, `AytherAudioEventDetector`, `AytherAudioEventSub`, `AytherAudioHasher`, `AytherAudioOccurrence`, `AytherAudioOverride`, `AytherAudioSub`, `AytherAudioSubstitutor`, `AytherAudioWrite`, `AytherBatchEventDetector`, `AytherBgStitcher`, `AytherCompat`, `AytherCredits`, `AytherEventSub`, `AytherGameProfile`, `AytherGeometricTween`, `AytherPackBuilder`, `AytherPackReport`, `AytherPackWatcher`, `AytherPcmEvent`, `AytherScriptEnv`, `AytherScrollUnwrapper`, `AytherSf2`, `AytherShaderParams`, `AytherSpriteHasher`, `AytherSpriteOccurrence`, `AytherSpriteOverride`, `AytherSpriteSub`, `AytherSpriteSubstitutor`, `AytherTileHasher`, `AytherTileOccurrence`, `AytherTileOverride`, `AytherTileSub`, `AytherTileSubstitutor`, `AytherTransform`, `PoseSetSubstitutor`, `struct`, `TweenPlayer`, `WidescreenGate`
 
 _The installed header (`include/ayther/ayther_core_ffi.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="ayther_element_recordh"></a>
+
+## ayther_element_record.h
+
+ayther_element_record.h — the raw record of one element of a game, and its
+reconstruction without an emulator (spec 007, Índice de elementos).
+
+An ELEMENT is one distinct observation of the VDP, keyed by (kind, hash): a
+sprite (the xxh3 of its w×h tiles, blind to palette and flips), a plane tile
+(the FNV of its 8×8 pattern mixed with its palette line; planes A and B) or a
+window tile (the same hash, on the Window plane). A frontend that keeps these
+records — the Lab's project index — can show, compose and measure the
+elements of a game with no take loaded, and after the take they came from is
+gone.
+
+Ownership: the Engine owns the FORMAT (the record stream below), the HASH
+reproducers and the RECONSTRUCTION (the CPU decoder here; the Vulkan path in
+AytherRenderer::render_elements). A frontend owns the policy: which frames
+feed the index, when it is written, what it shows.
+
+# Byte order
+
+The pattern bytes are stored in BUS order: the byte the VDP reads at tile
+offset `o`. The emulator publishes VRAM word-swapped on little-endian hosts
+(`docs/EMULATOR_EXTENSION_ABI.md`, `AYTHER_REGION_WORD_SWAPPED_LE`), so the
+bus byte `o` lives at host offset `o ^ 1`. The plane-tile hash and every
+decoder read the bus view; the sprite hash reads the HOST array
+(`docs/IDENTITY_SPECIFICATION.md`), so `sprite_pattern_hash` swaps the pairs
+back before hashing. One order on disk, both hashes reproducible.
+
+# Versions
+
+`kElementRecordSchema` versions this stream. The two identity algorithms are
+persisted too (`AytherRecording::kSpriteHashAlgo`, `kPlaneTileHashAlgo`): a
+reader that finds other values keeps the records and reports them stale.
+
+**Declares:** `ayther`, `compose_elements_rgba`, `decode_tile_rgba`, `element_color_rgb`, `ElementImage`, `ElementPaletteVariant`, `ElementPlacement`, `ElementProvenance`, `ElementRecord`, `ElementRecordLimits`, `ElementRecordReadReport`, `ElementRecordSet`, `ElementRenderOptions`, `plane_tile_hash`, `read_element_records`, `render_element_rgba`, `sprite_pattern_hash`, `sprite_tile_index`, `uint8_t`, `write_element_records`
+
+_The installed header (`include/ayther/ayther_element_record.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="ayther_element_sceneh"></a>
+
+## ayther_element_scene.h
+
+ayther_element_scene.h — a synthetic VDP frame built from element records,
+so the Vulkan renderer composes elements with no emulator and no take
+(spec 007, RF-5.1).
+
+build_element_scene() lays the patterns of the placed records into a fresh
+64 KB VRAM (host order, word-swapped like the core publishes it), assigns
+each distinct palette to one of the four CRAM lines, and emits one
+SceneElement per placement. frame_view() wraps it in a FrameView the
+renderer's scene path accepts (`fv.scene` + `scene_vram` + `scene_cram`,
+not dirty). AytherRenderer::export_elements() is the one-call form.
+
+The CPU counterpart is compose_elements_rgba() (ayther_element_record.h):
+both must give the same image; the GPU test checks it pixel by pixel.
+
+Limits of one scene: 2047 pattern tiles (tile 0 stays empty), four distinct
+palettes (the four CRAM lines), 80 sprites in depth order. Past any of them
+build_element_scene() fails and says which.
+
+**Declares:** `ayther`, `build_element_scene`, `ElementScene`
+
+_The installed header (`include/ayther/ayther_element_scene.h`) carries the full documentation of every symbol._
 
 ---
 
@@ -441,7 +513,7 @@ Single-owner; driven from the same thread as the session.
 R3.0: scaffold — owns the offscreen target; render() clears it. The
 emu-frame, HD-tile, sprite and post-process passes land in R3.1 / R3.2.
 
-**Declares:** `ayther`, `AytherLayerStack`, `AytherRenderer`, `FrameView`, `SceneElement`
+**Declares:** `ayther`, `AytherLayerStack`, `AytherRenderer`, `ElementScene`, `FrameView`, `SceneElement`
 
 _The installed header (`include/ayther/ayther_renderer.h`) carries the full documentation of every symbol._
 

@@ -36,6 +36,9 @@
 //   --- v9 (sombra de registros FM del detector al inicio de la toma) ---
 //   u32 fm_regs_size     (0 = sin sombra, o 512)
 //   fm_regs_size × u8    banco 0 (0x000-0x0FF) y banco 1 (0x100-0x1FF)
+//   --- v10 (spec 007: id estable de la toma) ---
+//   u64 take_id          (0 = sin asignar). SIEMPRE los últimos 8 bytes del
+//                        archivo: peek/patch_take_id dependen de eso.
 // ---------------------------------------------------------------------------
 #include "ayther_recording.h"
 #include "log.h"
@@ -248,7 +251,7 @@ namespace {
 
 constexpr char kMagic[4] = {'A', 'R', 'P', '1'};
 constexpr uint32_t kVersion =
-    9; // v9: + sombra de registros FM del detector al inicio de la toma
+    10; // v10: + id estable de la toma (spec 007), al final del archivo
 constexpr int kZstdLevel = 9; // takes are saved rarely — favour ratio
 constexpr std::size_t kMaxRecordingBytes = 64U * 1024U * 1024U;
 constexpr std::size_t kMaxInitialStateBytes = 64U * 1024U * 1024U;
@@ -1136,6 +1139,9 @@ bool AytherRecording::save(const std::string &path) const {
     f.write(reinterpret_cast<const char *>(audio_fm_regs.data()),
             audio_fm_regs.size());
 
+  // v10: el id de la toma, siempre los últimos 8 bytes.
+  put_u64(f, take_id);
+
   if (!f.good()) {
     ayther::log::write(ayther::log::Severity::Error, "recording",
                        "serialize_failed", "cannot serialize %s", path.c_str());
@@ -1234,6 +1240,93 @@ bool AytherRecording::patch_name(const std::string &path,
                      buf.end());
 
   return write_replacement(destination, replacement);
+}
+
+// ---------------------------------------------------------------------------
+// patch_take_id / peek_take_id — el id de la toma sin recomprimir (v10)
+// ---------------------------------------------------------------------------
+bool AytherRecording::patch_take_id(const std::string &path,
+                                    uint64_t new_take_id) {
+  std::uint32_t version = 0;
+  {
+    const std::filesystem::path destination(path);
+    const DestinationLock destination_lock(destination);
+    if (!destination_lock)
+      return false;
+    std::vector<char> buf;
+    if (!read_regular_file(destination, buf))
+      return false;
+    if (buf.size() < 16 || std::memcmp(buf.data(), kMagic, 4) != 0)
+      return false;
+    version = std::uint32_t(std::uint8_t(buf[4])) |
+              (std::uint32_t(std::uint8_t(buf[5])) << 8U) |
+              (std::uint32_t(std::uint8_t(buf[6])) << 16U) |
+              (std::uint32_t(std::uint8_t(buf[7])) << 24U);
+    if (version < 2 || version > kVersion)
+      return false;
+    if (version >= 8U) {
+      auto put_le = [](std::vector<char> &out, std::uint64_t v, int bytes) {
+        for (int i = 0; i < bytes; ++i)
+          out.push_back(static_cast<char>((v >> (8 * i)) & 0xFFU));
+      };
+      std::vector<char> image;
+      if (version >= kFormatVersionTakeId) {
+        if (buf.size() < 24)
+          return false;
+        std::uint64_t current = 0;
+        for (int i = 0; i < 8; ++i)
+          current |= std::uint64_t(std::uint8_t(buf[buf.size() - 8 + i]))
+                     << (8 * i);
+        if (current == new_take_id)
+          return true;
+        image.assign(buf.begin(), buf.end() - 8);
+      } else {
+        image = buf;
+        if (version == 8U)
+          put_le(image, 0U, 4); // v9: sombra FM ausente
+      }
+      put_le(image, new_take_id, 8);
+      const std::uint32_t v10 = kVersion;
+      for (int i = 0; i < 4; ++i)
+        image[4 + i] = static_cast<char>((v10 >> (8 * i)) & 0xFFU);
+      if (image.size() > kMaxRecordingBytes)
+        return false;
+      return write_replacement(destination, image);
+    }
+  }
+  // < v8: faltan historias enteras; reescritura completa (raro: tomas de
+  // antes de 2026-07). El lock se soltó arriba: save() toma el suyo.
+  auto rec = load(path);
+  if (!rec)
+    return false;
+  rec->take_id = new_take_id;
+  return rec->save(path);
+}
+
+std::optional<uint64_t>
+AytherRecording::peek_take_id(const std::string &path) {
+  std::ifstream f(std::filesystem::path(path), std::ios::binary);
+  if (!f)
+    return std::nullopt;
+  char head[8]{};
+  if (!f.read(head, sizeof(head)) || std::memcmp(head, kMagic, 4) != 0)
+    return std::nullopt;
+  const std::uint32_t version = std::uint32_t(std::uint8_t(head[4])) |
+                                (std::uint32_t(std::uint8_t(head[5])) << 8U) |
+                                (std::uint32_t(std::uint8_t(head[6])) << 16U) |
+                                (std::uint32_t(std::uint8_t(head[7])) << 24U);
+  if (version < 2 || version > kVersion)
+    return std::nullopt;
+  if (version < kFormatVersionTakeId)
+    return std::uint64_t{0};
+  f.seekg(-8, std::ios::end);
+  char tail[8]{};
+  if (!f || !f.read(tail, sizeof(tail)))
+    return std::nullopt;
+  std::uint64_t id = 0;
+  for (int i = 0; i < 8; ++i)
+    id |= std::uint64_t(std::uint8_t(tail[i])) << (8 * i);
+  return id;
 }
 
 // ---------------------------------------------------------------------------
@@ -1371,6 +1464,11 @@ std::optional<AytherRecording> AytherRecording::load(const std::string &path) {
           !cursor.read_bytes(rec.audio_fm_regs.data(), fm_regs_size))
         return std::nullopt;
     }
+    // v10: id estable de la toma (anterior = 0, sin asignar).
+    rec.take_id = 0;
+    if (version >= AytherRecording::kFormatVersionTakeId &&
+        !cursor.read_u64(rec.take_id))
+      return std::nullopt;
     if (!cursor.empty())
       return std::nullopt;
 
@@ -1431,6 +1529,7 @@ AytherRecording AytherRecording::slice(uint32_t begin, uint32_t end,
   AytherRecording r;
   r.game_id = game_id;
   r.name = name;           // el caller renombra el tail
+  r.take_id = 0;           // v10: el tail es otra toma; el caller le da id
   r.hash_algo = hash_algo; // la sub-toma hereda el algo de su historia
   r.initial_state = std::move(state);
   // v9: la sombra FM va con el savestate del mismo punto. Un tamaño que no

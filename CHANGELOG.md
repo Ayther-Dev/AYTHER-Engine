@@ -7,6 +7,26 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Element records (spec 007, `ayther_element_record.h`): the raw record of a
+  sprite, plane tile or window tile — its pattern bytes in bus order, the
+  palettes and frames it was seen with — and the `AYEI` stream that stores
+  them, with limits and a CRC. `plane_tile_hash()` and `sprite_pattern_hash()`
+  reproduce the identities from stored bytes; `kPlaneTileHashAlgo` versions
+  the plane-tile hash. A frontend can now show and compose any element of a
+  game with no take loaded.
+- Reconstruction without an emulator: `decode_tile_rgba()`,
+  `render_element_rgba()` and `compose_elements_rgba()` on the CPU, and
+  `build_element_scene()` + `AytherRenderer::export_elements()` through the
+  Vulkan scene path. Both give the same pixels, at the core's framebuffer
+  colour level (`element_color_rgb()`); a GPU test pins it.
+- `ayther_sprite_pattern_hash()` in the flat C ABI (revision 8).
+- Take recordings carry a stable `take_id` (`.arp` version 10), with
+  `AytherRecording::patch_take_id()` (no recompression; upgrades v8/v9 files
+  in place) and `peek_take_id()` (no decompression). Older files load 0;
+  `slice()` leaves the tail at 0. `abi_size()` changes: rebuild frontends.
+
 ### Changed
 
 - The FM audio-event signature no longer hashes the Total Level of carrier

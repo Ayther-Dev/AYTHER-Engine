@@ -16,6 +16,8 @@ foreach(_source IN ITEMS
         cram_palette_test.cpp
         core_path_test.cpp
         decode_limits_test.cpp
+        element_record_test.cpp
+        element_scene_test.cpp
         failure_escalation_test.cpp
         frame_composability_test.cpp
         frame_view_digest_test.cpp

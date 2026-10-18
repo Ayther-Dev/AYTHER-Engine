@@ -52,6 +52,13 @@ struct AytherRecording {
   /// Battle»). Replay and analysis seed their detectors from it.
   std::vector<uint8_t> audio_fm_regs;
   static constexpr size_t kAudioFmRegisterBytes = 0x200;
+  /// The take's stable id (.arp v10, spec 007): the frontend's catalogue id,
+  /// written INTO the file so it survives a rename, a copy to another project
+  /// and the loss of the frontend's catalogue. 0 = not assigned (every file
+  /// older than v10 loads 0). slice() leaves it 0: the tail is a new take.
+  uint64_t take_id = 0;
+  /// First format version that carries `take_id`.
+  static constexpr uint32_t kFormatVersionTakeId = 10;
   std::vector<uint16_t> inputs;       ///< port-0 RetroPad bitmask per frame
   std::vector<FrameStat> stats;       ///< per-frame occurrence summary (R7b)
   uint32_t trim_in = 0;               ///< non-destructive in-mark  (frame)
@@ -156,6 +163,20 @@ struct AytherRecording {
   /// reload rather than infer which name is present.
   static bool patch_name(const std::string &path, const std::string &new_name);
 
+  /// Writes `take_id` into an existing file without recompressing anything.
+  /// v10: rewrites the trailing 8 bytes (successful no-op when equal). v8/v9:
+  /// appends the fields the file lacks (v9's empty FM shadow for a v8 file)
+  /// plus the id and stamps version 10. Older files are rewritten through
+  /// load()+save(). Same lock, sibling and replacement discipline as
+  /// patch_name(); false leaves the file as it was or in an indeterminate
+  /// state only where patch_name() would, so callers must re-read.
+  static bool patch_take_id(const std::string &path, uint64_t take_id);
+
+  /// Reads the embedded take id without decompressing anything: 0 for a file
+  /// older than v10 (or one never assigned), std::nullopt when the file is not
+  /// a readable recording (bad magic, unsupported version, too short).
+  static std::optional<uint64_t> peek_take_id(const std::string &path);
+
   /// Load a `.arp` file. Returns std::nullopt on any error (bad magic,
   /// truncated, decompression failure).
   static std::optional<AytherRecording> load(const std::string &path);
@@ -171,5 +192,7 @@ struct AytherRecording {
 
 /// Marks that AytherRecording::abi_size() exists (frontends guard the check).
 #define AYTHER_RECORDING_ABI_SIZE 1
+/// Marks that AytherRecording carries `take_id` and patch/peek_take_id (v10).
+#define AYTHER_RECORDING_TAKE_ID 1
 
 } // namespace ayther

@@ -22,7 +22,7 @@ is not modified or redistributed.
 |---|---|---|
 | `ayther_core` Rust library | Implemented | `core/`; 360 unit tests pass and one benchmark is ignored |
 | Typed Rust/C++ bridge | Implemented on the Rust side | `core/src/ffi.rs`; generated through `cxx` |
-| Legacy flat C ABI | Implemented, unstable | `core/src/lib.rs`; independent ABI revision currently returns `7` |
+| Legacy flat C ABI | Implemented, unstable | `core/src/lib.rs`; independent ABI revision currently returns `8` |
 | `.ay` pack VFS, validation, and signing | Production policy implemented | Manifest schema `2`; explicit scoped/expiring/revocable public-key registry; optimized builds reject the RFC test key |
 | C++ `ayther_engine` | Buildable, pre-release | `Ayther::engine` declares all 24 sources and links the manifest-mode SDL3/Vulkan stack, core, and ymfm |
 | C++/ABI/integration tests | Partial | One headless C++ ABI test is present; renderer, audio, and full integration suites are pending |

@@ -36,6 +36,7 @@ namespace ayther {
 
 struct FrameView; // ayther_session.h (full definition needed only in the .cpp)
 struct SceneElement; // ayther_session.h — R-8: sub_texture_state()
+struct ElementScene; // ayther_element_scene.h — spec 007, export_elements()
 
 /// @brief Vulkan presentation layer for one session frame stream.
 ///
@@ -168,6 +169,16 @@ public:
                               const AytherLayerStack *layers = nullptr,
                               uint8_t vdp_mask = 0xFF);
   void readback_shutdown(const ayther::engine::VulkanContextView &ctx);
+
+  /// Spec 007 (RF-5.1): composes element records with no emulator — the
+  /// scene of build_element_scene() through the same path as a game frame
+  /// (HD as given by `hd_on` and `pack`). Returns the BGRA readback like
+  /// export_frame(), or nullptr when readback is not initialised or the
+  /// renderer's canvas is not `scene.width × scene.height` (resize first).
+  const uint8_t *export_elements(const ayther::engine::VulkanContextView &ctx,
+                                 const ElementScene &scene,
+                                 ayther::engine::PackView pack = {},
+                                 bool hd_on = false);
 
   // Record the HD render for `fv` into `cmd`, targeting the offscreen image.
   // Uploads the emu frame (always) then, when hd_on=true, overlays the resolved

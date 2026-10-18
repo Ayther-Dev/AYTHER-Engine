@@ -221,6 +221,26 @@ the final FNV step and applying the requested palette.
 > `^ 1` and include palette. Confusing the two definitions is a common silent
 > interoperability failure.
 
+### Algorithm versions and stored patterns
+
+The plane-tile hash above is algorithm `1` (`ayther::kPlaneTileHashAlgo`,
+`include/ayther/ayther_element_record.h`); the sprite hash is algorithm `1`
+(`AytherRecording::kSpriteHashAlgo`). A store that keeps identities next to
+their pattern bytes records both values and treats a mismatch as stale.
+
+Element records (spec 007) store patterns in **bus order**, the byte the VDP
+reads at tile offset `o`, that is `vram[o ^ 1]` of the host array. Their
+reproducers are:
+
+```text
+plane_tile_hash(bus32, pal)   = the loop above over bus32[b], then pal & 3
+sprite_pattern_hash(bus, n)   = sprite hash over host[i] = bus[i ^ 1]
+                                (C: ayther_sprite_pattern_hash(host, n))
+```
+
+`ayther_sprite_pattern_hash()` hashes bytes already in host order, `n` a
+multiple of 32, and equals the sprite hash of the same tiles read from VRAM.
+
 ## Audio-event signature
 
 Reference: `core/src/audio_event.rs`.
