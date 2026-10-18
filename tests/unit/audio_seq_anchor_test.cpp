@@ -581,8 +581,8 @@ int main() {
     // Compás normal del loop: el bajo sigue sonando → el hi-hat es interno.
     st = loop_open();
     seen = false;
-    const auto bar = decide_at({kHat}, std::vector<uint64_t>{kBassLoop}, st,
-                               &seen, nullptr);
+    const auto bar =
+        decide_at({kHat}, std::vector<uint64_t>{kBassLoop}, st, &seen, nullptr);
     check(!seen && bar.empty() && st[1].open && !st[0].open,
           "regla 6: con una voz del Loop sostenida no hay contradicción");
 
@@ -599,15 +599,17 @@ int main() {
     {
       std::vector<ayther::SeqAnchorState> fx = loop_open();
       std::vector<uint64_t> none;
-      std::optional<std::span<const uint64_t>> vs{std::span<const uint64_t>{none}};
+      std::optional<std::span<const uint64_t>> vs{
+          std::span<const uint64_t>{none}};
       bool fx_seen = false;
       const auto r = ayther::seq_anchor_frame_decided(
           968, {kHat}, vs, with_effect, fx,
           [](const ayther::SeqAnchorCandidateView &) noexcept {},
           [&](const ayther::SeqAnchorDecisionView &value) noexcept {
-            fx_seen = fx_seen ||
-                      value.result == ayther::SeqAnchorDecisionResult::
-                                          contradicted_open_sequence;
+            fx_seen =
+                fx_seen ||
+                value.result ==
+                    ayther::SeqAnchorDecisionResult::contradicted_open_sequence;
           },
           [](const ayther::SeqAnchorResolutionView &) noexcept {});
       check(!fx_seen && r.empty() && fx[1].open,
@@ -621,7 +623,8 @@ int main() {
     {
       std::vector<ayther::SeqAnchorState> hs = loop_open();
       std::vector<uint64_t> none;
-      std::optional<std::span<const uint64_t>> vs{std::span<const uint64_t>{none}};
+      std::optional<std::span<const uint64_t>> vs{
+          std::span<const uint64_t>{none}};
       const auto r = ayther::seq_anchor_frame_decided(
           968, {kHat}, vs, headed, hs,
           [](const ayther::SeqAnchorCandidateView &) noexcept {},

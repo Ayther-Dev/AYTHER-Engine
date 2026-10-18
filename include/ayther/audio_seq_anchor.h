@@ -577,10 +577,9 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
                          const std::vector<SeqAnchorSub> &subs,
                          std::vector<SeqAnchorState> &st, Visit &&visit,
                          Decide &&decide, Finish &&finish) {
-  return seq_anchor_frame_decided(f, sigs, std::nullopt, subs,
-                                  st, std::forward<Visit>(visit),
-                                  std::forward<Decide>(decide),
-                                  std::forward<Finish>(finish));
+  return seq_anchor_frame_decided(
+      f, sigs, std::nullopt, subs, st, std::forward<Visit>(visit),
+      std::forward<Decide>(decide), std::forward<Finish>(finish));
 }
 
 template <class Visit>
