@@ -248,6 +248,10 @@ Signatures use the AYTHER FNV seed:
 FM:  h = mix(mix(SEED, 0), channel)
      mix registers base 0x30..0x9C step 4, then 0xA0,0xA4,0xB0,0xB4
      bank = channel < 3 ? 0 : 0x100; index = channel % 3
+     the 0x40..0x4C total-level register of a CARRIER operator is skipped
+     (carriers per algorithm from FM_CARRIERS, register slot order S1,S3,S2,S4
+     mapped through FM_SLOT_OPERATOR = [0,2,1,3]); carrier level is volume and
+     is reported as velocity, so a fade keeps the signature (kAudioEventAlgo 3)
 
 DAC: h = mix(mix(mix(SEED, 0), 5), 0xDA)
      mix each ordered 0x2A sample byte from the opening block
@@ -396,7 +400,7 @@ The following mistakes compile and run but produce incompatible packs:
 6. treating relative-flip agreement as a hard filter instead of a preference,
    or discarding positionally repeated mirror arrangements of a multi-member
    pose with flips;
-7. including FM carrier total level in instrument identity;
+7. including FM carrier total level in instrument identity or in the FM event signature;
 8. including audio-write cycle in an event signature;
 9. combining screen signatures across planes.
 

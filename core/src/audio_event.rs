@@ -227,6 +227,16 @@ const FNV_PRIME: u64 = 1099511628211;
 /// varios, hasta el 7 donde los cuatro son portadores.
 const FM_CARRIERS: [u8; 8] = [0x8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF];
 
+/// Orden de los registros de operador del YM2612: cada parámetro ocupa cuatro
+/// registros (+0, +4, +8, +12) en orden de SLOT S1, S3, S2, S4 — no en el
+/// orden de operador 1, 2, 3, 4 con el que se expresan los algoritmos. Slot →
+/// bit de operador de `FM_CARRIERS`. Confundirlos hacía que en el algoritmo 4
+/// (portadores 2 y 4) el TL del operador 2 (+8) contara como timbre y el del
+/// operador 3 (+4) como volumen: un fundido del juego sobre sus portadores
+/// cambiaba el instrumento en cada nota (Golden Axe, pantalla de selección,
+/// 2026-10-14). Los algoritmos 0-3 (sólo el 4 = +12) y 5-7 no lo notaban.
+const FM_SLOT_OPERATOR: [u8; 4] = [0, 2, 1, 3];
+
 /// DAC: un frame se considera "con señal" si el rango (max-min) de sus muestras
 /// 0x2A llega a esto; por debajo es silencio (muestras casi constantes, cualquier
 /// valor de reposo). 8/256 ≈ 3% — tolerante a ruido de cuantización.
@@ -243,6 +253,11 @@ fn mix(h: u64, b: u8) -> u64 {
 // ---------------------------------------------------------------------------
 // AudioEventDetector
 // ---------------------------------------------------------------------------
+
+/// Size of the YM2612 register shadow the detector keeps: bank 0 at
+/// 0x000-0x0FF and bank 1 at 0x100-0x1FF. `fm_registers` / `seed_fm_registers`
+/// exchange exactly this many bytes.
+pub const FM_REGISTER_COUNT: usize = 0x200;
 
 /// Stateful detector that converts chip writes into channel-scoped events.
 pub struct AudioEventDetector {
@@ -899,6 +914,34 @@ impl AudioEventDetector {
         self.initial_active = mask;
     }
 
+    /// The YM2612 register shadow as the detector sees it right now.
+    ///
+    /// Everything that identifies a voice — `fm_instrument`, the pitch
+    /// decode — is hashed from this shadow at key-on, so a detector that
+    /// never saw a channel's patch writes identifies it as an all-zero
+    /// instrument. Capture it when a take starts so the replay can seed it.
+    pub fn fm_registers(&self) -> &[u8; FM_REGISTER_COUNT] {
+        &self.fm_regs
+    }
+
+    /// Seeds the YM2612 register shadow with the chip state the detector did
+    /// not observe: the patches a game loaded BEFORE this detector (or this
+    /// take) started, which it never rewrites while the music loops.
+    ///
+    /// Only the shadow changes. Key states, open blocks, residual evidence
+    /// and events stay as they are: seeding says what the registers hold,
+    /// not what is sounding. A `reset` discards the seed like everything
+    /// else, so seed after resetting, before the first `process_frame`.
+    ///
+    /// Report 2026-10-14 (Golden Axe «The Battle»): a take recorded with the
+    /// title music already playing left five FM channels with the same
+    /// zero-patch instrument, so none of their authored signatures matched
+    /// and the HD loop never anchored; the same music recorded from before
+    /// its first note matched every signature.
+    pub fn seed_fm_registers(&mut self, regs: &[u8; FM_REGISTER_COUNT]) {
+        self.fm_regs.copy_from_slice(regs);
+    }
+
     /// Hz → nota MIDI redondeada (NO_PITCH fuera de 0-127 o sin frecuencia).
     fn midi_from_hz(f: f64) -> u8 {
         if !f.is_finite() || f <= 0.0 {
@@ -1008,14 +1051,30 @@ impl AudioEventDetector {
     /// Firma del canal FM: hash del "patch" (4 operadores) + registros de
     /// frecuencia/algoritmo del canal, en el momento del key-on. Estable para el
     /// mismo SFX (los mismos parámetros de instrumento + nota).
+    ///
+    /// SIN el Total Level de los operadores PORTADORES (`kAudioEventAlgo` 3,
+    /// 2026-10-17): ese TL es el volumen, no la identidad. Golden Axe atenúa la
+    /// música en las transiciones título→selección y selección→stage mientras
+    /// la canción sigue sonando; con el TL dentro del hash cada nota del fundido
+    /// era «otra firma», la apertura del loop llegaba irreconocible y la única
+    /// firma intacta (el hi-hat) anclaba la Secuencia equivocada. El volumen
+    /// sigue saliendo por `velocity`. El TL de un modulador es timbre y se queda.
     fn fm_signature(&self, ch: usize) -> u64 {
         let bank = if ch < 3 { 0 } else { 0x100 };
         let idx = ch % 3;
+        let carriers = FM_CARRIERS[(self.fm_regs[bank + 0xB0 + idx] & 7) as usize];
         let mut h = mix(mix(FNV_SEED, CHIP_FM), ch as u8);
         // Registros de operador del canal: 0x30,0x34,…,0x9C con (reg & 3) == idx.
         let mut base = 0x30;
         while base <= 0x9C {
-            h = mix(h, self.fm_regs[bank + base + idx]);
+            // 0x40 = Total Level. Se salta sólo en los portadores (mismo mapeo
+            // slot→operador que `fm_instrument`).
+            let slot = (base - 0x30) / 4; // +0,+4,+8,+12 → S1,S3,S2,S4
+            let op = FM_SLOT_OPERATOR[slot % 4];
+            let is_tl = (base & 0xF0) == 0x40;
+            if !(is_tl && carriers & (1 << op) != 0) {
+                h = mix(h, self.fm_regs[bank + base + idx]);
+            }
             base += 4;
         }
         // Registros por canal: frecuencia (0xA0/0xA4), FB/algoritmo (0xB0), L/R/AMS/FMS (0xB4).
@@ -1054,9 +1113,10 @@ impl AudioEventDetector {
         let mut base = 0x30;
         while base <= 0x9C {
             // 0x40 = Total Level. Se salta sólo en los portadores.
-            let op = (base - 0x30) / 4; // 0x30,0x34,0x38,0x3C → op 0..3
+            let slot = (base - 0x30) / 4; // +0,+4,+8,+12 → S1,S3,S2,S4
+            let op = FM_SLOT_OPERATOR[slot % 4];
             let is_tl = (base & 0xF0) == 0x40;
-            if !(is_tl && carriers & (1 << (op % 4)) != 0) {
+            if !(is_tl && carriers & (1 << op) != 0) {
                 h = mix(h, self.fm_regs[bank + base + idx]);
             }
             base += 4;
@@ -1075,11 +1135,11 @@ impl AudioEventDetector {
         let idx = ch % 3;
         let carriers = FM_CARRIERS[(self.fm_regs[bank + 0xB0 + idx] & 7) as usize];
         let mut best = 127u8;
-        for op in 0..4usize {
+        for (slot, &op) in FM_SLOT_OPERATOR.iter().enumerate() {
             if carriers & (1 << op) == 0 {
                 continue;
             }
-            let tl = self.fm_regs[bank + 0x40 + op * 4 + idx] & 0x7F;
+            let tl = self.fm_regs[bank + 0x40 + slot * 4 + idx] & 0x7F;
             if tl < best {
                 best = tl;
             } // menor TL = más fuerte
@@ -2223,6 +2283,75 @@ mod tests {
         assert_eq!(restored.save_state().expect("unchanged state"), before);
     }
 
+    /// A patch written before the detector existed: without the seed the
+    /// key-on hashes an all-zero instrument; with it, the same instrument the
+    /// detector that saw the writes computes.
+    #[test]
+    fn seeded_registers_identify_the_instrument_the_detector_never_saw() {
+        // The detector that watched the patch being loaded.
+        let mut witness = AudioEventDetector::new();
+        let patch: Vec<AudioWrite> = (0x30u16..=0x9Cu16)
+            .step_by(4)
+            .map(|reg| fm(reg, (reg as u8).wrapping_mul(7) | 1))
+            .chain([
+                fm(0xB0, 0x3A),
+                fm(0xB4, 0xC0),
+                fm(0xA4, 0x22),
+                fm(0xA0, 0x69),
+            ])
+            .collect();
+        witness.process_frame(1, &patch);
+        witness.process_frame(2, &[fm(0x28, fm_keyon(0))]);
+        let seen = witness.active_channels();
+        assert_eq!(seen.len(), 1);
+        assert_ne!(seen[0].instrument, 0);
+
+        // A fresh detector starting with the music already playing.
+        let mut cold = AudioEventDetector::new();
+        cold.process_frame(1, &[fm(0x28, fm_keyon(0))]);
+        let unseeded = cold.active_channels();
+        assert_eq!(unseeded.len(), 1);
+        assert_ne!(
+            unseeded[0].instrument, seen[0].instrument,
+            "without the patch the instrument is the zero-register hash"
+        );
+
+        // The same fresh start, seeded with the witness's shadow.
+        let mut seeded = AudioEventDetector::new();
+        seeded.seed_fm_registers(witness.fm_registers());
+        assert_eq!(seeded.fm_registers(), witness.fm_registers());
+        assert!(
+            seeded.active_channels().is_empty(),
+            "seeding does not key anything on"
+        );
+        seeded.process_frame(1, &[fm(0x28, fm_keyon(0))]);
+        let warm = seeded.active_channels();
+        assert_eq!(warm.len(), 1);
+        assert_eq!(warm[0].instrument, seen[0].instrument);
+        assert_eq!(warm[0].signature, seen[0].signature);
+        assert_eq!(warm[0].pitch, seen[0].pitch);
+    }
+
+    #[test]
+    fn reset_discards_the_seed_and_later_writes_override_it() {
+        let mut regs = [0u8; FM_REGISTER_COUNT];
+        regs[0x30] = 0x71;
+        regs[0x1B0] = 0x05;
+        let mut det = AudioEventDetector::new();
+        det.seed_fm_registers(&regs);
+        assert_eq!(det.fm_registers()[0x30], 0x71);
+        assert_eq!(det.fm_registers()[0x1B0], 0x05);
+        det.process_frame(1, &[fm(0x30, 0x12)]);
+        assert_eq!(
+            det.fm_registers()[0x30],
+            0x12,
+            "a real write wins over the seed"
+        );
+        assert_eq!(det.fm_registers()[0x1B0], 0x05);
+        det.reset();
+        assert_eq!(det.fm_registers(), &[0u8; FM_REGISTER_COUNT]);
+    }
+
     #[test]
     fn active_channels_reflects_live_key_on_off() {
         let mut d = AudioEventDetector::new();
@@ -2950,6 +3079,82 @@ mod velocity_and_instrument_tests {
         );
     }
 
+    /// Algoritmo 4: portadores 2 y 4. Los registros van en orden de slot
+    /// (S1, S3, S2, S4): el operador 2 vive en +8 y el 3 en +4. Golden Axe
+    /// funde los portadores del hi-hat de «The Battle» en la pantalla de
+    /// selección; con el slot tomado por operador, cada nota del fundido era
+    /// otro instrumento.
+    #[test]
+    fn algorithm_4_carriers_follow_slot_order() {
+        let instrument_for = |slot: usize, tl: u8| -> u64 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 4);
+            for s in 0..4usize {
+                set_tl(&mut w, s, 20);
+            }
+            set_tl(&mut w, slot, tl);
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].instrument
+        };
+        assert_eq!(
+            instrument_for(2, 20),
+            instrument_for(2, 60),
+            "+8 es el operador 2, PORTADOR en el algoritmo 4: su TL es volumen"
+        );
+        assert_eq!(
+            instrument_for(3, 20),
+            instrument_for(3, 60),
+            "+12 es el operador 4, PORTADOR: su TL es volumen"
+        );
+        assert_ne!(
+            instrument_for(1, 20),
+            instrument_for(1, 60),
+            "+4 es el operador 3, MODULADOR en el algoritmo 4: su TL es timbre"
+        );
+        assert_ne!(
+            instrument_for(0, 20),
+            instrument_for(0, 60),
+            "+0 es el operador 1, MODULADOR: su TL es timbre"
+        );
+    }
+
+    /// Y la velocidad lee el TL de los portadores por slot: en el algoritmo 4
+    /// el de +8 (operador 2) la mueve; el de +4 (operador 3, modulador) no.
+    #[test]
+    fn algorithm_4_velocity_reads_carrier_slots() {
+        let velocity_for = |slot: usize, tl: u8| -> u8 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 4);
+            for s in 0..4usize {
+                set_tl(&mut w, s, 20);
+            }
+            set_tl(&mut w, slot, tl);
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].velocity
+        };
+        assert!(
+            velocity_for(2, 0) > velocity_for(2, 96),
+            "el TL del operador 2 (+8) es el volumen del algoritmo 4"
+        );
+        assert_eq!(
+            velocity_for(1, 0),
+            velocity_for(1, 96),
+            "el TL del operador 3 (+4) no es volumen en el algoritmo 4"
+        );
+    }
+
     /// El volumen no se pierde: se va a `velocity`, que es donde corresponde.
     #[test]
     fn volume_maps_to_velocity() {
@@ -2973,6 +3178,88 @@ mod velocity_and_instrument_tests {
             "menos TL = más fuerte: {loud} tendría que ser > {quiet}"
         );
         assert_eq!(loud, 127, "TL 0 es el máximo de la escala MIDI");
+    }
+
+    /// La FIRMA tampoco cambia con el volumen (kAudioEventAlgo 3). Un fundido
+    /// del juego (TL del portador subiendo nota a nota) tiene que seguir
+    /// produciendo la firma autorada: es lo que reconoce cabezas y disparadores.
+    #[test]
+    fn volume_does_not_change_signature() {
+        let signature_for_carrier_tl = |carrier_tl: u8| -> u64 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 0);
+            set_tl(&mut w, 0, 20); // modulador: timbre
+            set_tl(&mut w, 3, carrier_tl); // portador: volumen
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].signature
+        };
+        assert_eq!(
+            signature_for_carrier_tl(0),
+            signature_for_carrier_tl(64),
+            "el TL del PORTADOR es volumen: no debe cambiar la firma"
+        );
+    }
+
+    /// Y el TL de un MODULADOR sí parte la firma: sin este caso, el de arriba
+    /// pasaría también con una firma que ignore todos los TL.
+    #[test]
+    fn modulator_timbre_changes_signature() {
+        let signature_for_modulator_tl = |modulator_tl: u8| -> u64 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 0);
+            set_tl(&mut w, 0, modulator_tl);
+            set_tl(&mut w, 3, 10);
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].signature
+        };
+        assert_ne!(
+            signature_for_modulator_tl(0),
+            signature_for_modulator_tl(64),
+            "el TL de un MODULADOR es timbre: la firma tiene que cambiar"
+        );
+    }
+
+    /// En el algoritmo 4 los portadores son S2 y S4 (bits 1 y 3 en orden de
+    /// OPERADOR, slots +8 y +12 en orden de REGISTRO): el TL del slot +8 es
+    /// volumen y el del slot +4 (S3, modulador) es timbre. Mismo mapeo que
+    /// `algorithm_4_velocity_reads_carrier_slots`.
+    #[test]
+    fn algorithm_4_signature_skips_carrier_slots_only() {
+        let signature_for = |slot: usize, tl: u8| -> u64 {
+            let mut d = AudioEventDetector::new();
+            let mut w = Vec::new();
+            set_alg(&mut w, 4);
+            set_tl(&mut w, slot, tl);
+            key_on(&mut w);
+            d.process_frame(0, &w);
+            let mut off = Vec::new();
+            key_off(&mut off);
+            d.process_frame(1, &off);
+            d.finish();
+            d.events()[0].signature
+        };
+        assert_eq!(
+            signature_for(2, 0),
+            signature_for(2, 96),
+            "slot +8 = S2, portador"
+        );
+        assert_ne!(
+            signature_for(1, 0),
+            signature_for(1, 96),
+            "slot +4 = S3, modulador"
+        );
     }
 
     // -----------------------------------------------------------------------

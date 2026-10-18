@@ -47,7 +47,7 @@ bool stable_table() {
   const std::array<std::uint64_t, 4> signatures{7, 8, 7, 7};
   const std::array<std::uint32_t, 4> starts{10, 0, 0, 10};
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 7, 5, 5, true, false, {7, 8}, {7, 8}}};
+      {10, 7, 5, 5, true, false, {7, 8}, {7, 8}, true}};
   std::size_t plain_sig_reads = 0, plain_frame_reads = 0;
   const auto plain = ayther::seq_anchor_table(
       signatures.size(),
@@ -92,7 +92,7 @@ bool stable_table() {
 
 bool empty_and_dropped() {
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 7, 1, 1, true, false, {7}, {7}}};
+      {10, 7, 1, 1, true, false, {7}, {7}, true}};
   std::size_t begins = 0, visits = 0, reads = 0;
   const auto signature = [&](std::size_t) {
     ++reads;
@@ -133,7 +133,7 @@ struct CopyOnlyReader {
 bool original_reader_contract() {
   const CopyOnlyReader reader;
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 7, 1, 1, true, false, {7}, {7}}};
+      {10, 7, 1, 1, true, false, {7}, {7}, true}};
   const auto result =
       ayther::seq_anchor_table(1, reader, [](std::size_t) { return 0u; }, subs);
   return result.at(10) == std::vector<std::uint32_t>{0};

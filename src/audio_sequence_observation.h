@@ -133,6 +133,8 @@ inline std::string_view name(SeqAnchorDecisionResult result) noexcept {
     return "quorum_rejected";
   case SeqAnchorDecisionResult::claimed_by_open_sequence:
     return "claimed_by_open_sequence";
+  case SeqAnchorDecisionResult::contradicted_open_sequence:
+    return "contradicted_open_sequence";
   case SeqAnchorDecisionResult::selected:
     return "selected";
   }

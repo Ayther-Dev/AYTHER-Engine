@@ -229,9 +229,12 @@ struct SceneElement {
   /// hides the original only while that replacement's texture is resident.
   int16_t owner = -1;
   int32_t sub = -1; ///< index into the corresponding subs array (-1 = none)
-  /// Spec 002 (R8): plane cell placed for one scroll BAND (per-line hscroll ×
-  /// 2-cell column vscroll) — drawn only inside [clip_x0, clip_x1) ×
-  /// [clip_y0, clip_y1), screen px. clip_x1 <= clip_x0 = no clip.
+  /// Drawn only inside [clip_x0, clip_x1) × [clip_y0, clip_y1), screen px;
+  /// clip_x1 <= clip_x0 = no clip. Spec 002 (R8): plane cell placed for one
+  /// scroll BAND (per-line hscroll × 2-cell column vscroll). Spec 002 (R5):
+  /// sprite the VDP draws on only some of its lines (per-line sprite/pixel
+  /// limit, x = 0 mask) — clipped to those rows over the whole width; the
+  /// HD it anchors is clipped the same way.
   int16_t clip_x0 = 0, clip_y0 = 0, clip_x1 = 0, clip_y1 = 0;
   /// Sprite only: 0 when cumulative parsed-SAT evidence observed the same
   /// identity at different chain ranks. `chain` still drives normal depth;
@@ -1077,7 +1080,10 @@ public:
   /// kAudioEventAlgo. A null pointer or zero count clears the events.
   void set_audio_events(const AytherAudioEvent *events, uint32_t count);
   /// Detector-output revision used to invalidate frontend event caches.
-  static constexpr uint32_t kAudioEventAlgo = 1;
+  /// 3 (2026-10-17): the FM signature no longer hashes the carrier operators'
+  /// Total Level, so a game fade keeps the authored signature. Signatures
+  /// authored under 2 must be re-derived from their takes.
+  static constexpr uint32_t kAudioEventAlgo = 3;
 
   // -- Per-event audio substitution (C-A3b) ---------------------------------
   // It assigns an HD asset to an event SIGNATURE: ALL events with that
@@ -1460,6 +1466,20 @@ public:
   bool recording() const noexcept;
   size_t recorded_frames() const noexcept;
   AytherRecording take_recording();
+
+  /// YM2612 register shadow of the live audio event detector (512 bytes:
+  /// bank 0, then bank 1), or empty when the session has no detector. It is
+  /// what record_start() stores in the take (`AytherRecording::audio_fm_regs`,
+  /// .arp v9) so a replay can identify the patches the game loaded before the
+  /// take began.
+  std::vector<uint8_t> audio_fm_registers() const;
+  /// Seeds the live detector's YM2612 shadow with a take's `audio_fm_regs`.
+  /// replay_seek() does this itself when it restores a take's initial state
+  /// or a keyframe; hosts that restore the state with unserialize() and drive
+  /// step() themselves call it right after unserialize(). Only the shadow
+  /// changes; a reset() discards it. Returns false without a detector or when
+  /// `regs` is not exactly 512 bytes.
+  bool seed_audio_fm_registers(const std::vector<uint8_t> &regs);
 
   /// Renders `frame` of `rec` re-simulating the minimum: it starts from the
   /// live cursor if it is ahead, from the nearest cached keyframe ≤ frame, or

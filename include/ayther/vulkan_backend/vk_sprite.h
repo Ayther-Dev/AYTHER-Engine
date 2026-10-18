@@ -120,7 +120,11 @@ public:
             /// (the usual pipeline) · 1 = additive (src·a + dst, so a flash
             /// does not come out milky). Per call and not per sub: the unit
             /// is the layer, and blend is fixed pipeline state.
-            uint8_t blend = 0);
+            uint8_t blend = 0,
+            /// Spec 002 (R5/R8): scissor of the WHOLE CALL in target px (the
+            /// rows the VDP draws the anchor sprite on, a scroll band),
+            /// intersected with the target. nullptr = the whole target.
+            const VkRect2D *clip = nullptr);
 
   /// C-S2 animations: draws HD frames from a SHEET in phase — like draw()
   /// but each quad samples the `src_*` SUB-RECT (UV) of the sheet and the

@@ -83,8 +83,8 @@ bool actual_frame() {
       {30, qa::SequenceUse::live_pack, obs::FactId{4, 9}});
   const std::vector<std::uint64_t> inputs{7, 7};
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 7, 8, 5, true, true, {7, 7}, {7, 8}},
-      {20, 7, 1, 0, false, false, {}, {}}};
+      {10, 7, 8, 5, true, true, {7, 7}, {7, 8}, true},
+      {20, 7, 1, 0, false, false, {}, {}, true}};
   std::vector<ayther::SeqAnchorState> states(2);
   const std::array<qa::SequenceInputSource, 2> origins{
       {{obs::FactId{4, 10}, {}, 0, 7, "detector_signature"},
@@ -126,7 +126,7 @@ bool replay_and_bounds() {
       sink.observer(), ids,
       {1, qa::SequenceUse::replay_table, obs::FactId{4, 8}});
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 7, 1, 0, true, false, {}, {}}};
+      {10, 7, 1, 0, true, false, {}, {}, true}};
   const auto anchors = ayther::seq_anchor_table_observed(
       1025, [](std::size_t) { return std::uint64_t{7}; },
       [](std::size_t) { return 0u; }, subs,
@@ -179,7 +179,7 @@ bool malformed_provenance() {
       {1, qa::SequenceUse::live_authored, obs::FactId{4, 1}});
   const std::vector<std::uint64_t> inputs{7};
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 7, 1, 0, true, false, {}, {}}};
+      {10, 7, 1, 0, true, false, {}, {}, true}};
   std::vector<ayther::SeqAnchorState> states(1);
   const std::array<qa::SequenceInputSource, 1> origins{
       {{obs::FactId{4, 2}, {}, 0, 77, "resolved_assignment"}}};
@@ -241,8 +241,8 @@ bool decisions_and_terminal() {
       sink.observer(), ids, {5, qa::SequenceUse::live_pack, obs::FactId{4, 1}});
   const std::vector<std::uint64_t> inputs{7};
   const std::vector<ayther::SeqAnchorSub> subs{
-      {10, 99, 10, 0, true, false, {7, 8, 9}, {7, 8, 9}},
-      {20, 7, 10, 0, true, false, {7, 8}, {7}},
+      {10, 99, 10, 0, true, false, {7, 8, 9}, {7, 8, 9}, true},
+      {20, 7, 10, 0, true, false, {7, 8}, {7}, true},
   };
   std::vector<ayther::SeqAnchorState> states;
   const std::array<qa::SequenceInputSource, 1> origins{

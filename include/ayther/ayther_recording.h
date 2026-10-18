@@ -41,10 +41,21 @@ struct AytherRecording {
   std::string game_id;                ///< pack/game id this take belongs to
   std::string name;                   ///< display name (e.g. "take_003")
   std::vector<uint8_t> initial_state; ///< raw savestate at record start
-  std::vector<uint16_t> inputs;       ///< port-0 RetroPad bitmask per frame
-  std::vector<FrameStat> stats;       ///< per-frame occurrence summary (R7b)
-  uint32_t trim_in = 0;               ///< non-destructive in-mark  (frame)
-  uint32_t trim_out = 0; ///< non-destructive out-mark (frame, exclusive)
+  /// YM2612 register shadow at record start (.arp v9): the 512 bytes the
+  /// audio event detector held when the take began (bank 0, then bank 1), or
+  /// empty when the recorder had no detector (pre-v9 files load empty). The
+  /// instrument and pitch of every FM signature are hashed from that shadow at
+  /// key-on, and a game loads its patches once per song: a take that starts
+  /// with the music already playing never sees those writes again, so without
+  /// this seed its signatures do not match the ones authored from a take that
+  /// started before the first note (report 2026-10-14, Golden Axe «The
+  /// Battle»). Replay and analysis seed their detectors from it.
+  std::vector<uint8_t> audio_fm_regs;
+  static constexpr size_t kAudioFmRegisterBytes = 0x200;
+  std::vector<uint16_t> inputs; ///< port-0 RetroPad bitmask per frame
+  std::vector<FrameStat> stats; ///< per-frame occurrence summary (R7b)
+  uint32_t trim_in = 0;         ///< non-destructive in-mark  (frame)
+  uint32_t trim_out = 0;        ///< non-destructive out-mark (frame, exclusive)
 
   // Per-frame sprite hashes (R7c "occurrence history") — drives the per-hash
   // presence lane so the timeline can show *which* frames a sprite is on
@@ -113,10 +124,13 @@ struct AytherRecording {
   }
 
   /// Sub-take [begin, end) with `state` as the initial savestate (it must be
-  /// the machine state PRE-frame `begin`). Rebases inputs/stats/CSR history
-  /// and resets trim marks to 0. Precondition: begin < end <= frame_count().
+  /// the machine state PRE-frame `begin`) and `fm_regs` as the detector's
+  /// YM2612 shadow at that same point (512 bytes, or empty when unknown; for
+  /// begin == 0 pass `audio_fm_regs`). Rebases inputs/stats/CSR history and
+  /// resets trim marks to 0. Precondition: begin < end <= frame_count().
   AytherRecording slice(uint32_t begin, uint32_t end,
-                        std::vector<uint8_t> state) const;
+                        std::vector<uint8_t> state,
+                        std::vector<uint8_t> fm_regs = {}) const;
 
   /// Write to `path` as a `.arp` file (initial state zstd-compressed). The
   /// complete image is serialized and flushed through a sibling before an
@@ -145,6 +159,17 @@ struct AytherRecording {
   /// Load a `.arp` file. Returns std::nullopt on any error (bad magic,
   /// truncated, decompression failure).
   static std::optional<AytherRecording> load(const std::string &path);
+
+  /// `sizeof(AytherRecording)` as compiled INTO the engine library. A frontend
+  /// that compiles this struct from another copy of the header (the Lab kept a
+  /// vendored rc.6 copy while the package did not ship this file) reads every
+  /// field at the wrong offset once a member is added — frame_count() comes
+  /// back 0 and a take silently "does not open" (2026-10-17, audio_fm_regs).
+  /// Compare it with your own sizeof at start-up and refuse to run on mismatch.
+  static std::size_t abi_size() noexcept;
 };
+
+/// Marks that AytherRecording::abi_size() exists (frontends guard the check).
+#define AYTHER_RECORDING_ABI_SIZE 1
 
 } // namespace ayther

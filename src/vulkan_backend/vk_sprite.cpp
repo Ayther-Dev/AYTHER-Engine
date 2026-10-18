@@ -1533,8 +1533,8 @@ void VkSprite::draw(const ayther::engine::VulkanContextView &ctx,
                     const AytherSpriteSub *subs, uint32_t count,
                     AyArchive *pack, uint32_t emu_w, uint32_t emu_h,
                     const uint8_t *flips, const uint8_t *tint,
-                    const uint8_t *slots, const uint8_t *alphas,
-                    uint8_t blend) {
+                    const uint8_t *slots, const uint8_t *alphas, uint8_t blend,
+                    const VkRect2D *clip) {
   if (!pipeline_ || count == 0)
     return;
   if (framebuffers_.empty())
@@ -1603,6 +1603,19 @@ void VkSprite::draw(const ayther::engine::VulkanContextView &ctx,
   vkCmdSetViewport(cmd, 0, 1, &vp);
 
   VkRect2D scissor{{0, 0}, {fb_w_, fb_h_}};
+  // Spec 002 (R5/R8): the caller's clip, intersected with the target.
+  if (clip != nullptr) {
+    const int32_t x0 = (std::max)(0, clip->offset.x);
+    const int32_t y0 = (std::max)(0, clip->offset.y);
+    const int32_t x1 = (std::min)((int32_t)fb_w_,
+                                  clip->offset.x + (int32_t)clip->extent.width);
+    const int32_t y1 = (std::min)(
+        (int32_t)fb_h_, clip->offset.y + (int32_t)clip->extent.height);
+    scissor =
+        x1 <= x0 || y1 <= y0
+            ? VkRect2D{{0, 0}, {0, 0}}
+            : VkRect2D{{x0, y0}, {(uint32_t)(x1 - x0), (uint32_t)(y1 - y0)}};
+  }
   vkCmdSetScissor(cmd, 0, 1, &scissor);
 
   // ---- Bind pipeline -----------------------------------------------------

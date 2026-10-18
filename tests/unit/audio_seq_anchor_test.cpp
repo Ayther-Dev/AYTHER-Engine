@@ -15,6 +15,8 @@
 #include "audio_seq_anchor.h"
 
 #include <cstdio>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -152,6 +154,125 @@ int main() {
     const auto t2 = table(ev, {loop, intro});
     check(t2.at(10) == t.at(10) && t2.at(11) == t.at(11),
           "el orden de las subs no cambia las anclas");
+  }
+
+  // ---- Empate intro→loop: el que RECLAMA gana, no el más específico -------
+  // Golden Axe 2026-10-14: el hi-hat de la Intro es una de las seis cabezas
+  // del Loop. En el límite intro→loop disparan los dos; la Intro tiene MENOS
+  // miembros (22 vs 28) y por «específica» anclaba primero y reemplazaba al
+  // Loop recién empezado. El Loop lista la firma de la Intro; la Intro no
+  // lista la del Loop → el Loop ancla y su ventana reclama a la Intro.
+  {
+    SeqAnchorSub intro;
+    intro.key = 20;
+    intro.trigger_signature = kHat;
+    intro.duration_frames = 100;
+    intro.span_frames = 100;
+    intro.signatures = {kHat, 0xb}; // 2 firmas: MÁS específica que el Loop
+    SeqAnchorSub loop;
+    loop.key = 21;
+    loop.trigger_signature = kBass;
+    loop.duration_frames = 51; // el HD dura un frame más que el paso
+    loop.span_frames = 50;
+    loop.looping = true;
+    loop.signatures = {kBass, kHat, kOther, 0xc, 0xd};
+    loop.head = {kBass, kHat};
+    const std::vector<Ev> ev = {
+        {kHat, 1},    {kHat, 64},  {kBass, 101}, {kHat, 101},
+        {kBass, 151}, {kHat, 151}, {kBass, 201}, {kHat, 201},
+    };
+    const auto t = table(ev, {intro, loop});
+    check(t.at(20) == std::vector<uint32_t>{1},
+          "Intro ancla en 1 y nunca en el límite del Loop → " + fmt(t.at(20)));
+    check(t.at(21) == std::vector<uint32_t>{101, 151, 201},
+          "Loop ancla en 101 (reclama el hi-hat de la Intro) y continúa en "
+          "151 y 201 aunque su ventana (51) dure más que el paso (50) → " +
+              fmt(t.at(21)));
+    const auto t2 = table(ev, {loop, intro});
+    check(t2.at(20) == t.at(20) && t2.at(21) == t.at(21),
+          "reclamo en el empate: el orden de las subs no cambia las anclas");
+  }
+
+  // ---- REINICIO dentro del paso: la apertura completa re-ancla -----------
+  // El juego vuelve al inicio de la música (cambio de pantalla) a mitad de la
+  // pasada: disparador + quórum de cabeza juntos. Una ocurrencia suelta del
+  // disparador dentro del paso sigue siendo interna.
+  {
+    SeqAnchorSub loop;
+    loop.key = 30;
+    loop.trigger_signature = kBass;
+    loop.duration_frames = 50;
+    loop.span_frames = 50;
+    loop.looping = true;
+    loop.signatures = {kBass, kHat, kOther};
+    loop.head = {kBass, kHat};
+    const std::vector<Ev> ev = {
+        {kBass, 101}, {kHat, 101}, // ancla
+        {kBass, 120},              // disparador suelto: interno
+        {kBass, 130}, {kHat, 130}, // apertura completa: REINICIO
+        {kBass, 180}, {kHat, 180}, // paso nuevo desde 130
+    };
+    const auto t = table(ev, {loop});
+    check(t.at(30) == std::vector<uint32_t>{101, 130, 180},
+          "reinicio: 120 interno, 130 re-ancla y el paso sigue desde ahí → " +
+              fmt(t.at(30)));
+    SeqAnchorSub headless = loop;
+    headless.key = 31;
+    headless.head.clear(); // sin cabeza no hay quórum: nunca reinicia
+    const auto t2 = table(ev, {headless});
+    check(t2.at(31) == std::vector<uint32_t>{101, 180},
+          "sin cabeza: 130 es interno; re-ancla sólo cuando llega el paso → " +
+              fmt(t2.at(31)));
+  }
+
+  // ---- REINICIO: la apertura es TODA la cabeza, sin nada sostenido --------
+  // Wilderness (Golden Axe, 2026-10-14): tres de sus cinco notas de apertura
+  // vuelven cada pocos compases; con quórum, cada vuelta cortaba el HD y lo
+  // arrancaba de cero.
+  {
+    constexpr uint64_t kPad = 0xbbbb, kLead = 0xcccc, kForeign = 0xdddd;
+    SeqAnchorSub loop;
+    loop.key = 32;
+    loop.trigger_signature = kBass;
+    loop.duration_frames = 300;
+    loop.span_frames = 300;
+    loop.looping = true;
+    loop.signatures = {kBass, kHat, kPad, kLead, kOther};
+    loop.head = {kBass, kHat, kPad, kLead};
+    const std::vector<Ev> ev = {
+        {kBass, 100}, {kHat, 100}, {kPad, 100}, {kLead, 100},  // ancla
+        {kBass, 160}, {kHat, 160}, {kPad, 160}, {kOther, 160}, // 3 de 4: compás
+        {kBass, 220}, {kHat, 220}, {kPad, 220}, {kLead, 220},  // apertura
+    };
+    const auto t = table(ev, {loop});
+    check(t.at(32) == std::vector<uint32_t>{100, 220},
+          "reinicio: tres de cuatro cabezas es un compás; la cabeza entera "
+          "re-ancla → " +
+              fmt(t.at(32)));
+    // En vivo: una firma de la Secuencia que ya sonaba el frame anterior
+    // desmiente la apertura aunque la cabeza entera arranque.
+    const std::vector<SeqAnchorSub> subs{loop};
+    const std::vector<uint64_t> opening{kBass, kHat, kPad, kLead};
+    const auto decide = [&](const std::vector<uint64_t> &sustained,
+                            std::vector<ayther::SeqAnchorState> &state) {
+      return ayther::seq_anchor_frame_decided(
+          220, opening, sustained, subs, state,
+          [](const ayther::SeqAnchorCandidateView &) noexcept {},
+          [](const ayther::SeqAnchorDecisionView &) noexcept {},
+          [](const ayther::SeqAnchorResolutionView &) noexcept {});
+    };
+    std::vector<ayther::SeqAnchorState> held(1);
+    held[0].next_free = 400;
+    held[0].open = true;
+    held[0].win_start = 100;
+    held[0].win_end = 400;
+    std::vector<ayther::SeqAnchorState> foreign = held;
+    check(decide({kOther}, held).empty() && held[0].next_free == 400,
+          "reinicio: un miembro sostenido desde antes lo desmiente");
+    check(decide({kForeign}, foreign) == std::vector<size_t>{0} &&
+              foreign[0].next_free == 520,
+          "reinicio: una voz ajena sostenida no cuenta; la cabeza entera "
+          "re-ancla y el paso sigue desde ahí");
   }
 
   // ---- Empate de frame sin reclamo previo: gana la más específica ---------
@@ -390,6 +511,128 @@ int main() {
             claimed.key == 91 && claimed.owner_key == 90 &&
             claimed.candidate_signature == kHat,
         "resultado explícito: rechazo reclamado conserva propietario y causa");
+  }
+
+  // ---- Regla 6: CONTRADICCIÓN por estado de voces (título→selección) -----
+  // La canción llega a su loop mientras el título se funde: ancla el Loop en
+  // 913. En 968 la selección reinicia la música desde el INTRO: el driver
+  // cortó todas las voces en 967 y el único key-on es el hi-hat, disparador
+  // del Intro y miembro del Loop. Sin voz viva del Loop y con la apertura de
+  // otra Secuencia exclusiva, el Loop se cierra y el Intro ancla en sincronía.
+  {
+    constexpr uint64_t kBassLoop = 0xbb53, kPadLoop = 0xfd94;
+    SeqAnchorSub intro;
+    intro.key = 100;
+    intro.trigger_signature = kHat;
+    intro.duration_frames = 575;
+    intro.signatures = {kHat, kOther};
+    SeqAnchorSub loop;
+    loop.key = 101;
+    loop.trigger_signature = kBassLoop;
+    loop.duration_frames = 577;
+    loop.span_frames = 576;
+    loop.looping = true;
+    loop.signatures = {kBassLoop, kPadLoop, kHat, kOther};
+    loop.head = {kBassLoop, kPadLoop, kHat};
+    const std::vector<SeqAnchorSub> subs{intro, loop};
+    auto loop_open = [&] {
+      std::vector<ayther::SeqAnchorState> state(2);
+      state[1].open = true;
+      state[1].win_start = 913;
+      state[1].win_end = 1490;
+      state[1].next_free = 1489;
+      return state;
+    };
+    auto decide_at = [&](const std::vector<uint64_t> &sigs,
+                         std::optional<std::vector<uint64_t>> sustained,
+                         std::vector<ayther::SeqAnchorState> &state,
+                         bool *contradicted, size_t *related) {
+      std::optional<std::span<const uint64_t>> vs;
+      if (sustained)
+        vs = std::span<const uint64_t>{*sustained};
+      return ayther::seq_anchor_frame_decided(
+          968, sigs, vs, subs, state,
+          [](const ayther::SeqAnchorCandidateView &) noexcept {},
+          [&](const ayther::SeqAnchorDecisionView &value) noexcept {
+            if (value.result ==
+                ayther::SeqAnchorDecisionResult::contradicted_open_sequence) {
+              if (contradicted)
+                *contradicted = value.sub_index == 1 && value.key == 101 &&
+                                value.candidate_signature == kHat;
+              if (related)
+                *related = value.related_sub_index;
+            }
+          },
+          [](const ayther::SeqAnchorResolutionView &) noexcept {});
+    };
+
+    // Reinicio real: nada del Loop sostenido, sólo el hi-hat.
+    auto st = loop_open();
+    bool seen = false;
+    size_t related = 99;
+    const auto anchors =
+        decide_at({kHat}, std::vector<uint64_t>{}, st, &seen, &related);
+    check(seen && related == 0 && anchors == std::vector<size_t>{0} &&
+              !st[1].open && st[0].open && st[0].win_start == 968 &&
+              st[0].next_free == 968 + 575,
+          "regla 6: sin voces del Loop + apertura del Intro → el Loop cierra "
+          "y el Intro ancla en 968 con su paso hasta 1543");
+
+    // Compás normal del loop: el bajo sigue sonando → el hi-hat es interno.
+    st = loop_open();
+    seen = false;
+    const auto bar =
+        decide_at({kHat}, std::vector<uint64_t>{kBassLoop}, st, &seen, nullptr);
+    check(!seen && bar.empty() && st[1].open && !st[0].open,
+          "regla 6: con una voz del Loop sostenida no hay contradicción");
+
+    // Sin estado de voces (la tabla) la regla está apagada.
+    st = loop_open();
+    seen = false;
+    const auto table_path = decide_at({kHat}, std::nullopt, st, &seen, nullptr);
+    check(!seen && table_path.empty() && st[1].open,
+          "regla 6: sin estado de voces sigue el reclamo de siempre");
+
+    // Un EFECTO que toma prestada la firma no contradice la música.
+    std::vector<SeqAnchorSub> with_effect{intro, loop};
+    with_effect[0].exclusive = false;
+    {
+      std::vector<ayther::SeqAnchorState> fx = loop_open();
+      std::vector<uint64_t> none;
+      std::optional<std::span<const uint64_t>> vs{
+          std::span<const uint64_t>{none}};
+      bool fx_seen = false;
+      const auto r = ayther::seq_anchor_frame_decided(
+          968, {kHat}, vs, with_effect, fx,
+          [](const ayther::SeqAnchorCandidateView &) noexcept {},
+          [&](const ayther::SeqAnchorDecisionView &value) noexcept {
+            fx_seen =
+                fx_seen ||
+                value.result ==
+                    ayther::SeqAnchorDecisionResult::contradicted_open_sequence;
+          },
+          [](const ayther::SeqAnchorResolutionView &) noexcept {});
+      check(!fx_seen && r.empty() && fx[1].open,
+            "regla 6: sólo entre Secuencias exclusivas (música/ambiente)");
+    }
+
+    // Y la apertura tiene que ser ENTERA: si el otro tiene cabeza, falta una
+    // de sus firmas → no es su apertura → no hay contradicción.
+    std::vector<SeqAnchorSub> headed{intro, loop};
+    headed[0].head = {kHat, kOther};
+    {
+      std::vector<ayther::SeqAnchorState> hs = loop_open();
+      std::vector<uint64_t> none;
+      std::optional<std::span<const uint64_t>> vs{
+          std::span<const uint64_t>{none}};
+      const auto r = ayther::seq_anchor_frame_decided(
+          968, {kHat}, vs, headed, hs,
+          [](const ayther::SeqAnchorCandidateView &) noexcept {},
+          [](const ayther::SeqAnchorDecisionView &) noexcept {},
+          [](const ayther::SeqAnchorResolutionView &) noexcept {});
+      check(r.empty() && hs[1].open,
+            "regla 6: media apertura de otra Secuencia no contradice");
+    }
   }
 
   std::printf("%s\n", g_fail ? "FAIL" : "OK");

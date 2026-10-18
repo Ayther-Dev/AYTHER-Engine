@@ -253,6 +253,85 @@ struct AytherSession::Impl {
         tracker.operation(qa_observer, qa_identities, operation);
     qa_detector_complete = qa_detector_complete && result.complete;
   }
+
+  // -- Sombra de registros FM del detector (.arp v9) ------------------------
+  // El detector identifica instrumento y tono de cada firma FM hasheando SU
+  // sombra de los 512 registros del YM2612 al key-on, y la sombra sólo la
+  // llenan las escrituras que él vio. Un juego carga los patches una vez por
+  // canción: una toma que arranca con la música ya sonando nunca los vuelve a
+  // ver y sus firmas no coinciden con las autorizadas desde una toma que
+  // empezó antes de la primera nota (2026-10-14, Golden Axe «The Battle»:
+  // cinco canales con el mismo instrumento de registros en cero, el loop HD
+  // nunca anclaba). La toma lleva la sombra del detector en vivo al empezar a
+  // grabar, y el replay y el análisis la siembran antes del primer frame.
+
+  /// Identidad FNV-1a de una sombra, para los hechos QA del detector.
+  static uint64_t fm_regs_identity(std::span<const uint8_t> regs) noexcept {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    for (const uint8_t b : regs)
+      h = (h ^ b) * 0x100000001b3ULL;
+    return h;
+  }
+  /// Sombra FM del detector en vivo (512 bytes), o vacío sin detector.
+  std::vector<uint8_t> live_fm_registers() const {
+    std::vector<uint8_t> regs;
+    if (!audio_live_det)
+      return regs;
+    regs.resize(AytherRecording::kAudioFmRegisterBytes);
+    if (ayther_audio_event_fm_registers(audio_live_det.get(), regs.data(),
+                                        regs.size()) != regs.size())
+      regs.clear();
+    return regs;
+  }
+  /// Siembra `det` con `regs` (exactamente 512 bytes; cualquier otro tamaño
+  /// no siembra) y lo registra como operación del detector en `tracker`.
+  bool seed_detector(const AudioEventPtr &det,
+                     audio_qa::DetectorTracker &tracker,
+                     std::span<const uint8_t> regs) noexcept {
+    if (!det || regs.size() != AytherRecording::kAudioFmRegisterBytes)
+      return false;
+    if (!ayther_audio_event_seed_fm_registers(det.get(), regs.data(),
+                                              regs.size()))
+      return false;
+    observe_detector_operation(tracker,
+                               {frame_index,
+                                audio_qa::DetectorAction::seed_fm_registers,
+                                {},
+                                {},
+                                fm_regs_identity(regs)});
+    return true;
+  }
+  /// Sombra FM al INICIO del frame `frame` de `rec`: en 0 la de la toma; más
+  /// adelante, la de la toma más las escrituras cacheadas de [0, frame)
+  /// (voice_prime) pasadas por un detector auxiliar. Vacío cuando la toma no
+  /// trae sombra o el caché no cubre el tramo — el que llama no siembra.
+  std::vector<uint8_t> fm_registers_at(const AytherRecording &rec,
+                                       uint32_t frame) {
+    if (rec.audio_fm_regs.size() != AytherRecording::kAudioFmRegisterBytes)
+      return {};
+    if (frame == 0)
+      return rec.audio_fm_regs;
+    if (voice_prime_rec != static_cast<const void *>(&rec) ||
+        voice_prime_capped || voice_prime_built() < frame)
+      return {};
+    AudioEventPtr scratch{ayther_audio_event_new()};
+    if (!scratch ||
+        !ayther_audio_event_seed_fm_registers(
+            scratch.get(), rec.audio_fm_regs.data(), rec.audio_fm_regs.size()))
+      return {};
+    for (uint32_t f = 0; f < frame; ++f) {
+      const uint32_t a = voice_prime_offsets[f];
+      const uint32_t b = voice_prime_offsets[f + 1];
+      ayther_audio_event_process_frame(
+          scratch.get(), f, b > a ? voice_prime_writes.data() + a : nullptr,
+          b - a);
+    }
+    std::vector<uint8_t> out(AytherRecording::kAudioFmRegisterBytes);
+    if (ayther_audio_event_fm_registers(scratch.get(), out.data(),
+                                        out.size()) != out.size())
+      return {};
+    return out;
+  }
   std::string core_path, rom_path;
 
   TileHasherPtr tile_hasher; // ayther_core handles (RAII)
@@ -1229,6 +1308,12 @@ struct AytherSession::Impl {
       const auto hd = audio_event_head.find(sig);
       if (hd != audio_event_head.end())
         a.head = hd->second;
+      {
+        // Rule 6 runs between exclusive Sequences (music / ambience) only.
+        const auto category = playback_policy_of(sig).category;
+        a.exclusive = category == AudioCategory::music ||
+                      category == AudioCategory::ambient;
+      }
       v.push_back(std::move(a));
     }
     std::sort(v.begin(), v.end(),
@@ -1370,6 +1455,11 @@ struct AytherSession::Impl {
     uint32_t mask;
     uint64_t sig;
     uint64_t start = 0;
+    /// : instruments of the members this window has seen. A member that
+    /// fades keeps its timbre and changes its signature (the signature hashes
+    /// the carrier TL); an event with one of these instruments is the member
+    /// at another volume — muted, never a replacement.
+    std::vector<uint64_t> member_instruments;
   };
   std::vector<SeqWindow> audio_seq_windows;
   /// : anclas de TODAS las subs de Secuencia, calculadas en UNA pasada
@@ -1420,6 +1510,9 @@ struct AytherSession::Impl {
     uint64_t start_frame = 0; ///< : ancla (para el reclamo/continuación)
     uint32_t mask = 0;        ///< canales muteados mientras la ventana vive
     uint64_t last_seen = 0;   ///< último frame con un evento miembro activo
+    /// : instruments of the members seen — a member fading is still the
+    /// member (same timbre, another signature); it keeps the window alive.
+    std::vector<uint64_t> member_instruments;
   };
   std::vector<LiveSeqWin> audio_live_seq_win;
   std::unordered_map<uint64_t, uint64_t>
@@ -3471,6 +3564,11 @@ struct AytherSession::Impl {
       v.enabled = !s.asset.empty();
       v.signatures = s.signatures;
       v.head = s.head_signatures;
+      {
+        const auto category = playback_policy_of(s.trigger_signature).category;
+        v.exclusive = category == AudioCategory::music ||
+                      category == AudioCategory::ambient;
+      }
       v.looping = s.looping;
       subs.push_back(std::move(v));
     }

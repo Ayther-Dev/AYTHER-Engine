@@ -19,6 +19,7 @@ void check(bool condition, const char *message) {
 }
 
 using ayther::session::drawn_on_some_line;
+using ayther::session::drawn_rows;
 using ayther::session::line_limits_for;
 using ayther::session::ParsedSprite;
 
@@ -83,6 +84,41 @@ int main() try {
   std::vector<ParsedSprite> below = {at(10, 300, 0)};
   check(drawn_on_some_line(below, 224, line_limits_for(320, false))[0] == 1,
         "a sprite on no visible line is not judged");
+
+  // Sonic 1 title (per-line pixel budget): ten 32x32 sprites parked off
+  // screen on lines 104..135 spend the whole H40 budget there; a 32x16
+  // sprite later in the chain at y = 102 is drawn on lines 102-103 only.
+  std::vector<ParsedSprite> sonic;
+  for (std::uint8_t i = 0; i < 10; ++i) {
+    ParsedSprite d = at(-48, 104, i, 4);
+    d.h_tiles = 4;
+    sonic.push_back(d);
+  }
+  ParsedSprite body = at(120, 102, 10, 4);
+  body.h_tiles = 2;
+  sonic.push_back(body);
+  const auto rows = drawn_rows(sonic, 224, line_limits_for(320, false));
+  check(rows[10].visible && rows[10].drawn() && rows[10].y0 == 102 &&
+            rows[10].y1 == 104,
+        "RF-9.4: a sprite crossing the lines whose budget is spent is drawn "
+        "only above them");
+  check(rows[10].partial(sonic[10], 224),
+        "RF-9.4: that sprite is reported as partially drawn");
+  check(!rows[0].partial(sonic[0], 224) && rows[0].y0 == 104 &&
+            rows[0].y1 == 136,
+        "a sprite drawn on all its lines is not partial");
+  check(drawn_on_some_line(sonic, 224, line_limits_for(320, false))[10] == 1,
+        "a partially drawn sprite is still drawn on some line");
+  const auto lifted = drawn_rows(sonic, 224, line_limits_for(320, true));
+  check(!lifted[10].partial(sonic[10], 224) && lifted[10].y1 == 118,
+        "with no_sprite_limit the sprite is drawn whole");
+  // Straddling the bottom edge of the frame is not a partial draw.
+  ParsedSprite edge = at(10, 216, 0, 1);
+  edge.h_tiles = 2;
+  const std::vector<ParsedSprite> edge_list = {edge};
+  const auto er = drawn_rows(edge_list, 224, line_limits_for(320, false));
+  check(!er[0].partial(edge, 224) && er[0].y0 == 216 && er[0].y1 == 224,
+        "the frame edge does not make a sprite partial");
 
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;

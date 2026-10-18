@@ -227,6 +227,11 @@ file(STRINGS "${PROJECT_SOURCE_DIR}/cmake/AytherPublicHeaders.txt"
     AYTHER_INSTALLED_PUBLIC_HEADER_NAMES
     REGEX "^[^#].+[^ \\t]$")
 
+# Editing the manifest must re-run configure: file(STRINGS) is read once and
+# a header added without this line was silently left out of the install.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/cmake/AytherPublicHeaders.txt")
+
 set(AYTHER_CORE_PUBLIC_HEADER_NAMES
     ayther_core_ffi.h
     ayther_version.h)

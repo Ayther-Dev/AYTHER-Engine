@@ -1435,6 +1435,17 @@ void ayther_audio_event_set_pal(AytherAudioEventDetector *d, uint8_t pal);
  * take (bits 0-5 FM, 6-9 PSG; the session measures it with a PCM probe). */
 void ayther_audio_event_set_initial_active(AytherAudioEventDetector *d,
                                            uint16_t mask);
+/* YM2612 register shadow (512 bytes: bank 0 then bank 1). The detector hashes
+ * instrument and pitch from this shadow at key-on, so a detector that never saw
+ * a channel's patch writes identifies it as an all-zero instrument. The session
+ * copies it out when a take starts recording and seeds it back when the take is
+ * replayed or analysed. `fm_registers` returns the bytes written (0 = null or
+ * cap < 512); `seed_fm_registers` requires len == 512 and changes only the
+ * shadow (key states, blocks and events are untouched; `reset` discards it). */
+size_t ayther_audio_event_fm_registers(const AytherAudioEventDetector *d,
+                                       uint8_t *out, size_t cap);
+bool ayther_audio_event_seed_fm_registers(AytherAudioEventDetector *d,
+                                          const uint8_t *regs, size_t len);
 void ayther_audio_event_reset(AytherAudioEventDetector *d);
 /// Serialized detector state. A zero size/write is failure. Restore validates
 /// the complete versioned payload before replacing the detector.
