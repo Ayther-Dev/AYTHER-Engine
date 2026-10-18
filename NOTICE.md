@@ -9,7 +9,6 @@
 
 | crate | version | licence |
 |---|---|---|
-| `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
 | `autocfg` | 1.5.1 | Apache-2.0 OR MIT |
 | `ayther_core` | 0.1.0 | MPL-2.0 |
 | `base64ct` | 1.8.3 | Apache-2.0 OR MIT |
@@ -35,7 +34,6 @@
 | `cxxbridge-macro` | 1.0.199 | MIT OR Apache-2.0 |
 | `der` | 0.7.10 | Apache-2.0 OR MIT |
 | `digest` | 0.10.7 | MIT OR Apache-2.0 |
-| `displaydoc` | 0.2.7 | MIT OR Apache-2.0 |
 | `ed25519` | 2.2.3 | Apache-2.0 OR MIT |
 | `ed25519-dalek` | 2.2.0 | BSD-3-Clause |
 | `either` | 1.18.0 | MIT OR Apache-2.0 |
@@ -47,8 +45,8 @@
 | `flate2` | 1.1.9 | MIT OR Apache-2.0 |
 | `foldhash` | 0.2.0 | Zlib |
 | `generic-array` | 0.14.7 | MIT |
-| `getrandom` | 0.4.3 | MIT OR Apache-2.0 |
 | `getrandom` | 0.2.17 | MIT OR Apache-2.0 |
+| `getrandom` | 0.4.3 | MIT OR Apache-2.0 |
 | `hashbrown` | 0.17.1 | MIT OR Apache-2.0 |
 | `hound` | 3.5.1 | Apache-2.0 |
 | `indexmap` | 2.14.0 | Apache-2.0 OR MIT |
@@ -59,7 +57,6 @@
 | `lua-src` | 547.0.0 | MIT |
 | `luajit-src` | 210.5.12+a4f56a4 | MIT |
 | `memchr` | 2.8.3 | Unlicense OR MIT |
-| `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | `mlua` | 0.9.9 | MIT |
 | `mlua-sys` | 0.6.8 | MIT |
 | `notify` | 6.1.1 | CC0-1.0 |
@@ -91,14 +88,13 @@
 | `syn` | 3.0.4 | MIT OR Apache-2.0 |
 | `tempfile` | 3.27.0 | MIT OR Apache-2.0 |
 | `termcolor` | 1.4.1 | Unlicense OR MIT |
-| `thiserror` | 2.0.20 | MIT OR Apache-2.0 |
-| `thiserror-impl` | 2.0.20 | MIT OR Apache-2.0 |
 | `tinyvec` | 1.12.0 | Zlib OR Apache-2.0 OR MIT |
 | `tinyvec_macros` | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
 | `toml` | 0.8.23 | MIT OR Apache-2.0 |
 | `toml_datetime` | 0.6.11 | MIT OR Apache-2.0 |
 | `toml_edit` | 0.22.27 | MIT OR Apache-2.0 |
 | `toml_write` | 0.1.2 | MIT OR Apache-2.0 |
+| `typed-path` | 0.12.3 | MIT OR Apache-2.0 |
 | `typenum` | 1.20.1 | MIT OR Apache-2.0 |
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `unicode-width` | 0.2.2 | MIT OR Apache-2.0 |
@@ -115,7 +111,8 @@
 | `winsafe` | 0.0.19 | MIT |
 | `xxhash-rust` | 0.8.18 | BSL-1.0 |
 | `zeroize` | 1.9.0 | Apache-2.0 OR MIT |
-| `zip` | 2.4.2 | MIT |
+| `zip` | 9.0.5 | MIT |
+| `zlib-rs` | 0.6.8 | Zlib |
 | `zopfli` | 0.8.3 | Apache-2.0 |
 
 ## C/C++ libraries (vcpkg)

@@ -243,7 +243,7 @@ impl PackBuilder {
             let entry = zip.by_index_raw(index).map_err(|e| e.to_string())?;
             if !entry.is_dir() {
                 entries.push((
-                    entry.name().to_string(),
+                    entry.name().map_err(|e| e.to_string())?.into_owned(),
                     entry.size(),
                     entry.compressed_size(),
                 ));
