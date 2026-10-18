@@ -1609,9 +1609,8 @@ void VkSprite::draw(const ayther::engine::VulkanContextView &ctx,
     const int32_t y0 = (std::max)(0, clip->offset.y);
     const int32_t x1 = (std::min)((int32_t)fb_w_,
                                   clip->offset.x + (int32_t)clip->extent.width);
-    const int32_t y1 =
-        (std::min)((int32_t)fb_h_,
-                   clip->offset.y + (int32_t)clip->extent.height);
+    const int32_t y1 = (std::min)(
+        (int32_t)fb_h_, clip->offset.y + (int32_t)clip->extent.height);
     scissor =
         x1 <= x0 || y1 <= y0
             ? VkRect2D{{0, 0}, {0, 0}}
