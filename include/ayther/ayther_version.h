@@ -13,10 +13,10 @@
 
 #define AYTHER_VERSION_STRINGIFY_(x) #x
 #define AYTHER_VERSION_STRINGIFY(x) AYTHER_VERSION_STRINGIFY_(x)
-#define AYTHER_VERSION_STRING                                      \
-    AYTHER_VERSION_STRINGIFY(AYTHER_VERSION_MAJOR) "."             \
-    AYTHER_VERSION_STRINGIFY(AYTHER_VERSION_MINOR) "."             \
-    AYTHER_VERSION_STRINGIFY(AYTHER_VERSION_PATCH)
+#define AYTHER_VERSION_STRING                                                  \
+  AYTHER_VERSION_STRINGIFY(AYTHER_VERSION_MAJOR)                               \
+  "." AYTHER_VERSION_STRINGIFY(                                                \
+      AYTHER_VERSION_MINOR) "." AYTHER_VERSION_STRINGIFY(AYTHER_VERSION_PATCH)
 
 /// Revision of the legacy flat C ABI exported by ayther_core.
 #define AYTHER_CORE_C_ABI_REVISION 8

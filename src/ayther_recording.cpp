@@ -1303,8 +1303,7 @@ bool AytherRecording::patch_take_id(const std::string &path,
   return rec->save(path);
 }
 
-std::optional<uint64_t>
-AytherRecording::peek_take_id(const std::string &path) {
+std::optional<uint64_t> AytherRecording::peek_take_id(const std::string &path) {
   std::ifstream f(std::filesystem::path(path), std::ios::binary);
   if (!f)
     return std::nullopt;

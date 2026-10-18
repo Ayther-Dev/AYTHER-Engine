@@ -59,10 +59,10 @@ struct AytherRecording {
   uint64_t take_id = 0;
   /// First format version that carries `take_id`.
   static constexpr uint32_t kFormatVersionTakeId = 10;
-  std::vector<uint16_t> inputs;       ///< port-0 RetroPad bitmask per frame
-  std::vector<FrameStat> stats;       ///< per-frame occurrence summary (R7b)
-  uint32_t trim_in = 0;               ///< non-destructive in-mark  (frame)
-  uint32_t trim_out = 0; ///< non-destructive out-mark (frame, exclusive)
+  std::vector<uint16_t> inputs; ///< port-0 RetroPad bitmask per frame
+  std::vector<FrameStat> stats; ///< per-frame occurrence summary (R7b)
+  uint32_t trim_in = 0;         ///< non-destructive in-mark  (frame)
+  uint32_t trim_out = 0;        ///< non-destructive out-mark (frame, exclusive)
 
   // Per-frame sprite hashes (R7c "occurrence history") — drives the per-hash
   // presence lane so the timeline can show *which* frames a sprite is on
