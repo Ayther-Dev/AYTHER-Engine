@@ -25,7 +25,9 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - Take recordings carry a stable `take_id` (`.arp` version 10), with
   `AytherRecording::patch_take_id()` (no recompression; upgrades v8/v9 files
   in place) and `peek_take_id()` (no decompression). Older files load 0;
-  `slice()` leaves the tail at 0. `abi_size()` changes: rebuild frontends.
+  `slice()` leaves the tail at 0, while `split_recording()` keeps the id on
+  the head and `crop_recording()` on its result. `abi_size()` changes:
+  rebuild frontends.
 
 ### Changed
 
