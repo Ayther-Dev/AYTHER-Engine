@@ -7933,3 +7933,27 @@ mod visual_state_ffi_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod sprite_pattern_hash_ffi_tests {
+    use super::*;
+
+    /// Spec 007: the FFI is the identity a frontend checks an element record
+    /// against, so it must equal the published reproducer and refuse what is not
+    /// a whole number of tiles.
+    #[test]
+    fn ffi_matches_reproducer_and_rejects_partial_tiles() {
+        let bytes: Vec<u8> = (0..64u32).map(|i| (i * 37 + 11) as u8).collect();
+        // SAFETY: Each pointer is valid for the length passed, or null with n = 0.
+        unsafe {
+            assert_eq!(
+                ayther_sprite_pattern_hash(bytes.as_ptr(), 64),
+                identity_kat::sprite_pattern_hash(&bytes)
+            );
+            assert_ne!(ayther_sprite_pattern_hash(bytes.as_ptr(), 64), 0);
+            assert_eq!(ayther_sprite_pattern_hash(std::ptr::null(), 32), 0);
+            assert_eq!(ayther_sprite_pattern_hash(bytes.as_ptr(), 0), 0);
+            assert_eq!(ayther_sprite_pattern_hash(bytes.as_ptr(), 33), 0);
+        }
+    }
+}
