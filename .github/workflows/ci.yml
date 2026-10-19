@@ -5,6 +5,10 @@ on:
     branches:
       - main
   pull_request:
+  # Weekly: keeps main's vcpkg caches alive (Actions evicts a cache unused for
+  # seven days), so the first push of every pull request finds them.
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_dispatch:
     inputs:
       run_gpu_tests:
@@ -22,6 +26,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # On main (push or the weekly schedule) the vcpkg jobs only configure, which
+  # saves main's vcpkg cache for the pull requests; nothing is built or tested.
+  WARM_ONLY: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
   CMAKE_BUILD_PARALLEL_LEVEL: 2
   CARGO_AUDIT_VERSION: 0.22.0
   CARGO_FUZZ_VERSION: 0.13.1
@@ -67,6 +74,9 @@ jobs:
 
   rust:
     name: Rust quality gates (${{ matrix.platform }})
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): this job does not run there.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -123,6 +133,9 @@ jobs:
 
   headless:
     name: Headless (${{ matrix.platform }})
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): this job does not run there.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -177,18 +190,21 @@ jobs:
 
   sanitizers:
     name: ${{ matrix.name }}
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): this job only refreshes
+    # the vcpkg cache there (WARM_ONLY).
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Linux native ASan
-            preset: linux-native-asan
-            runtime_options: ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:strict_string_checks=1
-          - name: Linux native UBSan
-            preset: linux-native-ubsan
-            runtime_options: UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+          # One build instruments both: the CPU suite runs once instead of twice.
+          - name: Linux native ASan + UBSan
+            preset: linux-native-sanitizers
+            runtime_options: >-
+              ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:strict_string_checks=1
+              UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 
     steps:
       - name: Check out the repository
@@ -202,6 +218,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Each job reuses only its own built ports (system headers such as X11
+          # are outside the ABI hash). vcpkg still checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
 
       - name: Cache Cargo inputs and outputs
         uses: actions/cache@v4
@@ -220,14 +251,16 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
+        if: env.WARM_ONLY != 'true'
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Run CPU CTests under the sanitizer
+        if: env.WARM_ONLY != 'true'
         shell: bash
         run: env ${{ matrix.runtime_options }} ctest --preset ${{ matrix.preset }}
 
       - name: Retain sanitizer diagnostics on failure
-        if: failure()
+        if: env.WARM_ONLY != 'true' && (failure())
         uses: actions/upload-artifact@v4
         with:
           name: sanitizer-${{ matrix.preset }}
@@ -236,16 +269,12 @@ jobs:
           retention-days: 14
 
   fuzz-smoke:
-    name: Fuzz smoke (${{ matrix.target }})
+    name: Fuzz smoke
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): this job does not run there.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - packs
-          - decoders
-          - ffi
 
     steps:
       - name: Check out the repository
@@ -256,26 +285,28 @@ jobs:
           rustup toolchain install "${FUZZ_NIGHTLY}" --profile minimal
           cargo install cargo-fuzz --version "${CARGO_FUZZ_VERSION}" --locked
 
-      - name: Exercise the seeded corpus
-        run: >-
-          cargo +"${FUZZ_NIGHTLY}" fuzz run ${{ matrix.target }}
-          fuzz/corpus/${{ matrix.target }}
-          --
-          -max_total_time=30
-          -max_len=1048576
-          -print_final_stats=1
+      - name: Exercise the seeded corpora
+        run: |
+          status=0
+          for target in packs decoders ffi; do
+            cargo +"${FUZZ_NIGHTLY}" fuzz run "$target" "fuzz/corpus/$target" -- -max_total_time=30 -max_len=1048576 -print_final_stats=1 || status=1
+          done
+          exit "$status"
 
       - name: Retain fuzz crashes
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-crashes-${{ matrix.target }}
-          path: fuzz/artifacts/${{ matrix.target }}
+          name: fuzz-crashes
+          path: fuzz/artifacts
           if-no-files-found: ignore
           retention-days: 30
 
   rust-coverage:
     name: Rust coverage gate
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): this job does not run there.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -321,6 +352,9 @@ jobs:
 
   cpp-coverage:
     name: C++ coverage gate
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): this job only refreshes
+    # the vcpkg cache there (WARM_ONLY).
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -337,6 +371,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Each job reuses only its own built ports (system headers such as X11
+          # are outside the ABI hash). vcpkg still checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
 
       # Changed-line coverage includes the Vulkan backend. Exercise it through
       # Mesa's deterministic software device instead of excluding first-party
@@ -355,9 +404,11 @@ jobs:
         run: cmake --preset linux-native-coverage
 
       - name: Build coverage targets
+        if: env.WARM_ONLY != 'true'
         run: cmake --build --preset linux-native-coverage
 
       - name: Run CPU CTests with LLVM profiles
+        if: env.WARM_ONLY != 'true'
         shell: bash
         run: |
           mkdir -p build/linux-native-coverage/coverage-profiles
@@ -365,6 +416,7 @@ jobs:
             ctest --preset linux-native-coverage
 
       - name: Run GPU CTests with LLVM profiles
+        if: env.WARM_ONLY != 'true'
         shell: bash
         env:
           LLVM_PROFILE_FILE: ${{ github.workspace }}/build/linux-native-coverage/coverage-profiles/%m-%p.profraw
@@ -387,6 +439,7 @@ jobs:
             -ReportFile coverage-gpu-report.md
 
       - name: Generate C++ coverage
+        if: env.WARM_ONLY != 'true'
         shell: bash
         env:
           LLVM_TOOLS_VERSION: ${{ env.CLANG_TIDY_VERSION }}
@@ -396,6 +449,7 @@ jobs:
           coverage/cpp
 
       - name: Enforce C++ coverage thresholds
+        if: env.WARM_ONLY != 'true'
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -409,7 +463,7 @@ jobs:
       # Published even when the gate failed: the report naming the uncovered
       # files and line ranges is most useful on the run that went red.
       - name: Publish C++ coverage
-        if: always()
+        if: env.WARM_ONLY != 'true' && (always())
         uses: actions/upload-artifact@v4
         with:
           name: coverage-cpp
@@ -421,20 +475,15 @@ jobs:
 
   native:
     name: ${{ matrix.name }}
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): this job only refreshes
+    # the vcpkg cache there (WARM_ONLY).
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Windows native + package consumer
-            os: windows-latest
-            preset: windows-native
-            compiler: clang-cl
-            executable: ayther_package_consumer.exe
-            install_subdir: windows-native
-            needs_vpx: false
-            parallel: 1
           - name: Linux native + package consumer
             os: ubuntu-latest
             preset: linux-native
@@ -458,6 +507,8 @@ jobs:
             executable: ayther_package_consumer.exe
             install_subdir: windows-native-vpx
             needs_vpx: true
+            # Parallel links race on shared files on the Windows runner
+            # ("being used by another process"): keep one job.
             parallel: 1
 
     steps:
@@ -474,6 +525,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Each job reuses only its own built ports (system headers such as X11
+          # are outside the ABI hash). vcpkg still checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
 
       - name: Install Linux VPX development files
         if: runner.os == 'Linux' && matrix.needs_vpx
@@ -522,6 +588,7 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Verify required audio QA CTest families
+        if: env.WARM_ONLY != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -533,12 +600,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build
+        if: env.WARM_ONLY != 'true'
         run: >-
           cmake --build --preset ${{ matrix.preset }}
           --parallel ${{ matrix.parallel }}
 
       - name: Install the pinned clang-tidy
-        if: matrix.preset == 'linux-native'
+        if: env.WARM_ONLY != 'true' && (matrix.preset == 'linux-native')
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
@@ -546,7 +614,7 @@ jobs:
             "clang-tidy-${CLANG_TIDY_VERSION}"
 
       - name: Check format and static analysis on modified C++ sources
-        if: matrix.preset == 'linux-native'
+        if: env.WARM_ONLY != 'true' && (matrix.preset == 'linux-native')
         shell: bash
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -562,6 +630,7 @@ jobs:
             build/${{ matrix.preset }}
 
       - name: Test native targets
+        if: env.WARM_ONLY != 'true'
         shell: pwsh
         run: |
           ctest --preset ${{ matrix.preset }} 2>&1 | Tee-Object -FilePath native-ctest.log
@@ -569,11 +638,13 @@ jobs:
           ./tools/check_core_test_results.ps1 -LogPath native-ctest.log
 
       - name: Install the native package
+        if: env.WARM_ONLY != 'true'
         run: >-
           cmake --install build/${{ matrix.preset }}
           --prefix '${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
 
       - name: Configure the out-of-tree package consumer
+        if: env.WARM_ONLY != 'true'
         shell: pwsh
         run: >-
           cmake
@@ -587,11 +658,13 @@ jobs:
           -DCMAKE_PREFIX_PATH='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
 
       - name: Build the out-of-tree package consumer
+        if: env.WARM_ONLY != 'true'
         run: >-
           cmake --build
           '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}'
 
       - name: Run the out-of-tree package consumer
+        if: env.WARM_ONLY != 'true'
         shell: pwsh
         run: >-
           ./tools/run_package_consumer.ps1
@@ -600,13 +673,14 @@ jobs:
           -ForbiddenPath '${{ github.workspace }}'
 
       - name: Reject an incompatible installed package version
+        if: env.WARM_ONLY != 'true'
         run: >-
           cmake
           -DAYTHER_PACKAGE_PREFIX='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
           -P tests/package_consumer/check_incompatible.cmake
 
       - name: Retain CTest diagnostics on failure
-        if: failure()
+        if: env.WARM_ONLY != 'true' && (failure())
         uses: actions/upload-artifact@v4
         with:
           name: ctest-${{ matrix.preset }}
@@ -645,6 +719,10 @@ jobs:
           failed=0
           for result in "${results[@]}"; do
             printf '%s\n' "$result"
+            # On main (push or schedule) the build jobs are skipped on purpose.
+            if [[ "${{ env.WARM_ONLY }}" == true && "$result" == *=skipped ]]; then
+              continue
+            fi
             if [[ "$result" != *=success ]]; then
               failed=1
             fi
@@ -679,6 +757,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Each job reuses only its own built ports (system headers such as X11
+          # are outside the ABI hash). vcpkg still checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
 
       - name: Install Linux Vulkan runtime and virtual display
         if: runner.os == 'Linux'
