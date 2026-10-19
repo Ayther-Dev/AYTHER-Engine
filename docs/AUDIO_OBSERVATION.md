@@ -622,13 +622,16 @@ no inventa un recorrido amplio.
 
 El anclaje de secuencias conserva quorum_rejected,
 claimed_by_open_sequence, selected y contradicted_open_sequence (regla 6: la
-ventana abierta que se cerró porque el disparador de otra secuencia llegó en
-un desfase que sus ocurrencias autorizadas no predicen) dentro del mismo
+ventana abierta que se cerró porque ninguna de sus voces seguía sonando y llegó
+la apertura de otra secuencia exclusiva) dentro del mismo
 recorrido que muta el estado. sequence_candidate_decision identifica cuadro, entrada, sustitución,
 firma y sustitución relacionada cuando existe. sequence_selection cierra cada
 cuadro con no_candidate, no_selection o selected y la cantidad real de anclajes.
 Los hechos comparten la consulta y la identidad de sustitución con las visitas;
-no vuelven a buscar candidatos ni recalculan la prioridad.
+no vuelven a buscar candidatos ni recalculan la prioridad. Cuando la apertura
+que llega sin voces vivas es la de la MISMA secuencia abierta, la regla 6 la
+re-ancla como la regla 5: el cuadro emite selected antes del paso previsto y la
+reproducción HD vuelve a empezar desde cero.
 
 Los callbacks son síncronos, noexcept y prestados. Los métodos ordinarios usan
 receptores vacíos sobre el mismo algoritmo. Los adaptadores permanecen dentro de

@@ -168,6 +168,13 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Live sequence anchoring (Rule 6) now also recognises the game restarting the
+  SAME music: when no voice of the open exclusive Sequence is still sounding
+  and its own opening arrives, it re-anchors there like Rule 5 and the HD
+  starts again from zero. A trigger-only Intro could not use Rule 5, so in
+  Golden Axe the title's HD intro kept running into the selection screen,
+  ran out two seconds after the game restarted the intro and left the
+  original playing until the loop anchored.
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take
   with the same count kept the previous ones; any change of the events now

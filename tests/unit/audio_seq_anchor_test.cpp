@@ -578,6 +578,39 @@ int main() {
           "regla 6: sin voces del Loop + apertura del Intro → el Loop cierra "
           "y el Intro ancla en 968 con su paso hasta 1543");
 
+    // Reinicio de la MISMA música: el Intro del título sigue abierto (338) y
+    // en 799 la selección corta todas las voces y vuelve a abrir el Intro.
+    {
+      std::vector<ayther::SeqAnchorState> open_intro(2);
+      open_intro[0].open = true;
+      open_intro[0].win_start = 338;
+      open_intro[0].win_end = 913;
+      open_intro[0].next_free = 913;
+      auto at_799 = [&](std::vector<ayther::SeqAnchorState> state,
+                        std::vector<uint64_t> sustained,
+                        std::vector<ayther::SeqAnchorState> &out) {
+        std::optional<std::span<const uint64_t>> vs{
+            std::span<const uint64_t>{sustained}};
+        auto r = ayther::seq_anchor_frame_decided(
+            799, {kHat}, vs, subs, state,
+            [](const ayther::SeqAnchorCandidateView &) noexcept {},
+            [](const ayther::SeqAnchorDecisionView &) noexcept {},
+            [](const ayther::SeqAnchorResolutionView &) noexcept {});
+        out = state;
+        return r;
+      };
+      std::vector<ayther::SeqAnchorState> after;
+      const auto restarted = at_799(open_intro, {}, after);
+      check(restarted == std::vector<size_t>{0} && after[0].open &&
+                after[0].win_start == 799 && after[0].next_free == 799 + 575,
+            "regla 6: sin voces del Intro + su propia apertura → el Intro "
+            "re-ancla en 799 y su paso vuelve a empezar");
+      const auto inner = at_799(open_intro, {kOther}, after);
+      check(inner.empty() && after[0].win_start == 338 &&
+                after[0].next_free == 913,
+            "regla 6: con una voz del Intro sostenida, su hi-hat es interno");
+    }
+
     // Compás normal del loop: el bajo sigue sonando → el hi-hat es interno.
     st = loop_open();
     seen = false;
