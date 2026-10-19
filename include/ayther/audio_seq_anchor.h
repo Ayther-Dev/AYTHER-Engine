@@ -76,6 +76,15 @@
 //     anchors in sync and its step ends exactly where the loop begins. Only
 //     with voice state (live paths); the table relies on the whole head.
 //     Effects never contradict music and are never contradicted.
+//     The same evidence also gives away the game restarting THE SAME music
+//     (2026-10-19, Golden Axe, entering the selection screen while the title's
+//     Intro still plays): every voice of the open Sequence was cut and its own
+//     opening arrives. A trigger-only Intro cannot use Rule 5 (no other head),
+//     so its window was kept and the HD intro ran out 114 frames into the
+//     game's restarted intro, leaving the original until the loop anchored.
+//     Then the Sequence restarts as in Rule 5: it re-anchors on this frame and
+//     its step starts again. Inside a normal bar a voice it claims is still
+//     sounding, so a recurring hi-hat stays internal.
 //
 // Events are traversed in ascending `start_frame` order. The detector does NOT
 // return them sorted (it emits them per channel), so the table applies a stable
@@ -421,8 +430,12 @@ seq_anchor_frame_decided(uint32_t f, const std::vector<uint64_t> &sigs,
         if (i != j && subs[i].enabled && subs[i].exclusive &&
             seq_opening_now(subs[i], sigs, sustained))
           other = i;
-      if (other == subs.size())
+      if (other == subs.size()) {
+        // The game restarted this same music: re-anchor like Rule 5.
+        if (seq_opening_now(sq, sigs, sustained))
+          restart[j] = 1;
         continue;
+      }
       size_t trigger_input = 0;
       for (const uint64_t sig : sigs) {
         if (sig == subs[other].trigger_signature)
