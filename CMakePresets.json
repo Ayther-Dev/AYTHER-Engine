@@ -224,6 +224,17 @@
       }
     },
     {
+      "name": "linux-native-sanitizers",
+      "displayName": "Linux Native Engine + ASan + UBSan",
+      "description": "Complete native engine and CPU CTests under AddressSanitizer and UndefinedBehaviorSanitizer in one build (CI)",
+      "inherits": "linux-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AYTHER_ENABLE_ASAN": "ON",
+        "AYTHER_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
       "name": "linux-native-coverage",
       "displayName": "Linux Native Engine Coverage",
       "description": "LLVM source coverage for first-party CPU and software-Vulkan tests",
@@ -308,6 +319,10 @@
     {
       "name": "linux-native-ubsan",
       "configurePreset": "linux-native-ubsan"
+    },
+    {
+      "name": "linux-native-sanitizers",
+      "configurePreset": "linux-native-sanitizers"
     },
     {
       "name": "linux-native-coverage",
@@ -507,6 +522,21 @@
     {
       "name": "linux-native-ubsan",
       "configurePreset": "linux-native-ubsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "linux-native-sanitizers",
+      "configurePreset": "linux-native-sanitizers",
       "output": {
         "outputOnFailure": true
       },

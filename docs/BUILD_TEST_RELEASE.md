@@ -54,6 +54,9 @@ cmake --preset linux-native-ubsan  && cmake --build --preset linux-native-ubsan
 ctest --preset linux-native-ubsan
 ```
 
+CI uses `linux-native-sanitizers`, which enables both sanitizers in one build
+and runs the CPU suite once.
+
 Both sanitizer presets build `Debug`, compile with `-fno-sanitize-recover=all`,
 and run every CPU CTest; tests labelled `gpu` are excluded because the runners
 promise no Vulkan hardware. A finding aborts the process, so any report is a
@@ -482,23 +485,30 @@ there was none would read, later, exactly like one where audio worked.
 
 ## CI expectations
 
-The checkout now includes `.github/workflows/ci.yml`. On pushes to `main`, pull
-requests, and manual dispatches it runs repository-boundary checks, locked Rust
+The checkout now includes `.github/workflows/ci.yml`. On pull requests and
+manual dispatches it runs repository-boundary checks, locked Rust
 format/lint/tests/docs on both Windows and Linux, documentation-reference and
 license consistency checks, dependency-notice verification, and the
 Windows/Linux headless sequence. The
 required native matrix additionally configures, builds, tests, and installs
-`windows-native`, `linux-native`, `windows-native-vpx`, and
-`linux-native-vpx`; every matrix entry then configures, links, and executes
-`tests/package_consumer/` from outside the producer tree. Pull requests
-additionally validate that individual commits do not mix the closed Lab
-boundary with FOSS paths.
+`linux-native`, `windows-native-vpx`, and `linux-native-vpx`; every matrix
+entry then configures, links, and executes `tests/package_consumer/` from
+outside the producer tree. Windows builds only the VPX variant, a superset of
+`windows-native`, whose package the release still builds and consumes. Pull
+requests additionally validate that individual commits do not mix the closed
+Lab boundary with FOSS paths. A push to `main` reruns only the repository
+policy: `main` accepts a pull request only when its branch is up to date, so
+the merged tree is the one the pull request already validated.
 
-Five further jobs run on every pull request. `Linux native ASan` and
-`Linux native UBSan` build the complete engine and run the CPU CTests under
-their sanitizer, uploading `Testing/Temporary/LastTest.log` on failure.
-`Fuzz smoke` runs the `packs`, `decoders`, and `ffi` targets for 30 seconds
-each against their seeded corpus and keeps any crash as an artifact. Its
+Jobs that use vcpkg keep its built ports in the Actions cache
+(`VCPKG_BINARY_SOURCES` with the `files` provider); vcpkg checks every
+package's ABI hash, so an outdated archive is rebuilt, never linked.
+
+Further jobs run on every pull request. `Linux native ASan + UBSan` builds
+the complete engine with both sanitizers and runs the CPU CTests, uploading
+`Testing/Temporary/LastTest.log` on failure. `Fuzz smoke` runs the `packs`,
+`decoders`, and `ffi` targets in one job for 30 seconds each against their
+seeded corpus and keeps any crash as an artifact. Its
 standalone workspace is pinned by `fuzz/Cargo.lock`. The Rust audit runs inside
 the `rust` job with a pinned `cargo-audit` and checks both lockfiles. Coverage is
 gated and published by `rust-coverage` and `cpp-coverage` as separate

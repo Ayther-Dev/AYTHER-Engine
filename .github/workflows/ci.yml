@@ -67,6 +67,9 @@ jobs:
 
   rust:
     name: Rust quality gates (${{ matrix.platform }})
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): only the policy job reruns.
+    if: github.event_name != 'push'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -123,6 +126,9 @@ jobs:
 
   headless:
     name: Headless (${{ matrix.platform }})
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): only the policy job reruns.
+    if: github.event_name != 'push'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -177,18 +183,21 @@ jobs:
 
   sanitizers:
     name: ${{ matrix.name }}
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): only the policy job reruns.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Linux native ASan
-            preset: linux-native-asan
-            runtime_options: ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:strict_string_checks=1
-          - name: Linux native UBSan
-            preset: linux-native-ubsan
-            runtime_options: UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+          # One build instruments both: the CPU suite runs once instead of twice.
+          - name: Linux native ASan + UBSan
+            preset: linux-native-sanitizers
+            runtime_options: >-
+              ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:strict_string_checks=1
+              UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 
     steps:
       - name: Check out the repository
@@ -202,6 +211,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Built ports are reused between runs: vcpkg checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
+            vcpkg-${{ runner.os }}-
 
       - name: Cache Cargo inputs and outputs
         uses: actions/cache@v4
@@ -236,16 +260,12 @@ jobs:
           retention-days: 14
 
   fuzz-smoke:
-    name: Fuzz smoke (${{ matrix.target }})
+    name: Fuzz smoke
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): only the policy job reruns.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - packs
-          - decoders
-          - ffi
 
     steps:
       - name: Check out the repository
@@ -256,26 +276,28 @@ jobs:
           rustup toolchain install "${FUZZ_NIGHTLY}" --profile minimal
           cargo install cargo-fuzz --version "${CARGO_FUZZ_VERSION}" --locked
 
-      - name: Exercise the seeded corpus
-        run: >-
-          cargo +"${FUZZ_NIGHTLY}" fuzz run ${{ matrix.target }}
-          fuzz/corpus/${{ matrix.target }}
-          --
-          -max_total_time=30
-          -max_len=1048576
-          -print_final_stats=1
+      - name: Exercise the seeded corpora
+        run: |
+          status=0
+          for target in packs decoders ffi; do
+            cargo +"${FUZZ_NIGHTLY}" fuzz run "$target" "fuzz/corpus/$target" -- -max_total_time=30 -max_len=1048576 -print_final_stats=1 || status=1
+          done
+          exit "$status"
 
       - name: Retain fuzz crashes
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-crashes-${{ matrix.target }}
-          path: fuzz/artifacts/${{ matrix.target }}
+          name: fuzz-crashes
+          path: fuzz/artifacts
           if-no-files-found: ignore
           retention-days: 30
 
   rust-coverage:
     name: Rust coverage gate
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): only the policy job reruns.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -321,6 +343,9 @@ jobs:
 
   cpp-coverage:
     name: C++ coverage gate
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): only the policy job reruns.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -337,6 +362,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Built ports are reused between runs: vcpkg checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
+            vcpkg-${{ runner.os }}-
 
       # Changed-line coverage includes the Vulkan backend. Exercise it through
       # Mesa's deterministic software device instead of excluding first-party
@@ -421,20 +461,15 @@ jobs:
 
   native:
     name: ${{ matrix.name }}
+    # A push to main replays the tree its pull request already validated
+    # (the branch must be up to date to merge): only the policy job reruns.
+    if: github.event_name != 'push'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Windows native + package consumer
-            os: windows-latest
-            preset: windows-native
-            compiler: clang-cl
-            executable: ayther_package_consumer.exe
-            install_subdir: windows-native
-            needs_vpx: false
-            parallel: 1
           - name: Linux native + package consumer
             os: ubuntu-latest
             preset: linux-native
@@ -458,7 +493,7 @@ jobs:
             executable: ayther_package_consumer.exe
             install_subdir: windows-native-vpx
             needs_vpx: true
-            parallel: 1
+            parallel: 2
 
     steps:
       - name: Check out the repository
@@ -474,6 +509,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Built ports are reused between runs: vcpkg checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
+            vcpkg-${{ runner.os }}-
 
       - name: Install Linux VPX development files
         if: runner.os == 'Linux' && matrix.needs_vpx
@@ -645,6 +695,10 @@ jobs:
           failed=0
           for result in "${results[@]}"; do
             printf '%s\n' "$result"
+            # On a push to main the heavy jobs are skipped on purpose.
+            if [[ "${{ github.event_name }}" == push && "$result" == *=skipped ]]; then
+              continue
+            fi
             if [[ "$result" != *=success ]]; then
               failed=1
             fi
@@ -679,6 +733,21 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Built ports are reused between runs: vcpkg checks each package's
+          # ABI hash, so a stale archive is ignored, never linked.
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$binaryCache,readwrite" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ github.job }}-${{ matrix.preset || 'default' }}-
+            vcpkg-${{ runner.os }}-
 
       - name: Install Linux Vulkan runtime and virtual display
         if: runner.os == 'Linux'
