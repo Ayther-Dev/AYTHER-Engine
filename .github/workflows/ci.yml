@@ -493,7 +493,9 @@ jobs:
             executable: ayther_package_consumer.exe
             install_subdir: windows-native-vpx
             needs_vpx: true
-            parallel: 2
+            # Parallel links race on shared files on the Windows runner
+            # ("being used by another process"): keep one job.
+            parallel: 1
 
     steps:
       - name: Check out the repository
