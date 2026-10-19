@@ -2,6 +2,8 @@
 // Impl — owns every motor handle + the per-frame buffers FrameView points into.
 // ---------------------------------------------------------------------------
 struct AytherSession::Impl {
+  std::unique_ptr<engine::NativeEmulation> native;
+  engine::NativeResult native_result;
   RetroRunner runner;                     // emulator host
   session::EmulationObserver observer;    // ABI observation + legacy fallback
   session::RecordingController recording; // deterministic live capture

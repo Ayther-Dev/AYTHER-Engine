@@ -68,7 +68,7 @@ add_test(
     NAME ayther.package.engine_public_contract
     COMMAND "${CMAKE_COMMAND}"
         "-DAYTHER_ENGINE_PUBLIC_DIR=${PROJECT_SOURCE_DIR}/include/ayther/engine"
-        "-DAYTHER_ENGINE_PUBLIC_HEADERS=audio_fact_queue.hpp;audio_hd_state.hpp;audio_initial_snapshot.hpp;audio_observation_close.hpp;audio_observation_overflow.hpp;audio_observation_worker.hpp;audio_observer.hpp;audio_pcm_queue.hpp;audio_production_limit.hpp;capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;music_analysis_limits.hpp;music_analysis_snapshot.hpp;music_asset_owner.hpp;music_audio_math.hpp;music_causal_recognizer.hpp;music_corpus_quality.hpp;music_event_normalization.hpp;music_event_scoring.hpp;music_execution_adapter.hpp;music_identity_state.hpp;music_late_entry.hpp;music_live_recognition.hpp;music_pack_contract.hpp;music_pause_signal.hpp;music_pause_state.hpp;music_pattern_analysis.hpp;music_position_recovery.hpp;music_proposal_assessment.hpp;music_recognition_candidate.hpp;music_sequence.hpp;music_sequence_validation.hpp;music_source_lifecycle.hpp;music_transition_arbiter.hpp;music_transition_cancel.hpp;music_transition_queue.hpp;music_transition_span.hpp;music_voice_budget.hpp;pack.hpp;render_observer.hpp;visual_state.hpp;vulkan_interop.hpp"
+        "-DAYTHER_ENGINE_PUBLIC_HEADERS=audio_fact_queue.hpp;audio_hd_state.hpp;audio_initial_snapshot.hpp;audio_observation_close.hpp;audio_observation_overflow.hpp;audio_observation_worker.hpp;audio_observer.hpp;audio_pcm_queue.hpp;audio_production_limit.hpp;capabilities.hpp;core_probe.hpp;engine.hpp;input.hpp;music_analysis_limits.hpp;music_analysis_snapshot.hpp;music_asset_owner.hpp;music_audio_math.hpp;music_causal_recognizer.hpp;music_corpus_quality.hpp;music_event_normalization.hpp;music_event_scoring.hpp;music_execution_adapter.hpp;music_identity_state.hpp;music_late_entry.hpp;music_live_recognition.hpp;music_pack_contract.hpp;music_pause_signal.hpp;music_pause_state.hpp;music_pattern_analysis.hpp;music_position_recovery.hpp;music_proposal_assessment.hpp;music_recognition_candidate.hpp;music_sequence.hpp;music_sequence_validation.hpp;music_source_lifecycle.hpp;music_transition_arbiter.hpp;music_transition_cancel.hpp;music_transition_queue.hpp;music_transition_span.hpp;music_voice_budget.hpp;native_emulation.hpp;pack.hpp;render_observer.hpp;visual_state.hpp;vulkan_interop.hpp"
         -P "${PROJECT_SOURCE_DIR}/tools/check_engine_public_contract.cmake")
 set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
@@ -696,3 +696,53 @@ unset(_ayther_vpx_test)
 target_compile_definitions(ayther_audio_asset_fallback_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_audio_asset_fallback_test ayther_test_core)
+
+# The optional provider consumes only an installed Tessera package. Its test-only
+# fixture/oracle headers reuse the exact approved Tessera dependency lock.
+if(AYTHER_ENABLE_TESSERA)
+    set(AYTHER_TESSERA_TEST_SOURCE_DIR "" CACHE PATH "Approved Tessera source checkout for test headers and CLI fixtures")
+    if(NOT EXISTS "${AYTHER_TESSERA_TEST_SOURCE_DIR}/cmake/dependencies.lock.json")
+        message(FATAL_ERROR "Native Tessera tests require AYTHER_TESSERA_TEST_SOURCE_DIR")
+    endif()
+    foreach(_provider_test IN ITEMS tessera_backend_test tessera_provider_test)
+        if(_provider_test STREQUAL "tessera_backend_test")
+            set(_provider_source unit/${_provider_test}.cpp)
+        else()
+            set(_provider_source integration/${_provider_test}.cpp)
+        endif()
+        ayther_add_native_test("${PROJECT_SOURCE_DIR}/tests/${_provider_source}" integration)
+        target_include_directories(ayther_${_provider_test} SYSTEM PRIVATE
+            "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include"
+            "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/picosha2-1.0.1/include")
+        target_compile_options(ayther_${_provider_test} PRIVATE /EHsc)
+        tessera_copy_runtime_dependencies(ayther_${_provider_test})
+    endforeach()
+endif()
+if(AYTHER_ENABLE_TESSERA)
+    ayther_add_native_test("${PROJECT_SOURCE_DIR}/tests/integration/tessera_session_test.cpp" integration)
+    target_sources(ayther_tessera_session_test PRIVATE support/tessera_fx01_oracle.cpp)
+    target_include_directories(ayther_tessera_session_test SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/nlohmann-json-3.12.0/include")
+    target_compile_options(ayther_tessera_session_test PRIVATE /EHsc)
+    tessera_copy_runtime_dependencies(ayther_tessera_session_test)
+endif()
+
+if(AYTHER_ENABLE_TESSERA)
+    if(NOT AYTHER_PWSH_EXECUTABLE)
+        message(FATAL_ERROR "Tessera integration replay requires PowerShell 7")
+    endif()
+    get_filename_component(_tessera_share "${Tessera_METADATA_FILE}" DIRECTORY)
+    get_filename_component(_tessera_prefix "${_tessera_share}/../.." ABSOLUTE)
+    set(AYTHER_TESSERA_CLI "${_tessera_prefix}/bin/tessera.exe" CACHE FILEPATH "Installed Tessera CLI used by native replay acceptance")
+    if(NOT EXISTS "${AYTHER_TESSERA_CLI}")
+        message(FATAL_ERROR "Tessera native replay requires the installed CLI")
+    endif()
+    add_test(NAME ayther.integration.tessera_native_replay
+        COMMAND "${AYTHER_PWSH_EXECUTABLE}" -NoProfile -File
+            "${PROJECT_SOURCE_DIR}/tests/support/tessera_native_validation.ps1"
+            -TesseraCli "${AYTHER_TESSERA_CLI}"
+            -EngineWorker "$<TARGET_FILE:ayther_tessera_session_test>"
+            -EvidenceDirectory "${CMAKE_CURRENT_BINARY_DIR}/tessera-evidence")
+    set_tests_properties(ayther.integration.tessera_native_replay PROPERTIES
+        TIMEOUT 240 RUN_SERIAL TRUE LABELS "engine;native;integration;replay;FX-01;phase2")
+endif()

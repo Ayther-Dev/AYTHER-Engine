@@ -102,3 +102,24 @@ Before publishing an artifact:
 The software is provided without warranty as stated in MPL-2.0. Early-development
 status creates additional technical risk and must remain visible in release and
 integration materials.
+
+## Integración opcional de Tessera
+
+El proveedor de T015–T018 enlaza el paquete instalado de AYTHER Tessera (MIT),
+con su build ID y prefijo explícitos. El lock de fuente usado por CI es el SHA
+fijo declarado en `.github/workflows/ci.yml`. Sus avisos y los de PicoSHA2 se
+instalan bajo `share/tessera/licenses` en el paquete de Tessera; no se deben
+retirar al preparar su distribución coordinada con Engine.
+
+Las fórmulas de los oráculos de `tests/support/tessera_fx01_oracle.*` se adaptan
+de las fuentes MIT de Tessera, con sus SHA-256 de procedencia en el encabezado.
+Su copyright y permiso se conservan en [tercero Tessera](../third_party/tessera/LICENSE).
+Los headers de doctest/PicoSHA2/nlohmann utilizados por estos tests proceden de
+la copia fijada por `cmake/dependencies.lock.json` de Tessera; son dependencias
+solo de validación y conservan allí sus avisos originales. Los tests no se
+instalan como parte del producto Engine.
+
+Los paquetes locales ASAN son artefactos de desarrollo del toolchain declarado.
+La publicación y el cierre de licencias transitivas, fixtures y runtimes de
+la cadena completa continúan en T034 del MVP; esta integración no acredita
+Mega Drive, packs reales ni una release de distribución.

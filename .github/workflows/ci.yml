@@ -501,7 +501,7 @@ jobs:
             needs_vpx: true
             parallel: 2
           - name: Windows native + VPX + package consumer
-            os: windows-latest
+            os: windows-2025-vs2026
             preset: windows-native-vpx
             compiler: clang-cl
             executable: ayther_package_consumer.exe
@@ -516,6 +516,32 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Check out the pinned Tessera provider
+        if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
+        uses: actions/checkout@v5
+        with:
+          repository: Ayther-Dev/AYTHER-Tessera
+          ref: dfef7223af0928f89fa0db97bb754cc64a417aed
+          path: build/tessera-source
+          persist-credentials: false
+
+      - name: Build and install the pinned Tessera provider
+        if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'build/tessera-source'
+          Push-Location $source
+          try {
+            ./tools/bootstrap-dependencies.ps1 -Download
+            ./tools/check.ps1 -Preset windows-release -Stage Configure -Jobs 1
+            cmake --build build/windows-release --target tessera_core tessera_cli --parallel 1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            cmake --install build/windows-release --prefix "$env:RUNNER_TEMP/tessera-install"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          "TESSERA_PREFIX=$env:RUNNER_TEMP/tessera-install" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Select the runner vcpkg installation
         shell: pwsh
@@ -585,7 +611,16 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        shell: pwsh
+        run: |
+          $nativeArgs = @()
+          if ($env:TESSERA_PREFIX) {
+            $nativeArgs += '-DAYTHER_ENABLE_TESSERA=ON'
+            $nativeArgs += "-DTessera_DIR=$env:TESSERA_PREFIX/lib/cmake/Tessera"
+            $nativeArgs += "-DAYTHER_TESSERA_TEST_SOURCE_DIR=$($PWD.Path)/build/tessera-source"
+          }
+          cmake --preset ${{ matrix.preset }} @nativeArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify required audio QA CTest families
         if: env.WARM_ONLY != 'true'
@@ -646,16 +681,23 @@ jobs:
       - name: Configure the out-of-tree package consumer
         if: env.WARM_ONLY != 'true'
         shell: pwsh
-        run: >-
-          cmake
-          -S tests/package_consumer
-          -B '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}'
-          -G Ninja
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
-          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
-          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-          -DCMAKE_PREFIX_PATH='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
+        run: |
+          $providerArgs = @()
+          if ($env:TESSERA_PREFIX) {
+            $providerArgs += "-DTessera_DIR=$env:TESSERA_PREFIX/lib/cmake/Tessera"
+            $providerArgs += '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL'
+          }
+          cmake `
+            -S tests/package_consumer `
+            -B '${{ runner.temp }}/ayther-consumer/${{ matrix.install_subdir }}' `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF `
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DCMAKE_PREFIX_PATH='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}' `
+            @providerArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build the out-of-tree package consumer
         if: env.WARM_ONLY != 'true'
@@ -684,7 +726,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ctest-${{ matrix.preset }}
-          path: build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          path: |
+            build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+            build/${{ matrix.preset }}/tests/tessera-evidence/tessera-native-summary.json
+            build/${{ matrix.preset }}/tests/tessera-evidence/**/engine-*.stderr.log
           if-no-files-found: ignore
           retention-days: 7
 

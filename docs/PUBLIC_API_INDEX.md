@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 63 headers
+## The 64 headers
 
 | header | what it provides |
 |---|---|
@@ -72,6 +72,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`engine/music_transition_queue.hpp`](#enginemusic_transition_queuehpp) | Installed public header. |
 | [`engine/music_transition_span.hpp`](#enginemusic_transition_spanhpp) | Installed public header. |
 | [`engine/music_voice_budget.hpp`](#enginemusic_voice_budgethpp) | Installed public header. |
+| [`engine/native_emulation.hpp`](#enginenative_emulationhpp) | Installed public header. |
 | [`engine/pack.hpp`](#enginepackhpp) | Installed public header. |
 | [`engine/render_observer.hpp`](#enginerender_observerhpp) | Installed public header. |
 | [`engine/visual_state.hpp`](#enginevisual_statehpp) | Installed public header. |
@@ -604,9 +605,9 @@ docs/ARCHITECTURE.md#session-and-renderer-boundary):
   timeline produce a FrameView  ----------------->    consume FrameView,
   render it
 
-Audio output lives entirely inside the session (the AudioPlayer is owned by
-the motor in R1): play/mute/flush happen in step(), nothing audio crosses the
-boundary. The frontend never touches Vulkan-from-the-motor or SDL-audio.
+Legacy audio output is owned by the session. The explicit Tessera provider
+exposes original PCM through borrowed native frames; device presentation is
+unavailable in that provider until its Runtime contract is integrated.
 
 No-throw: construction and fallible operations return ayther::Result
 (§4.1.1); nothing throws across the FFI users. Opaque handles are held as
@@ -1029,6 +1030,16 @@ _The installed header (`include/ayther/engine/music_transition_span.hpp`) carrie
 **Declares:** `MusicVoiceAdmission`, `MusicVoiceBudget`
 
 _The installed header (`include/ayther/engine/music_voice_budget.hpp`) carries the full documentation of every symbol._
+
+---
+
+<a id="enginenative_emulationhpp"></a>
+
+## engine/native_emulation.hpp
+
+**Declares:** `detail`, `NativeBackendInfo`, `NativeCandidate`, `NativeConfig`, `NativeControlItem`, `NativeControlTransaction`, `NativeDetection`, `NativeEmulation`, `NativeFrame`, `NativeFrameId`, `NativeInputAssignment`, `NativeInputFrame`, `NativeRegion`, `NativeResult`, `NativeSessionInfo`, `NativeSnapshot`, `NativeSnapshotInfo`, `TesseraBackend`
+
+_The installed header (`include/ayther/engine/native_emulation.hpp`) carries the full documentation of every symbol._
 
 ---
 

@@ -183,8 +183,44 @@ AytherSession &AytherSession::operator=(AytherSession &&) noexcept = default;
 
 Result<std::unique_ptr<AytherSession>>
 AytherSession::create(const Config &cfg) {
+  engine::NativeResult native_result;
+  return create(cfg, native_result);
+}
+
+Result<std::unique_ptr<AytherSession>>
+AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
+  native_result = {};
+  if (cfg.provider != EmulationProvider::libretro &&
+      cfg.provider != EmulationProvider::tessera_native) {
+    native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
+    return Error{ErrorCode::Unsupported, "Tessera: invalid provider selector"};
+  }
   std::unique_ptr<AytherSession> session(new AytherSession());
   Impl &im = *session->impl_;
+  if (cfg.provider == EmulationProvider::tessera_native) {
+    // Device presentation and real pack composition have separate contracts.
+    if (cfg.enable_audio || !cfg.pack_path.empty() || !cfg.patch_path.empty() ||
+        !cfg.core_options.empty() || !cfg.rom_path.empty() ||
+        cfg.audio_observer.on_fact || cfg.audio_observer.on_pcm ||
+        cfg.render_observer) {
+      native_result.code = static_cast<std::int32_t>(
+          engine::NativeStatus::unsupported_capability);
+      return Error{ErrorCode::Unsupported,
+                   "Tessera: use native PCM/originals; device, pack and legacy "
+                   "options are unavailable"};
+    }
+    native_result =
+        engine::NativeEmulation::create(cfg.native_config, im.native);
+    if (native_result.code != 0) {
+      return Error{native_result.code == -26 ? ErrorCode::Internal
+                                             : ErrorCode::Unsupported,
+                   "Tessera: native preparation failed (code " +
+                       std::to_string(native_result.code) + ")"};
+    }
+    im.native_result = native_result;
+    return session;
+  }
   im.qa_observer = cfg.audio_observer;
   im.render_observer = cfg.render_observer;
   if (im.qa_observer.on_fact) {
@@ -384,6 +420,10 @@ AytherSession::create(const Config &cfg) {
 // Content: the HD pack (hot-reloadable)
 // ---------------------------------------------------------------------------
 Result<void> AytherSession::set_pack(const std::string &pack_path) {
+  if (impl_->native)
+    return Result<void>::fail(
+        ErrorCode::Unsupported,
+        "Tessera: native pack composition is unavailable in this increment");
   Impl &im = *impl_;
   namespace fs = std::filesystem;
 
@@ -443,6 +483,10 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
 }
 
 Result<void> AytherSession::reload_pack() {
+  if (impl_->native)
+    return Result<void>::fail(
+        ErrorCode::Unsupported,
+        "Tessera: native pack composition is unavailable in this increment");
   if (impl_->pack.path().empty())
     return Result<void>::ok();
   return set_pack(impl_->pack.path());
@@ -454,6 +498,15 @@ bool AytherSession::has_pack() const noexcept { return impl_->pack.loaded(); }
 // Input
 // ---------------------------------------------------------------------------
 void AytherSession::set_input(int port, uint16_t buttons) noexcept {
+  if (impl_->native) {
+    // Native callers submit complete per-frame controls through the typed
+    // driver.
+    impl_->native_result = {};
+    impl_->native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    impl_->view.native_result = impl_->native_result;
+    return;
+  }
   impl_->runner.set_input(port, buttons);
   if (port == 0)
     impl_->recording.set_input(buttons);
@@ -462,8 +515,47 @@ void AytherSession::set_input(int port, uint16_t buttons) noexcept {
 // ---------------------------------------------------------------------------
 // Frame stepping — the deterministic pipeline (motor-owned).
 // ---------------------------------------------------------------------------
+engine::NativeEmulation *AytherSession::native_emulation() noexcept {
+  return impl_->native.get();
+}
+const engine::NativeEmulation *
+AytherSession::native_emulation() const noexcept {
+  return impl_->native.get();
+}
+
+const FrameView &AytherSession::native_frame() noexcept {
+  Impl &im = *impl_;
+  if (!im.native)
+    return im.view;
+  engine::NativeFrame original;
+  const auto result = im.native->original(original);
+  // A successful reset/close through the direct driver expires old originals.
+  im.view = {};
+  if (result.code == 0) {
+    im.view.fb_pixels = original.pixels.data();
+    im.view.fb_width = original.width;
+    im.view.fb_height = original.height;
+    im.view.fb_pitch = original.row_bytes;
+    im.view.fb_format = -1;
+    im.view.pixel_encoding = FramePixelEncoding::rgba8;
+    im.view.native_original = original;
+    im.view.frame_index = original.frame_id.frame;
+    im.frame_index = original.frame_id.frame;
+    im.view.native_original_reason = NativeOriginalReason::pack_not_integrated;
+  }
+  im.view.native_result = result;
+  return im.view;
+}
+
 const FrameView &AytherSession::step() {
   Impl &im = *impl_;
+  if (im.native) {
+    const auto &view = native_frame();
+    im.view.native_result = {};
+    im.view.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    return view;
+  }
   if (im.audio.production_limit().frozen)
     return im.view;
   im.replay_pos = -1; // el step en vivo mueve la máquina fuera del replay (R7d)
@@ -5497,16 +5589,30 @@ AytherSession::restore_visual_state(
 // Determinism: savestate round-trip
 // ---------------------------------------------------------------------------
 size_t AytherSession::serialize_size() const {
+  if (impl_->native)
+    return 0;
   return impl_->runner.serialize_size();
 }
 
 Result<void> AytherSession::serialize(std::vector<uint8_t> &out) const {
+  if (impl_->native) {
+    impl_->native_result = impl_->native->checkpoint(out);
+    return impl_->native_result.code == 0
+               ? Result<void>::ok()
+               : Result<void>::fail(ErrorCode::Unsupported,
+                                    "Tessera: checkpoint unavailable; use the "
+                                    "native result for details");
+  }
   return impl_->runner.serialize(out)
              ? Result<void>::ok()
              : Result<void>::fail(ErrorCode::Internal, "core serialize failed");
 }
 
 Result<void> AytherSession::unserialize(const std::vector<uint8_t> &in) {
+  if (impl_->native)
+    return Result<void>::fail(
+        ErrorCode::Unsupported,
+        "Tessera: use native restore_checkpoint with its matching input trace");
   const bool ok = impl_->runner.unserialize(in);
   if (ok) {
     impl_->rewind.clear();     // timeline branched — drop stale rewind states
@@ -5520,6 +5626,15 @@ Result<void> AytherSession::unserialize(const std::vector<uint8_t> &in) {
 
 void AytherSession::reset() {
   Impl &im = *impl_;
+  if (im.native) {
+    im.native_result = im.native->reset();
+    if (im.native_result.code == 0) {
+      im.view = {};
+      im.frame_index = 0;
+    }
+    im.view.native_result = im.native_result;
+    return;
+  }
   im.runner.reset();
   // E-2 (): las suscripciones NO se serializan y el core las limpia con
   // retro_reset — sin volver a pedirlas, todo lo que se observa por la ABI
@@ -10962,7 +11077,7 @@ std::vector<std::string> AytherSession::catalog_texture_assets() const {
   // Acetatos are textures too. Include both their base sheet and every
   // animation step in pack order; otherwise their first visible frame races
   // the asynchronous decode worker even after a successful pack prewarm.
-  const auto add_layer_asset = [&](const char(&asset)[256]) {
+  const auto add_layer_asset = [&](const char (&asset)[256]) {
     add_name(std::string(asset, ::strnlen(asset, sizeof(asset))));
   };
   for (const PackOverlay &overlay : im.overlays) {

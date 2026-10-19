@@ -31,13 +31,23 @@ function(ayther_configure_instrumentation)
         endif()
         list(JOIN _ayther_sanitizers "," _ayther_sanitizer_flags)
 
-        target_compile_options(ayther_instrumentation INTERFACE
-            "-fsanitize=${_ayther_sanitizer_flags}"
-            -fno-omit-frame-pointer
-            -fno-sanitize-recover=all)
-        target_link_options(ayther_instrumentation INTERFACE
-            "-fsanitize=${_ayther_sanitizer_flags}"
-            -fno-sanitize-recover=all)
+        if(MSVC)
+            # clang-cl forwards LLVM-only switches explicitly. CMake invokes the
+            # COFF linker directly; the installed native provider supplies its
+            # matching diagnostic runtime and thunk libraries.
+            target_compile_options(ayther_instrumentation INTERFACE
+                "-fsanitize=${_ayther_sanitizer_flags}" /Zi
+                /clang:-fno-omit-frame-pointer /clang:-fno-sanitize-recover=all)
+            target_link_options(ayther_instrumentation INTERFACE /INCREMENTAL:NO)
+        else()
+            target_compile_options(ayther_instrumentation INTERFACE
+                "-fsanitize=${_ayther_sanitizer_flags}"
+                -fno-omit-frame-pointer
+                -fno-sanitize-recover=all)
+            target_link_options(ayther_instrumentation INTERFACE
+                "-fsanitize=${_ayther_sanitizer_flags}"
+                -fno-sanitize-recover=all)
+        endif()
     endif()
 
     if(AYTHER_ENABLE_COVERAGE)

@@ -65,3 +65,4 @@ engine/music_live_recognition.hpp
 engine/music_position_recovery.hpp
 engine/pack.hpp
 engine/vulkan_interop.hpp
+engine/native_emulation.hpp
