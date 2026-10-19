@@ -746,3 +746,30 @@ if(AYTHER_ENABLE_TESSERA)
     set_tests_properties(ayther.integration.tessera_native_replay PROPERTIES
         TIMEOUT 240 RUN_SERIAL TRUE LABELS "engine;native;integration;replay;FX-01;phase2")
 endif()
+
+# Phase 3 reads the immutable Tessera evidence produced by the independent
+# Mega Drive runner. The path is supplied locally so CTest never downloads or
+# regenerates a corpus silently.
+if(AYTHER_ENABLE_TESSERA)
+    add_executable(ayther_tessera_checkpoint_test
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_checkpoint_test.cpp")
+    target_compile_features(ayther_tessera_checkpoint_test PRIVATE cxx_std_20)
+    target_compile_options(ayther_tessera_checkpoint_test PRIVATE /W4 /EHsc)
+    target_link_libraries(ayther_tessera_checkpoint_test PRIVATE
+        Ayther::engine Ayther::core ayther_test_support)
+    target_include_directories(ayther_tessera_checkpoint_test SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/nlohmann-json-3.12.0/include")
+    ayther_instrument_target(ayther_tessera_checkpoint_test)
+    tessera_copy_runtime_dependencies(ayther_tessera_checkpoint_test)
+    set(AYTHER_TESSERA_PHASE3_EVIDENCE_DIR "" CACHE PATH
+        "Completed local Tessera Mega Drive replay evidence")
+    if(EXISTS "${AYTHER_TESSERA_PHASE3_EVIDENCE_DIR}/summary.json")
+        add_test(NAME ayther.integration.tessera_checkpoint
+            COMMAND ayther_tessera_checkpoint_test
+                "${AYTHER_TESSERA_PHASE3_EVIDENCE_DIR}"
+                "${AYTHER_TESSERA_TEST_SOURCE_DIR}/tests/fixtures/ayther-engine-synthetic/ayther_synthetic.md")
+        set_tests_properties(ayther.integration.tessera_checkpoint PROPERTIES
+            TIMEOUT 1200 RUN_SERIAL TRUE
+            LABELS "engine;native;integration;checkpoint;FX-02;phase3")
+    endif()
+endif()

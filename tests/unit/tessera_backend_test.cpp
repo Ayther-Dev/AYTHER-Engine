@@ -291,8 +291,7 @@ TEST_CASE(
   REQUIRE(step(*emulation).code == 0);
 }
 
-TEST_CASE("native replay EOF and buffers retain public semantics and "
-          "unsupported capabilities") {
+TEST_CASE("native replay EOF, checkpoints and buffers retain public semantics") {
   const auto configuration = config();
   auto emulation = create(configuration);
   REQUIRE(emulation->bind_trace(trace(configuration, 2)).code == 0);
@@ -307,9 +306,20 @@ TEST_CASE("native replay EOF and buffers retain public semantics and "
   CHECK(info.frame_id.frame == 2);
   CHECK(info.pending_transaction == 7);
   Bytes checkpoint{1, 2, 3};
-  CHECK(emulation->checkpoint(checkpoint).code == -6);
-  CHECK(checkpoint == Bytes{1, 2, 3});
-  CHECK(emulation->restore_checkpoint({}, {}).code == -6);
+  if (info.capabilities & native::native_cap_checkpoint) {
+    CHECK(emulation->checkpoint(checkpoint).code == 0);
+    REQUIRE(checkpoint.size() > 64);
+    CHECK(std::equal(checkpoint.begin(), checkpoint.begin() + 8,
+                     std::string_view("TSCHK001").begin()));
+    CHECK(emulation->restore_checkpoint({}, {}).code == -21);
+  } else {
+    CHECK(emulation->checkpoint(checkpoint).code == -6);
+    CHECK(checkpoint == Bytes{1, 2, 3});
+    CHECK(emulation->restore_checkpoint({}, {}).code == -6);
+  }
+  CHECK(state(*emulation) == before);
+  REQUIRE(emulation->info(info).code == 0);
+  CHECK(info.pending_transaction == 7);
   REQUIRE(step(*emulation).code == 0);
   std::uint64_t required = 0, next = 0;
   CHECK(emulation->events(0, {}, required, next).code == -3);
