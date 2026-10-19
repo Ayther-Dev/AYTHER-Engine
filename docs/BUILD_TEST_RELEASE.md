@@ -496,13 +496,16 @@ entry then configures, links, and executes `tests/package_consumer/` from
 outside the producer tree. Windows builds only the VPX variant, a superset of
 `windows-native`, whose package the release still builds and consumes. Pull
 requests additionally validate that individual commits do not mix the closed
-Lab boundary with FOSS paths. A push to `main` reruns only the repository
-policy: `main` accepts a pull request only when its branch is up to date, so
-the merged tree is the one the pull request already validated.
+Lab boundary with FOSS paths. A push to `main` does not rebuild or retest:
+`main` accepts a pull request only when its branch is up to date, so the merged
+tree is the one the pull request already validated. There, and in a weekly
+scheduled run, the jobs that use vcpkg only configure (`WARM_ONLY`) so `main`
+keeps a vcpkg cache that every pull request can restore from its first push.
 
 Jobs that use vcpkg keep its built ports in the Actions cache
-(`VCPKG_BINARY_SOURCES` with the `files` provider); vcpkg checks every
-package's ABI hash, so an outdated archive is rebuilt, never linked.
+(`VCPKG_BINARY_SOURCES` with the `files` provider), one cache per job and
+preset because system headers such as X11 change what a port builds without
+changing its ABI hash; vcpkg still rebuilds an outdated archive.
 
 Further jobs run on every pull request. `Linux native ASan + UBSan` builds
 the complete engine with both sanitizers and runs the CPU CTests, uploading
