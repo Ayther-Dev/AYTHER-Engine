@@ -29,10 +29,21 @@ string(REGEX MATCHALL
     "name: (Windows|Linux) native( \\+ VPX)? \\+ package consumer"
     consumer_matrix_entries "${workflow_text}")
 list(LENGTH consumer_matrix_entries consumer_matrix_count)
-if(NOT consumer_matrix_count EQUAL 4)
+# Windows builds only the VPX variant in CI (a superset of the plain one); the
+# release builds and consumes the plain Windows package.
+if(NOT consumer_matrix_count EQUAL 3)
     message(FATAL_ERROR
-        "Engine CI must build and run four native package consumers; found ${consumer_matrix_count}")
+        "Engine CI must build and run three native package consumers (Linux, Linux + VPX, Windows + VPX); found ${consumer_matrix_count}")
 endif()
+foreach(entry IN ITEMS
+        "name: Linux native + package consumer"
+        "name: Linux native + VPX + package consumer"
+        "name: Windows native + VPX + package consumer")
+    string(FIND "${workflow_text}" "${entry}" position)
+    if(position EQUAL -1)
+        message(FATAL_ERROR "Engine CI omits '${entry}'")
+    endif()
+endforeach()
 
 string(FIND "${workflow_text}" "  native:" native_begin)
 string(FIND "${workflow_text}" "  required-ci:" required_begin)
