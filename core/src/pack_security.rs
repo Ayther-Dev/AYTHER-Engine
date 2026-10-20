@@ -316,9 +316,15 @@ mod tests {
 
         let total = (0..9).map(|index| EntryMetadata {
             path: match index {
-                0 => "assets/0", 1 => "assets/1", 2 => "assets/2",
-                3 => "assets/3", 4 => "assets/4", 5 => "assets/5",
-                6 => "assets/6", 7 => "assets/7", _ => "assets/8",
+                0 => "assets/0",
+                1 => "assets/1",
+                2 => "assets/2",
+                3 => "assets/3",
+                4 => "assets/4",
+                5 => "assets/5",
+                6 => "assets/6",
+                7 => "assets/7",
+                _ => "assets/8",
             },
             uncompressed_size: MAX_ENTRY_BYTES,
             compressed_size: MAX_ENTRY_BYTES,

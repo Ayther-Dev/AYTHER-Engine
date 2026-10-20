@@ -1229,17 +1229,27 @@ impl AyArchive {
             // Legacy resident packs were verified in full while opening.
             return true;
         };
-        let Ok(mut archive) = zip.lock() else { return false };
+        let Ok(mut archive) = zip.lock() else {
+            return false;
+        };
         let mut buffer = [0u8; 64 * 1024];
         for (name, expected) in index {
-            let Ok(mut entry) = archive.by_name(name) else { return false };
+            let Ok(mut entry) = archive.by_name(name) else {
+                return false;
+            };
             let mut digest = Sha256::new();
             let mut total = 0u64;
             loop {
-                let Ok(count) = entry.read(&mut buffer) else { return false };
-                if count == 0 { break; }
+                let Ok(count) = entry.read(&mut buffer) else {
+                    return false;
+                };
+                if count == 0 {
+                    break;
+                }
                 total += count as u64;
-                if total > expected.size { return false; }
+                if total > expected.size {
+                    return false;
+                }
                 digest.update(&buffer[..count]);
             }
             if total != expected.size || digest.finalize()[..] != expected.sha256 {

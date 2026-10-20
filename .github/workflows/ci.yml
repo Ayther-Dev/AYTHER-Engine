@@ -522,7 +522,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: Ayther-Dev/AYTHER-Tessera
-          ref: 006f4618845d01a9f14dcae94386119bf8bd492f
+          ref: c5b8a46cec3295b43735e4249fef0c114758853d
           path: build/tessera-source
           persist-credentials: false
 

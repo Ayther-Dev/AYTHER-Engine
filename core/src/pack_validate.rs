@@ -915,25 +915,40 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                 .map(|mut entry| entry.read_to_string(&mut source))
                 .is_err()
             {
-                r.error("tile.catalog_unreadable", format!("{catalog} cannot be read"));
+                r.error(
+                    "tile.catalog_unreadable",
+                    format!("{catalog} cannot be read"),
+                );
                 continue;
             }
             let Ok(document) = toml::from_str::<toml::Value>(&source) else {
                 continue; // catalog.malformed reports the syntax error above.
             };
             let Some(rules) = document.get("sub").and_then(toml::Value::as_array) else {
-                r.error("tile.rules_missing", format!("{catalog} declares no [[sub]] rules"));
+                r.error(
+                    "tile.rules_missing",
+                    format!("{catalog} declares no [[sub]] rules"),
+                );
                 continue;
             };
             for (index, rule) in rules.iter().enumerate() {
                 let hash = rule.get("hash").and_then(toml::Value::as_str).unwrap_or("");
                 let hash_digits = hash.strip_prefix("0x").unwrap_or("");
                 if hash_digits.is_empty() || u64::from_str_radix(hash_digits, 16).is_err() {
-                    r.error("tile.hash_invalid", format!("{catalog} [[sub]] #{index} has an invalid hash"));
+                    r.error(
+                        "tile.hash_invalid",
+                        format!("{catalog} [[sub]] #{index} has an invalid hash"),
+                    );
                 }
-                let asset = rule.get("asset").and_then(toml::Value::as_str).unwrap_or("");
+                let asset = rule
+                    .get("asset")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or("");
                 if validate_canonical_logical_path(asset).is_err() {
-                    r.error("tile.asset_path_invalid", format!("{catalog} [[sub]] #{index} has an invalid asset path"));
+                    r.error(
+                        "tile.asset_path_invalid",
+                        format!("{catalog} [[sub]] #{index} has an invalid asset path"),
+                    );
                     continue;
                 }
                 let entries: Vec<&String> = names
@@ -946,7 +961,10 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                 }
                 if entries.iter().any(|entry| {
                     let mut head = Vec::new();
-                    let read = zip.by_name(entry).map(|e| e.take(64).read_to_end(&mut head)).is_ok();
+                    let read = zip
+                        .by_name(entry)
+                        .map(|e| e.take(64).read_to_end(&mut head))
+                        .is_ok();
                     !read || !image_header_is_readable(entry, &head)
                 }) {
                     r.error("tile.asset_unreadable", format!("{catalog} [[sub]] #{index} references '{asset}', which is not a readable image"));
@@ -1123,16 +1141,22 @@ platform  = "megadrive"
 
     #[test]
     fn crc_game_id_must_match_loaded_rom() {
-        let p = bake("wrong_game_id", &OK_MANIFEST.replace(
-            "game_id    = \"crc32:7b905383\"",
-            "game_id    = \"crc32:00000000\"",
-        ));
+        let p = bake(
+            "wrong_game_id",
+            &OK_MANIFEST.replace(
+                "game_id    = \"crc32:7b905383\"",
+                "game_id    = \"crc32:00000000\"",
+            ),
+        );
         let ctx = SessionCtx {
             rom_crc32: Some(0x7b905383),
             ..Default::default()
         };
         let r = validate_path(&p, &ctx);
-        assert!(r.errors().any(|finding| finding.code == "rom.game_id_mismatch"));
+        assert!(
+            r.errors()
+                .any(|finding| finding.code == "rom.game_id_mismatch")
+        );
     }
 
     /// Rejects a pack authored for a different game.
@@ -1592,7 +1616,8 @@ supported = ["NTSC"]
         let image = png_1x1();
         let report_for = |name: &str, rules: &str| {
             let path = pack(
-                directory.path(), name,
+                directory.path(),
+                name,
                 &[
                     ("manifest.toml", VALID_MANIFEST.as_bytes()),
                     ("assets/ok.png", &image),
@@ -1603,15 +1628,27 @@ supported = ["NTSC"]
             codes(&validate_path(&path, &SessionCtx::default()))
         };
         let good = report_for("tile_good.ay", "[[sub]]\nhash='0x01'\nasset='ok.png'\n");
-        assert!(!good.iter().any(|code| code.starts_with("tile.")), "{good:?}");
+        assert!(
+            !good.iter().any(|code| code.starts_with("tile.")),
+            "{good:?}"
+        );
         let invalid_hash = report_for("tile_hash.ay", "[[sub]]\nhash='bogus'\nasset='ok.png'\n");
-        assert!(invalid_hash.contains(&"tile.hash_invalid"), "{invalid_hash:?}");
+        assert!(
+            invalid_hash.contains(&"tile.hash_invalid"),
+            "{invalid_hash:?}"
+        );
         let escaped = report_for("tile_path.ay", "[[sub]]\nhash='0x01'\nasset='../ok.png'\n");
         assert!(escaped.contains(&"tile.asset_path_invalid"), "{escaped:?}");
-        let missing = report_for("tile_missing.ay", "[[sub]]\nhash='0x01'\nasset='missing.png'\n");
+        let missing = report_for(
+            "tile_missing.ay",
+            "[[sub]]\nhash='0x01'\nasset='missing.png'\n",
+        );
         assert!(missing.contains(&"tile.asset_missing"), "{missing:?}");
         let unreadable = report_for("tile_bad.ay", "[[sub]]\nhash='0x01'\nasset='bad.png'\n");
-        assert!(unreadable.contains(&"tile.asset_unreadable"), "{unreadable:?}");
+        assert!(
+            unreadable.contains(&"tile.asset_unreadable"),
+            "{unreadable:?}"
+        );
     }
 
     /// Validates a pack whose `pose_substitutions.toml` is `poses`, with
