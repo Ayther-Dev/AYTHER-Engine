@@ -251,6 +251,31 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   unsigned pack is refused, the development key is refused in an optimized
   build, and `Config` had no way to name a production trust registry.
 
+## [0.1.0-rc.20] - 2026-10-20
+
+A Panorama reaches the screen edge where the camera stops between two cells.
+
+### Fixed
+
+- A pan that ended with the camera resting on a fine offset never stitched
+  its last column. The background stitcher read whole cells only, while the
+  screen showed part of one more column (and of one more row with a vertical
+  fine offset); nobody saw that column again, so "Go to Turtle Town" (Golden
+  Axe) came out 191 columns wide with 192 on screen, and its HD strip stopped
+  short of the screen edge. A resting camera now has its partial column and
+  row stitched, so a new capture can be one column or row larger than an
+  older capture of the same stretch. A camera left of the origin now starts
+  at column -1 instead of 0.
+- `define_panorama` and pack loading kept the cells outside the Panorama's
+  rectangle. The content index includes the partial edge column, so such a
+  cell was claimed (its original tile hidden) where the HD quad, which covers
+  exactly the rectangle, drew nothing, and the backdrop showed through. Cells
+  outside the rectangle are ignored now; `w_cells` or `h_cells` 0 still means
+  no rectangle.
+- `replay_seek` logged every call at Warning level, a diagnostic left behind:
+  a Panorama sweep wrote one line per frame (9,140 for "Go to Turtle Town").
+  It is a Debug line now.
+
 ## [0.1.0-rc.19] - 2026-10-19
 
 HD music follows the game when it restarts the same music.

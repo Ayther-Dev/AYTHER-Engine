@@ -430,6 +430,9 @@ struct AytherSession::Impl {
   std::vector<uint16_t>
       bg_prev_grid[2]; // codes visibles del frame previo (A/B)
   int32_t bg_prev_col[2] = {}, bg_prev_row[2] = {};
+  // La cámara del frame previo AL PÍXEL: el borde parcial sólo se lee con
+  // la cámara en reposo (bg_capture_window.h); quieta por celdas no basta.
+  int64_t bg_prev_camx[2] = {}, bg_prev_camy[2] = {};
   bool bg_prev_ok[2] = {};
   //  EM-8.0: la cámara ABSOLUTA de cada banda de parallax, por plano. El
   // plano B lleva una entrada de Hscroll por banda, así que «columna de nivel»

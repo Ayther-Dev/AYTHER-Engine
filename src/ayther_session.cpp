@@ -48,6 +48,7 @@
 #include "ayther_video.h"           // VideoClip: el paso-video ()
 #include "libretro_host/retro_runner.h" // RetroRunner (emulator host)
 #include "rewind_buffer.h"              // RewindBuffer (R6)
+#include "session/bg_capture_window.h"
 #include "session/emulation_observer.h"
 #include "session/frame_composability.h"
 #include "session/native_presentation.h"
@@ -2857,8 +2858,10 @@ const FrameView &AytherSession::produce_frame() {
               const L layers[2] = {{0, baseA, absxA, absyA},
                                    {1, baseB, absxB, absyB}};
               for (const L &l : layers) {
-                const int cam_col = (int)(l.camx / 8),
-                          cam_row = (int)(l.camy / 8);
+                // floor y no truncado: una cámara en −3 está en la celda −1
+                // (bg_capture_window.h).
+                const int cam_col = (int)ayther::session::floor_div8(l.camx),
+                          cam_row = (int)ayther::session::floor_div8(l.camy);
                 // Saltar las últimas columnas MIENTRAS LA CÁMARA SE MUEVE: el
                 // juego streamea la columna entrante 1–2 celdas antes de que
                 // esté en pantalla — leer el borde en movimiento toma tiles
@@ -2866,10 +2869,14 @@ const FrameView &AytherSession::produce_frame() {
                 // borde se lee entero — sin esto, el extremo FINAL del paneo
                 // perdía sus últimas columnas para siempre (el ojo de la
                 // tortuga de GA, reporte 2026-07-30).
+                bool pixel_static = false;
                 if (l.plane < 2) {
                   const bool cam_moved = !im.bg_prev_ok[l.plane] ||
                                          im.bg_prev_col[l.plane] != cam_col ||
                                          im.bg_prev_row[l.plane] != cam_row;
+                  pixel_static = !cam_moved &&
+                                 im.bg_prev_camx[l.plane] == l.camx &&
+                                 im.bg_prev_camy[l.plane] == l.camy;
                   im.bg_static_frames[l.plane] =
                       cam_moved ? 0 : im.bg_static_frames[l.plane] + 1;
                 }
@@ -2948,6 +2955,8 @@ const FrameView &AytherSession::produce_frame() {
                   im.bg_prev_grid[l.plane] = grid;
                   im.bg_prev_col[l.plane] = cam_col;
                   im.bg_prev_row[l.plane] = cam_row;
+                  im.bg_prev_camx[l.plane] = l.camx;
+                  im.bg_prev_camy[l.plane] = l.camy;
                   im.bg_prev_ok[l.plane] = true;
                 }
                 // 3) Observar con la coordenada de NIVEL = registros +
@@ -2987,6 +2996,46 @@ const FrameView &AytherSession::produce_frame() {
                                  : 0),
                         lv_row + scy, code);
                   }
+                // 4) El BORDE PARCIAL (2026-10-19): con la cámara en reposo
+                // sobre un desplazamiento fino, la pantalla muestra parte de
+                // la columna cam_col+scr_cols (y de la fila cam_row+28) y la
+                // grilla no la lee. Al final del paneo nadie la vuelve a
+                // ver: «Go to Turtle Town» (GA) quedaba en 191 columnas con
+                // 192 en pantalla, y el quad HD terminaba antes del borde.
+                // El borde se observa pero NO entra en `grid` ni en
+                // `bg_prev_grid`: la detección de desplazamiento de
+                // contenido compara exactamente lo mismo que antes.
+                if (l.plane < 2) {
+                  const ayther::session::CaptureEdges edge =
+                      ayther::session::capture_edges(
+                          {l.camx, l.camy, im.bg_static_frames[l.plane] >= 1,
+                           pixel_static, wc, hc, scr_cols, scr_rows});
+                  const auto observe_edge = [&](int scx, int scy,
+                                                int band_row) {
+                    const int ntc = (((cam_col + scx) % wc) + wc) % wc;
+                    const int ntr = (((cam_row + scy) % hc) + hc) % hc;
+                    const uint16_t wd = (uint16_t)rd16(
+                        l.base + (uint32_t)(ntr * wc + ntc) * 2u);
+                    if ((wd & 0x7FF) == 0)
+                      return;
+                    ayther_bg_stitcher_observe(
+                        im.bg_st.get(), l.plane,
+                        lv_col + scx +
+                            im.bg_bands[l.plane].offset_from_top(band_row),
+                        lv_row + scy, (uint16_t)(wd & 0x7FFF));
+                  };
+                  // La fila de borde no tiene banda propia: usa la de la
+                  // última fila (offset_from_top fuera de rango no vale).
+                  if (edge.column)
+                    for (int scy = 0; scy < grows; ++scy)
+                      observe_edge(scr_cols, scy, scy);
+                  if (edge.row) {
+                    for (int scx = 0; scx < gcols; ++scx)
+                      observe_edge(scx, grows, grows - 1);
+                    if (edge.column)
+                      observe_edge(scr_cols, grows, grows - 1);
+                  }
+                }
                 // Guardar la cámara de ESTE plano (ya con el offset de
                 // contenido: bg_hash y la def de la Panorámica tienen que
                 // vivir en el MISMO espacio de nivel que el stitcher) para
@@ -7012,17 +7061,34 @@ AytherSession::Impl::build_panorama(uint8_t plane, int32_t ox, int32_t oy,
   d.w_cells = w;
   d.h_cells = h;
   d.asset = asset;
-  d.total_cells = n;
+  // Sólo las celdas DENTRO del rectángulo (2026-10-19). El índice de
+  // contenido incluye la columna parcial del borde aunque el stitcher no la
+  // cosiera: «Go to Turtle Town» (GA) tenía 27 celdas en lx = 191 con un
+  // rectángulo de 191 columnas. El reclamo ocultaba esos tiles originales y
+  // el quad HD, que mide w_cells·8, no llegaba a cubrirlos: se veía el fondo.
+  // Una celda que el quad no dibuja no se reclama. w o h en 0 = sin
+  // rectángulo (lo usa tools/panorama_smoke).
+  const bool has_rect = w > 0 && h > 0;
+  const auto inside = [&](const AytherSession::PanoramaCell &c) {
+    return !has_rect ||
+           ((int64_t)c.lx >= ox && (int64_t)c.lx < (int64_t)ox + w &&
+            (int64_t)c.ly >= oy && (int64_t)c.ly < (int64_t)oy + h);
+  };
   // Rareza: se cuenta cuántas veces aparece cada hash en la tira y sólo los
   // POCO frecuentes entran al índice de anclaje. Un tile de cielo repetido
   // 500 veces no dice dónde está la cámara y multiplica el costo del voto.
   std::unordered_map<uint64_t, uint32_t> freq;
   freq.reserve(n);
   for (uint32_t i = 0; i < n; ++i)
-    ++freq[cells[i].hash];
-  d.by_pos.reserve(n);
+    if (inside(cells[i])) {
+      ++freq[cells[i].hash];
+      ++d.total_cells;
+    }
+  d.by_pos.reserve(d.total_cells);
   for (uint32_t i = 0; i < n; ++i) {
     const AytherSession::PanoramaCell &c = cells[i];
+    if (!inside(c))
+      continue;
     d.by_pos[pano_key(c.lx, c.ly)].push_back(c.hash); // la tira ENTERA
     if (freq[c.hash] > kPanoramaRare)
       continue;
@@ -7890,9 +7956,9 @@ uint32_t AytherSession::replay_start_frame(const AytherRecording &rec,
 const FrameView *AytherSession::replay_seek(const AytherRecording &rec,
                                             uint32_t frame, bool quiet) {
   Impl &im = *impl_;
-  ayther::log::write(ayther::log::Severity::Warning, "debug",
-                     "replay_seek_f_pos", "replay_seek f=%u pos=%d quiet=%d",
-                     frame, im.replay_pos, (int)quiet);
+  ayther::log::write(ayther::log::Severity::Debug, "debug", "replay_seek_f_pos",
+                     "replay_seek f=%u pos=%d quiet=%d", frame, im.replay_pos,
+                     (int)quiet);
   if (rec.empty())
     return nullptr;
   im.chunk.active = false; // un seek directo supersede cualquier seek en chunks
@@ -10617,6 +10683,8 @@ void AytherSession::bg_capture(bool on) {
     for (int p = 0; p < 2; ++p) {
       im.bg_prev_grid[p].clear();
       im.bg_prev_ok[p] = false;
+      im.bg_prev_camx[p] = 0;
+      im.bg_prev_camy[p] = 0;
       im.bg_static_frames[p] = 0;
     }
   }

@@ -174,6 +174,25 @@ constexpr uint16_t kOneShotLine = 120;
 /// AYTHER_RASTER_REASON_REG of the forked core: a register written in
 /// mid-screen.
 constexpr uint16_t kRasterReasonReg = 1u << 0;
+
+// ---- Pan scenario (Fondos, 2026-10-19) -------------------------------------
+// A ROM that starts with this tag pans plane A over a level wider than its
+// nametable, one pixel per frame, and streams every column into the nametable
+// two cells before it is on screen, the way a game does. The byte after the
+// tag picks where the pan rests: on a fine offset (the screen shows part of
+// one more column), on a cell boundary, or 3 px left of the origin.
+// tests/integration/bg_partial_edge_session_test.cpp uses the same values.
+constexpr char kPanScenarioTag[] = "AYTHER-PAN-SCENARIO";
+bool g_pan_scenario = false;
+uint8_t g_pan_variant = 0;
+constexpr uint64_t kPanStartFrame = 8; // the camera rests at 0 until then
+constexpr int kPanRestFine = 197;      // variant 0: 24 * 8 + 5
+constexpr int kPanRestAligned = 200;   // variant 1: 25 * 8
+constexpr int kPanRestLeft = -3;       // variant 2
+constexpr int kPanFirstCol = -2;       // level columns -2..59
+constexpr int kPanCols = 62;
+constexpr int kPanRows = 24; // the visible lines; rows 24.. stay empty
+constexpr int kPanLead = 2;  // columns streamed ahead of the screen
 std::vector<uint16_t> g_framebuffer(kWidth *kHeight, 0);
 std::vector<int16_t> g_audio(kSamplesPerFrame * 2, 0);
 
@@ -226,6 +245,10 @@ void reset_state(bool clear_subscriptions) {
   g_display_scenario = g_rom.size() >= sizeof(kDisplayScenarioTag) - 1 &&
                        std::memcmp(g_rom.data(), kDisplayScenarioTag,
                                    sizeof(kDisplayScenarioTag) - 1) == 0;
+  g_pan_scenario = g_rom.size() >= sizeof(kPanScenarioTag) &&
+                   std::memcmp(g_rom.data(), kPanScenarioTag,
+                               sizeof(kPanScenarioTag) - 1) == 0;
+  g_pan_variant = g_pan_scenario ? g_rom[sizeof(kPanScenarioTag) - 1] : 0;
   g_empty_abi_sprites_scenario =
       g_rom.size() >= sizeof(kEmptyAbiSpritesScenarioTag) - 1 &&
       std::memcmp(g_rom.data(), kEmptyAbiSpritesScenarioTag,
@@ -269,6 +292,24 @@ void reset_state(bool clear_subscriptions) {
         g_state.vram[at] = static_cast<uint8_t>(word & 0xFF);
         g_state.vram[at + 1] = static_cast<uint8_t>(word >> 8);
       }
+    for (size_t i = 2; i < 32; i += 2) {
+      const uint16_t colour = static_cast<uint16_t>((i * 0x111) & 0x0EEE);
+      g_state.cram[i] = static_cast<uint8_t>(colour & 0xFF);
+      g_state.cram[i + 1] = static_cast<uint8_t>(colour >> 8);
+    }
+  }
+  if (g_pan_scenario) {
+    // The display scenario's VDP: H32, plane A at 0xC000 (64x32 cells),
+    // hscroll at 0xFC00 for the whole screen, no window.
+    const uint8_t regs[24] = {0x04, 0x74, 0x30, 0x3C, 0x07, 0x6C, 0x00, 0x00,
+                              0x00, 0x00, 0xFF, 0x00, 0x00, 0x3F, 0x00, 0x02,
+                              0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    std::memcpy(g_state.vdp_regs, regs, sizeof(regs));
+    // One distinct pattern per level cell, so every cell is its own hash.
+    for (uint32_t p = 1; p <= kPanCols * kPanRows; ++p)
+      for (uint32_t b = 0; b < kPatternBytes; ++b)
+        g_state.vram[p * kPatternBytes + b] = static_cast<uint8_t>(
+            (p * 29u + b * 11u + (p >> 2) + (b >> 3) * p) | 0x11u);
     for (size_t i = 2; i < 32; i += 2) {
       const uint16_t colour = static_cast<uint16_t>((i * 0x111) & 0x0EEE);
       g_state.cram[i] = static_cast<uint8_t>(colour & 0xFF);
@@ -432,7 +473,43 @@ void advance_frame() {
     }
   }
 
-  if (subscribed(AYTHER_SUB_VDP_MEMORY) && !g_display_scenario) {
+  if (g_pan_scenario) {
+    const int rest = g_pan_variant == 1   ? kPanRestAligned
+                     : g_pan_variant == 2 ? kPanRestLeft
+                                          : kPanRestFine;
+    const int moved = g_state.frame < kPanStartFrame
+                          ? 0
+                          : static_cast<int>(std::min<uint64_t>(
+                                g_state.frame - kPanStartFrame, 4096));
+    const int cam_x =
+        rest >= 0 ? std::min(moved, rest) : std::max(-moved, rest);
+    const auto write_word = [](size_t at, uint16_t word) {
+      const uint8_t lo = static_cast<uint8_t>(word & 0xFF);
+      const uint8_t hi = static_cast<uint8_t>(word >> 8);
+      if (g_state.vram[at] != lo || g_state.vram[at + 1] != hi) {
+        g_state.vram[at] = lo;
+        g_state.vram[at + 1] = hi;
+        g_state.dirty_patterns[at / kPatternBytes] = 1;
+      }
+    };
+    // Plane A's H for line 0 (the whole screen): the camera, negated.
+    write_word(0xFC00, static_cast<uint16_t>((-cam_x) & 0x3FF));
+    const int col0 = cam_x >= 0 ? cam_x / 8 : -((-cam_x + 7) / 8);
+    for (int lc = col0 - 1; lc <= col0 + 32 + kPanLead; ++lc) {
+      const int ntc = ((lc % 64) + 64) % 64;
+      const bool in_level = lc >= kPanFirstCol && lc < kPanFirstCol + kPanCols;
+      for (int ly = 0; ly < kPanRows; ++ly) {
+        const uint16_t word =
+            in_level
+                ? static_cast<uint16_t>(1 + ly * kPanCols + (lc - kPanFirstCol))
+                : uint16_t{0};
+        write_word(0xC000 + static_cast<size_t>(ly * 64 + ntc) * 2, word);
+      }
+    }
+  }
+
+  if (subscribed(AYTHER_SUB_VDP_MEMORY) && !g_display_scenario &&
+      !g_pan_scenario) {
     for (unsigned i = 0; i < 32; ++i) {
       const uint64_t value = next_random();
       const size_t offset = static_cast<size_t>(value % kVramBytes);

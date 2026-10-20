@@ -7,6 +7,7 @@ foreach(_source IN ITEMS
         animation_phase_test.cpp
         audio_bus_balance_test.cpp
         band_carry_test.cpp
+        bg_capture_window_test.cpp
         capabilities_test.cpp
         audio_fade_test.cpp
         audio_match_rule_test.cpp

@@ -1,50 +1,53 @@
 # Current release gate: go / no-go decision
 
-**Pre-release decision: GO for `v0.1.0-rc.19`.**
+**Pre-release decision: GO for `v0.1.0-rc.20`.**
 
 **Stable-release decision: NO-GO for `v0.1.0`.**
 
-**Decision date:** 2026-10-19
+**Decision date:** 2026-10-20
 
-**Evidence cutoff:** 2026-10-19T21:00:00-03:00
+**Evidence cutoff:** 2026-10-20T12:00:00-03:00
 
 **Candidate identity:** the commit targeted by the annotated tag
-`v0.1.0-rc.19`. The tag object records the exact candidate SHA and is the
+`v0.1.0-rc.20`. The tag object records the exact candidate SHA and is the
 authoritative binding between this decision and the immutable source revision.
 
 **Evidence baseline before the decision record:**
-`dd6df45` (`main` after merging pull requests #43 and #44, on top of
-`79c47fe`, the published candidate `v0.1.0-rc.18`).
+`5db91f1` (`main` after merging pull request #46, on top of `6f272c8`, the
+published candidate `v0.1.0-rc.19`).
 
 **Decider:** the sole maintainer, operating under
 [GOV-2026-001](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review)
 
-This record supersedes the operational GO for `v0.1.0-rc.18`, which was
+This record supersedes the operational GO for `v0.1.0-rc.19`, which was
 published successfully as a pre-release. The earlier decisions remain
 immutable historical snapshots in this file's history and in
 [RELEASE_GO_NO_GO.md](RELEASE_GO_NO_GO.md).
 
 ## Why a new candidate
 
-The HD music of Golden Axe drops to the original sound when the game restarts
-the same music: on entering the selection screen the game cuts every voice and
-starts "The Battle" intro again, but the Engine kept the title's HD intro open,
-let it run out two seconds later and left the original playing until the loop
-anchored (15.2 to 22.9 s of the spec 006 power-on timeline). Since `rc.18`,
-`main` gained:
+The HD Panorama of "Go to Turtle Town" (Golden Axe) stops short of the screen
+edge: at the end of the pan a strip of the backdrop shows through. The camera
+rests on a fine offset there, and the background stitcher read whole cells
+only, so the last column on screen was never stitched (191 columns where the
+screen shows 192) while the content index still had cells in it; those cells
+were claimed, hiding the original tiles, and the HD quad, which covers
+exactly the stored rectangle, drew nothing over them. Since `rc.19`, `main`
+gained:
 
-- pull request #44: Sequence anchoring Rule 6 also re-anchors the open
-  exclusive Sequence when none of its voices is sounding and its own opening
-  arrives, so the HD restarts from zero with the game;
-- pull request #43: a cheaper CI (vcpkg binary cache kept warm on `main`, one
-  sanitizer job, one fuzz job, Windows CI builds only the VPX variant, a push
-  to `main` no longer rebuilds). No product change.
+- pull request #46: a resting camera has its partial column and row
+  stitched (a new capture can be one column or row larger than an older one
+  of the same stretch, and a camera left of the origin starts at column -1);
+  `define_panorama` and pack loading ignore the cells outside the Panorama's
+  rectangle, which also protects packs baked before the fix; the per-seek
+  `replay_seek` diagnostic moves from Warning to Debug.
 
 ## Decision scope
 
-The GO authorizes publishing `v0.1.0-rc.19` as a **pre-release candidate** so
-that AYTHER Runtime and AYTHER Play CE can lock the Engine with the fix. It
-does not authorize publishing the stable `v0.1.0` release.
+The GO authorizes publishing `v0.1.0-rc.20` as a **pre-release candidate** so
+that AYTHER Lab can lock the Engine that stitches the partial edge and
+recapture its Panoramas. It does not authorize publishing the stable `v0.1.0`
+release.
 
 Stable remains NO-GO because supported-release blockers and the required
 rollback rehearsal are not yet closed.
@@ -53,16 +56,16 @@ rollback rehearsal are not yet closed.
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.19` passes for prerelease `rc.19` of `0.1.0`; every surface keeps the core `0.1.0`, as in `rc.11` to `rc.18` |
-| Required CI on the changes | **Pass** | [Pull request #44](https://github.com/Ayther-Dev/AYTHER-Engine/pull/44): 18 checks green on head `a6a4a3f` ([CI](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/39312930533)). [Pull request #43](https://github.com/Ayther-Dev/AYTHER-Engine/pull/43): 18 checks green on head `7624feb`. Both include the C++ coverage gate, ASan + UBSan, fuzz smoke, clang-format 18, clang-tidy, `cargo audit` and CodeQL; the opt-in GPU job was skipped |
-| Required CI on the merged baseline | **Pass by construction** | Since #43, a push to `main` only configures (it keeps the vcpkg cache) and does not rebuild or retest. `Protect main` requires an up-to-date branch, so `dd6df45` is the tree pull request #44 validated; the release workflow builds and tests the four artifacts again from the tag |
+| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.20` passes for prerelease `rc.20` of `0.1.0`; every surface keeps the core `0.1.0`, as in `rc.11` to `rc.19` |
+| Required CI on the changes | **Pass** | [Pull request #46](https://github.com/Ayther-Dev/AYTHER-Engine/pull/46): 18 checks green on head `f2243cf` ([CI](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/39359417249)), including the C++ coverage gate, ASan + UBSan, fuzz smoke, clang-format 18, clang-tidy, `cargo audit` and CodeQL; the opt-in GPU job was skipped |
+| Required CI on the merged baseline | **Pass by construction** | A push to `main` only configures (it keeps the vcpkg cache) and does not rebuild or retest. `Protect main` requires an up-to-date branch, so `5db91f1` is the tree pull request #46 validated; the release workflow builds and tests the four artifacts again from the tag |
 | Open code-scanning findings | **Pass** | GitHub returned no open code-scanning alerts at the evidence cutoff |
-| Dependency advisories | **Pass** | `cargo audit --deny warnings` passed on `Cargo.lock` and `fuzz/Cargo.lock` in the CI of #44; no dependency changed since `rc.18` |
-| The changes have tests | **Pass** | `tests/unit/audio_seq_anchor_test.cpp`: the open Intro re-anchors at its own opening without live voices, and a sustained voice keeps its recurring hi-hat internal. Locally on the candidate sources: the 92 audio CTests of the `windows-release-engine-vpx` build |
-| Consumer integration | **Pass** | AYTHER Runtime built against these sources (`out/build/windows-qa-local`) replays the spec 006 TL-010 timeline of Golden Axe: the Intro re-anchors at f799 with `restart same_key_same_asset`, ends at f1374 exactly where the Loop anchors, no other re-anchor; the maintainer confirmed by ear that the replay sounds right |
-| ABI and package surface | **Pass, unchanged** | No public header, flat C ABI (revision `8`), recording format (`.arp` v10) or package change since `rc.18` |
-| `rc.18` release outcome | **Pass** | Published 2026-10-18 as [pre-release `v0.1.0-rc.18`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.18) |
-| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.19` did not exist at the evidence cutoff |
+| Dependency advisories | **Pass** | `cargo audit --deny warnings` passed on `Cargo.lock` and `fuzz/Cargo.lock` in the CI of #46; no dependency changed since `rc.19` |
+| The changes have tests | **Pass** | `tests/unit/bg_capture_window_test.cpp` (the edge rule) and `tests/integration/bg_partial_edge_session_test.cpp` on the new `AYTHER-PAN-SCENARIO` of `tools/test_core`: a resting fine offset stitches the full width, aligned and moving captures are unchanged, a pan left of the origin starts at -1, and cells outside the rectangle are not claimed; without the fix exactly four of its checks fail, among them a strip one column short as in Golden Axe. Locally on the candidate sources: `ctest --preset windows-native` 214/214 (4 skipped by environment), `tools/gen_api_reference.ps1 -Check` and `tools/check_doc_references.ps1` clean |
+| Consumer integration | **Pass** | AYTHER Lab `feat/pano-export-progress` drives "Recapturar en su sitio" and the Panorama export end to end over MCP on a copy of the Golden Axe QA project (17/17 checks against `rc.19`); its re-run against these sources, where "Go to Turtle Town" grows to 192 columns, is the Lab's lock gate |
+| ABI and package surface | **Pass, unchanged** | No public header declaration, flat C ABI (revision `8`), header inventory, recording format (`.arp` v10) or package change since `rc.19`; `ayther_session.h` changed in comments only |
+| `rc.19` release outcome | **Pass** | Published 2026-10-19 as [pre-release `v0.1.0-rc.19`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.19) |
+| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.20` did not exist at the evidence cutoff |
 | Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment requires the maintainer's approval |
 
 The final candidate commit is the merge result containing this record. Before
@@ -108,21 +111,22 @@ If publication or post-publication verification exposes a defect, follow
 evidence, withdraw affected release assets as documented, notify consumers,
 and publish a fix-forward candidate under a new version.
 
-After publication, AYTHER Runtime moves its Engine and QA Engine locks to this
-candidate and AYTHER Play CE picks up that Runtime, so the music of Golden Axe
-plays the restarted intro in HD; AYTHER Lab moves its lock as well, before the
-stable `v0.1.0` gate is re-evaluated.
+After publication, AYTHER Lab moves its Engine lock to this candidate so that
+"Recapturar en su sitio" stitches the full Panorama. A pack baked from the
+recaptured strip draws without the strip in the current Runtime; the Runtime
+picks up the rectangle guard with its next lock, before the stable `v0.1.0`
+gate is re-evaluated.
 
 ## Reproducing the pre-tag checks
 
 ```text
 git rev-parse main
-pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.19
+pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.20
 gh run list --branch main --limit 12
 gh api 'repos/Ayther-Dev/AYTHER-Engine/code-scanning/alerts?state=open'
 gh api repos/Ayther-Dev/AYTHER-Engine/environments/release
 gh api repos/Ayther-Dev/AYTHER-Engine/rulesets
-gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.19
+gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.20
 ```
 
 Ruleset identifiers are not treated as stable evidence. Enumerate the active
