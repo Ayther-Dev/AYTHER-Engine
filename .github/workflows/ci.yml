@@ -637,7 +637,7 @@ jobs:
           cmake --preset ${{ matrix.preset }} @nativeArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($env:TESSERA_PREFIX -and '${{ matrix.preset }}' -eq 'windows-native-vpx') {
-            $registered = ctest --test-dir 'build/windows-native' -N `
+            $registered = ctest --test-dir "build/${{ matrix.preset }}" -N `
               -R '^ayther.integration.tessera_checkpoint$'
             if ($LASTEXITCODE -ne 0 -or ($registered -join [Environment]::NewLine) -notmatch 'Total Tests: 1') {
               throw 'Native checkpoint CTest was omitted after fixture generation.'
