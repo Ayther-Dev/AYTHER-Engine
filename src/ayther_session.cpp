@@ -51,6 +51,7 @@
 #include "session/bg_capture_window.h"
 #include "session/emulation_observer.h"
 #include "session/frame_composability.h"
+#include "session/native_presentation.h"
 #include "session/pack_runtime.h"
 #include "session/parsed_sprite_join.h"
 #include "session/plane_bands.h"
@@ -168,6 +169,16 @@ inline uint32_t chan_bit(uint8_t chip, uint8_t channel) {
     return static_cast<uint32_t>(1u << (10 + channel)); // PCM 0-7
   return 0;
 }
+
+uint32_t content_crc32(std::span<const uint8_t> bytes) noexcept {
+  uint32_t crc = 0xFFFFFFFFU;
+  for (const auto byte : bytes) {
+    crc ^= byte;
+    for (unsigned bit = 0; bit < 8; ++bit)
+      crc = (crc >> 1) ^ ((crc & 1U) != 0 ? 0xEDB88320U : 0U);
+  }
+  return ~crc;
+}
 } // namespace
 
 // Private state and cohesive runtime helpers live in a dedicated implementation
@@ -184,8 +195,54 @@ AytherSession &AytherSession::operator=(AytherSession &&) noexcept = default;
 
 Result<std::unique_ptr<AytherSession>>
 AytherSession::create(const Config &cfg) {
+  engine::NativeResult native_result;
+  return create(cfg, native_result);
+}
+
+Result<std::unique_ptr<AytherSession>>
+AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
+  native_result = {};
+  if (cfg.provider != EmulationProvider::libretro &&
+      cfg.provider != EmulationProvider::tessera_native) {
+    native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
+    return Error{ErrorCode::Unsupported, "Tessera: invalid provider selector"};
+  }
   std::unique_ptr<AytherSession> session(new AytherSession());
   Impl &im = *session->impl_;
+  if (cfg.provider == EmulationProvider::tessera_native) {
+    // Device presentation and real pack composition have separate contracts.
+    if (cfg.enable_audio || !cfg.patch_path.empty() ||
+        !cfg.core_options.empty() || !cfg.rom_path.empty() ||
+        cfg.audio_observer.on_fact || cfg.audio_observer.on_pcm ||
+        cfg.render_observer) {
+      native_result.code = static_cast<std::int32_t>(
+          engine::NativeStatus::unsupported_capability);
+      return Error{ErrorCode::Unsupported,
+                   "Tessera: use native PCM/originals; device and legacy "
+                   "options are unavailable"};
+    }
+    native_result =
+        engine::NativeEmulation::create(cfg.native_config, im.native);
+    if (native_result.code != 0) {
+      return Error{native_result.code == -26 ? ErrorCode::Internal
+                                             : ErrorCode::Unsupported,
+                   "Tessera: native preparation failed (code " +
+                       std::to_string(native_result.code) + ")"};
+    }
+    im.native_result = native_result;
+    im.native_rom_crc32 = content_crc32(cfg.native_config.content);
+    im.pack_trust_registry = cfg.trust_registry;
+    if (!cfg.pack_path.empty()) {
+      auto loaded = session->set_pack(cfg.pack_path);
+      if (!loaded) {
+        native_result.code =
+            static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
+        return loaded.error;
+      }
+    }
+    return session;
+  }
   im.qa_observer = cfg.audio_observer;
   im.render_observer = cfg.render_observer;
   if (im.qa_observer.on_fact) {
@@ -385,6 +442,54 @@ AytherSession::create(const Config &cfg) {
 // Content: the HD pack (hot-reloadable)
 // ---------------------------------------------------------------------------
 Result<void> AytherSession::set_pack(const std::string &pack_path) {
+  if (impl_->native) {
+    Impl &im = *impl_;
+    if (pack_path.empty()) {
+      im.pack.close();
+      im.native_tile_overrides.clear();
+      return Result<void>::ok();
+    }
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_regular_file(pack_path, ec))
+      return Result<void>::fail(ErrorCode::NotFound,
+                                "Tessera: pack file does not exist");
+    session::PackRuntime::ValidateContext context;
+    context.platform = "megadrive";
+    context.has_rom = true;
+    context.rom_crc32 = im.native_rom_crc32;
+#ifdef NDEBUG
+    context.release_build = true;
+#endif
+    for (const auto &finding :
+         session::PackRuntime::validate(pack_path, context))
+      if (finding.blocking || finding.code == "meta.author" ||
+          finding.code == "meta.license")
+        return Result<void>::fail(ErrorCode::BadFormat,
+                                  "Tessera: pack rejected: " + finding.code);
+    session::PackRuntime candidate;
+    const auto opened =
+        im.pack_trust_registry.empty()
+            ? candidate.open(pack_path)
+            : candidate.open_trusted(pack_path, im.pack_trust_registry);
+    if (!opened)
+      return opened;
+    if (!candidate.loaded())
+      return Result<void>::fail(ErrorCode::BadFormat,
+                                "Tessera: pack did not open");
+    char expected_game_id[15]{};
+    std::snprintf(expected_game_id, sizeof(expected_game_id), "crc32:%08x",
+                  im.native_rom_crc32);
+    if (std::string_view(candidate.game_id()) != expected_game_id)
+      return Result<void>::fail(ErrorCode::BadFormat,
+                                "Tessera: pack game_id does not match ROM");
+    if (!ayther_pack_verify_all(candidate.get()))
+      return Result<void>::fail(ErrorCode::BadFormat,
+                                "Tessera: pack integrity check failed");
+    im.pack.swap(candidate);
+    im.native_tile_overrides.clear();
+    return Result<void>::ok();
+  }
   Impl &im = *impl_;
   namespace fs = std::filesystem;
 
@@ -444,6 +549,11 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
 }
 
 Result<void> AytherSession::reload_pack() {
+  if (impl_->native) {
+    if (impl_->pack.path().empty())
+      return Result<void>::ok();
+    return set_pack(impl_->pack.path());
+  }
   if (impl_->pack.path().empty())
     return Result<void>::ok();
   return set_pack(impl_->pack.path());
@@ -455,6 +565,15 @@ bool AytherSession::has_pack() const noexcept { return impl_->pack.loaded(); }
 // Input
 // ---------------------------------------------------------------------------
 void AytherSession::set_input(int port, uint16_t buttons) noexcept {
+  if (impl_->native) {
+    // Native callers submit complete per-frame controls through the typed
+    // driver.
+    impl_->native_result = {};
+    impl_->native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    impl_->view.native_result = impl_->native_result;
+    return;
+  }
   impl_->runner.set_input(port, buttons);
   if (port == 0)
     impl_->recording.set_input(buttons);
@@ -463,8 +582,278 @@ void AytherSession::set_input(int port, uint16_t buttons) noexcept {
 // ---------------------------------------------------------------------------
 // Frame stepping — the deterministic pipeline (motor-owned).
 // ---------------------------------------------------------------------------
+engine::NativeEmulation *AytherSession::native_emulation() noexcept {
+  return impl_->native.get();
+}
+const engine::NativeEmulation *
+AytherSession::native_emulation() const noexcept {
+  return impl_->native.get();
+}
+
+engine::NativeResult AytherSession::native_submit_presentation_policy(
+    std::uint64_t regions, std::uint64_t events) noexcept {
+  Impl &im = *impl_;
+  engine::NativeResult result;
+  if (!im.native || ((regions | events) & ~std::uint64_t{31}) != 0) {
+    result.code = static_cast<std::int32_t>(
+        im.native ? engine::NativeStatus::invalid_argument
+                  : engine::NativeStatus::unsupported_capability);
+    return im.native_result = result;
+  }
+  if (im.next_native_policy_transaction == 0 ||
+      im.next_native_policy_transaction == UINT64_MAX) {
+    result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
+    return im.native_result = result;
+  }
+  engine::NativeSessionInfo current;
+  result = im.native->info(current);
+  if (result.code != 0)
+    return im.native_result = result;
+  if (current.frame_id.frame == UINT64_MAX) {
+    result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
+    return im.native_result = result;
+  }
+  const auto transaction = im.next_native_policy_transaction;
+  result = im.native->submit_presentation_policy(current.frame_id.epoch,
+                                                 current.frame_id.frame + 1,
+                                                 transaction, regions, events);
+  if (result.code == 0) {
+    ++im.next_native_policy_transaction;
+    im.native_policy.requested_regions = regions;
+    im.native_policy.requested_events = events;
+    im.native_policy.pending_transaction = transaction;
+    im.native_policy.pending_frame = {current.frame_id.session,
+                                      current.frame_id.epoch,
+                                      current.frame_id.frame + 1};
+    im.native_policy.configured = true;
+  }
+  return im.native_result = result;
+}
+
+engine::NativeResult AytherSession::native_step_frame(
+    const engine::NativeInputFrame &input) noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto advanced = im.native->step(input);
+  if (advanced.code == 0 && im.native_policy.pending_transaction != 0 &&
+      (advanced.flags & engine::native_controls_applied) != 0 &&
+      advanced.transaction == im.native_policy.pending_transaction &&
+      advanced.frame_id.session == im.native_policy.pending_frame.session &&
+      advanced.frame_id.epoch == im.native_policy.pending_frame.epoch &&
+      advanced.frame_id.frame == im.native_policy.pending_frame.frame) {
+    im.native_policy.active_regions = im.native_policy.requested_regions;
+    im.native_policy.active_events = im.native_policy.requested_events;
+    im.native_policy.pending_transaction = 0;
+    im.native_policy.confirmed = true;
+  }
+  return im.native_result = advanced;
+}
+
+engine::NativeResult AytherSession::native_replay_next() noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto advanced = im.native->replay_next();
+  if (advanced.code == 0 && im.native_policy.pending_transaction != 0 &&
+      (advanced.flags & engine::native_controls_applied) != 0 &&
+      advanced.transaction == im.native_policy.pending_transaction &&
+      advanced.frame_id.session == im.native_policy.pending_frame.session &&
+      advanced.frame_id.epoch == im.native_policy.pending_frame.epoch &&
+      advanced.frame_id.frame == im.native_policy.pending_frame.frame) {
+    im.native_policy.active_regions = im.native_policy.requested_regions;
+    im.native_policy.active_events = im.native_policy.requested_events;
+    im.native_policy.pending_transaction = 0;
+    im.native_policy.confirmed = true;
+  }
+  return im.native_result = advanced;
+}
+engine::NativeResult AytherSession::native_restore_checkpoint(
+    std::span<const std::uint8_t> checkpoint,
+    std::span<const std::uint8_t> trace) noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto restored = im.native->restore_checkpoint(checkpoint, trace);
+  if (restored.code == 0) {
+    // Restore retains Tessera's effective observation masks. A pending
+    // request, if any, was cancelled and must not leak into the new epoch.
+    const auto active_regions = im.native_policy.active_regions;
+    const auto active_events = im.native_policy.active_events;
+    const auto had_active_policy = im.native_policy.confirmed;
+    im.native_policy = {};
+    im.native_policy.active_regions = active_regions;
+    im.native_policy.active_events = active_events;
+    im.native_policy.requested_regions = active_regions;
+    im.native_policy.requested_events = active_events;
+    im.native_policy.configured = had_active_policy;
+    im.native_policy.confirmed = had_active_policy;
+    im.view = {};
+    im.frame_index = restored.frame_id.frame;
+  }
+  im.view.native_result = restored;
+  return im.native_result = restored;
+}
+
+engine::NativeResult AytherSession::native_close() noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto closed = im.native->close();
+  if (closed.code == 0) {
+    im.native_policy = {};
+    im.view = {};
+  }
+  im.view.native_result = closed;
+  return im.native_result = closed;
+}
+
+NativePresentationPolicy
+AytherSession::native_presentation_policy() const noexcept {
+  return impl_->native_policy;
+}
+
+bool AytherSession::native_set_tile_override(std::uint64_t hash,
+                                             std::string asset_path) {
+  Impl &im = *impl_;
+  if (!im.native || !im.pack || hash == 0 || asset_path.empty() ||
+      asset_path.size() >= 512 || asset_path.find('\0') != std::string::npos)
+    return false;
+  auto path = asset_path;
+  if (ayther_pack_file_size(im.pack.get(), path.c_str()) <= 0)
+    path = "assets/" + asset_path;
+  if (ayther_pack_file_size(im.pack.get(), path.c_str()) <= 0)
+    return false;
+  im.native_tile_overrides[hash] = std::move(asset_path);
+  return true;
+}
+
+void AytherSession::native_clear_tile_overrides() noexcept {
+  impl_->native_tile_overrides.clear();
+}
+
+const FrameView &AytherSession::native_frame() noexcept {
+  Impl &im = *impl_;
+  if (!im.native)
+    return im.view;
+  engine::NativeFrame original;
+  const auto result = im.native->original(original);
+  // A successful reset/close through the direct driver expires old originals.
+  im.view = {};
+  if (result.code == 0) {
+    im.view.fb_pixels = original.pixels.data();
+    im.view.fb_width = original.width;
+    im.view.fb_height = original.height;
+    im.view.fb_pitch = original.row_bytes;
+    im.view.fb_format =
+        5; // TexPixelFormat::Rgba8888 for the installed renderer.
+    im.view.pixel_encoding = FramePixelEncoding::rgba8;
+    im.view.native_original = original;
+    im.view.frame_index = original.frame_id.frame;
+    im.frame_index = original.frame_id.frame;
+    im.view.native_original_reason = NativeOriginalReason::pack_not_integrated;
+    if (!im.pack)
+      im.view.native_original_reason = NativeOriginalReason::no_pack;
+    else if (!im.native_policy.confirmed ||
+             (im.native_policy.active_regions & 16U) == 0)
+      im.view.native_original_reason = NativeOriginalReason::policy_unconfirmed;
+    else {
+      engine::NativeSnapshot snapshot;
+      engine::NativeSnapshotInfo info;
+      engine::NativeRegion temporal;
+      if (im.native->snapshot_acquire(snapshot).code != 0 ||
+          snapshot.info(info).code != 0)
+        im.view.native_original_reason = NativeOriginalReason::capture_lost;
+      else if (info.frame_id.session != original.frame_id.session ||
+               info.frame_id.epoch != original.frame_id.epoch ||
+               info.frame_id.frame != original.frame_id.frame ||
+               (info.region_mask & 16U) == 0 || (info.complete_mask & 16U) == 0)
+        im.view.native_original_reason =
+            NativeOriginalReason::temporal_incomplete;
+      else {
+        bool found = false;
+        for (std::uint32_t index = 0; index < info.region_count; ++index) {
+          engine::NativeRegion candidate;
+          if (snapshot.region(index, candidate).code != 0)
+            break;
+          if (candidate.kind == 5) {
+            temporal = candidate;
+            found = true;
+            break;
+          }
+        }
+        if (!found)
+          im.view.native_original_reason = NativeOriginalReason::capture_lost;
+        else {
+          try {
+            switch (session::compose_native_frame(
+                original, temporal, im.pack.get(), im.native_tile_overrides,
+                im.native_presented_pixels)) {
+            case session::NativeComposeResult::presented:
+              im.view.fb_pixels = im.native_presented_pixels.data();
+              im.view.native_original_reason = NativeOriginalReason::none;
+              break;
+            case session::NativeComposeResult::no_matching_rule:
+              im.view.native_original_reason =
+                  NativeOriginalReason::no_matching_rule;
+              break;
+            case session::NativeComposeResult::incomplete:
+              im.view.native_original_reason =
+                  NativeOriginalReason::temporal_incomplete;
+              break;
+            case session::NativeComposeResult::unsupported:
+              im.view.native_original_reason =
+                  NativeOriginalReason::unsupported_mode;
+              break;
+            case session::NativeComposeResult::invalid_data:
+              im.view.native_original_reason =
+                  NativeOriginalReason::invalid_capture;
+              break;
+            case session::NativeComposeResult::invalid_asset:
+              im.view.native_original_reason =
+                  NativeOriginalReason::invalid_asset;
+              break;
+            }
+          } catch (...) {
+            im.native_presented_pixels.clear();
+            im.view.native_original_reason =
+                NativeOriginalReason::invalid_capture;
+          }
+        }
+      }
+    }
+  }
+  im.view.native_result = result;
+  return im.view;
+}
+
 const FrameView &AytherSession::step() {
   Impl &im = *impl_;
+  if (im.native) {
+    const auto &view = native_frame();
+    im.view.native_result = {};
+    im.view.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
+    return view;
+  }
   if (im.audio.production_limit().frozen)
     return im.view;
   im.replay_pos = -1; // el step en vivo mueve la máquina fuera del replay (R7d)
@@ -5546,16 +5935,30 @@ AytherSession::restore_visual_state(
 // Determinism: savestate round-trip
 // ---------------------------------------------------------------------------
 size_t AytherSession::serialize_size() const {
+  if (impl_->native)
+    return 0;
   return impl_->runner.serialize_size();
 }
 
 Result<void> AytherSession::serialize(std::vector<uint8_t> &out) const {
+  if (impl_->native) {
+    impl_->native_result = impl_->native->checkpoint(out);
+    return impl_->native_result.code == 0
+               ? Result<void>::ok()
+               : Result<void>::fail(ErrorCode::Unsupported,
+                                    "Tessera: checkpoint unavailable; use the "
+                                    "native result for details");
+  }
   return impl_->runner.serialize(out)
              ? Result<void>::ok()
              : Result<void>::fail(ErrorCode::Internal, "core serialize failed");
 }
 
 Result<void> AytherSession::unserialize(const std::vector<uint8_t> &in) {
+  if (impl_->native)
+    return Result<void>::fail(
+        ErrorCode::Unsupported,
+        "Tessera: use native restore_checkpoint with its matching input trace");
   const bool ok = impl_->runner.unserialize(in);
   if (ok) {
     impl_->rewind.clear();     // timeline branched — drop stale rewind states
@@ -5569,6 +5972,26 @@ Result<void> AytherSession::unserialize(const std::vector<uint8_t> &in) {
 
 void AytherSession::reset() {
   Impl &im = *impl_;
+  if (im.native) {
+    im.native_result = im.native->reset();
+    if (im.native_result.code == 0) {
+      im.view = {};
+      im.frame_index = 0;
+      im.native_policy.active_regions = 0;
+      im.native_policy.active_events = 0;
+      im.native_policy.pending_transaction = 0;
+      im.native_policy.confirmed = false;
+      if (im.native_policy.configured) {
+        const auto rearmed = native_submit_presentation_policy(
+            im.native_policy.requested_regions,
+            im.native_policy.requested_events);
+        if (rearmed.code != 0)
+          im.native_result = rearmed;
+      }
+    }
+    im.view.native_result = im.native_result;
+    return;
+  }
   im.runner.reset();
   // E-2 (): las suscripciones NO se serializan y el core las limpia con
   // retro_reset — sin volver a pedirlas, todo lo que se observa por la ABI
@@ -6081,7 +6504,13 @@ AytherSession::validate_pack(const std::string &pack_path) const {
   // assuming it is fine. A frontend that does have it (the Lab does: the
   // project's game_id is "crc32:...") can call the FFI with that itself.
   session::PackRuntime::ValidateContext context;
-  context.platform = impl_->runner.cd_media() ? "segacd" : "megadrive";
+  context.platform = impl_->native              ? "megadrive"
+                     : impl_->runner.cd_media() ? "segacd"
+                                                : "megadrive";
+  if (impl_->native) {
+    context.has_rom = true;
+    context.rom_crc32 = impl_->native_rom_crc32;
+  }
   // The core's build_id is NOT NUL-terminated (it is an ABI span), so it
   // is copied: passing the raw pointer would read past the end.
   if (const ayther_interface_v1 *api = impl_->runner.ayther_api()) {

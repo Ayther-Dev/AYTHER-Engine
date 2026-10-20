@@ -1,8 +1,10 @@
 # Coverage policy
 
 Coverage is a required CI gate, reported independently for the Rust core and
-the first-party native C++ surface. Both jobs publish an LCOV file, a textual
-summary, a gate report with uncovered line ranges, and an HTML source report.
+the first-party native C++ surface. Rust uses one coverage job. C++ combines
+Linux CPU/GPU profiles with Windows Tessera-native profiles before enforcing
+the existing total and changed-line thresholds. The collectors publish LCOV
+artifacts; the combined job publishes the gate report.
 
 ## Initial baseline and thresholds
 
@@ -25,13 +27,13 @@ definition of line coverage. The summary reports 74.93% for Rust and 62.28% for
 C++ against the gate's 75.24% and 62.00%; the difference is entirely that
 double counting.
 
-The C++ baseline was measured on Windows, because that is the platform
-available to whoever recorded it. CI measures on Linux, where the compiled file
-set differs. That is why the floor sits twelve points under the measurement
-rather than immediately beneath it: the first Linux run should replace this row
-with its own numerator and denominator and tighten the floor to match. Setting
-it just below a Windows number would have made the first Linux run red for a
-reason that is not a regression.
+The original C++ baseline was measured on Windows. Linux CPU/GPU coverage alone
+cannot exercise the Windows-only Tessera integration, so the CI gate merges
+both platform reports by source path and line number. The collectors do not
+relax either threshold; a missing platform artifact fails the combined gate.
+A local combined run after the native integration measured 53,694 / 68,047
+covered total lines (78.91%) and 2,989 / 3,825 changed lines (78.14%).
+These are local measurements pending CI confirmation.
 
 The changed-line gate compares each report with the pull-request base (or the
 previous commit on a branch push). Only changed lines LLVM identifies as
@@ -46,7 +48,7 @@ the gate on the changed-line rule while the total rule passes comfortably.
 
 C++ changed lines are held to 70% rather than 80% because the native renderer
 still has device- and driver-dependent branches that a single software device
-cannot exercise. The coverage job runs the CPU suite first, then the `gpu`
+cannot exercise. The Linux coverage collector runs the CPU suite first, then the `gpu`
 suite against Mesa's software Vulkan device under `xvfb`; both runs write into
 the same LLVM profile set. CI selects SDL's X11 backend and Mesa's Lavapipe ICD
 explicitly so the headless runner cannot silently choose a missing display or
@@ -62,9 +64,10 @@ GPU tests select SDL's `offscreen` Vulkan backend; Lavapipe exposes
 `VK_EXT_headless_surface`, so no X server is involved. The test Vulkan owner
 passes SDL's required instance extensions to vk-bootstrap before creating the
 headless surface.
-`check_gpu_matrix.ps1` rejects an empty or skipped
-GPU run, so first-party Vulkan code stays inside both the total and changed-line
-denominators without turning an omitted renderer suite into a green result.
+`check_gpu_matrix.ps1` rejects an empty or skipped GPU run. The Windows
+collector runs four Tessera-native integration tests against generated local
+fixtures. The combined gate merges both reports without excluding first-party
+Vulkan or native integration code.
 
 ## Scope and exclusions
 
@@ -144,6 +147,15 @@ python tools/check_coverage.py --component cpp --lcov coverage/cpp/cpp.lcov --ba
 
 `llvm-profdata` and `llvm-cov` must be the ones matching the compiler; a
 different LLVM version cannot read the profiles.
+
+For the Tessera-native Windows collector, configure the same preset with
+`AYTHER_ENABLE_TESSERA=ON`, `Tessera_DIR`, the Tessera source directory and
+generated fixture directory, then run the four `ayther.integration.tessera_*`
+CTest cases and `tools/collect_cpp_coverage_windows.ps1`. CI merges its
+`native.lcov` with Linux `cpp.lcov`; run `tools/check_coverage.py` on the
+concatenated report. The release budget tests continue to gate timing in
+optimized builds. ASan and coverage builds retain behavior and equality
+checks but report the timing budget as `not-gated-instrumented`.
 
 C++ on Linux with LLVM tools available:
 

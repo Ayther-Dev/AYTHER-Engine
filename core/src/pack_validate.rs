@@ -566,6 +566,21 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                 .to_string(),
         );
     }
+    if let (Some(game_id), Some(actual)) = (m.pack.game_id.as_deref(), ctx.rom_crc32)
+        && let Some(declared) = game_id.strip_prefix("crc32:")
+    {
+        match u32::from_str_radix(declared, 16) {
+            Ok(value) if value == actual => {}
+            Ok(_) => r.error(
+                "rom.game_id_mismatch",
+                format!("pack game_id {game_id} does not match the loaded ROM"),
+            ),
+            Err(_) => r.error(
+                "rom.game_id_invalid",
+                format!("pack game_id {game_id} has an invalid CRC-32"),
+            ),
+        }
+    }
 
     // -- versión mínima de AYTHER --------------------------------------------
     let engine = ctx.engine_version.unwrap_or(ENGINE_VERSION);
@@ -860,6 +875,9 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
             "game_profile.toml",
             "entity_substitutions.toml",
             "pose_substitutions.toml",
+            "tile_substitutions.toml",
+            "plane_tile_substitutions.toml",
+            "sprite_substitutions.toml",
         ] {
             if !names.iter().any(|n| n == cat) {
                 continue;
@@ -881,6 +899,76 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                         cat
                     ),
                 );
+            }
+        }
+
+        // A malformed or dangling tile rule would otherwise be ignored by
+        // the runtime after activation, leaving the author with a pack that
+        // appears to load but cannot draw its requested replacement.
+        for catalog in ["tile_substitutions.toml", "plane_tile_substitutions.toml"] {
+            if !names.iter().any(|name| name == catalog) {
+                continue;
+            }
+            let mut source = String::new();
+            if zip
+                .by_name(catalog)
+                .map(|mut entry| entry.read_to_string(&mut source))
+                .is_err()
+            {
+                r.error(
+                    "tile.catalog_unreadable",
+                    format!("{catalog} cannot be read"),
+                );
+                continue;
+            }
+            let Ok(document) = toml::from_str::<toml::Value>(&source) else {
+                continue; // catalog.malformed reports the syntax error above.
+            };
+            let Some(rules) = document.get("sub").and_then(toml::Value::as_array) else {
+                r.error(
+                    "tile.rules_missing",
+                    format!("{catalog} declares no [[sub]] rules"),
+                );
+                continue;
+            };
+            for (index, rule) in rules.iter().enumerate() {
+                let hash = rule.get("hash").and_then(toml::Value::as_str).unwrap_or("");
+                let hash_digits = hash.strip_prefix("0x").unwrap_or("");
+                if hash_digits.is_empty() || u64::from_str_radix(hash_digits, 16).is_err() {
+                    r.error(
+                        "tile.hash_invalid",
+                        format!("{catalog} [[sub]] #{index} has an invalid hash"),
+                    );
+                }
+                let asset = rule
+                    .get("asset")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or("");
+                if validate_canonical_logical_path(asset).is_err() {
+                    r.error(
+                        "tile.asset_path_invalid",
+                        format!("{catalog} [[sub]] #{index} has an invalid asset path"),
+                    );
+                    continue;
+                }
+                let entries: Vec<&String> = names
+                    .iter()
+                    .filter(|name| asset_entry_matches(name, asset))
+                    .collect();
+                if entries.is_empty() {
+                    r.error("tile.asset_missing", format!("{catalog} [[sub]] #{index} references '{asset}', which is absent from the pack"));
+                    continue;
+                }
+                if entries.iter().any(|entry| {
+                    let mut head = Vec::new();
+                    let read = zip
+                        .by_name(entry)
+                        .map(|e| e.take(64).read_to_end(&mut head))
+                        .is_ok();
+                    !read || !image_header_is_readable(entry, &head)
+                }) {
+                    r.error("tile.asset_unreadable", format!("{catalog} [[sub]] #{index} references '{asset}', which is not a readable image"));
+                }
             }
         }
 
@@ -1049,6 +1137,26 @@ platform  = "megadrive"
         };
         let r = validate_path(&p, &ctx);
         assert!(!r.has_errors(), "hallazgos: {:?}", r.findings);
+    }
+
+    #[test]
+    fn crc_game_id_must_match_loaded_rom() {
+        let p = bake(
+            "wrong_game_id",
+            &OK_MANIFEST.replace(
+                "game_id    = \"crc32:7b905383\"",
+                "game_id    = \"crc32:00000000\"",
+            ),
+        );
+        let ctx = SessionCtx {
+            rom_crc32: Some(0x7b905383),
+            ..Default::default()
+        };
+        let r = validate_path(&p, &ctx);
+        assert!(
+            r.errors()
+                .any(|finding| finding.code == "rom.game_id_mismatch")
+        );
     }
 
     /// Rejects a pack authored for a different game.
@@ -1500,6 +1608,47 @@ supported = ["NTSC"]
         v.extend_from_slice(&[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
         v.extend_from_slice(&[0x1F, 0x15, 0xC4, 0x89]);
         v
+    }
+
+    #[test]
+    fn tile_rules_require_valid_hashes_and_readable_local_assets() {
+        let directory = tempfile::tempdir().unwrap();
+        let image = png_1x1();
+        let report_for = |name: &str, rules: &str| {
+            let path = pack(
+                directory.path(),
+                name,
+                &[
+                    ("manifest.toml", VALID_MANIFEST.as_bytes()),
+                    ("assets/ok.png", &image),
+                    ("assets/bad.png", b"not a PNG"),
+                    ("tile_substitutions.toml", rules.as_bytes()),
+                ],
+            );
+            codes(&validate_path(&path, &SessionCtx::default()))
+        };
+        let good = report_for("tile_good.ay", "[[sub]]\nhash='0x01'\nasset='ok.png'\n");
+        assert!(
+            !good.iter().any(|code| code.starts_with("tile.")),
+            "{good:?}"
+        );
+        let invalid_hash = report_for("tile_hash.ay", "[[sub]]\nhash='bogus'\nasset='ok.png'\n");
+        assert!(
+            invalid_hash.contains(&"tile.hash_invalid"),
+            "{invalid_hash:?}"
+        );
+        let escaped = report_for("tile_path.ay", "[[sub]]\nhash='0x01'\nasset='../ok.png'\n");
+        assert!(escaped.contains(&"tile.asset_path_invalid"), "{escaped:?}");
+        let missing = report_for(
+            "tile_missing.ay",
+            "[[sub]]\nhash='0x01'\nasset='missing.png'\n",
+        );
+        assert!(missing.contains(&"tile.asset_missing"), "{missing:?}");
+        let unreadable = report_for("tile_bad.ay", "[[sub]]\nhash='0x01'\nasset='bad.png'\n");
+        assert!(
+            unreadable.contains(&"tile.asset_unreadable"),
+            "{unreadable:?}"
+        );
     }
 
     /// Validates a pack whose `pose_substitutions.toml` is `poses`, with

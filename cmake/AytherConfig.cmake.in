@@ -58,6 +58,14 @@ if(NOT TARGET Ayther::core)
 endif()
 
 if(Ayther_engine_FOUND)
+    set(Ayther_HAS_TESSERA @AYTHER_ENABLE_TESSERA@)
+    if(Ayther_HAS_TESSERA)
+        # CMake <= 3.29 allows dependencies to replace PACKAGE_PREFIX_DIR.
+        set(_ayther_saved_package_prefix "${PACKAGE_PREFIX_DIR}")
+        find_dependency(Tessera 0.1 CONFIG)
+        set(PACKAGE_PREFIX_DIR "${_ayther_saved_package_prefix}")
+        unset(_ayther_saved_package_prefix)
+    endif()
     # Public, relocatable asset contract for installed Engine consumers.
     set_and_check(
         Ayther_SHADER_DIR

@@ -149,3 +149,14 @@ The full text of each licence ships in
 libretro cores (supplied by the user — BYOC), ROMs and BIOS images (BYOR),
 and packs derived from commercial games. The guard
 `sdk/tools/check_sdk_leak.cmake` verifies this against the published artifact.
+
+## Optional Tessera native provider
+
+The `AYTHER_ENABLE_TESSERA` build links an independently installed Tessera
+package. Tessera's own source is MIT, while its Mega Drive backend includes
+ClownMDEmu, clown68000, and clownz80 under AGPL-3.0; see the exact revisions,
+notices, licenses, source locations, and build patch in the matching Tessera
+package's `share/tessera` directory and source repository. Distributing an
+Engine binary with this provider requires the corresponding Tessera package
+and source availability for the combined build. This notice does not cover
+ROMs, content packs, trust metadata, or the fixture generator.

@@ -23,9 +23,9 @@
 //   timeline produce a FrameView  ----------------->    consume FrameView,
 //   render it
 //
-// Audio output lives entirely inside the session (the AudioPlayer is owned by
-// the motor in R1): play/mute/flush happen in step(), nothing audio crosses the
-// boundary. The frontend never touches Vulkan-from-the-motor or SDL-audio.
+// Legacy audio output is owned by the session. The explicit Tessera provider
+// exposes original PCM through borrowed native frames; device presentation is
+// unavailable in that provider until its Runtime contract is integrated.
 //
 // No-throw: construction and fallible operations return ayther::Result
 // (§4.1.1); nothing throws across the FFI users. Opaque handles are held as
@@ -59,6 +59,7 @@
 #include <ayther/engine/audio_initial_snapshot.hpp>
 #include <ayther/engine/audio_observer.hpp>
 #include <ayther/engine/audio_production_limit.hpp>
+#include <ayther/engine/native_emulation.hpp>
 #include <ayther/engine/render_observer.hpp>
 #include <ayther/engine/visual_state.hpp>
 
@@ -285,6 +286,31 @@ struct ElementEffect {
 // set_pack() or reload_pack(). The frontend must copy anything it needs to keep
 // (e.g. a thumbnail) before the next step().
 // ---------------------------------------------------------------------------
+enum class EmulationProvider : std::uint8_t { libretro, tessera_native };
+enum class FramePixelEncoding : std::uint8_t { libretro, rgba8 };
+enum class NativeOriginalReason : std::uint8_t {
+  no_native_provider,
+  pack_not_integrated,
+  none,
+  no_pack,
+  policy_unconfirmed,
+  capture_lost,
+  temporal_incomplete,
+  unsupported_mode,
+  invalid_capture,
+  invalid_asset,
+  no_matching_rule
+};
+
+struct NativePresentationPolicy {
+  std::uint64_t requested_regions{}, requested_events{};
+  std::uint64_t active_regions{}, active_events{};
+  std::uint64_t pending_transaction{};
+  engine::NativeFrameId pending_frame;
+  bool configured{};
+  bool confirmed{};
+};
+
 struct FrameView {
   // -- Emulator framebuffer: the base image to upload + present --------------
   // fb_pixels is null when the core duplicated the previous frame (no redraw);
@@ -699,6 +725,14 @@ struct FrameView {
   /// throughput and varies with the machine: using it would break replay
   /// determinism.
   double fps_timing = 0.0;
+
+  // Native originals are borrowed without pixel/PCM copies or legacy
+  // observation translation. Consult this format before interpreting fb_format.
+  FramePixelEncoding pixel_encoding = FramePixelEncoding::libretro;
+  engine::NativeFrame native_original;
+  engine::NativeResult native_result;
+  NativeOriginalReason native_original_reason =
+      NativeOriginalReason::no_native_provider;
 };
 
 // ---------------------------------------------------------------------------
@@ -833,6 +867,10 @@ public:
     /// Caller owns it and keeps it alive until the session is destroyed. Null
     /// disables the observation: nothing is built and FrameView is unchanged.
     engine::render_observation::RenderObserver *render_observer = nullptr;
+    /// Explicit provider; a native failure never falls back to libretro.
+    EmulationProvider provider = EmulationProvider::libretro;
+    /// Installed Tessera provider configuration. Content is passed as bytes.
+    engine::NativeConfig native_config;
   };
 
   // -- Lifecycle (no-throw) --------------------------------------------------
@@ -840,6 +878,42 @@ public:
   // substitutors, script, optional pack + audio) wrapped in unique_handle.
   // On failure returns an Error (bad core/ROM/pack) — never throws.
   static Result<std::unique_ptr<AytherSession>> create(const Config &cfg);
+  /// Also returns the exact native result, including failed creation context.
+  static Result<std::unique_ptr<AytherSession>>
+  create(const Config &cfg, engine::NativeResult &native_result);
+  /// Null for the legacy provider. This single-owner driver preserves complete
+  /// input states, capabilities, EOF, transaction results and retained
+  /// captures.
+  [[nodiscard]] engine::NativeEmulation *native_emulation() noexcept;
+  [[nodiscard]] const engine::NativeEmulation *
+  native_emulation() const noexcept;
+  /// Submit both observation masks atomically for the next executable frame.
+  [[nodiscard]] engine::NativeResult
+  native_submit_presentation_policy(std::uint64_t regions,
+                                    std::uint64_t events) noexcept;
+  /// Advance a complete native frame and activate Engine policy only on the
+  /// matching Tessera confirmation. On rejection the policy is unchanged.
+  [[nodiscard]] engine::NativeResult
+  native_step_frame(const engine::NativeInputFrame &input) noexcept;
+  /// Replay a bound trace frame and confirm matching presentation controls.
+  [[nodiscard]] engine::NativeResult native_replay_next() noexcept;
+  /// Restore a native checkpoint. Success invalidates borrowed presentation
+  /// data and discards a cancelled pending policy while retaining controls
+  /// that Tessera had already applied; failure leaves Engine policy intact.
+  [[nodiscard]] engine::NativeResult
+  native_restore_checkpoint(std::span<const std::uint8_t> checkpoint,
+                            std::span<const std::uint8_t> trace = {}) noexcept;
+  /// Close the native driver and discard Engine presentation policy only after
+  /// a successful close; the result preserves Tessera cancellation context.
+  [[nodiscard]] engine::NativeResult native_close() noexcept;
+  [[nodiscard]] NativePresentationPolicy
+  native_presentation_policy() const noexcept;
+  [[nodiscard]] bool native_set_tile_override(std::uint64_t hash,
+                                              std::string asset_path);
+  void native_clear_tile_overrides() noexcept;
+  /// Refresh borrowed originals after driving native_emulation(). Native packs
+  /// are not integrated in this increment; the reason is explicit in FrameView.
+  [[nodiscard]] const FrameView &native_frame() noexcept;
 
   ~AytherSession(); ///< RAII frees every handle
   AytherSession(const AytherSession &) = delete;

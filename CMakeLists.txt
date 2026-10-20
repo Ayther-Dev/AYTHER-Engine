@@ -8,6 +8,7 @@ option(AYTHER_BUILD_ENGINE    "Build the native C++ engine"           OFF)
 option(AYTHER_BUILD_RENDERER  "Build the Vulkan renderer"             OFF)
 option(AYTHER_BUILD_GPU_TESTS "Build tests that require a Vulkan GPU" OFF)
 option(AYTHER_ENABLE_VPX      "Enable VPX video decoding"             OFF)
+option(AYTHER_ENABLE_TESSERA  "Enable the installed native Tessera provider" OFF)
 option(AYTHER_CARGO_LOCKED    "Pass --locked to Cargo"                ON)
 option(AYTHER_ENABLE_ASAN     "Enable AddressSanitizer on native targets" OFF)
 option(AYTHER_ENABLE_UBSAN    "Enable UndefinedBehaviorSanitizer on native targets" OFF)
@@ -190,6 +191,7 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/ayther_sdk.cpp
     src/ayther_sdk_version.cpp
     src/ayther_session.cpp
+    src/session/native_presentation.cpp
     src/ayther_session_impl.inl
     src/ayther_video.cpp
     src/decode_limits.cpp
@@ -324,7 +326,23 @@ set_target_properties(ayther_engine PROPERTIES
     PUBLIC_HEADER "${AYTHER_ENGINE_LEGACY_PUBLIC_HEADERS}")
 set_target_properties(ayther_ymfm PROPERTIES EXPORT_NAME ymfm)
 
+if(AYTHER_ENABLE_TESSERA)
+    if(NOT AYTHER_BUILD_ENGINE)
+        message(FATAL_ERROR "TESSERA_ENGINE_REQUIRED: enable AYTHER_BUILD_ENGINE.")
+    endif()
+    find_package(Tessera 0.1 CONFIG REQUIRED)
+    if((Tessera_DIAGNOSTICS AND NOT AYTHER_ENABLE_ASAN) OR
+       (AYTHER_ENABLE_ASAN AND NOT Tessera_DIAGNOSTICS))
+        message(FATAL_ERROR "Engine and the Tessera provider must use matching AddressSanitizer configurations")
+    endif()
+    if(Tessera_DIAGNOSTICS)
+        target_compile_definitions(ayther_instrumentation INTERFACE _DISABLE_STL_ANNOTATION)
+    endif()
+    target_link_libraries(ayther_engine PRIVATE Tessera::core)
+endif()
 add_library(Ayther::engine ALIAS ayther_engine)
+target_sources(ayther_engine PRIVATE src/tessera_backend.cpp)
+target_compile_definitions(ayther_engine PRIVATE AYTHER_HAS_TESSERA=$<BOOL:${AYTHER_ENABLE_TESSERA}>)
 ayther_instrument_target(ayther_engine)
 
 set(AYTHER_ENGINE_SOURCES_PRESENT ON)
