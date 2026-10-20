@@ -244,6 +244,14 @@ void VkTexture::upload(const ayther::engine::VulkanContextView& ctx, VkCommandBu
                 // Already BGRA — direct copy, preserves alpha channel.
                 copy_bgra8888(src_row, dst_row, w);
                 break;
+            case TexPixelFormat::Rgba8888:
+                for (uint32_t x = 0; x < w; ++x) {
+                    dst_row[x * 4] = src_row[x * 4 + 2];
+                    dst_row[x * 4 + 1] = src_row[x * 4 + 1];
+                    dst_row[x * 4 + 2] = src_row[x * 4];
+                    dst_row[x * 4 + 3] = src_row[x * 4 + 3];
+                }
+                break;
             case TexPixelFormat::Gray8:
                 // : un byte por pixel, tal cual. Es el camino de los planos
                 // Y/U/V del video; el image tiene que haberse creado R8.

@@ -737,7 +737,7 @@ const FrameView &AytherSession::native_frame() noexcept {
     im.view.fb_width = original.width;
     im.view.fb_height = original.height;
     im.view.fb_pitch = original.row_bytes;
-    im.view.fb_format = -1;
+    im.view.fb_format = 5; // TexPixelFormat::Rgba8888 for the installed renderer.
     im.view.pixel_encoding = FramePixelEncoding::rgba8;
     im.view.native_original = original;
     im.view.frame_index = original.frame_id.frame;

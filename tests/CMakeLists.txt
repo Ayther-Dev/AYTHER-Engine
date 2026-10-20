@@ -751,6 +751,13 @@ endif()
 # Mega Drive runner. The path is supplied locally so CTest never downloads or
 # regenerates a corpus silently.
 if(AYTHER_ENABLE_TESSERA)
+    set(AYTHER_TESSERA_TEST_FIXTURE_DIR
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/build/windows-dev/native-fixtures" CACHE PATH
+        "Locally generated native fixtures; never part of the source checkout")
+    if(NOT EXISTS "${AYTHER_TESSERA_TEST_FIXTURE_DIR}/roms/ayther_synthetic.md"
+            OR NOT EXISTS "${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx03/fx03.ay")
+        message(FATAL_ERROR "Generate native fixtures before configuring Engine tests")
+    endif()
     add_executable(ayther_tessera_checkpoint_test
         "${PROJECT_SOURCE_DIR}/tests/integration/tessera_checkpoint_test.cpp")
     target_compile_features(ayther_tessera_checkpoint_test PRIVATE cxx_std_20)
@@ -767,7 +774,7 @@ if(AYTHER_ENABLE_TESSERA)
         add_test(NAME ayther.integration.tessera_checkpoint
             COMMAND ayther_tessera_checkpoint_test
                 "${AYTHER_TESSERA_PHASE3_EVIDENCE_DIR}"
-                "${AYTHER_TESSERA_TEST_SOURCE_DIR}/tests/fixtures/ayther-engine-synthetic/ayther_synthetic.md")
+                "${AYTHER_TESSERA_TEST_FIXTURE_DIR}/roms/ayther_synthetic.md")
         set_tests_properties(ayther.integration.tessera_checkpoint PROPERTIES
             TIMEOUT 1200 RUN_SERIAL TRUE
             LABELS "engine;native;integration;checkpoint;FX-02;phase3")
@@ -781,7 +788,7 @@ if(AYTHER_ENABLE_TESSERA)
         "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
     target_compile_options(ayther_tessera_pack_test PRIVATE /EHsc)
     target_compile_definitions(ayther_tessera_pack_test PRIVATE
-        AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_SOURCE_DIR}/tests/fixtures/graphics-replacement")
+        AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx03")
     tessera_copy_runtime_dependencies(ayther_tessera_pack_test)
     set_tests_properties(ayther.integration.tessera_pack_test PROPERTIES
         LABELS "engine;native;integration;phase4;FX-03")
@@ -793,7 +800,7 @@ if(AYTHER_ENABLE_TESSERA)
         "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
     target_compile_options(ayther_tessera_presentation_test PRIVATE /EHsc)
     target_compile_definitions(ayther_tessera_presentation_test PRIVATE
-        AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_SOURCE_DIR}/tests/fixtures/graphics-replacement")
+        AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx03")
     tessera_copy_runtime_dependencies(ayther_tessera_presentation_test)
     set_tests_properties(ayther.integration.tessera_presentation_test PROPERTIES
         LABELS "engine;native;integration;phase4;FX-03")
