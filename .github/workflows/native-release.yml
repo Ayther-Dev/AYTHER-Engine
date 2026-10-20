@@ -25,7 +25,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: 0
       CMAKE_BUILD_PARALLEL_LEVEL: 1
-      TESSERA_COMMIT: bb6fdb00cce888d5f21b3dfa8ae092bf72c08ab6
+      TESSERA_COMMIT: c69b9a313e5b18a0001124487a2bac0f0306377c
       ASSET_NAME: ayther-engine-vpx-${{ github.ref_name }}-windows-x86_64.zip
     steps:
       - name: Check out the exact Engine tag
@@ -42,8 +42,12 @@ jobs:
           $productTag = '${{ github.ref_name }}' -replace '^native-', ''
           ./tools/check_release_version.ps1 -Tag $productTag
           if ($LASTEXITCODE -ne 0) { throw 'Engine version does not match the tag.' }
-          gh release view '${{ github.ref_name }}' --repo '${{ github.repository }}' *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'A release already exists for this immutable tag.' }
+          $response = Invoke-WebRequest `
+            -Uri 'https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}' `
+            -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' } `
+            -SkipHttpErrorCheck
+          if ($response.StatusCode -eq 200) { throw 'A release already exists for this immutable tag.' }
+          if ($response.StatusCode -ne 404) { throw "Release lookup failed: HTTP $($response.StatusCode)." }
 
       - name: Check out the exact Tessera source
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
