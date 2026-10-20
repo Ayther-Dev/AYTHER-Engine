@@ -105,11 +105,18 @@ integration materials.
 
 ## Integración opcional de Tessera
 
-El proveedor de T015–T018 enlaza el paquete instalado de AYTHER Tessera (MIT),
-con su build ID y prefijo explícitos. El lock de fuente usado por CI es el SHA
-fijo declarado en `.github/workflows/ci.yml`. Sus avisos y los de PicoSHA2 se
-instalan bajo `share/tessera/licenses` en el paquete de Tessera; no se deben
-retirar al preparar su distribución coordinada con Engine.
+El proveedor de T015–T018 enlaza el paquete instalado de AYTHER Tessera,
+con su build ID y prefijo explícitos. El código propio de Tessera es MIT,
+pero su backend Mega Drive incluye bibliotecas estáticas ClownMDEmu,
+clown68000 y clownz80 bajo AGPL-3.0. El lock de fuente usado por CI es el SHA
+fijo declarado en `.github/workflows/ci.yml`. El paquete de Tessera instala
+licencias de los componentes Clown, PicoSHA2 y nlohmann/json, además de su
+inventario y avisos en `share/tessera`. Una distribución de Engine con ese
+proveedor requiere conservarlos y ofrecer el código fuente correspondiente
+de la combinación, con revisiones y scripts de construcción identificados.
+La revisión del artefacto final se registra en el repositorio Tessera bajo
+`docs/distribution-review.md`; un enlace CMake no resuelve por sí solo el
+alcance de AGPL ni las condiciones de MPL-2.0 para Engine.
 
 Las fórmulas de los oráculos de `tests/support/tessera_fx01_oracle.*` se adaptan
 de las fuentes MIT de Tessera, con sus SHA-256 de procedencia en el encabezado.
