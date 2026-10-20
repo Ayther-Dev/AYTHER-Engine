@@ -1,0 +1,165 @@
+name: Native Tessera software candidate
+
+on:
+  push:
+    tags:
+      - 'native-v0.1.0-rc.*'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: native-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_INCREMENTAL: 0
+      CMAKE_BUILD_PARALLEL_LEVEL: 1
+      TESSERA_COMMIT: bb6fdb00cce888d5f21b3dfa8ae092bf72c08ab6
+      ASSET_NAME: ayther-engine-vpx-${{ github.ref_name }}-windows-x86_64.zip
+    steps:
+      - name: Check out the exact Engine tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse a rerun or an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ('${{ github.run_attempt }}' -ne '1') { throw 'Use a new tag for a corrected candidate.' }
+          $productTag = '${{ github.ref_name }}' -replace '^native-', ''
+          ./tools/check_release_version.ps1 -Tag $productTag
+          if ($LASTEXITCODE -ne 0) { throw 'Engine version does not match the tag.' }
+          gh release view '${{ github.ref_name }}' --repo '${{ github.repository }}' *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'A release already exists for this immutable tag.' }
+
+      - name: Check out the exact Tessera source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          repository: Ayther-Dev/AYTHER-Tessera
+          ref: ${{ env.TESSERA_COMMIT }}
+          path: build/tessera-source
+          persist-credentials: false
+
+      - name: Build and install Tessera from the pinned source
+        run: |
+          Push-Location build/tessera-source
+          try {
+            ./tools/bootstrap-dependencies.ps1 -Download
+            ./tools/bootstrap-backends.ps1 -Download -SelectedOnly
+            ./tools/check.ps1 -Preset windows-release -Stage Configure -Jobs 1
+            ./tools/check.ps1 -Preset windows-release -Stage Build -Jobs 1
+            cmake --install build/windows-release --prefix "$env:RUNNER_TEMP/tessera-install"
+            if ($LASTEXITCODE -ne 0) { throw 'Tessera installation failed.' }
+          } finally { Pop-Location }
+          $meta = Get-Content "$env:RUNNER_TEMP/tessera-install/share/tessera/package-metadata.json" -Raw | ConvertFrom-Json
+          if ($meta.source.revision -cne $env:TESSERA_COMMIT -or $meta.source.clean_at_configure -ne $true) {
+            throw 'Tessera source identity is not clean or pinned.'
+          }
+
+      - name: Prepare VPX and isolated vcpkg inputs
+        run: |
+          if (-not $env:VCPKG_INSTALLATION_ROOT) { throw 'VCPKG_INSTALLATION_ROOT is required.' }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_INSTALLED_DIR=$env:RUNNER_TEMP/vcpkg-installed-engine" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install nasm --yes --no-progress
+            'C:\Program Files\NASM' | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+          choco install make --yes --no-progress
+          $make = Get-ChildItem (Join-Path $env:ChocolateyInstall 'lib/make/tools') -Recurse -Filter make.exe | Select-Object -First 1
+          if (-not $make) { throw 'Make is unavailable.' }
+          "AYTHER_MAKE=$($make.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          ./tools/build_libvpx.ps1
+
+      - name: Generate excluded local fixtures and replay evidence
+        run: |
+          cmake --preset windows-release-engine-vpx -DAYTHER_ENABLE_TESSERA=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Engine fixture-tool configuration failed.' }
+          cmake --build build/windows-release-engine-vpx --target make_test_pack --parallel 1
+          if ($LASTEXITCODE -ne 0) { throw 'Fixture tool build failed.' }
+          $source = Join-Path $PWD 'build/tessera-source'
+          & (Join-Path $source 'tools/generate-native-fixtures.ps1') `
+            -TesseraBuild (Join-Path $source 'build/windows-release') `
+            -EnginePackTool (Join-Path $PWD 'build/windows-release-engine-vpx/bin/make_test_pack.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed.' }
+          ctest --test-dir (Join-Path $source 'build/windows-release') `
+            -R '^integration.megadrive_replay$' --output-on-failure -j 1
+          if ($LASTEXITCODE -ne 0) { throw 'Tessera replay failed.' }
+          $evidence = Get-ChildItem (Join-Path $source 'build/evidence/phase3-Release-OFF') -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName 'summary.json') } |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $evidence) { throw 'Tessera replay evidence is missing.' }
+          "TESSERA_EVIDENCE=$($evidence.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure, build and test native Engine Release
+        run: |
+          $source = Join-Path $PWD 'build/tessera-source'
+          cmake --preset windows-release-engine-vpx `
+            -DAYTHER_ENABLE_TESSERA=ON `
+            "-DTessera_DIR=$env:RUNNER_TEMP/tessera-install/lib/cmake/Tessera" `
+            "-DAYTHER_TESSERA_TEST_SOURCE_DIR=$source" `
+            "-DAYTHER_TESSERA_TEST_FIXTURE_DIR=$source/build/windows-release/native-fixtures" `
+            "-DAYTHER_TESSERA_PHASE3_EVIDENCE_DIR=$env:TESSERA_EVIDENCE"
+          if ($LASTEXITCODE -ne 0) { throw 'Native Engine configuration failed.' }
+          cmake --build build/windows-release-engine-vpx --parallel 1
+          if ($LASTEXITCODE -ne 0) { throw 'Native Engine build failed.' }
+          ctest --test-dir build/windows-release-engine-vpx -C Release --output-on-failure -j 1
+          if ($LASTEXITCODE -ne 0) { throw 'Native Engine CTest failed.' }
+
+      - name: Install and verify software-only payload
+        run: |
+          cmake --install build/windows-release-engine-vpx --prefix "$env:RUNNER_TEMP/engine-install"
+          if ($LASTEXITCODE -ne 0) { throw 'Engine installation failed.' }
+          ./tools/check_release_payload.ps1 -Directory "$env:RUNNER_TEMP/engine-install" -Kind engine-vpx -RequireBundledVpx
+          if ($LASTEXITCODE -ne 0) { throw 'Engine payload check failed.' }
+
+      - name: Package twice and checksum
+        run: |
+          $epoch = [long](git show -s --format=%ct HEAD)
+          $root = [IO.Path]::GetFileNameWithoutExtension($env:ASSET_NAME)
+          ./tools/package_release.ps1 -InputDirectory "$env:RUNNER_TEMP/engine-install" `
+            -OutputFile "release-out/$env:ASSET_NAME" -ArchiveRoot $root -SourceDateEpoch $epoch
+          ./tools/package_release.ps1 -InputDirectory "$env:RUNNER_TEMP/engine-install" `
+            -OutputFile "repro-out/$env:ASSET_NAME" -ArchiveRoot $root -SourceDateEpoch $epoch
+          $a = (Get-FileHash "release-out/$env:ASSET_NAME" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $b = (Get-FileHash "repro-out/$env:ASSET_NAME" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($a -cne $b) { throw 'Repeated Engine packaging differed.' }
+          [IO.File]::WriteAllText('release-out/CHECKSUMS.sha256', "$a *$env:ASSET_NAME`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Attest the Engine software ZIP
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: release-out/${{ env.ASSET_NAME }}
+
+      - name: Create a draft with only authorized software and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          @"
+          Candidato nativo de Engine para Windows x64, con VPX y proveedor
+          Tessera. Fuentes Engine: https://github.com/Ayther-Dev/AYTHER-Engine/tree/${{ github.sha }}
+          Fuentes Tessera: https://github.com/Ayther-Dev/AYTHER-Tessera/tree/$env:TESSERA_COMMIT
+          Las revisiones de terceros y los scripts de construcción constan en
+          ambos repositorios. Se aplican MPL-2.0 y las
+          obligaciones AGPL de los componentes Clown integrados.
+          No contiene ROM, pack, trust ni generador compilado. El borrador
+          permanece sin publicar hasta fijar el lock nativo de Runtime.
+          "@ | Set-Content release-notes.md -Encoding utf8NoBOM
+          gh release create '${{ github.ref_name }}' `
+            "release-out/$env:ASSET_NAME" release-out/CHECKSUMS.sha256 `
+            --repo '${{ github.repository }}' --verify-tag --draft --prerelease `
+            --title "Engine ${{ github.ref_name }}" --notes-file release-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'Draft Engine candidate creation failed.' }
