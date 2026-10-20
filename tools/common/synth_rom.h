@@ -230,7 +230,7 @@ inline constexpr int kBgX   = 200, kBgY   = 200;  ///< backdrop, lejos de los do
 /// nametable y el sprite en la SAT: mismo VDP, misma paleta, mismos tiles en
 /// VRAM, misma animación. Es el control de los oráculos de imagen, y es estrecho
 /// a propósito — lo único que cambia es el dibujo.
-inline void program_canonical(Rom& r, bool draw = true) {
+inline void program_canonical(Rom& r, bool draw = true, bool overlap = false) {
     // Modo 5, display encendido, H40 (320×224) y las tablas donde vamos a
     // escribir. El backdrop es el color 0 de la paleta 0 (reg 7 = 0).
     r.vdp_reg(0x00, 0x04);   // modo 5, sin HINT
@@ -259,6 +259,7 @@ inline void program_canonical(Rom& r, bool draw = true) {
 
     r.vdp_fill_tile(1, 1);   // el tile del plano  → rojo
     r.vdp_fill_tile(2, 2);   // el tile del sprite → verde
+    if (overlap) r.vdp_fill_tile(4, 3);
 
     if (draw) {
         // Una celda del plano A: fila 4, columna 4, tile 1, paleta 0, sin
@@ -266,13 +267,25 @@ inline void program_canonical(Rom& r, bool draw = true) {
         r.vdp_vram_at(0xC000u + (4u * 64u + 4u) * 2u);
         r.vdp_data(0x0001);
 
+        if (overlap) {
+            // A high-priority plane cell under two overlapping SAT entries.
+            r.vdp_vram_at(0xC000u + (8u * 64u + 12u) * 2u);
+            r.vdp_data(0x8001);
+        }
+
         // Un sprite de 1×1 celda en la SAT. Las coordenadas del VDP llevan un
         // corrimiento de 128 en los dos ejes, y `link` 0 cierra la cadena.
         r.vdp_vram_at(0xD800u);
         r.vdp_data(uint16_t(128 + kSprY));   // Y
-        r.vdp_data(0x0000);                  // tamaño 1×1 · link 0
+        r.vdp_data(overlap ? 0x0001 : 0x0000); // link to slot 1 in FX-03
         r.vdp_data(0x0002);                  // tile 2, paleta 0, sin prioridad
         r.vdp_data(uint16_t(128 + kSprX - 3));   // X (el muestreo cae adentro)
+        if (overlap) {
+            r.vdp_data(uint16_t(128 + kSprY));
+            r.vdp_data(0x0000);                 // slot 1 ends the SAT chain
+            r.vdp_data(0x8004);                 // high-priority blue sprite
+            r.vdp_data(uint16_t(128 + kSprX + 1));
+        }
     }
 
     // El MOVIMIENTO. Toca dos cosas que el motor observa por caminos distintos y
@@ -311,6 +324,14 @@ inline std::string canonical_rom_path() {
     const auto p = std::filesystem::temp_directory_path() / "ayther_synthetic.md";
     Rom r("AYTHER SYNTHETIC ROM");
     program_canonical(r, true);
+    if (!r.save(p)) return {};
+    return p.string();
+}
+
+inline std::string fx03_rom_path() {
+    const auto p = std::filesystem::temp_directory_path() / "ayther_fx03.md";
+    Rom r("AYTHER FX03 SYNTH ROM");
+    program_canonical(r, true, true);
     if (!r.save(p)) return {};
     return p.string();
 }

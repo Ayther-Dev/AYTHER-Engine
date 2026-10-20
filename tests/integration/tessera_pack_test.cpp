@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <string>
@@ -102,6 +104,59 @@ NativeConfig configuration() {
         (nibble(digest[index * 2]) << 4) | nibble(digest[index * 2 + 1]));
   }
   field(result.config, 7, 5, hash);
+  return result;
+}
+NativeConfig megadrive_configuration() {
+  std::vector<NativeBackendInfo> backends;
+  REQUIRE(ayther::engine::NativeEmulation::backends(backends).code == 0);
+  const auto found = std::ranges::find(backends, std::string("clownmdemu"),
+                                       &NativeBackendInfo::id);
+  REQUIRE(found != backends.end());
+  NativeConfig result;
+  result.backend_id = found->id;
+  result.system_override = 1;
+  std::ifstream rom(std::filesystem::path(AYTHER_FX03_ROOT) / "fx03_rom.md",
+                    std::ios::binary);
+  REQUIRE(rom.good());
+  result.content = {std::istreambuf_iterator<char>(rom),
+                    std::istreambuf_iterator<char>()};
+  result.initial_persistent_memory.resize(65536);
+  scalar(result.config, 1, 1, 1);
+  field(result.config, 2, 6, text(result.backend_id));
+  field(result.config, 3, 5, found->build_id);
+  scalar(result.config, 4, 1, 1);
+  scalar(result.config, 5, 1, 48000);
+  std::vector<Bytes> inputs;
+  for (unsigned index = 0; index < 8; ++index) {
+    Bytes item;
+    scalar(item, 1, 1, 0);
+    scalar(item, 2, 1, index);
+    scalar(item, 3, 1, 1);
+    scalar(item, 4, 2, 0);
+    scalar(item, 5, 2, 1);
+    inputs.push_back(std::move(item));
+  }
+  field(result.config, 6, 8, array(inputs));
+  std::array<char, 65> digest{};
+  REQUIRE(ayther_sha256_hex(result.initial_persistent_memory.data(),
+                            result.initial_persistent_memory.size(),
+                            digest.data()));
+  Bytes hash(32);
+  const auto nibble = [](char value) -> std::uint8_t {
+    if (value >= '0' && value <= '9') return static_cast<std::uint8_t>(value - '0');
+    if (value >= 'a' && value <= 'f') return static_cast<std::uint8_t>(value - 'a' + 10);
+    return static_cast<std::uint8_t>(value - 'A' + 10);
+  };
+  for (std::size_t index = 0; index < 32; ++index)
+    hash[index] = static_cast<std::uint8_t>(
+        (nibble(digest[index * 2]) << 4) | nibble(digest[index * 2 + 1]));
+  field(result.config, 7, 5, hash);
+  scalar(result.config, 8, 1, 895780);
+  scalar(result.config, 9, 1, 53693175);
+  scalar(result.config, 10, 1, 1);
+  scalar(result.config, 11, 2, 32768);
+  scalar(result.config, 12, 2, 4096);
+  field(result.config, 13, 6, text("integer-causal-ZOH-v1;CD-disabled-zero-required;zero-initialized-upstream-options"));
   return result;
 }
 std::string manifest(const NativeConfig &config) {
@@ -228,4 +283,100 @@ TEST_CASE("Native activation rejects signed packs with missing attribution or da
   auto second = open(native, "", missing_asset.registry_path());
   CHECK_FALSE(second->set_pack(missing_asset.pack_path()));
   CHECK_FALSE(second->has_pack());
+}
+
+TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile rule") {
+  const auto root = std::filesystem::path(AYTHER_FX03_ROOT);
+  const auto native = megadrive_configuration();
+  auto session = open(native, (root / "fx03.ay").string(),
+                      (root / "trust.toml").string());
+  REQUIRE(session->has_pack());
+  CHECK(std::string(session->game_id()) == "crc32:2af4a80d");
+  std::array<ayther::engine::NativeInputAssignment, 8> neutral{};
+  for (std::uint16_t control = 0; control < neutral.size(); ++control)
+    neutral[control] = {0, control, 0};
+  auto &emulation = *session->native_emulation();
+  const std::array<ayther::engine::NativeControlItem, 1> observe{{{1, 1, 4}}};
+  REQUIRE(emulation.submit_controls({1, 1, 44, observe}).code == 0);
+  REQUIRE(emulation.step({1, 1, neutral}).code == 0);
+  ayther::engine::NativeSnapshot capture;
+  REQUIRE(emulation.snapshot_acquire(capture).code == 0);
+  ayther::engine::NativeRegion sat;
+  REQUIRE(capture.region(0, sat).code == 0);
+  CHECK(sat.data[0xD800 + 3] == 1); // slot 0 links to slot 1
+  CHECK(sat.data[0xD800 + 12] == 0x80); // slot 1 is high priority
+  const auto &frame = session->native_frame();
+  REQUIRE(frame.native_result.code == 0);
+  REQUIRE(frame.native_original.pixels.size() == 320 * 224 * 4);
+  const auto pixel = (36 * 320 + 36) * 4;
+  CHECK(frame.native_original.pixels[pixel] == 255);
+  CHECK(frame.native_original.pixels[pixel + 1] == 0);
+  CHECK(frame.native_original.pixels[pixel + 2] == 0);
+  const auto colour_at = [&](std::size_t x, std::size_t y) {
+    const auto offset = (y * 320 + x) * 4;
+    return std::array<std::uint8_t, 3>{frame.native_original.pixels[offset],
+                                       frame.native_original.pixels[offset + 1],
+                                       frame.native_original.pixels[offset + 2]};
+  };
+  const std::array<std::uint8_t, 3> red{255, 0, 0},
+                                   green{0, 255, 0}, blue{0, 0, 255};
+  CHECK(colour_at(97, 68) == red);
+  CHECK(colour_at(101, 68) == red);
+  CHECK(colour_at(105, 68) == green); // SAT slot 0 masks slot 1
+  CHECK(colour_at(109, 68) == blue);
+  std::array<std::uint8_t, 8 * 8 * 4> bgra{};
+  for (std::size_t y = 0; y < 8; ++y)
+    for (std::size_t x = 0; x < 8; ++x) {
+      const auto source = ((32 + y) * 320 + 32 + x) * 4;
+      const auto dest = (y * 8 + x) * 4;
+      bgra[dest] = frame.native_original.pixels[source + 2];
+      bgra[dest + 1] = frame.native_original.pixels[source + 1];
+      bgra[dest + 2] = frame.native_original.pixels[source];
+      bgra[dest + 3] = 255;
+    }
+  std::unique_ptr<AytherTileHasher, decltype(&ayther_tile_hasher_free)> hasher(
+      ayther_tile_hasher_new(), &ayther_tile_hasher_free);
+  REQUIRE(hasher != nullptr);
+  ayther_tile_hasher_process_frame(hasher.get(), bgra.data(), 8, 8, 32, 1);
+  AytherTileOccurrence observed{};
+  REQUIRE(ayther_tile_hasher_get_occurrences(hasher.get(), &observed, 1) == 1);
+  std::ifstream metadata(root / "manifest.json", std::ios::binary);
+  REQUIRE(metadata.good());
+  const std::string description{std::istreambuf_iterator<char>(metadata),
+                                std::istreambuf_iterator<char>()};
+  const auto label = description.find("\"tile_hash\": \"0x");
+  REQUIRE(label != std::string::npos);
+  const auto expected = std::stoull(description.substr(label + 16, 16), nullptr, 16);
+  CHECK(observed.hash == expected);
+  for (std::size_t y = 0; y < 8; ++y)
+    for (std::size_t x = 0; x < 8; ++x) {
+      const auto source = ((64 + y) * 320 + 96 + x) * 4;
+      const auto dest = (y * 8 + x) * 4;
+      bgra[dest] = frame.native_original.pixels[source + 2];
+      bgra[dest + 1] = frame.native_original.pixels[source + 1];
+      bgra[dest + 2] = frame.native_original.pixels[source];
+      bgra[dest + 3] = 255;
+    }
+  ayther_tile_hasher_process_frame(hasher.get(), bgra.data(), 8, 8, 32, 1);
+  AytherTileOccurrence overlapped{};
+  REQUIRE(ayther_tile_hasher_get_occurrences(hasher.get(), &overlapped, 1) == 1);
+  CHECK(overlapped.hash == expected);
+  std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)> catalog(
+      ayther_tile_sub_new(), &ayther_tile_sub_free);
+  REQUIRE(catalog != nullptr);
+  auto *archive = ayther_pack_open_trusted((root / "fx03.ay").string().c_str(),
+                                          (root / "trust.toml").string().c_str());
+  REQUIRE(archive != nullptr);
+  ayther_tile_sub_load_pack(catalog.get(), archive);
+  std::array<char, 128> asset{};
+  REQUIRE(ayther_tile_sub_lookup(catalog.get(), observed.hash, asset.data(),
+                                 static_cast<std::uint32_t>(asset.size())));
+  CHECK(std::string(asset.data()) == "first.png");
+  ayther_tile_sub_add_override(catalog.get(), observed.hash, "second.png");
+  REQUIRE(ayther_tile_sub_lookup(catalog.get(), observed.hash, asset.data(),
+                                 static_cast<std::uint32_t>(asset.size())));
+  CHECK(std::string(asset.data()) == "second.png");
+  ayther_pack_close(archive);
+  CHECK(frame.native_original_reason ==
+        ayther::NativeOriginalReason::pack_not_integrated);
 }

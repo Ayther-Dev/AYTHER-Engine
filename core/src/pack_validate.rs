@@ -900,25 +900,25 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                 .map(|mut entry| entry.read_to_string(&mut source))
                 .is_err()
             {
-                r.error("tile.catalog_unreadable", format!("{catalog} no se puede leer"));
+                r.error("tile.catalog_unreadable", format!("{catalog} cannot be read"));
                 continue;
             }
             let Ok(document) = toml::from_str::<toml::Value>(&source) else {
                 continue; // catalog.malformed reports the syntax error above.
             };
             let Some(rules) = document.get("sub").and_then(toml::Value::as_array) else {
-                r.error("tile.rules_missing", format!("{catalog} no declara [[sub]]"));
+                r.error("tile.rules_missing", format!("{catalog} declares no [[sub]] rules"));
                 continue;
             };
             for (index, rule) in rules.iter().enumerate() {
                 let hash = rule.get("hash").and_then(toml::Value::as_str).unwrap_or("");
                 let hash_digits = hash.strip_prefix("0x").unwrap_or("");
                 if hash_digits.is_empty() || u64::from_str_radix(hash_digits, 16).is_err() {
-                    r.error("tile.hash_invalid", format!("{catalog} [[sub]] #{index} tiene un hash inválido"));
+                    r.error("tile.hash_invalid", format!("{catalog} [[sub]] #{index} has an invalid hash"));
                 }
                 let asset = rule.get("asset").and_then(toml::Value::as_str).unwrap_or("");
                 if validate_canonical_logical_path(asset).is_err() {
-                    r.error("tile.asset_path_invalid", format!("{catalog} [[sub]] #{index} tiene una ruta inválida"));
+                    r.error("tile.asset_path_invalid", format!("{catalog} [[sub]] #{index} has an invalid asset path"));
                     continue;
                 }
                 let entries: Vec<&String> = names
@@ -926,7 +926,7 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                     .filter(|name| asset_entry_matches(name, asset))
                     .collect();
                 if entries.is_empty() {
-                    r.error("tile.asset_missing", format!("{catalog} [[sub]] #{index} refiere a '{asset}', ausente del pack"));
+                    r.error("tile.asset_missing", format!("{catalog} [[sub]] #{index} references '{asset}', which is absent from the pack"));
                     continue;
                 }
                 if entries.iter().any(|entry| {
@@ -934,7 +934,7 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                     let read = zip.by_name(entry).map(|e| e.take(64).read_to_end(&mut head)).is_ok();
                     !read || !image_header_is_readable(entry, &head)
                 }) {
-                    r.error("tile.asset_unreadable", format!("{catalog} [[sub]] #{index} refiere a '{asset}', que no es una imagen legible"));
+                    r.error("tile.asset_unreadable", format!("{catalog} [[sub]] #{index} references '{asset}', which is not a readable image"));
                 }
             }
         }

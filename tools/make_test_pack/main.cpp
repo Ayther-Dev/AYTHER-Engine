@@ -17,9 +17,12 @@
 
 #include <cstdio>
 #include <cstring>
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 extern "C" bool ayther_test_public_key_hex(unsigned char seed_byte, char* out_buf,
                                            size_t cap);
@@ -35,18 +38,65 @@ constexpr const char* kKeyId = "ayther-rc-consumer";
 /// 2100-01-01: past any clock this fixture will meet.
 constexpr const char* kNotAfter = "4102444800";
 
+std::vector<std::uint8_t> read_file(const std::string& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+std::uint32_t crc32(const std::vector<std::uint8_t>& bytes) {
+    std::uint32_t value = 0xFFFFFFFFU;
+    for (auto byte : bytes) {
+        value ^= byte;
+        for (unsigned bit = 0; bit < 8; ++bit)
+            value = (value >> 1) ^ ((value & 1U) ? 0xEDB88320U : 0U);
+    }
+    return ~value;
+}
+
+std::uint64_t red_tile_hash() {
+    std::array<std::uint8_t, 8 * 8 * 4> bgra{};
+    for (std::size_t i = 0; i < bgra.size(); i += 4) {
+        bgra[i + 2] = 255;
+        bgra[i + 3] = 255;
+    }
+    AytherTileHasher* hasher = ayther_tile_hasher_new();
+    if (!hasher) return 0;
+    ayther_tile_hasher_process_frame(hasher, bgra.data(), 8, 8, 32, 1);
+    AytherTileOccurrence tile{};
+    const auto count = ayther_tile_hasher_get_occurrences(hasher, &tile, 1);
+    ayther_tile_hasher_free(hasher);
+    return count == 1 ? tile.hash : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     if (argc < 3) {
         std::fprintf(stderr,
                      "usage: make_test_pack <pack-path> <registry-path> "
-                     "[game_id] [rom-path]\n");
+                     "[game_id] [rom-path] [--fx03 first.png second.png]\n");
         return 2;
     }
     const std::string pack_path = argv[1];
     const std::string registry_path = argv[2];
-    const std::string game_id = argc > 3 ? argv[3] : "crc32:rc000001";
+    std::string game_id = argc > 3 ? argv[3] : "crc32:rc000001";
+    const bool fx03 = argc == 8 && std::strcmp(argv[5], "--fx03") == 0;
+    const std::string rom_source = fx03 ? ayther::synth::fx03_rom_path()
+                                        : ayther::synth::canonical_rom_path();
+    if (rom_source.empty()) return 1;
+    if (fx03) {
+        char identity[32]{};
+        std::snprintf(identity, sizeof(identity), "crc32:%08x", crc32(read_file(rom_source)));
+        game_id = identity;
+    }
+    const auto first = fx03 ? read_file(argv[6]) : std::vector<std::uint8_t>{};
+    const auto second = fx03 ? read_file(argv[7]) : std::vector<std::uint8_t>{};
+    const auto tile_hash = fx03 ? red_tile_hash() : 0;
+    if (fx03 && (first.empty() || second.empty() || tile_hash == 0)) {
+        std::fprintf(stderr, "FX-03 requires two PNG assets and a tile hash\n");
+        return 2;
+    }
 
     std::error_code ec;
     for (const std::string& path : {pack_path, registry_path}) {
@@ -81,14 +131,23 @@ int main(int argc, char** argv) {
     // --- The pack ---------------------------------------------------------
     const std::string manifest =
         "[pack]\n"
-        "name       = \"rc_consumer\"\n"
+        "name       = \"" + std::string(fx03 ? "fx03_graphics" : "rc_consumer") + "\"\n"
         "version    = \"1.0.0\"\n"
         "game_id    = \"" + game_id + "\"\n"
         "ayther_min = \"0.1.0\"\n"
+        + (fx03 ? "author = \"AYTHER Tessera\"\nlicense = \"CC0-1.0\"\ncontributors = [\"AYTHER Tessera\"]\n[systems]\nincluded = [\"tiles\"]\n" : "") +
         "\n[regions]\n"
         "default = \"NTSC\"\n"
         "supported = [\"NTSC\"]\n";
     const std::string asset = "release-candidate consumer asset";
+    char tile_hash_text[24]{};
+    std::snprintf(tile_hash_text, sizeof(tile_hash_text), "0x%016llx",
+                  static_cast<unsigned long long>(tile_hash));
+    const std::string rules =
+        "[[sub]]\nhash = \"" + std::string(tile_hash_text) +
+        "\"\nasset = \"first.png\"\n"
+        "[[sub]]\nhash = \"" + std::string(tile_hash_text) +
+        "\"\nasset = \"second.png\"\n";
 
     AytherPackBuilder* builder = ayther_pack_builder_new();
     if (builder == nullptr) {
@@ -100,9 +159,14 @@ int main(int argc, char** argv) {
         ayther_pack_builder_add_bytes(
             builder, "manifest.toml",
             reinterpret_cast<const uint8_t*>(manifest.data()), manifest.size()) &&
-        ayther_pack_builder_add_bytes(
-            builder, "assets/tone.bin",
-            reinterpret_cast<const uint8_t*>(asset.data()), asset.size());
+        (fx03 ?
+             ayther_pack_builder_add_bytes(builder, "tile_substitutions.toml",
+                 reinterpret_cast<const uint8_t*>(rules.data()), rules.size()) &&
+             ayther_pack_builder_add_bytes(builder, "assets/first.png", first.data(), first.size()) &&
+             ayther_pack_builder_add_bytes(builder, "assets/second.png", second.data(), second.size())
+           : ayther_pack_builder_add_bytes(
+                 builder, "assets/tone.bin",
+                 reinterpret_cast<const uint8_t*>(asset.data()), asset.size()));
     const bool baked =
         staged && ayther_test_pack_builder_finish_signed_as(
                       builder, pack_path.c_str(), kKeyId, kSeed, error,
@@ -123,13 +187,8 @@ int main(int argc, char** argv) {
         const std::filesystem::path parent =
             std::filesystem::path(rom_path).parent_path();
         if (!parent.empty()) std::filesystem::create_directories(parent, ec);
-        const std::string canonical = ayther::synth::canonical_rom_path();
-        if (canonical.empty()) {
-            std::fprintf(stderr, "could not build the synthetic ROM\n");
-            return 1;
-        }
         std::filesystem::copy_file(
-            canonical, rom_path,
+            rom_source, rom_path,
             std::filesystem::copy_options::overwrite_existing, ec);
         if (ec) {
             std::fprintf(stderr, "could not place the ROM: %s\n",
@@ -146,5 +205,6 @@ int main(int argc, char** argv) {
                 std::filesystem::path(pack_path).filename().string().c_str(),
                 std::filesystem::path(registry_path).filename().string().c_str(),
                 game_id.c_str());
+    if (fx03) std::printf("tile_hash=%s\n", tile_hash_text);
     return 0;
 }
