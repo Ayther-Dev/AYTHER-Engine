@@ -168,6 +168,24 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A pan that ended with the camera resting on a fine offset never stitched
+  its last column. The background stitcher read whole cells only, while the
+  screen showed part of one more column (and of one more row with a vertical
+  fine offset); nobody saw that column again, so "Go to Turtle Town" (Golden
+  Axe) came out 191 columns wide with 192 on screen, and its HD strip stopped
+  short of the screen edge. A resting camera now has its partial column and
+  row stitched, so a new capture can be one column or row larger than an
+  older capture of the same stretch. A camera left of the origin now starts
+  at column -1 instead of 0.
+- `define_panorama` and pack loading kept the cells outside the Panorama's
+  rectangle. The content index includes the partial edge column, so such a
+  cell was claimed (its original tile hidden) where the HD quad, which covers
+  exactly the rectangle, drew nothing, and the backdrop showed through. Cells
+  outside the rectangle are ignored now; `w_cells` or `h_cells` 0 still means
+  no rectangle.
+- `replay_seek` logged every call at Warning level, a diagnostic left behind:
+  a Panorama sweep wrote one line per frame (9,140 for "Go to Turtle Town").
+  It is a Debug line now.
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take
   with the same count kept the previous ones; any change of the events now

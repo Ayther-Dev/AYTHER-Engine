@@ -2294,6 +2294,11 @@ public:
   /// the same idea as the least frequent anchor of the set matcher — the sky
   /// tile that appears 500 times contributes no information and does cost. The
   /// rarity is computed here, at declaration time, not per frame.
+  ///
+  /// Only the cells inside the rectangle (`origin`, `w_cells` x `h_cells`) are
+  /// kept: the HD quad covers exactly that rectangle, and a cell outside it
+  /// would be claimed (its original tile hidden) with nothing drawn over it.
+  /// `w_cells` or `h_cells` 0 means no rectangle: every cell is kept.
   void define_panorama(uint64_t id, uint8_t plane, int32_t origin_x,
                        int32_t origin_y, uint16_t w_cells, uint16_t h_cells,
                        const PanoramaCell *cells, uint32_t cell_count,
@@ -2378,7 +2383,10 @@ public:
   /// max_y}. false without capture or with an empty plane. The definition of a
   /// Panorama MUST use these bounds (those of the exported PNG) — the extents
   /// of bg_cells() may differ by a row/column (partial edge cells) and that
-  /// offset stretches and shifts the asset when drawing.
+  /// offset stretches and shifts the asset when drawing. A camera that rests
+  /// on a fine offset (x or y not a multiple of 8) shows part of one more
+  /// column or row, and the stitcher reads it too, so the bounds reach the
+  /// last cell the screen showed.
   bool bg_bounds(uint8_t plane, int32_t out[4]) const;
   /// The plane's accumulated cells as PANORAMA CELLS: (hash, lx, ly), ready for
   /// `define_panorama`. Different from what the stitcher exports to PNG: those
