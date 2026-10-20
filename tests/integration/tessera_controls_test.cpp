@@ -227,3 +227,44 @@ TEST_CASE("Successful close cancels the pending transaction and clears Engine po
   CHECK_FALSE(session->native_presentation_policy().configured);
   CHECK(session->native_presentation_policy().pending_transaction == 0);
 }
+
+TEST_CASE("Native restore keeps effective controls and cancels only a pending request") {
+  auto session = open_native("synthetic.complete");
+  auto &machine = *session->native_emulation();
+  const auto input = neutral();
+  REQUIRE(session->native_submit_presentation_policy(31, 31).code == 0);
+  REQUIRE(session->native_step_frame({1, 1, input}).code == 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(machine.checkpoint(checkpoint).code == 0);
+  REQUIRE(session->native_submit_presentation_policy(0, 0).code == 0);
+  const auto pending = session->native_presentation_policy();
+  std::vector<std::uint8_t> state_before, state_after;
+  REQUIRE(machine.state(state_before).code == 0);
+  CHECK(session->native_restore_checkpoint({}).code != 0);
+  CHECK(session->native_presentation_policy().pending_transaction ==
+        pending.pending_transaction);
+  REQUIRE(machine.state(state_after).code == 0);
+  CHECK(state_after == state_before);
+  const auto restored = session->native_restore_checkpoint(checkpoint);
+  REQUIRE(restored.code == 0);
+  CHECK((restored.flags & native::native_control_cancelled) != 0);
+  CHECK(restored.transaction == pending.pending_transaction);
+  CHECK(restored.cancel_reason == native::native_cancel_restore);
+  const auto policy = session->native_presentation_policy();
+  CHECK(policy.pending_transaction == 0);
+  CHECK(policy.configured);
+  CHECK(policy.confirmed);
+  CHECK(policy.active_regions == 31);
+  CHECK(policy.active_events == 31);
+  CHECK(policy.requested_regions == 31);
+  CHECK(policy.requested_events == 31);
+  native::NativeSessionInfo info;
+  REQUIRE(machine.info(info).code == 0);
+  CHECK(info.frame_id.epoch == 2);
+  CHECK(info.frame_id.frame == 1);
+  CHECK(info.pending_transaction == 0);
+  const auto continued = session->native_step_frame({2, 2, input});
+  REQUIRE(continued.code == 0);
+  CHECK((continued.flags & native::native_controls_applied) == 0);
+  CHECK(session->native_presentation_policy().active_regions == 31);
+}

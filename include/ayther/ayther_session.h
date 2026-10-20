@@ -885,6 +885,12 @@ public:
   /// matching Tessera confirmation. On rejection the policy is unchanged.
   [[nodiscard]] engine::NativeResult
   native_step_frame(const engine::NativeInputFrame &input) noexcept;
+  /// Restore a native checkpoint. Success invalidates borrowed presentation
+  /// data and discards a cancelled pending policy while retaining controls
+  /// that Tessera had already applied; failure leaves Engine policy intact.
+  [[nodiscard]] engine::NativeResult native_restore_checkpoint(
+      std::span<const std::uint8_t> checkpoint,
+      std::span<const std::uint8_t> trace = {}) noexcept;
   /// Close the native driver and discard Engine presentation policy only after
   /// a successful close; the result preserves Tessera cancellation context.
   [[nodiscard]] engine::NativeResult native_close() noexcept;

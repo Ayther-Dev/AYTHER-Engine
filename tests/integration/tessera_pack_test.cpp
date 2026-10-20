@@ -458,4 +458,21 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
   REQUIRE(restarted.code == 0);
   CHECK(restarted.transaction == rearmed.pending_transaction);
   CHECK(session->native_presentation_policy().confirmed);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(emulation.checkpoint(checkpoint).code == 0);
+  REQUIRE(session->native_submit_presentation_policy(0, 0).code == 0);
+  const auto pending = session->native_presentation_policy().pending_transaction;
+  CHECK(session->native_restore_checkpoint({}).code != 0);
+  CHECK(session->native_presentation_policy().pending_transaction == pending);
+  const auto restored = session->native_restore_checkpoint(checkpoint);
+  REQUIRE(restored.code == 0);
+  CHECK(restored.transaction == pending);
+  CHECK(restored.cancel_reason == ayther::engine::native_cancel_restore);
+  CHECK(session->has_pack());
+  CHECK(session->native_presentation_policy().pending_transaction == 0);
+  CHECK(session->native_presentation_policy().active_regions == 4);
+  ayther::engine::NativeSessionInfo after_restore;
+  REQUIRE(emulation.info(after_restore).code == 0);
+  CHECK(after_restore.frame_id.epoch == 3);
+  CHECK(after_restore.frame_id.frame == 1);
 }

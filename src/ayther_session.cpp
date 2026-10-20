@@ -647,6 +647,37 @@ engine::NativeResult AytherSession::native_step_frame(
   return im.native_result = advanced;
 }
 
+engine::NativeResult AytherSession::native_restore_checkpoint(
+    std::span<const std::uint8_t> checkpoint,
+    std::span<const std::uint8_t> trace) noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code = static_cast<std::int32_t>(
+        engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto restored = im.native->restore_checkpoint(checkpoint, trace);
+  if (restored.code == 0) {
+    // Restore retains Tessera's effective observation masks. A pending
+    // request, if any, was cancelled and must not leak into the new epoch.
+    const auto active_regions = im.native_policy.active_regions;
+    const auto active_events = im.native_policy.active_events;
+    const auto had_active_policy = im.native_policy.confirmed;
+    im.native_policy = {};
+    im.native_policy.active_regions = active_regions;
+    im.native_policy.active_events = active_events;
+    im.native_policy.requested_regions = active_regions;
+    im.native_policy.requested_events = active_events;
+    im.native_policy.configured = had_active_policy;
+    im.native_policy.confirmed = had_active_policy;
+    im.view = {};
+    im.frame_index = restored.frame_id.frame;
+  }
+  im.view.native_result = restored;
+  return im.native_result = restored;
+}
+
 engine::NativeResult AytherSession::native_close() noexcept {
   Impl &im = *impl_;
   if (!im.native) {
