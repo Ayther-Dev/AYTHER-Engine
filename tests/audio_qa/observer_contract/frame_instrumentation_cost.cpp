@@ -276,7 +276,7 @@ int main() try {
     const bool behavior_pair_passed =
         disabled.valid && enabled.valid && decisions_match(disabled, enabled);
     behavior_passed = behavior_passed && behavior_pair_passed;
-    const bool pair_budget_passed =
+    [[maybe_unused]] const bool pair_budget_passed =
         within_budget(disabled_percentiles, enabled_percentiles);
 #if !defined(AYTHER_INSTRUMENTED_BUILD)
     budget_passed = budget_passed && pair_budget_passed;
