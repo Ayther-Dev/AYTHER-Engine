@@ -894,6 +894,8 @@ public:
   /// matching Tessera confirmation. On rejection the policy is unchanged.
   [[nodiscard]] engine::NativeResult
   native_step_frame(const engine::NativeInputFrame &input) noexcept;
+  /// Replay a bound trace frame and confirm matching presentation controls.
+  [[nodiscard]] engine::NativeResult native_replay_next() noexcept;
   /// Restore a native checkpoint. Success invalidates borrowed presentation
   /// data and discards a cancelled pending policy while retaining controls
   /// that Tessera had already applied; failure leaves Engine policy intact.

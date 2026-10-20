@@ -653,6 +653,28 @@ engine::NativeResult AytherSession::native_step_frame(
   return im.native_result = advanced;
 }
 
+engine::NativeResult AytherSession::native_replay_next() noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code = static_cast<std::int32_t>(
+        engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto advanced = im.native->replay_next();
+  if (advanced.code == 0 && im.native_policy.pending_transaction != 0 &&
+      (advanced.flags & engine::native_controls_applied) != 0 &&
+      advanced.transaction == im.native_policy.pending_transaction &&
+      advanced.frame_id.session == im.native_policy.pending_frame.session &&
+      advanced.frame_id.epoch == im.native_policy.pending_frame.epoch &&
+      advanced.frame_id.frame == im.native_policy.pending_frame.frame) {
+    im.native_policy.active_regions = im.native_policy.requested_regions;
+    im.native_policy.active_events = im.native_policy.requested_events;
+    im.native_policy.pending_transaction = 0;
+    im.native_policy.confirmed = true;
+  }
+  return im.native_result = advanced;
+}
 engine::NativeResult AytherSession::native_restore_checkpoint(
     std::span<const std::uint8_t> checkpoint,
     std::span<const std::uint8_t> trace) noexcept {

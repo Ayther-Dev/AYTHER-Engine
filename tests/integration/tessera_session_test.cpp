@@ -602,6 +602,23 @@ Json worker(const std::map<std::string, std::string> &options) {
               configuration.config == fx::configuration(selected) &&
               configuration.initial_persistent_memory == fx::initial_memory(),
           "FIXTURE_DOES_NOT_MATCH_INDEPENDENT_MODEL");
+  if (complete) {
+    auto replay_owner = create(configuration);
+    auto &replay_machine = *replay_owner->native_emulation();
+    ok(replay_machine.bind_trace(trace));
+    ok(replay_owner->native_submit_presentation_policy(31, 31));
+    const auto pending = replay_owner->native_presentation_policy();
+    require(pending.pending_transaction != 0 && !pending.confirmed,
+            "REPLAY_POLICY_NOT_PENDING");
+    const auto applied = replay_owner->native_replay_next();
+    ok(applied);
+    const auto policy = replay_owner->native_presentation_policy();
+    require((applied.flags & native::native_controls_applied) != 0 &&
+                applied.transaction == pending.pending_transaction &&
+                policy.confirmed && policy.pending_transaction == 0 &&
+                policy.active_regions == 31 && policy.active_events == 31,
+            "REPLAY_POLICY_NOT_CONFIRMED");
+  }
   auto owner = create(configuration);
   auto &emulation = *owner->native_emulation();
   const auto initial_info = info(emulation);
