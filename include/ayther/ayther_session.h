@@ -290,7 +290,16 @@ enum class EmulationProvider : std::uint8_t { libretro, tessera_native };
 enum class FramePixelEncoding : std::uint8_t { libretro, rgba8 };
 enum class NativeOriginalReason : std::uint8_t {
   no_native_provider,
-  pack_not_integrated
+  pack_not_integrated,
+  none,
+  no_pack,
+  policy_unconfirmed,
+  capture_lost,
+  temporal_incomplete,
+  unsupported_mode,
+  invalid_capture,
+  invalid_asset,
+  no_matching_rule
 };
 
 struct NativePresentationPolicy {
@@ -895,6 +904,9 @@ public:
   /// a successful close; the result preserves Tessera cancellation context.
   [[nodiscard]] engine::NativeResult native_close() noexcept;
   [[nodiscard]] NativePresentationPolicy native_presentation_policy() const noexcept;
+  [[nodiscard]] bool native_set_tile_override(std::uint64_t hash,
+                                               std::string asset_path);
+  void native_clear_tile_overrides() noexcept;
   /// Refresh borrowed originals after driving native_emulation(). Native packs
   /// are not integrated in this increment; the reason is explicit in FrameView.
   [[nodiscard]] const FrameView &native_frame() noexcept;

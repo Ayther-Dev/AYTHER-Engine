@@ -51,6 +51,7 @@
 #include "session/emulation_observer.h"
 #include "session/frame_composability.h"
 #include "session/pack_runtime.h"
+#include "session/native_presentation.h"
 #include "session/parsed_sprite_join.h"
 #include "session/plane_bands.h"
 #include "session/plane_set_match.h"
@@ -233,8 +234,11 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
     im.pack_trust_registry = cfg.trust_registry;
     if (!cfg.pack_path.empty()) {
       auto loaded = session->set_pack(cfg.pack_path);
-      if (!loaded)
+      if (!loaded) {
+        native_result.code = static_cast<std::int32_t>(
+            engine::NativeStatus::invalid_argument);
         return loaded.error;
+      }
     }
     return session;
   }
@@ -441,6 +445,7 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
     Impl &im = *impl_;
     if (pack_path.empty()) {
       im.pack.close();
+      im.native_tile_overrides.clear();
       return Result<void>::ok();
     }
     namespace fs = std::filesystem;
@@ -481,6 +486,7 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
       return Result<void>::fail(ErrorCode::BadFormat,
                                 "Tessera: pack integrity check failed");
     im.pack.swap(candidate);
+    im.native_tile_overrides.clear();
     return Result<void>::ok();
   }
   Impl &im = *impl_;
@@ -699,6 +705,25 @@ NativePresentationPolicy AytherSession::native_presentation_policy() const noexc
   return impl_->native_policy;
 }
 
+bool AytherSession::native_set_tile_override(std::uint64_t hash,
+                                              std::string asset_path) {
+  Impl &im = *impl_;
+  if (!im.native || !im.pack || hash == 0 || asset_path.empty() ||
+      asset_path.size() >= 512 || asset_path.find('\0') != std::string::npos)
+    return false;
+  auto path = asset_path;
+  if (ayther_pack_file_size(im.pack.get(), path.c_str()) <= 0)
+    path = "assets/" + asset_path;
+  if (ayther_pack_file_size(im.pack.get(), path.c_str()) <= 0)
+    return false;
+  im.native_tile_overrides[hash] = std::move(asset_path);
+  return true;
+}
+
+void AytherSession::native_clear_tile_overrides() noexcept {
+  impl_->native_tile_overrides.clear();
+}
+
 const FrameView &AytherSession::native_frame() noexcept {
   Impl &im = *impl_;
   if (!im.native)
@@ -718,6 +743,65 @@ const FrameView &AytherSession::native_frame() noexcept {
     im.view.frame_index = original.frame_id.frame;
     im.frame_index = original.frame_id.frame;
     im.view.native_original_reason = NativeOriginalReason::pack_not_integrated;
+    if (!im.pack)
+      im.view.native_original_reason = NativeOriginalReason::no_pack;
+    else if (!im.native_policy.confirmed ||
+             (im.native_policy.active_regions & 16U) == 0)
+      im.view.native_original_reason = NativeOriginalReason::policy_unconfirmed;
+    else {
+      engine::NativeSnapshot snapshot;
+      engine::NativeSnapshotInfo info;
+      engine::NativeRegion temporal;
+      if (im.native->snapshot_acquire(snapshot).code != 0 ||
+          snapshot.info(info).code != 0)
+        im.view.native_original_reason = NativeOriginalReason::capture_lost;
+      else if (info.frame_id.session != original.frame_id.session ||
+               info.frame_id.epoch != original.frame_id.epoch ||
+               info.frame_id.frame != original.frame_id.frame ||
+               (info.region_mask & 16U) == 0 ||
+               (info.complete_mask & 16U) == 0)
+        im.view.native_original_reason = NativeOriginalReason::temporal_incomplete;
+      else {
+        bool found = false;
+        for (std::uint32_t index = 0; index < info.region_count; ++index) {
+          engine::NativeRegion candidate;
+          if (snapshot.region(index, candidate).code != 0) break;
+          if (candidate.kind == 5) { temporal = candidate; found = true; break; }
+        }
+        if (!found)
+          im.view.native_original_reason = NativeOriginalReason::capture_lost;
+        else {
+          try {
+            switch (session::compose_native_frame(
+                original, temporal, im.pack.get(), im.native_tile_overrides,
+                im.native_presented_pixels)) {
+            case session::NativeComposeResult::presented:
+              im.view.fb_pixels = im.native_presented_pixels.data();
+              im.view.native_original_reason = NativeOriginalReason::none;
+              break;
+            case session::NativeComposeResult::no_matching_rule:
+              im.view.native_original_reason = NativeOriginalReason::no_matching_rule;
+              break;
+            case session::NativeComposeResult::incomplete:
+              im.view.native_original_reason = NativeOriginalReason::temporal_incomplete;
+              break;
+            case session::NativeComposeResult::unsupported:
+              im.view.native_original_reason = NativeOriginalReason::unsupported_mode;
+              break;
+            case session::NativeComposeResult::invalid_data:
+              im.view.native_original_reason = NativeOriginalReason::invalid_capture;
+              break;
+            case session::NativeComposeResult::invalid_asset:
+              im.view.native_original_reason = NativeOriginalReason::invalid_asset;
+              break;
+            }
+          } catch (...) {
+            im.native_presented_pixels.clear();
+            im.view.native_original_reason = NativeOriginalReason::invalid_capture;
+          }
+        }
+      }
+    }
   }
   im.view.native_result = result;
   return im.view;

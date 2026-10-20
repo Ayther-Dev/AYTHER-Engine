@@ -285,7 +285,7 @@ Json self_tests() {
             frame_view.native_result.code == 0,
         "FACADE_ORIGINAL_FORMAT_FAILED");
   check(frame_view.native_original_reason ==
-            ayther::NativeOriginalReason::pack_not_integrated,
+            ayther::NativeOriginalReason::no_pack,
         "FACADE_ORIGINAL_FALLBACK_NOT_EXPLICIT");
   const std::array<native::NativeControlItem, 2> controls{
       {{1, 1, 31}, {2, 1, 31}}};
@@ -360,7 +360,8 @@ Json self_tests() {
               !created.value.has_value(),
           "INCOMPATIBLE_FACADE_CONFIGURATION_ACCEPTED");
     if (negative < 5 || negative >= 7)
-      check(result.code == -6, "FACADE_CONFIGURATION_REJECTION_NOT_EXPLICIT");
+      check(result.code == (negative == 1 ? -1 : -6),
+            "FACADE_CONFIGURATION_REJECTION_NOT_EXPLICIT");
   }
   auto incompatible = session_config(configuration);
   incompatible.native_config.config.back() ^= 1;
@@ -641,7 +642,7 @@ Json worker(const std::map<std::string, std::string> &options) {
                 view.fb_width == 16 && view.fb_height == 16 &&
                 view.fb_pitch == 64 &&
                 view.native_original_reason ==
-                    ayther::NativeOriginalReason::pack_not_integrated,
+                    ayther::NativeOriginalReason::no_pack,
             "REAL_FRAME_VIEW_NOT_ORIGINAL_ZERO_COPY_FALLBACK");
     const auto hashes = fx::canonical(logical, original);
     const auto hashed = Clock::now();

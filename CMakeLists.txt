@@ -191,6 +191,7 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/ayther_sdk.cpp
     src/ayther_sdk_version.cpp
     src/ayther_session.cpp
+    src/session/native_presentation.cpp
     src/ayther_session_impl.inl
     src/ayther_video.cpp
     src/decode_limits.cpp

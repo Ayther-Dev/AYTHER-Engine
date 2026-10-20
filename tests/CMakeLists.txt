@@ -786,6 +786,18 @@ if(AYTHER_ENABLE_TESSERA)
     set_tests_properties(ayther.integration.tessera_pack_test PROPERTIES
         LABELS "engine;native;integration;phase4;FX-03")
     ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_presentation_test.cpp" integration)
+    target_include_directories(ayther_tessera_presentation_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/src")
+    target_include_directories(ayther_tessera_presentation_test SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
+    target_compile_options(ayther_tessera_presentation_test PRIVATE /EHsc)
+    target_compile_definitions(ayther_tessera_presentation_test PRIVATE
+        AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_SOURCE_DIR}/tests/fixtures/graphics-replacement")
+    tessera_copy_runtime_dependencies(ayther_tessera_presentation_test)
+    set_tests_properties(ayther.integration.tessera_presentation_test PROPERTIES
+        LABELS "engine;native;integration;phase4;FX-03")
+    ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/tessera_controls_test.cpp" integration)
     target_include_directories(ayther_tessera_controls_test SYSTEM PRIVATE
         "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")

@@ -446,7 +446,7 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
   CHECK(std::string(asset.data()) == "second.png");
   ayther_pack_close(archive);
   CHECK(frame.native_original_reason ==
-        ayther::NativeOriginalReason::pack_not_integrated);
+        ayther::NativeOriginalReason::policy_unconfirmed);
   session->reset();
   CHECK(session->has_pack());
   const auto rearmed = session->native_presentation_policy();
