@@ -471,6 +471,12 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
     if (!candidate.loaded())
       return Result<void>::fail(ErrorCode::BadFormat,
                                 "Tessera: pack did not open");
+    char expected_game_id[15]{};
+    std::snprintf(expected_game_id, sizeof(expected_game_id), "crc32:%08x",
+                  im.native_rom_crc32);
+    if (std::string_view(candidate.game_id()) != expected_game_id)
+      return Result<void>::fail(ErrorCode::BadFormat,
+                                "Tessera: pack game_id does not match ROM");
     if (!ayther_pack_verify_all(candidate.get()))
       return Result<void>::fail(ErrorCode::BadFormat,
                                 "Tessera: pack integrity check failed");
@@ -575,6 +581,91 @@ engine::NativeEmulation *AytherSession::native_emulation() noexcept {
 const engine::NativeEmulation *
 AytherSession::native_emulation() const noexcept {
   return impl_->native.get();
+}
+
+engine::NativeResult AytherSession::native_submit_presentation_policy(
+    std::uint64_t regions, std::uint64_t events) noexcept {
+  Impl &im = *impl_;
+  engine::NativeResult result;
+  if (!im.native || ((regions | events) & ~std::uint64_t{31}) != 0) {
+    result.code = static_cast<std::int32_t>(
+        im.native ? engine::NativeStatus::invalid_argument
+                  : engine::NativeStatus::unsupported_capability);
+    return im.native_result = result;
+  }
+  if (im.next_native_policy_transaction == 0 ||
+      im.next_native_policy_transaction == UINT64_MAX) {
+    result.code = static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
+    return im.native_result = result;
+  }
+  engine::NativeSessionInfo current;
+  result = im.native->info(current);
+  if (result.code != 0)
+    return im.native_result = result;
+  if (current.frame_id.frame == UINT64_MAX) {
+    result.code = static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
+    return im.native_result = result;
+  }
+  const auto transaction = im.next_native_policy_transaction;
+  result = im.native->submit_presentation_policy(
+      current.frame_id.epoch, current.frame_id.frame + 1, transaction,
+      regions, events);
+  if (result.code == 0) {
+    ++im.next_native_policy_transaction;
+    im.native_policy.requested_regions = regions;
+    im.native_policy.requested_events = events;
+    im.native_policy.pending_transaction = transaction;
+    im.native_policy.pending_frame = {current.frame_id.session,
+                                      current.frame_id.epoch,
+                                      current.frame_id.frame + 1};
+    im.native_policy.configured = true;
+  }
+  return im.native_result = result;
+}
+
+engine::NativeResult AytherSession::native_step_frame(
+    const engine::NativeInputFrame &input) noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code = static_cast<std::int32_t>(
+        engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto advanced = im.native->step(input);
+  if (advanced.code == 0 && im.native_policy.pending_transaction != 0 &&
+      (advanced.flags & engine::native_controls_applied) != 0 &&
+      advanced.transaction == im.native_policy.pending_transaction &&
+      advanced.frame_id.session == im.native_policy.pending_frame.session &&
+      advanced.frame_id.epoch == im.native_policy.pending_frame.epoch &&
+      advanced.frame_id.frame == im.native_policy.pending_frame.frame) {
+    im.native_policy.active_regions = im.native_policy.requested_regions;
+    im.native_policy.active_events = im.native_policy.requested_events;
+    im.native_policy.pending_transaction = 0;
+    im.native_policy.confirmed = true;
+  }
+  return im.native_result = advanced;
+}
+
+engine::NativeResult AytherSession::native_close() noexcept {
+  Impl &im = *impl_;
+  if (!im.native) {
+    im.native_result = {};
+    im.native_result.code = static_cast<std::int32_t>(
+        engine::NativeStatus::unsupported_capability);
+    return im.native_result;
+  }
+  const auto closed = im.native->close();
+  if (closed.code == 0) {
+    im.native_policy = {};
+    im.view = {};
+  }
+  im.view.native_result = closed;
+  return im.native_result = closed;
+}
+
+NativePresentationPolicy AytherSession::native_presentation_policy() const noexcept {
+  return impl_->native_policy;
 }
 
 const FrameView &AytherSession::native_frame() noexcept {
@@ -5685,6 +5776,17 @@ void AytherSession::reset() {
     if (im.native_result.code == 0) {
       im.view = {};
       im.frame_index = 0;
+      im.native_policy.active_regions = 0;
+      im.native_policy.active_events = 0;
+      im.native_policy.pending_transaction = 0;
+      im.native_policy.confirmed = false;
+      if (im.native_policy.configured) {
+        const auto rearmed = native_submit_presentation_policy(
+            im.native_policy.requested_regions,
+            im.native_policy.requested_events);
+        if (rearmed.code != 0)
+          im.native_result = rearmed;
+      }
     }
     im.view.native_result = im.native_result;
     return;

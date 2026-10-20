@@ -293,6 +293,15 @@ enum class NativeOriginalReason : std::uint8_t {
   pack_not_integrated
 };
 
+struct NativePresentationPolicy {
+  std::uint64_t requested_regions{}, requested_events{};
+  std::uint64_t active_regions{}, active_events{};
+  std::uint64_t pending_transaction{};
+  engine::NativeFrameId pending_frame;
+  bool configured{};
+  bool confirmed{};
+};
+
 struct FrameView {
   // -- Emulator framebuffer: the base image to upload + present --------------
   // fb_pixels is null when the core duplicated the previous frame (no redraw);
@@ -869,6 +878,17 @@ public:
   [[nodiscard]] engine::NativeEmulation *native_emulation() noexcept;
   [[nodiscard]] const engine::NativeEmulation *
   native_emulation() const noexcept;
+  /// Submit both observation masks atomically for the next executable frame.
+  [[nodiscard]] engine::NativeResult native_submit_presentation_policy(
+      std::uint64_t regions, std::uint64_t events) noexcept;
+  /// Advance a complete native frame and activate Engine policy only on the
+  /// matching Tessera confirmation. On rejection the policy is unchanged.
+  [[nodiscard]] engine::NativeResult
+  native_step_frame(const engine::NativeInputFrame &input) noexcept;
+  /// Close the native driver and discard Engine presentation policy only after
+  /// a successful close; the result preserves Tessera cancellation context.
+  [[nodiscard]] engine::NativeResult native_close() noexcept;
+  [[nodiscard]] NativePresentationPolicy native_presentation_policy() const noexcept;
   /// Refresh borrowed originals after driving native_emulation(). Native packs
   /// are not integrated in this increment; the reason is explicit in FrameView.
   [[nodiscard]] const FrameView &native_frame() noexcept;

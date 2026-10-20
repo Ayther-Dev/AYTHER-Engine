@@ -487,6 +487,17 @@ NativeResult NativeEmulation::submit_controls(
 #endif
 }
 
+NativeResult NativeEmulation::submit_presentation_policy(
+    std::uint64_t epoch, std::uint64_t frame, std::uint64_t transaction,
+    std::uint64_t regions, std::uint64_t events) noexcept {
+  if (transaction == 0 || ((regions | events) & ~std::uint64_t{31}) != 0)
+    return backend_->last = error(NativeStatus::invalid_argument, 1);
+  const std::array<NativeControlItem, 2> items{{
+      {native_observation_region_mask, native_mask64, regions},
+      {native_observation_event_mask, native_mask64, events}}};
+  return submit_controls({epoch, frame, transaction, items});
+}
+
 NativeResult NativeEmulation::original(NativeFrame &out) noexcept {
 #if AYTHER_HAS_TESSERA
   auto context = initialized<tessera_context_v1>();

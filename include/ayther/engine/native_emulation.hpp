@@ -202,6 +202,10 @@ public:
   [[nodiscard]] NativeResult replay_next() noexcept;
   [[nodiscard]] NativeResult
   submit_controls(const NativeControlTransaction &controls) noexcept;
+  /// Engine presentation policy is an indivisible pair of observation masks.
+  [[nodiscard]] NativeResult submit_presentation_policy(
+      std::uint64_t epoch, std::uint64_t frame, std::uint64_t transaction,
+      std::uint64_t regions, std::uint64_t events) noexcept;
   [[nodiscard]] NativeResult original(NativeFrame &out) noexcept;
   [[nodiscard]] NativeResult state(std::vector<std::uint8_t> &out) noexcept;
   [[nodiscard]] NativeResult events(std::uint64_t cursor,

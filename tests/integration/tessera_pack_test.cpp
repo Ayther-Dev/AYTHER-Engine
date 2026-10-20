@@ -285,6 +285,64 @@ TEST_CASE("Native activation rejects signed packs with missing attribution or da
   CHECK_FALSE(second->has_pack());
 }
 
+TEST_CASE("Native validation rejects signed metadata and tile-rule mutations") {
+  const auto native = configuration();
+  const auto png = ayther::test::solid_png(8, 8, 0xFF0000FFU);
+  const std::string valid_rules =
+      "[[sub]]\nhash = \"0x0000000000000001\"\nasset = \"ok.png\"\n";
+  struct Mutation {
+    const char *name;
+    std::string metadata;
+    std::string rules;
+    Bytes image;
+  };
+  auto future = manifest(native);
+  future.replace(future.find("ayther_min = \"0.1.0\""),
+                 std::string("ayther_min = \"0.1.0\"").size(),
+                 "ayther_min = \"999.0.0\"");
+  auto wrong_rom = manifest(native);
+  wrong_rom.replace(wrong_rom.find("game_id = \"crc32:"),
+                    std::string("game_id = \"crc32:").size() + 8,
+                    "game_id = \"crc32:00000000");
+  auto missing_license = manifest(native);
+  missing_license.erase(missing_license.find("license = \"MIT\"\n"),
+                        std::string("license = \"MIT\"\n").size());
+  const std::vector<Mutation> mutations{
+      {"future_version", future, valid_rules, png},
+      {"wrong_rom", wrong_rom, valid_rules, png},
+      {"missing_license", missing_license, valid_rules, png},
+      {"invalid_hash", manifest(native),
+       "[[sub]]\nhash = \"not-hex\"\nasset = \"ok.png\"\n", png},
+      {"external_path", manifest(native),
+       "[[sub]]\nhash = \"0x01\"\nasset = \"../ok.png\"\n", png},
+      {"invalid_image", manifest(native), valid_rules, Bytes{0, 1, 2, 3}}};
+  for (const auto &mutation : mutations) {
+    INFO(std::string(mutation.name));
+    ayther::test::TrustedPackFixture fixture(mutation.name);
+    REQUIRE(fixture.add_bytes("manifest.toml",
+                              reinterpret_cast<const std::uint8_t *>(
+                                  mutation.metadata.data()),
+                              mutation.metadata.size()));
+    REQUIRE(fixture.add_bytes("tile_substitutions.toml",
+                              reinterpret_cast<const std::uint8_t *>(
+                                  mutation.rules.data()),
+                              mutation.rules.size()));
+    REQUIRE(fixture.add_bytes("assets/ok.png", mutation.image.data(),
+                              mutation.image.size()));
+    std::array<char, 512> error{};
+    REQUIRE(fixture.finish(error.data(), error.size()));
+    auto session = open(native, "", fixture.registry_path());
+    const auto findings = session->validate_pack(fixture.pack_path());
+    CHECK(std::ranges::any_of(findings, [&](const auto &finding) {
+      return mutation.name == std::string_view("missing_license")
+                 ? finding.code == "meta.license"
+                 : finding.error;
+    }));
+    CHECK_FALSE(session->set_pack(fixture.pack_path()));
+    CHECK_FALSE(session->has_pack());
+  }
+}
+
 TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile rule") {
   const auto root = std::filesystem::path(AYTHER_FX03_ROOT);
   const auto native = megadrive_configuration();
@@ -296,9 +354,9 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
   for (std::uint16_t control = 0; control < neutral.size(); ++control)
     neutral[control] = {0, control, 0};
   auto &emulation = *session->native_emulation();
-  const std::array<ayther::engine::NativeControlItem, 1> observe{{{1, 1, 4}}};
-  REQUIRE(emulation.submit_controls({1, 1, 44, observe}).code == 0);
-  REQUIRE(emulation.step({1, 1, neutral}).code == 0);
+  REQUIRE(session->native_submit_presentation_policy(4, 0).code == 0);
+  REQUIRE(session->native_step_frame({1, 1, neutral}).code == 0);
+  CHECK(session->native_presentation_policy().confirmed);
   ayther::engine::NativeSnapshot capture;
   REQUIRE(emulation.snapshot_acquire(capture).code == 0);
   ayther::engine::NativeRegion sat;
@@ -379,4 +437,15 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
   ayther_pack_close(archive);
   CHECK(frame.native_original_reason ==
         ayther::NativeOriginalReason::pack_not_integrated);
+  session->reset();
+  CHECK(session->has_pack());
+  const auto rearmed = session->native_presentation_policy();
+  CHECK(rearmed.pending_frame.epoch == 2);
+  CHECK(rearmed.pending_transaction != 0);
+  CHECK_FALSE(rearmed.confirmed);
+  CHECK(rearmed.active_regions == 0);
+  const auto restarted = session->native_step_frame({2, 1, neutral});
+  REQUIRE(restarted.code == 0);
+  CHECK(restarted.transaction == rearmed.pending_transaction);
+  CHECK(session->native_presentation_policy().confirmed);
 }

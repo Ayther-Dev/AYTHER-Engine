@@ -566,6 +566,21 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                 .to_string(),
         );
     }
+    if let (Some(game_id), Some(actual)) = (m.pack.game_id.as_deref(), ctx.rom_crc32)
+        && let Some(declared) = game_id.strip_prefix("crc32:")
+    {
+        match u32::from_str_radix(declared, 16) {
+            Ok(value) if value == actual => {}
+            Ok(_) => r.error(
+                "rom.game_id_mismatch",
+                format!("pack game_id {game_id} does not match the loaded ROM"),
+            ),
+            Err(_) => r.error(
+                "rom.game_id_invalid",
+                format!("pack game_id {game_id} has an invalid CRC-32"),
+            ),
+        }
+    }
 
     // -- versión mínima de AYTHER --------------------------------------------
     let engine = ctx.engine_version.unwrap_or(ENGINE_VERSION);
@@ -1104,6 +1119,20 @@ platform  = "megadrive"
         };
         let r = validate_path(&p, &ctx);
         assert!(!r.has_errors(), "hallazgos: {:?}", r.findings);
+    }
+
+    #[test]
+    fn crc_game_id_must_match_loaded_rom() {
+        let p = bake("wrong_game_id", &OK_MANIFEST.replace(
+            "game_id    = \"crc32:7b905383\"",
+            "game_id    = \"crc32:00000000\"",
+        ));
+        let ctx = SessionCtx {
+            rom_crc32: Some(0x7b905383),
+            ..Default::default()
+        };
+        let r = validate_path(&p, &ctx);
+        assert!(r.errors().any(|finding| finding.code == "rom.game_id_mismatch"));
     }
 
     /// Rejects a pack authored for a different game.

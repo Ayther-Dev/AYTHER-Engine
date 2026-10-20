@@ -785,4 +785,12 @@ if(AYTHER_ENABLE_TESSERA)
     tessera_copy_runtime_dependencies(ayther_tessera_pack_test)
     set_tests_properties(ayther.integration.tessera_pack_test PROPERTIES
         LABELS "engine;native;integration;phase4;FX-03")
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_controls_test.cpp" integration)
+    target_include_directories(ayther_tessera_controls_test SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
+    target_compile_options(ayther_tessera_controls_test PRIVATE /EHsc)
+    tessera_copy_runtime_dependencies(ayther_tessera_controls_test)
+    set_tests_properties(ayther.integration.tessera_controls_test PROPERTIES
+        LABELS "engine;native;integration;phase4;controls")
 endif()

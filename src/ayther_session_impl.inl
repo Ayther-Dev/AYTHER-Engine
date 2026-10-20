@@ -4,6 +4,8 @@
 struct AytherSession::Impl {
   std::unique_ptr<engine::NativeEmulation> native;
   engine::NativeResult native_result;
+  NativePresentationPolicy native_policy;
+  std::uint64_t next_native_policy_transaction = 1;
   RetroRunner runner;                     // emulator host
   session::EmulationObserver observer;    // ABI observation + legacy fallback
   session::RecordingController recording; // deterministic live capture
