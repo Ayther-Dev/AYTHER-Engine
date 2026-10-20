@@ -32,8 +32,8 @@ struct TexPixelFormat {
     Xrgb8888 = 1, // RETRO_PIXEL_FORMAT_XRGB8888
     Rgb565 = 2,   // RETRO_PIXEL_FORMAT_RGB565   (Genesis default)
     Bgra8888 =
-        3,     // pre-swapped BGRA (sprite PNGs after R↔B swap); alpha preserved
-    Gray8 = 4, // one byte per pixel, as-is (video Y/U/V planes)
+        3, // pre-swapped BGRA (sprite PNGs after R↔B swap); alpha preserved
+    Gray8 = 4,    // one byte per pixel, as-is (video Y/U/V planes)
     Rgba8888 = 5, // native Tessera frame, converted to the BGRA GPU image
   };
 };
