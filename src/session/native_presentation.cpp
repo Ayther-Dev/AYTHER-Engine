@@ -3,13 +3,13 @@
 #include "ayther_core_ffi.h"
 #include "decode_limits.h"
 
-#include <stb_image.h>
 #include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
 #include <map>
 #include <memory>
+#include <stb_image.h>
 
 namespace ayther::session {
 namespace {
@@ -41,7 +41,8 @@ bool parse_fields(Bytes bytes, std::array<Field, 8> &fields,
     at += 16;
     if (tag <= previous || tag > 8 || length > bytes.size() - at)
       return false;
-    fields[count++] = {tag, encoding, bytes.subspan(at, static_cast<std::size_t>(length))};
+    fields[count++] = {tag, encoding,
+                       bytes.subspan(at, static_cast<std::size_t>(length))};
     at += static_cast<std::size_t>(length);
     previous = tag;
   }
@@ -73,17 +74,19 @@ bool load_asset(const AyArchive *pack, const std::string &name,
   if (size <= 0 || size > 4 * 1024 * 1024)
     return false;
   std::vector<std::uint8_t> encoded(static_cast<std::size_t>(size));
-  if (ayther_pack_read(pack, path.c_str(), encoded.data(), encoded.size()) != size)
+  if (ayther_pack_read(pack, path.c_str(), encoded.data(), encoded.size()) !=
+      size)
     return false;
   int width = 0, height = 0, channels = 0;
   if (!limits::image_header_within_limits(encoded.data(), encoded.size(),
                                           &width, &height) ||
       width != 8 || height != 8 ||
-      encoded.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+      encoded.size() >
+          static_cast<std::size_t>(std::numeric_limits<int>::max()))
     return false;
-  auto *decoded = stbi_load_from_memory(encoded.data(),
-                                        static_cast<int>(encoded.size()),
-                                        &width, &height, &channels, 4);
+  auto *decoded =
+      stbi_load_from_memory(encoded.data(), static_cast<int>(encoded.size()),
+                            &width, &height, &channels, 4);
   if (!decoded || width != 8 || height != 8) {
     stbi_image_free(decoded);
     return false;
@@ -104,11 +107,11 @@ NativeComposeResult compose_native_frame(
   if (!pack || original.video_format != engine::native_video_rgba8 ||
       original.width != 320 || original.height != 224 ||
       original.row_bytes != original.width * 4 ||
-      original.pixels.size() != std::size_t(original.row_bytes) * original.height)
+      original.pixels.size() !=
+          std::size_t(original.row_bytes) * original.height)
     return NativeComposeResult::unsupported;
   if (temporal.kind != 5 || temporal.encoding != 5 ||
-      temporal.byte_count != temporal.data.size() ||
-      temporal.flags != 3)
+      temporal.byte_count != temporal.data.size() || temporal.flags != 3)
     return NativeComposeResult::incomplete;
   std::array<Field, 8> fields{};
   std::size_t field_count = 0;
@@ -141,9 +144,8 @@ NativeComposeResult compose_native_frame(
     cell.x = static_cast<std::uint16_t>(read_le(cells_data, at, 2));
     cell.y = static_cast<std::uint16_t>(read_le(cells_data, at + 2, 2));
     cell.word = static_cast<std::uint16_t>(read_le(cells_data, at + 4, 2));
-    if (read_le(cells_data, at + 6, 2) != 0 || cell.x >= 320 ||
-        cell.y >= 224 || cell.x % 8 || cell.y % 8 ||
-        (cell.word & 0x1800) != 0)
+    if (read_le(cells_data, at + 6, 2) != 0 || cell.x >= 320 || cell.y >= 224 ||
+        cell.x % 8 || cell.y % 8 || (cell.word & 0x1800) != 0)
       return NativeComposeResult::invalid_data;
     cell.visible = read_le(cells_data, at + 8, 8);
     if (cell.visible == 0)
@@ -169,18 +171,19 @@ NativeComposeResult compose_native_frame(
 
   std::unique_ptr<AytherTileHasher, decltype(&ayther_tile_hasher_free)> hasher(
       ayther_tile_hasher_new(), &ayther_tile_hasher_free);
-  std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)> catalog(
-      ayther_tile_sub_new(), &ayther_tile_sub_free);
+  std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)>
+      catalog(ayther_tile_sub_new(), &ayther_tile_sub_free);
   if (!hasher || !catalog)
     return NativeComposeResult::invalid_data;
   ayther_tile_sub_load_pack(catalog.get(), pack);
-  ayther_tile_sub_begin_frame(catalog.get(), original.frame_id.frame,
-                              nullptr, 0, false);
+  ayther_tile_sub_begin_frame(catalog.get(), original.frame_id.frame, nullptr,
+                              0, false);
   for (const auto &[hash, path] : overrides)
     ayther_tile_sub_add_override(catalog.get(), hash, path.c_str());
   std::map<std::array<std::uint8_t, 256>, std::uint64_t> hashes;
   std::map<std::string, std::array<std::uint8_t, 256>> decoded;
-  std::vector<std::pair<const Cell *, const std::array<std::uint8_t, 256> *>> drawing;
+  std::vector<std::pair<const Cell *, const std::array<std::uint8_t, 256> *>>
+      drawing;
   for (const auto &cell : cells) {
     auto found = hashes.find(cell.rgba);
     if (found == hashes.end()) {
@@ -218,7 +221,8 @@ NativeComposeResult compose_native_frame(
     for (unsigned bit = 0; bit < 64; ++bit) {
       if ((cell->visible & (std::uint64_t{1} << bit)) == 0)
         continue;
-      const auto at = (std::size_t(cell->y + bit / 8) * 320 + cell->x + bit % 8) * 4;
+      const auto at =
+          (std::size_t(cell->y + bit / 8) * 320 + cell->x + bit % 8) * 4;
       const auto src = bit * 4;
       const auto alpha = (*image)[src + 3];
       for (unsigned channel = 0; channel < 3; ++channel)

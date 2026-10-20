@@ -351,7 +351,7 @@ jobs:
           retention-days: 14
 
   cpp-coverage:
-    name: C++ coverage gate
+    name: C++ coverage collection (Linux)
     # A push to main replays the tree its pull request already validated
     # (the branch must be up to date to merge): this job only refreshes
     # the vcpkg cache there (WARM_ONLY).
@@ -448,20 +448,7 @@ jobs:
           build/linux-native-coverage
           coverage/cpp
 
-      - name: Enforce C++ coverage thresholds
-        if: env.WARM_ONLY != 'true'
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          base_sha="${PR_BASE_SHA:-$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)}"
-          python3 tools/check_coverage.py \
-            --component cpp \
-            --lcov coverage/cpp/cpp.lcov \
-            --base "${base_sha}" \
-            --output coverage/cpp/gate.txt
-
-      # Published even when the gate failed: the report naming the uncovered
-      # files and line ranges is most useful on the run that went red.
+      # Retain the Linux profile for the combined cross-platform gate.
       - name: Publish C++ coverage
         if: env.WARM_ONLY != 'true' && (always())
         uses: actions/upload-artifact@v4
@@ -628,7 +615,7 @@ jobs:
               -TesseraBuild (Join-Path $source 'build/windows-release') `
               -EnginePackTool (Join-Path $PWD "build/${{ matrix.preset }}/bin/make_test_pack.exe")
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            if ('${{ matrix.preset }}' -eq 'windows-native') {
+            if ('${{ matrix.preset }}' -eq 'windows-native-vpx') {
               cmake --build (Join-Path $source 'build/windows-release') `
                 --target tessera_megadrive_replay_test --parallel 1
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -649,7 +636,7 @@ jobs:
           }
           cmake --preset ${{ matrix.preset }} @nativeArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($env:TESSERA_PREFIX -and '${{ matrix.preset }}' -eq 'windows-native') {
+          if ($env:TESSERA_PREFIX -and '${{ matrix.preset }}' -eq 'windows-native-vpx') {
             $registered = ctest --test-dir 'build/windows-native' -N `
               -R '^ayther.integration.tessera_checkpoint$'
             if ($LASTEXITCODE -ne 0 -or ($registered -join [Environment]::NewLine) -notmatch 'Total Tests: 1') {
@@ -756,6 +743,46 @@ jobs:
           -DAYTHER_PACKAGE_PREFIX='${{ runner.temp }}/ayther-install/${{ matrix.install_subdir }}'
           -P tests/package_consumer/check_incompatible.cmake
 
+      - name: Collect Tessera-native C++ coverage on Windows
+        if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'build/tessera-source'
+          $fixtures = Join-Path $source 'build/windows-release/native-fixtures'
+          cmake --preset windows-native-coverage `
+            -DAYTHER_ENABLE_TESSERA=ON `
+            "-DTessera_DIR=$env:TESSERA_PREFIX/lib/cmake/Tessera" `
+            "-DAYTHER_TESSERA_TEST_SOURCE_DIR=$source" `
+            "-DAYTHER_TESSERA_TEST_FIXTURE_DIR=$fixtures"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build/windows-native-coverage `
+            --target ayther_tessera_session_test ayther_tessera_pack_test `
+              ayther_tessera_presentation_test ayther_tessera_controls_test `
+            --parallel 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pattern = '^ayther\.integration\.tessera_(session|pack|presentation|controls)_test$'
+          $registered = ctest --test-dir build/windows-native-coverage -N -R $pattern
+          if ($LASTEXITCODE -ne 0 -or ($registered -join [Environment]::NewLine) -notmatch 'Total Tests: 4') {
+            throw 'Native coverage must register all four Tessera integration tests.'
+          }
+          New-Item -ItemType Directory -Force `
+            -Path build/windows-native-coverage/coverage-profiles | Out-Null
+          $env:LLVM_PROFILE_FILE = "$env:GITHUB_WORKSPACE/build/windows-native-coverage/coverage-profiles/%m-%p.profraw"
+          ctest --test-dir build/windows-native-coverage -R $pattern --output-on-failure -j 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tools/collect_cpp_coverage_windows.ps1 `
+            -BuildDirectory build/windows-native-coverage `
+            -OutputDirectory coverage/cpp-windows
+
+      - name: Publish Tessera-native C++ coverage
+        if: env.WARM_ONLY != 'true' && runner.os == 'Windows' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-cpp-windows
+          path: coverage/cpp-windows/native.lcov
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Retain CTest diagnostics on failure
         if: env.WARM_ONLY != 'true' && (failure())
         uses: actions/upload-artifact@v4
@@ -767,6 +794,49 @@ jobs:
             build/${{ matrix.preset }}/tests/tessera-evidence/**/engine-*.stderr.log
           if-no-files-found: ignore
           retention-days: 7
+
+  cpp-coverage-gate:
+    name: C++ coverage gate
+    if: env.WARM_ONLY != 'true'
+    needs: [cpp-coverage, native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-cpp
+          path: coverage/input-linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-cpp-windows
+          path: coverage/input-windows
+      - name: Combine platform reports and enforce unchanged thresholds
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          linux_report="$(find coverage/input-linux -type f -name 'cpp.lcov' -print -quit)"
+          windows_report="$(find coverage/input-windows -type f -name 'native.lcov' -print -quit)"
+          test -n "$linux_report" && test -n "$windows_report"
+          mkdir -p coverage/combined
+          cat "$linux_report" "$windows_report" > coverage/combined/cpp.lcov
+          base_sha="${PR_BASE_SHA:-$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)}"
+          python3 tools/check_coverage.py \
+            --component cpp \
+            --lcov coverage/combined/cpp.lcov \
+            --base "$base_sha" \
+            --output coverage/combined/gate.txt
+      - name: Publish combined C++ coverage gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-cpp-combined
+          path: coverage/combined
+          if-no-files-found: ignore
+          retention-days: 14
 
   required-ci:
     name: Required CI gate
@@ -780,6 +850,7 @@ jobs:
       - rust-coverage
       - cpp-coverage
       - native
+      - cpp-coverage-gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -795,6 +866,7 @@ jobs:
             "rust-coverage=${{ needs.rust-coverage.result }}"
             "cpp-coverage=${{ needs.cpp-coverage.result }}"
             "native=${{ needs.native.result }}"
+            "cpp-coverage-gate=${{ needs.cpp-coverage-gate.result }}"
           )
           failed=0
           for result in "${results[@]}"; do

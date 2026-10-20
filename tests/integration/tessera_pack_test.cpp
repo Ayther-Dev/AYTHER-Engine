@@ -52,16 +52,15 @@ std::uint32_t crc32(std::span<const std::uint8_t> bytes) {
   for (auto byte : bytes) {
     value ^= byte;
     for (unsigned bit = 0; bit < 8; ++bit)
-      value = (value >> 1) ^
-              ((value & 1U) != 0 ? 0xEDB88320U : 0U);
+      value = (value >> 1) ^ ((value & 1U) != 0 ? 0xEDB88320U : 0U);
   }
   return ~value;
 }
 NativeConfig configuration() {
   std::vector<NativeBackendInfo> backends;
   REQUIRE(ayther::engine::NativeEmulation::backends(backends).code == 0);
-  const auto found = std::ranges::find(backends, std::string("synthetic.complete"),
-                                       &NativeBackendInfo::id);
+  const auto found = std::ranges::find(
+      backends, std::string("synthetic.complete"), &NativeBackendInfo::id);
   REQUIRE(found != backends.end());
   NativeConfig result;
   result.backend_id = found->id;
@@ -100,8 +99,8 @@ NativeConfig configuration() {
     return static_cast<std::uint8_t>(value - 'A' + 10);
   };
   for (std::size_t index = 0; index < 32; ++index) {
-    hash[index] = static_cast<std::uint8_t>(
-        (nibble(digest[index * 2]) << 4) | nibble(digest[index * 2 + 1]));
+    hash[index] = static_cast<std::uint8_t>((nibble(digest[index * 2]) << 4) |
+                                            nibble(digest[index * 2 + 1]));
   }
   field(result.config, 7, 5, hash);
   return result;
@@ -143,38 +142,39 @@ NativeConfig megadrive_configuration() {
                             digest.data()));
   Bytes hash(32);
   const auto nibble = [](char value) -> std::uint8_t {
-    if (value >= '0' && value <= '9') return static_cast<std::uint8_t>(value - '0');
-    if (value >= 'a' && value <= 'f') return static_cast<std::uint8_t>(value - 'a' + 10);
+    if (value >= '0' && value <= '9')
+      return static_cast<std::uint8_t>(value - '0');
+    if (value >= 'a' && value <= 'f')
+      return static_cast<std::uint8_t>(value - 'a' + 10);
     return static_cast<std::uint8_t>(value - 'A' + 10);
   };
   for (std::size_t index = 0; index < 32; ++index)
-    hash[index] = static_cast<std::uint8_t>(
-        (nibble(digest[index * 2]) << 4) | nibble(digest[index * 2 + 1]));
+    hash[index] = static_cast<std::uint8_t>((nibble(digest[index * 2]) << 4) |
+                                            nibble(digest[index * 2 + 1]));
   field(result.config, 7, 5, hash);
   scalar(result.config, 8, 1, 895780);
   scalar(result.config, 9, 1, 53693175);
   scalar(result.config, 10, 1, 1);
   scalar(result.config, 11, 2, 32768);
   scalar(result.config, 12, 2, 4096);
-  field(result.config, 13, 6, text("integer-causal-ZOH-v1;CD-disabled-zero-required;zero-initialized-upstream-options"));
+  field(result.config, 13, 6,
+        text("integer-causal-ZOH-v1;CD-disabled-zero-required;zero-initialized-"
+             "upstream-options"));
   return result;
 }
 std::string manifest(const NativeConfig &config) {
   char id[32];
   std::snprintf(id, sizeof(id), "crc32:%08x", crc32(config.content));
   return std::string("[pack]\nname = \"native_graphics\"\n") +
-         "version = \"1.0.0\"\n" +
-         "game_id = \"" + id + "\"\n" +
-         "ayther_min = \"0.1.0\"\n" +
-         "author = \"AYTHER Tessera\"\n" +
-         "license = \"MIT\"\n" +
-         "contributors = [\"AYTHER Tessera\"]\n" +
+         "version = \"1.0.0\"\n" + "game_id = \"" + id + "\"\n" +
+         "ayther_min = \"0.1.0\"\n" + "author = \"AYTHER Tessera\"\n" +
+         "license = \"MIT\"\n" + "contributors = [\"AYTHER Tessera\"]\n" +
          "[regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n" +
          "[systems]\nincluded = [\"tiles\"]\n";
 }
-std::unique_ptr<ayther::AytherSession>
-open(const NativeConfig &native, const std::string &pack,
-     const std::string &registry) {
+std::unique_ptr<ayther::AytherSession> open(const NativeConfig &native,
+                                            const std::string &pack,
+                                            const std::string &registry) {
   ayther::AytherSession::Config config;
   config.provider = ayther::EmulationProvider::tessera_native;
   config.native_config = native;
@@ -188,15 +188,15 @@ open(const NativeConfig &native, const std::string &pack,
 }
 } // namespace
 
-TEST_CASE("Native pack validation rejects bad candidates without losing the selected pack") {
+TEST_CASE("Native pack validation rejects bad candidates without losing the "
+          "selected pack") {
   const auto native = configuration();
   ayther::test::TrustedPackFixture fixture("tessera_native_pack");
   const auto metadata = manifest(native);
-  const std::string rules =
-      "[[sub]]\nhash = \"0x0000000000000001\"\n"
-      "asset = \"graphics/first.png\"\n"
-      "[[sub]]\nhash = \"0x0000000000000001\"\n"
-      "asset = \"graphics/second.png\"\n";
+  const std::string rules = "[[sub]]\nhash = \"0x0000000000000001\"\n"
+                            "asset = \"graphics/first.png\"\n"
+                            "[[sub]]\nhash = \"0x0000000000000001\"\n"
+                            "asset = \"graphics/second.png\"\n";
   const auto first = ayther::test::solid_png(8, 8, 0xFF0000FFU);
   const auto second = ayther::test::solid_png(8, 8, 0x00FF00FFU);
   REQUIRE(fixture.add_bytes("manifest.toml",
@@ -206,7 +206,8 @@ TEST_CASE("Native pack validation rejects bad candidates without losing the sele
                             reinterpret_cast<const uint8_t *>(rules.data()),
                             rules.size()));
   REQUIRE(fixture.add_bytes("graphics/first.png", first.data(), first.size()));
-  REQUIRE(fixture.add_bytes("graphics/second.png", second.data(), second.size()));
+  REQUIRE(
+      fixture.add_bytes("graphics/second.png", second.data(), second.size()));
   std::array<char, 512> error{};
   REQUIRE(fixture.finish(error.data(), error.size()));
   auto session = open(native, fixture.pack_path(), fixture.registry_path());
@@ -221,15 +222,17 @@ TEST_CASE("Native pack validation rejects bad candidates without losing the sele
   const auto corrupt = fixture.pack_path() + ".corrupt.ay";
   std::filesystem::copy_file(fixture.pack_path(), corrupt);
   {
-    std::fstream output(corrupt, std::ios::binary | std::ios::in | std::ios::out);
+    std::fstream output(corrupt,
+                        std::ios::binary | std::ios::in | std::ios::out);
     REQUIRE(output.good());
-    output.put('X'); // Invalidate the ZIP header without changing the selected file.
+    output.put(
+        'X'); // Invalidate the ZIP header without changing the selected file.
   }
   CHECK_FALSE(session->set_pack(corrupt));
   CHECK(session->has_pack());
   CHECK(session->game_id() == old);
-  std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)> catalog(
-      ayther_tile_sub_new(), &ayther_tile_sub_free);
+  std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)>
+      catalog(ayther_tile_sub_new(), &ayther_tile_sub_free);
   REQUIRE(catalog != nullptr);
   auto *archive = fixture.open();
   REQUIRE(archive != nullptr);
@@ -249,24 +252,23 @@ TEST_CASE("Native pack validation rejects bad candidates without losing the sele
   CHECK_FALSE(wrong_trust->has_pack());
 
   const auto findings = session->validate_pack(fixture.pack_path());
-  CHECK(std::ranges::none_of(findings, [](const auto &finding) {
-    return finding.error;
-  }));
+  CHECK(std::ranges::none_of(
+      findings, [](const auto &finding) { return finding.error; }));
   CHECK(session->reload_pack());
   CHECK(session->has_pack());
   CHECK(session->set_pack(""));
   CHECK_FALSE(session->has_pack());
 }
 
-TEST_CASE("Native activation rejects signed packs with missing attribution or dangling tile rules") {
+TEST_CASE("Native activation rejects signed packs with missing attribution or "
+          "dangling tile rules") {
   const auto native = configuration();
   const auto image = ayther::test::solid_png(8, 8, 0xFF0000FFU);
   const auto bake = [&](ayther::test::TrustedPackFixture &fixture,
-                        const std::string &metadata,
-                        const std::string &rules) {
-    REQUIRE(fixture.add_bytes("manifest.toml",
-                              reinterpret_cast<const uint8_t *>(metadata.data()),
-                              metadata.size()));
+                        const std::string &metadata, const std::string &rules) {
+    REQUIRE(fixture.add_bytes(
+        "manifest.toml", reinterpret_cast<const uint8_t *>(metadata.data()),
+        metadata.size()));
     REQUIRE(fixture.add_bytes("tile_substitutions.toml",
                               reinterpret_cast<const uint8_t *>(rules.data()),
                               rules.size()));
@@ -329,14 +331,14 @@ TEST_CASE("Native validation rejects signed metadata and tile-rule mutations") {
   for (const auto &mutation : mutations) {
     INFO(std::string(mutation.name));
     ayther::test::TrustedPackFixture fixture(mutation.name);
-    REQUIRE(fixture.add_bytes("manifest.toml",
-                              reinterpret_cast<const std::uint8_t *>(
-                                  mutation.metadata.data()),
-                              mutation.metadata.size()));
-    REQUIRE(fixture.add_bytes("tile_substitutions.toml",
-                              reinterpret_cast<const std::uint8_t *>(
-                                  mutation.rules.data()),
-                              mutation.rules.size()));
+    REQUIRE(fixture.add_bytes(
+        "manifest.toml",
+        reinterpret_cast<const std::uint8_t *>(mutation.metadata.data()),
+        mutation.metadata.size()));
+    REQUIRE(fixture.add_bytes(
+        "tile_substitutions.toml",
+        reinterpret_cast<const std::uint8_t *>(mutation.rules.data()),
+        mutation.rules.size()));
     REQUIRE(fixture.add_bytes("assets/ok.png", mutation.image.data(),
                               mutation.image.size()));
     std::array<char, 512> error{};
@@ -353,11 +355,12 @@ TEST_CASE("Native validation rejects signed metadata and tile-rule mutations") {
   }
 }
 
-TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile rule") {
+TEST_CASE(
+    "Persistent FX-03 seed binds the real Mega Drive ROM and first tile rule") {
   const auto root = std::filesystem::path(AYTHER_FX03_ROOT);
   const auto native = megadrive_configuration();
-  auto session = open(native, (root / "fx03.ay").string(),
-                      (root / "trust.toml").string());
+  auto session =
+      open(native, (root / "fx03.ay").string(), (root / "trust.toml").string());
   REQUIRE(session->has_pack());
   CHECK(std::string(session->game_id()) == "crc32:2af4a80d");
   std::array<ayther::engine::NativeInputAssignment, 8> neutral{};
@@ -371,7 +374,7 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
   REQUIRE(emulation.snapshot_acquire(capture).code == 0);
   ayther::engine::NativeRegion sat;
   REQUIRE(capture.region(0, sat).code == 0);
-  CHECK(sat.data[0xD800 + 3] == 1); // slot 0 links to slot 1
+  CHECK(sat.data[0xD800 + 3] == 1);     // slot 0 links to slot 1
   CHECK(sat.data[0xD800 + 12] == 0x80); // slot 1 is high priority
   const auto &frame = session->native_frame();
   REQUIRE(frame.native_result.code == 0);
@@ -382,12 +385,13 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
   CHECK(frame.native_original.pixels[pixel + 2] == 0);
   const auto colour_at = [&](std::size_t x, std::size_t y) {
     const auto offset = (y * 320 + x) * 4;
-    return std::array<std::uint8_t, 3>{frame.native_original.pixels[offset],
-                                       frame.native_original.pixels[offset + 1],
-                                       frame.native_original.pixels[offset + 2]};
+    return std::array<std::uint8_t, 3>{
+        frame.native_original.pixels[offset],
+        frame.native_original.pixels[offset + 1],
+        frame.native_original.pixels[offset + 2]};
   };
-  const std::array<std::uint8_t, 3> red{255, 0, 0},
-                                   green{0, 255, 0}, blue{0, 0, 255};
+  const std::array<std::uint8_t, 3> red{255, 0, 0}, green{0, 255, 0},
+      blue{0, 0, 255};
   CHECK(colour_at(97, 68) == red);
   CHECK(colour_at(101, 68) == red);
   CHECK(colour_at(105, 68) == green); // SAT slot 0 masks slot 1
@@ -414,7 +418,8 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
                                 std::istreambuf_iterator<char>()};
   const auto label = description.find("\"tile_hash\": \"0x");
   REQUIRE(label != std::string::npos);
-  const auto expected = std::stoull(description.substr(label + 16, 16), nullptr, 16);
+  const auto expected =
+      std::stoull(description.substr(label + 16, 16), nullptr, 16);
   CHECK(observed.hash == expected);
   for (std::size_t y = 0; y < 8; ++y)
     for (std::size_t x = 0; x < 8; ++x) {
@@ -427,13 +432,15 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
     }
   ayther_tile_hasher_process_frame(hasher.get(), bgra.data(), 8, 8, 32, 1);
   AytherTileOccurrence overlapped{};
-  REQUIRE(ayther_tile_hasher_get_occurrences(hasher.get(), &overlapped, 1) == 1);
+  REQUIRE(ayther_tile_hasher_get_occurrences(hasher.get(), &overlapped, 1) ==
+          1);
   CHECK(overlapped.hash == expected);
-  std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)> catalog(
-      ayther_tile_sub_new(), &ayther_tile_sub_free);
+  std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)>
+      catalog(ayther_tile_sub_new(), &ayther_tile_sub_free);
   REQUIRE(catalog != nullptr);
-  auto *archive = ayther_pack_open_trusted((root / "fx03.ay").string().c_str(),
-                                          (root / "trust.toml").string().c_str());
+  auto *archive =
+      ayther_pack_open_trusted((root / "fx03.ay").string().c_str(),
+                               (root / "trust.toml").string().c_str());
   REQUIRE(archive != nullptr);
   ayther_tile_sub_load_pack(catalog.get(), archive);
   std::array<char, 128> asset{};
@@ -461,7 +468,8 @@ TEST_CASE("Persistent FX-03 seed binds the real Mega Drive ROM and first tile ru
   std::vector<std::uint8_t> checkpoint;
   REQUIRE(emulation.checkpoint(checkpoint).code == 0);
   REQUIRE(session->native_submit_presentation_policy(0, 0).code == 0);
-  const auto pending = session->native_presentation_policy().pending_transaction;
+  const auto pending =
+      session->native_presentation_policy().pending_transaction;
   CHECK(session->native_restore_checkpoint({}).code != 0);
   CHECK(session->native_presentation_policy().pending_transaction == pending);
   const auto restored = session->native_restore_checkpoint(checkpoint);

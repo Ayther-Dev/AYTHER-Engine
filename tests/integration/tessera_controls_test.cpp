@@ -40,17 +40,18 @@ Bytes array(const std::vector<Bytes> &values) {
   return out;
 }
 native::NativeConfig configuration(std::string_view backend_id,
-                                    std::uint32_t flags = 0) {
+                                   std::uint32_t flags = 0) {
   std::vector<native::NativeBackendInfo> backends;
   REQUIRE(native::NativeEmulation::backends(backends).code == 0);
-  const auto found = std::ranges::find(backends, backend_id,
-                                       &native::NativeBackendInfo::id);
+  const auto found =
+      std::ranges::find(backends, backend_id, &native::NativeBackendInfo::id);
   REQUIRE(found != backends.end());
   native::NativeConfig result;
   result.backend_id = found->id;
   result.content = bytes("TSSYN001");
-  for (auto value : {backend_id == "synthetic.complete" ? 2U : 1U,
-                     7U, flags, 0U}) put(result.content, value, 4);
+  for (auto value :
+       {backend_id == "synthetic.complete" ? 2U : 1U, 7U, flags, 0U})
+    put(result.content, value, 4);
   for (unsigned index = 0; index < 16; ++index)
     result.initial_persistent_memory.push_back(
         static_cast<std::uint8_t>(3 + 17 * index));
@@ -75,19 +76,21 @@ native::NativeConfig configuration(std::string_view backend_id,
                             result.initial_persistent_memory.size(),
                             digest.data()));
   const auto nibble = [](char value) -> std::uint8_t {
-    if (value >= '0' && value <= '9') return static_cast<std::uint8_t>(value - '0');
-    if (value >= 'a' && value <= 'f') return static_cast<std::uint8_t>(value - 'a' + 10);
+    if (value >= '0' && value <= '9')
+      return static_cast<std::uint8_t>(value - '0');
+    if (value >= 'a' && value <= 'f')
+      return static_cast<std::uint8_t>(value - 'a' + 10);
     return static_cast<std::uint8_t>(value - 'A' + 10);
   };
   Bytes hash(32);
   for (std::size_t index = 0; index < hash.size(); ++index)
-    hash[index] = static_cast<std::uint8_t>(
-        (nibble(digest[index * 2]) << 4) | nibble(digest[index * 2 + 1]));
+    hash[index] = static_cast<std::uint8_t>((nibble(digest[index * 2]) << 4) |
+                                            nibble(digest[index * 2 + 1]));
   field(result.config, 7, 5, hash);
   return result;
 }
 std::unique_ptr<ayther::AytherSession> open_native(std::string_view backend_id,
-                                           std::uint32_t flags = 0) {
+                                                   std::uint32_t flags = 0) {
   ayther::AytherSession::Config config;
   config.provider = ayther::EmulationProvider::tessera_native;
   config.native_config = configuration(backend_id, flags);
@@ -105,7 +108,8 @@ std::array<native::NativeInputAssignment, 8> neutral() {
 }
 } // namespace
 
-TEST_CASE("Engine policy activates only on a matching native frame confirmation") {
+TEST_CASE(
+    "Engine policy activates only on a matching native frame confirmation") {
   auto selected = open_native("synthetic.complete");
   auto plain = open_native("synthetic.complete");
   auto &machine = *selected->native_emulation();
@@ -125,7 +129,8 @@ TEST_CASE("Engine policy activates only on a matching native frame confirmation"
   REQUIRE(machine.pause().code == 0);
   CHECK(selected->native_presentation_policy().active_regions == 0);
   auto input = neutral();
-  CHECK(selected->native_step_frame({1, 1, std::span{input}.first(7)}).code == -15);
+  CHECK(selected->native_step_frame({1, 1, std::span{input}.first(7)}).code ==
+        -15);
   CHECK(selected->native_step_frame({2, 1, input}).code == -11);
   CHECK(selected->native_presentation_policy().pending_transaction ==
         queued.pending_transaction);
@@ -179,7 +184,8 @@ TEST_CASE("Engine policy rejects unsupported native capabilities atomically") {
   CHECK(minimal->native_presentation_policy().active_regions == 0);
 }
 
-TEST_CASE("Failed reset keeps a pending Engine policy; successful reset rearms it") {
+TEST_CASE(
+    "Failed reset keeps a pending Engine policy; successful reset rearms it") {
   auto session = open_native("synthetic.complete", 1);
   auto &machine = *session->native_emulation();
   const auto input = neutral();
@@ -215,7 +221,8 @@ TEST_CASE("Failed reset keeps a pending Engine policy; successful reset rearms i
   CHECK(session->native_presentation_policy().confirmed);
 }
 
-TEST_CASE("Successful close cancels the pending transaction and clears Engine policy") {
+TEST_CASE("Successful close cancels the pending transaction and clears Engine "
+          "policy") {
   auto session = open_native("synthetic.complete");
   REQUIRE(session->native_submit_presentation_policy(31, 31).code == 0);
   const auto pending = session->native_presentation_policy();
@@ -228,7 +235,8 @@ TEST_CASE("Successful close cancels the pending transaction and clears Engine po
   CHECK(session->native_presentation_policy().pending_transaction == 0);
 }
 
-TEST_CASE("Native restore keeps effective controls and cancels only a pending request") {
+TEST_CASE("Native restore keeps effective controls and cancels only a pending "
+          "request") {
   auto session = open_native("synthetic.complete");
   auto &machine = *session->native_emulation();
   const auto input = neutral();

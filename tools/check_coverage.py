@@ -16,7 +16,8 @@ LineCoverage = dict[str, dict[int, int]]
 
 
 def repository_path(source: str, root: Path) -> str:
-    path = Path(source)
+    # LCOV from Windows uses backslashes even when the gate runs on Linux.
+    path = Path(source.replace("\\", "/"))
     if path.is_absolute():
         try:
             path = path.resolve().relative_to(root.resolve())

@@ -53,16 +53,15 @@ std::uint32_t crc32(std::span<const std::uint8_t> bytes) {
   for (auto byte : bytes) {
     value ^= byte;
     for (unsigned bit = 0; bit < 8; ++bit)
-      value = (value >> 1) ^
-              ((value & 1U) != 0 ? 0xEDB88320U : 0U);
+      value = (value >> 1) ^ ((value & 1U) != 0 ? 0xEDB88320U : 0U);
   }
   return ~value;
 }
 [[maybe_unused]] NativeConfig configuration() {
   std::vector<NativeBackendInfo> backends;
   REQUIRE(ayther::engine::NativeEmulation::backends(backends).code == 0);
-  const auto found = std::ranges::find(backends, std::string("synthetic.complete"),
-                                       &NativeBackendInfo::id);
+  const auto found = std::ranges::find(
+      backends, std::string("synthetic.complete"), &NativeBackendInfo::id);
   REQUIRE(found != backends.end());
   NativeConfig result;
   result.backend_id = found->id;
@@ -101,8 +100,8 @@ std::uint32_t crc32(std::span<const std::uint8_t> bytes) {
     return static_cast<std::uint8_t>(value - 'A' + 10);
   };
   for (std::size_t index = 0; index < 32; ++index) {
-    hash[index] = static_cast<std::uint8_t>(
-        (nibble(digest[index * 2]) << 4) | nibble(digest[index * 2 + 1]));
+    hash[index] = static_cast<std::uint8_t>((nibble(digest[index * 2]) << 4) |
+                                            nibble(digest[index * 2 + 1]));
   }
   field(result.config, 7, 5, hash);
   return result;
@@ -144,38 +143,39 @@ NativeConfig megadrive_configuration() {
                             digest.data()));
   Bytes hash(32);
   const auto nibble = [](char value) -> std::uint8_t {
-    if (value >= '0' && value <= '9') return static_cast<std::uint8_t>(value - '0');
-    if (value >= 'a' && value <= 'f') return static_cast<std::uint8_t>(value - 'a' + 10);
+    if (value >= '0' && value <= '9')
+      return static_cast<std::uint8_t>(value - '0');
+    if (value >= 'a' && value <= 'f')
+      return static_cast<std::uint8_t>(value - 'a' + 10);
     return static_cast<std::uint8_t>(value - 'A' + 10);
   };
   for (std::size_t index = 0; index < 32; ++index)
-    hash[index] = static_cast<std::uint8_t>(
-        (nibble(digest[index * 2]) << 4) | nibble(digest[index * 2 + 1]));
+    hash[index] = static_cast<std::uint8_t>((nibble(digest[index * 2]) << 4) |
+                                            nibble(digest[index * 2 + 1]));
   field(result.config, 7, 5, hash);
   scalar(result.config, 8, 1, 895780);
   scalar(result.config, 9, 1, 53693175);
   scalar(result.config, 10, 1, 1);
   scalar(result.config, 11, 2, 32768);
   scalar(result.config, 12, 2, 4096);
-  field(result.config, 13, 6, text("integer-causal-ZOH-v1;CD-disabled-zero-required;zero-initialized-upstream-options"));
+  field(result.config, 13, 6,
+        text("integer-causal-ZOH-v1;CD-disabled-zero-required;zero-initialized-"
+             "upstream-options"));
   return result;
 }
 [[maybe_unused]] std::string manifest(const NativeConfig &config) {
   char id[32];
   std::snprintf(id, sizeof(id), "crc32:%08x", crc32(config.content));
   return std::string("[pack]\nname = \"native_graphics\"\n") +
-         "version = \"1.0.0\"\n" +
-         "game_id = \"" + id + "\"\n" +
-         "ayther_min = \"0.1.0\"\n" +
-         "author = \"AYTHER Tessera\"\n" +
-         "license = \"MIT\"\n" +
-         "contributors = [\"AYTHER Tessera\"]\n" +
+         "version = \"1.0.0\"\n" + "game_id = \"" + id + "\"\n" +
+         "ayther_min = \"0.1.0\"\n" + "author = \"AYTHER Tessera\"\n" +
+         "license = \"MIT\"\n" + "contributors = [\"AYTHER Tessera\"]\n" +
          "[regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n" +
          "[systems]\nincluded = [\"tiles\"]\n";
 }
-std::unique_ptr<ayther::AytherSession>
-open(const NativeConfig &native, const std::string &pack,
-     const std::string &registry) {
+std::unique_ptr<ayther::AytherSession> open(const NativeConfig &native,
+                                            const std::string &pack,
+                                            const std::string &registry) {
   ayther::AytherSession::Config config;
   config.provider = ayther::EmulationProvider::tessera_native;
   config.native_config = native;
@@ -217,8 +217,7 @@ TEST_CASE("FX-03 composes only visible plane pixels and preserves originals") {
   }
   for (auto [x, y] : {std::pair{105U, 68U}, std::pair{109U, 68U}})
     CHECK(std::equal(original.begin() + pixel(x, y),
-                     original.begin() + pixel(x, y) + 4,
-                     shown + pixel(x, y)));
+                     original.begin() + pixel(x, y) + 4, shown + pixel(x, y)));
   for (std::uint32_t y = 0; y < 224; ++y)
     for (std::uint32_t x = 0; x < 320; ++x)
       if (!((x >= 32 && x < 40 && y >= 32 && y < 40) ||
@@ -230,7 +229,8 @@ TEST_CASE("FX-03 composes only visible plane pixels and preserves originals") {
   constexpr std::uint64_t red_hash = 0x6a56a02d82cba6a1ULL;
   REQUIRE(session->native_set_tile_override(red_hash, "second.png"));
   const auto &override = session->native_frame();
-  REQUIRE(override.native_original_reason == ayther::NativeOriginalReason::none);
+  REQUIRE(override.native_original_reason ==
+          ayther::NativeOriginalReason::none);
   shown = static_cast<const std::uint8_t *>(override.fb_pixels);
   CHECK(shown[pixel(36, 36)] == 0);
   CHECK(shown[pixel(36, 36) + 1] == 255);
@@ -262,7 +262,8 @@ TEST_CASE("FX-03 composes only visible plane pixels and preserves originals") {
         ayther::NativeOriginalReason::none);
 }
 
-TEST_CASE("FX-03 malformed or unsupported temporal evidence falls back atomically") {
+TEST_CASE(
+    "FX-03 malformed or unsupported temporal evidence falls back atomically") {
   const auto root = std::filesystem::path(AYTHER_FX03_ROOT);
   auto session = open(megadrive_configuration(), (root / "fx03.ay").string(),
                       (root / "trust.toml").string());
@@ -286,7 +287,7 @@ TEST_CASE("FX-03 malformed or unsupported temporal evidence falls back atomicall
   const auto compose = [&](const ayther::engine::NativeRegion &evidence,
                            const ayther::engine::NativeFrame &frame) {
     return ayther::session::compose_native_frame(frame, evidence, pack,
-                                                  overrides, output);
+                                                 overrides, output);
   };
   CHECK(compose(region, original) ==
         ayther::session::NativeComposeResult::presented);
@@ -305,7 +306,8 @@ TEST_CASE("FX-03 malformed or unsupported temporal evidence falls back atomicall
   CHECK(compose(region, unsupported) ==
         ayther::session::NativeComposeResult::unsupported);
   CHECK(output.empty());
-  std::vector<std::uint8_t> unknown_version(region.data.begin(), region.data.end());
+  std::vector<std::uint8_t> unknown_version(region.data.begin(),
+                                            region.data.end());
   unknown_version[16] = 3; // temporal record tag 1: version 3 is not supported.
   damaged = region;
   damaged.data = unknown_version;
@@ -315,7 +317,8 @@ TEST_CASE("FX-03 malformed or unsupported temporal evidence falls back atomicall
   ayther_pack_close(pack);
 }
 
-TEST_CASE("FX-03 presentation invalidates on pack and snapshot loss, then recovers") {
+TEST_CASE(
+    "FX-03 presentation invalidates on pack and snapshot loss, then recovers") {
   const auto root = std::filesystem::path(AYTHER_FX03_ROOT);
   const auto pack_path = (root / "fx03.ay").string();
   auto session = open(megadrive_configuration(), pack_path,
@@ -329,7 +332,8 @@ TEST_CASE("FX-03 presentation invalidates on pack and snapshot loss, then recove
         ayther::NativeOriginalReason::none);
   REQUIRE(session->set_pack(""));
   const auto &unpacked = session->native_frame();
-  CHECK(unpacked.native_original_reason == ayther::NativeOriginalReason::no_pack);
+  CHECK(unpacked.native_original_reason ==
+        ayther::NativeOriginalReason::no_pack);
   CHECK(unpacked.fb_pixels == unpacked.native_original.pixels.data());
   REQUIRE(session->set_pack(pack_path));
   CHECK(session->native_frame().native_original_reason ==
@@ -354,7 +358,8 @@ TEST_CASE("FX-03 presentation invalidates on pack and snapshot loss, then recove
         ayther::NativeOriginalReason::none);
 }
 
-TEST_CASE("FX-03 restore cancels pending presentation and keeps a failed restore intact") {
+TEST_CASE("FX-03 restore cancels pending presentation and keeps a failed "
+          "restore intact") {
   const auto root = std::filesystem::path(AYTHER_FX03_ROOT);
   auto session = open(megadrive_configuration(), (root / "fx03.ay").string(),
                       (root / "trust.toml").string());
@@ -368,7 +373,8 @@ TEST_CASE("FX-03 restore cancels pending presentation and keeps a failed restore
   std::vector<std::uint8_t> checkpoint;
   REQUIRE(session->native_emulation()->checkpoint(checkpoint).code == 0);
   REQUIRE(session->native_submit_presentation_policy(0, 0).code == 0);
-  const auto pending = session->native_presentation_policy().pending_transaction;
+  const auto pending =
+      session->native_presentation_policy().pending_transaction;
   CHECK(pending != 0);
   CHECK(session->native_restore_checkpoint({}).code != 0);
   CHECK(session->native_presentation_policy().pending_transaction == pending);
@@ -383,7 +389,8 @@ TEST_CASE("FX-03 restore cancels pending presentation and keeps a failed restore
         ayther::NativeOriginalReason::none);
 }
 
-TEST_CASE("FX-03 substitution leaves canonical state, video and PCM unchanged") {
+TEST_CASE(
+    "FX-03 substitution leaves canonical state, video and PCM unchanged") {
   const auto root = std::filesystem::path(AYTHER_FX03_ROOT);
   const auto native_config = megadrive_configuration();
   auto observed = open(native_config, (root / "fx03.ay").string(),

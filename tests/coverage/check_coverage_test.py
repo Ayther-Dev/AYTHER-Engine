@@ -43,6 +43,14 @@ class CoverageGateTest(unittest.TestCase):
         source = "/home/runner/work/AYTHER-Engine/AYTHER-Engine/core/src/lib.rs"
         self.assertEqual(coverage_gate.repository_path(source, root), "core/src/lib.rs")
 
+    def test_windows_lcov_path_is_normalized_on_linux(self):
+        root = Path("/home/runner/work/AYTHER-Engine/AYTHER-Engine")
+        source = r"D:\a\AYTHER-Engine\AYTHER-Engine\src\tessera_backend.cpp"
+        self.assertEqual(
+            coverage_gate.repository_path(source, root),
+            "src/tessera_backend.cpp",
+        )
+
     def test_evaluate_separates_total_and_changed_coverage(self):
         values = {"src/a.cpp": {5: 1, 6: 0, 9: 0}, "third_party/x.cpp": {1: 0}}
         result = coverage_gate.evaluate(values, {"src/a.cpp": {5, 6}}, ["src/"])

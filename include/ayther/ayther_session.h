@@ -888,8 +888,9 @@ public:
   [[nodiscard]] const engine::NativeEmulation *
   native_emulation() const noexcept;
   /// Submit both observation masks atomically for the next executable frame.
-  [[nodiscard]] engine::NativeResult native_submit_presentation_policy(
-      std::uint64_t regions, std::uint64_t events) noexcept;
+  [[nodiscard]] engine::NativeResult
+  native_submit_presentation_policy(std::uint64_t regions,
+                                    std::uint64_t events) noexcept;
   /// Advance a complete native frame and activate Engine policy only on the
   /// matching Tessera confirmation. On rejection the policy is unchanged.
   [[nodiscard]] engine::NativeResult
@@ -899,15 +900,16 @@ public:
   /// Restore a native checkpoint. Success invalidates borrowed presentation
   /// data and discards a cancelled pending policy while retaining controls
   /// that Tessera had already applied; failure leaves Engine policy intact.
-  [[nodiscard]] engine::NativeResult native_restore_checkpoint(
-      std::span<const std::uint8_t> checkpoint,
-      std::span<const std::uint8_t> trace = {}) noexcept;
+  [[nodiscard]] engine::NativeResult
+  native_restore_checkpoint(std::span<const std::uint8_t> checkpoint,
+                            std::span<const std::uint8_t> trace = {}) noexcept;
   /// Close the native driver and discard Engine presentation policy only after
   /// a successful close; the result preserves Tessera cancellation context.
   [[nodiscard]] engine::NativeResult native_close() noexcept;
-  [[nodiscard]] NativePresentationPolicy native_presentation_policy() const noexcept;
+  [[nodiscard]] NativePresentationPolicy
+  native_presentation_policy() const noexcept;
   [[nodiscard]] bool native_set_tile_override(std::uint64_t hash,
-                                               std::string asset_path);
+                                              std::string asset_path);
   void native_clear_tile_overrides() noexcept;
   /// Refresh borrowed originals after driving native_emulation(). Native packs
   /// are not integrated in this increment; the reason is explicit in FrameView.

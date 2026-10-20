@@ -50,8 +50,8 @@
 #include "rewind_buffer.h"              // RewindBuffer (R6)
 #include "session/emulation_observer.h"
 #include "session/frame_composability.h"
-#include "session/pack_runtime.h"
 #include "session/native_presentation.h"
+#include "session/pack_runtime.h"
 #include "session/parsed_sprite_join.h"
 #include "session/plane_bands.h"
 #include "session/plane_set_match.h"
@@ -235,8 +235,8 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
     if (!cfg.pack_path.empty()) {
       auto loaded = session->set_pack(cfg.pack_path);
       if (!loaded) {
-        native_result.code = static_cast<std::int32_t>(
-            engine::NativeStatus::invalid_argument);
+        native_result.code =
+            static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
         return loaded.error;
       }
     }
@@ -601,7 +601,8 @@ engine::NativeResult AytherSession::native_submit_presentation_policy(
   }
   if (im.next_native_policy_transaction == 0 ||
       im.next_native_policy_transaction == UINT64_MAX) {
-    result.code = static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
+    result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
     return im.native_result = result;
   }
   engine::NativeSessionInfo current;
@@ -609,13 +610,14 @@ engine::NativeResult AytherSession::native_submit_presentation_policy(
   if (result.code != 0)
     return im.native_result = result;
   if (current.frame_id.frame == UINT64_MAX) {
-    result.code = static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
+    result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::budget_exceeded);
     return im.native_result = result;
   }
   const auto transaction = im.next_native_policy_transaction;
-  result = im.native->submit_presentation_policy(
-      current.frame_id.epoch, current.frame_id.frame + 1, transaction,
-      regions, events);
+  result = im.native->submit_presentation_policy(current.frame_id.epoch,
+                                                 current.frame_id.frame + 1,
+                                                 transaction, regions, events);
   if (result.code == 0) {
     ++im.next_native_policy_transaction;
     im.native_policy.requested_regions = regions;
@@ -634,8 +636,8 @@ engine::NativeResult AytherSession::native_step_frame(
   Impl &im = *impl_;
   if (!im.native) {
     im.native_result = {};
-    im.native_result.code = static_cast<std::int32_t>(
-        engine::NativeStatus::unsupported_capability);
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
     return im.native_result;
   }
   const auto advanced = im.native->step(input);
@@ -657,8 +659,8 @@ engine::NativeResult AytherSession::native_replay_next() noexcept {
   Impl &im = *impl_;
   if (!im.native) {
     im.native_result = {};
-    im.native_result.code = static_cast<std::int32_t>(
-        engine::NativeStatus::unsupported_capability);
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
     return im.native_result;
   }
   const auto advanced = im.native->replay_next();
@@ -681,8 +683,8 @@ engine::NativeResult AytherSession::native_restore_checkpoint(
   Impl &im = *impl_;
   if (!im.native) {
     im.native_result = {};
-    im.native_result.code = static_cast<std::int32_t>(
-        engine::NativeStatus::unsupported_capability);
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
     return im.native_result;
   }
   const auto restored = im.native->restore_checkpoint(checkpoint, trace);
@@ -710,8 +712,8 @@ engine::NativeResult AytherSession::native_close() noexcept {
   Impl &im = *impl_;
   if (!im.native) {
     im.native_result = {};
-    im.native_result.code = static_cast<std::int32_t>(
-        engine::NativeStatus::unsupported_capability);
+    im.native_result.code =
+        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
     return im.native_result;
   }
   const auto closed = im.native->close();
@@ -723,12 +725,13 @@ engine::NativeResult AytherSession::native_close() noexcept {
   return im.native_result = closed;
 }
 
-NativePresentationPolicy AytherSession::native_presentation_policy() const noexcept {
+NativePresentationPolicy
+AytherSession::native_presentation_policy() const noexcept {
   return impl_->native_policy;
 }
 
 bool AytherSession::native_set_tile_override(std::uint64_t hash,
-                                              std::string asset_path) {
+                                             std::string asset_path) {
   Impl &im = *impl_;
   if (!im.native || !im.pack || hash == 0 || asset_path.empty() ||
       asset_path.size() >= 512 || asset_path.find('\0') != std::string::npos)
@@ -759,7 +762,8 @@ const FrameView &AytherSession::native_frame() noexcept {
     im.view.fb_width = original.width;
     im.view.fb_height = original.height;
     im.view.fb_pitch = original.row_bytes;
-    im.view.fb_format = 5; // TexPixelFormat::Rgba8888 for the installed renderer.
+    im.view.fb_format =
+        5; // TexPixelFormat::Rgba8888 for the installed renderer.
     im.view.pixel_encoding = FramePixelEncoding::rgba8;
     im.view.native_original = original;
     im.view.frame_index = original.frame_id.frame;
@@ -780,15 +784,20 @@ const FrameView &AytherSession::native_frame() noexcept {
       else if (info.frame_id.session != original.frame_id.session ||
                info.frame_id.epoch != original.frame_id.epoch ||
                info.frame_id.frame != original.frame_id.frame ||
-               (info.region_mask & 16U) == 0 ||
-               (info.complete_mask & 16U) == 0)
-        im.view.native_original_reason = NativeOriginalReason::temporal_incomplete;
+               (info.region_mask & 16U) == 0 || (info.complete_mask & 16U) == 0)
+        im.view.native_original_reason =
+            NativeOriginalReason::temporal_incomplete;
       else {
         bool found = false;
         for (std::uint32_t index = 0; index < info.region_count; ++index) {
           engine::NativeRegion candidate;
-          if (snapshot.region(index, candidate).code != 0) break;
-          if (candidate.kind == 5) { temporal = candidate; found = true; break; }
+          if (snapshot.region(index, candidate).code != 0)
+            break;
+          if (candidate.kind == 5) {
+            temporal = candidate;
+            found = true;
+            break;
+          }
         }
         if (!found)
           im.view.native_original_reason = NativeOriginalReason::capture_lost;
@@ -802,24 +811,30 @@ const FrameView &AytherSession::native_frame() noexcept {
               im.view.native_original_reason = NativeOriginalReason::none;
               break;
             case session::NativeComposeResult::no_matching_rule:
-              im.view.native_original_reason = NativeOriginalReason::no_matching_rule;
+              im.view.native_original_reason =
+                  NativeOriginalReason::no_matching_rule;
               break;
             case session::NativeComposeResult::incomplete:
-              im.view.native_original_reason = NativeOriginalReason::temporal_incomplete;
+              im.view.native_original_reason =
+                  NativeOriginalReason::temporal_incomplete;
               break;
             case session::NativeComposeResult::unsupported:
-              im.view.native_original_reason = NativeOriginalReason::unsupported_mode;
+              im.view.native_original_reason =
+                  NativeOriginalReason::unsupported_mode;
               break;
             case session::NativeComposeResult::invalid_data:
-              im.view.native_original_reason = NativeOriginalReason::invalid_capture;
+              im.view.native_original_reason =
+                  NativeOriginalReason::invalid_capture;
               break;
             case session::NativeComposeResult::invalid_asset:
-              im.view.native_original_reason = NativeOriginalReason::invalid_asset;
+              im.view.native_original_reason =
+                  NativeOriginalReason::invalid_asset;
               break;
             }
           } catch (...) {
             im.native_presented_pixels.clear();
-            im.view.native_original_reason = NativeOriginalReason::invalid_capture;
+            im.view.native_original_reason =
+                NativeOriginalReason::invalid_capture;
           }
         }
       }
@@ -6440,9 +6455,9 @@ AytherSession::validate_pack(const std::string &pack_path) const {
   // assuming it is fine. A frontend that does have it (the Lab does: the
   // project's game_id is "crc32:...") can call the FFI with that itself.
   session::PackRuntime::ValidateContext context;
-  context.platform = impl_->native
-                         ? "megadrive"
-                         : impl_->runner.cd_media() ? "segacd" : "megadrive";
+  context.platform = impl_->native              ? "megadrive"
+                     : impl_->runner.cd_media() ? "segacd"
+                                                : "megadrive";
   if (impl_->native) {
     context.has_rom = true;
     context.rom_crc32 = impl_->native_rom_crc32;

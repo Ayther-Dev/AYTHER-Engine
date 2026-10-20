@@ -291,7 +291,8 @@ TEST_CASE(
   REQUIRE(step(*emulation).code == 0);
 }
 
-TEST_CASE("native replay EOF, checkpoints and buffers retain public semantics") {
+TEST_CASE(
+    "native replay EOF, checkpoints and buffers retain public semantics") {
   const auto configuration = config();
   auto emulation = create(configuration);
   REQUIRE(emulation->bind_trace(trace(configuration, 2)).code == 0);

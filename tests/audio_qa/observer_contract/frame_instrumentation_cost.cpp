@@ -276,10 +276,11 @@ int main() try {
     const bool behavior_pair_passed =
         disabled.valid && enabled.valid && decisions_match(disabled, enabled);
     behavior_passed = behavior_passed && behavior_pair_passed;
-    const bool pair_passed =
-        behavior_pair_passed &&
+    const bool pair_budget_passed =
         within_budget(disabled_percentiles, enabled_percentiles);
-    budget_passed = budget_passed && pair_passed;
+#if !defined(AYTHER_INSTRUMENTED_BUILD)
+    budget_passed = budget_passed && pair_budget_passed;
+#endif
     std::printf("frame_instrumentation_cost pair=%zu order=%s frames=%zu "
                 "disabled_p95_ns=%llu enabled_p95_ns=%llu disabled_p99_ns=%llu "
                 "enabled_p99_ns=%llu disabled_work_fps=%.3f "
@@ -298,7 +299,11 @@ int main() try {
                 static_cast<unsigned long long>(enabled.pcm_blocks),
                 static_cast<unsigned long long>(enabled.losses),
                 decisions_match(disabled, enabled) ? "equal" : "different",
-                pair_passed ? "passed" : "failed");
+#if defined(AYTHER_INSTRUMENTED_BUILD)
+                "not-gated-instrumented");
+#else
+                pair_budget_passed ? "passed" : "failed");
+#endif
   }
   std::printf("frame_instrumentation_cost aggregate=all_pairs pairs=%zu "
               "clock=%s behavior=%s budget=%s\n",
@@ -309,7 +314,11 @@ int main() try {
               "steady_wall",
 #endif
               behavior_passed ? "passed" : "failed",
+#if defined(AYTHER_INSTRUMENTED_BUILD)
+              "not-gated-instrumented");
+#else
               budget_passed ? "passed" : "failed");
+#endif
   return behavior_passed && budget_passed ? 0 : 1;
 } catch (...) {
   return 4;
