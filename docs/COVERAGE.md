@@ -32,7 +32,7 @@ cannot exercise the Windows-only Tessera integration, so the CI gate merges
 both platform reports by source path and line number. The collectors do not
 relax either threshold; a missing platform artifact fails the combined gate.
 A local combined run after the native integration measured 53,694 / 68,047
-covered total lines (78.91%) and 2,458 / 3,164 changed lines (77.69%).
+covered total lines (78.91%) and 2,989 / 3,825 changed lines (78.14%).
 These are local measurements pending CI confirmation.
 
 The changed-line gate compares each report with the pull-request base (or the

@@ -84,6 +84,8 @@ def git_changed_lines(root: Path, base: str, prefixes: list[str]) -> dict[str, s
         cwd=root,
         check=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
