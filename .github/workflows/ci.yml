@@ -797,7 +797,7 @@ jobs:
 
   cpp-coverage-gate:
     name: C++ coverage gate
-    if: env.WARM_ONLY != 'true'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     needs: [cpp-coverage, native]
     runs-on: ubuntu-latest
     timeout-minutes: 5
