@@ -306,19 +306,12 @@ impl TileSubstitutor {
                     if !conds.is_empty() {
                         self.conditional = true;
                     }
-                    let list = self.catalog.entry(hash).or_default();
-                    // Compatibilidad exacta con el mapa plano de antes: dos
-                    // `[[sub]]` SIN condiciones para el mismo hash eran un
-                    // `HashMap::insert` — ganaba el ÚLTIMO. Se conserva
-                    // reemplazando en su lugar; las condicionales sí se apilan
-                    // y entre ellas gana la PRIMERA que matchea.
-                    match list.iter_mut().find(|e| e.conds.is_empty()) {
-                        Some(slot) if conds.is_empty() => slot.asset = entry.asset,
-                        _ => list.push(CatalogEntry {
-                            asset: entry.asset,
-                            conds,
-                        }),
-                    }
+                    // Keep every entry in source order. The first applicable
+                    // rule wins, including when several are unconditional.
+                    self.catalog.entry(hash).or_default().push(CatalogEntry {
+                        asset: entry.asset,
+                        conds,
+                    });
                 }
             }
             Err(e) => eprintln!("[TileSubstitutor] toml parse error: {}", e),
@@ -563,17 +556,17 @@ asset = "columna_dia.png"
         assert_eq!(sub.lookup(0xdddd), Some("bueno.png"));
     }
 
-    /// Regresión: antes el catálogo era un HashMap plano y un hash duplicado
-    /// sin condiciones ganaba el ÚLTIMO. Eso NO cambia.
+    /// The first applicable unconditional entry wins as declared by the
+    /// Engine–Tessera replacement contract.
     #[test]
-    fn duplicate_unconditional_entries_keep_last_wins() {
+    fn duplicate_unconditional_entries_keep_first_wins() {
         let mut sub = TileSubstitutor::new();
         sub.parse_toml(
             "[[sub]]\nhash=\"0x7\"\nasset=\"primero.png\"\n\n\
                         [[sub]]\nhash=\"0x7\"\nasset=\"ultimo.png\"\n",
         );
-        assert_eq!(sub.entry_len(), 1);
-        assert_eq!(sub.lookup(0x7), Some("ultimo.png"));
+        assert_eq!(sub.entry_len(), 2);
+        assert_eq!(sub.lookup(0x7), Some("primero.png"));
     }
 
     #[test]

@@ -58,6 +58,7 @@ public:
 
     PackRuntime(const PackRuntime&)            = delete;
     PackRuntime& operator=(const PackRuntime&) = delete;
+    void swap(PackRuntime& other) noexcept;
 
     // ---- Activation -----------------------------------------------------
 

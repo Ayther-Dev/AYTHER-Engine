@@ -167,6 +167,16 @@ inline uint32_t chan_bit(uint8_t chip, uint8_t channel) {
     return static_cast<uint32_t>(1u << (10 + channel)); // PCM 0-7
   return 0;
 }
+
+uint32_t content_crc32(std::span<const uint8_t> bytes) noexcept {
+  uint32_t crc = 0xFFFFFFFFU;
+  for (const auto byte : bytes) {
+    crc ^= byte;
+    for (unsigned bit = 0; bit < 8; ++bit)
+      crc = (crc >> 1) ^ ((crc & 1U) != 0 ? 0xEDB88320U : 0U);
+  }
+  return ~crc;
+}
 } // namespace
 
 // Private state and cohesive runtime helpers live in a dedicated implementation
@@ -200,14 +210,14 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
   Impl &im = *session->impl_;
   if (cfg.provider == EmulationProvider::tessera_native) {
     // Device presentation and real pack composition have separate contracts.
-    if (cfg.enable_audio || !cfg.pack_path.empty() || !cfg.patch_path.empty() ||
+    if (cfg.enable_audio || !cfg.patch_path.empty() ||
         !cfg.core_options.empty() || !cfg.rom_path.empty() ||
         cfg.audio_observer.on_fact || cfg.audio_observer.on_pcm ||
         cfg.render_observer) {
       native_result.code = static_cast<std::int32_t>(
           engine::NativeStatus::unsupported_capability);
       return Error{ErrorCode::Unsupported,
-                   "Tessera: use native PCM/originals; device, pack and legacy "
+                   "Tessera: use native PCM/originals; device and legacy "
                    "options are unavailable"};
     }
     native_result =
@@ -219,6 +229,13 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
                        std::to_string(native_result.code) + ")"};
     }
     im.native_result = native_result;
+    im.native_rom_crc32 = content_crc32(cfg.native_config.content);
+    im.pack_trust_registry = cfg.trust_registry;
+    if (!cfg.pack_path.empty()) {
+      auto loaded = session->set_pack(cfg.pack_path);
+      if (!loaded)
+        return loaded.error;
+    }
     return session;
   }
   im.qa_observer = cfg.audio_observer;
@@ -420,10 +437,46 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
 // Content: the HD pack (hot-reloadable)
 // ---------------------------------------------------------------------------
 Result<void> AytherSession::set_pack(const std::string &pack_path) {
-  if (impl_->native)
-    return Result<void>::fail(
-        ErrorCode::Unsupported,
-        "Tessera: native pack composition is unavailable in this increment");
+  if (impl_->native) {
+    Impl &im = *impl_;
+    if (pack_path.empty()) {
+      im.pack.close();
+      return Result<void>::ok();
+    }
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_regular_file(pack_path, ec))
+      return Result<void>::fail(ErrorCode::NotFound,
+                                "Tessera: pack file does not exist");
+    session::PackRuntime::ValidateContext context;
+    context.platform = "megadrive";
+    context.has_rom = true;
+    context.rom_crc32 = im.native_rom_crc32;
+#ifdef NDEBUG
+    context.release_build = true;
+#endif
+    for (const auto &finding :
+         session::PackRuntime::validate(pack_path, context))
+      if (finding.blocking || finding.code == "meta.author" ||
+          finding.code == "meta.license")
+        return Result<void>::fail(ErrorCode::BadFormat,
+                                  "Tessera: pack rejected: " + finding.code);
+    session::PackRuntime candidate;
+    const auto opened =
+        im.pack_trust_registry.empty()
+            ? candidate.open(pack_path)
+            : candidate.open_trusted(pack_path, im.pack_trust_registry);
+    if (!opened)
+      return opened;
+    if (!candidate.loaded())
+      return Result<void>::fail(ErrorCode::BadFormat,
+                                "Tessera: pack did not open");
+    if (!ayther_pack_verify_all(candidate.get()))
+      return Result<void>::fail(ErrorCode::BadFormat,
+                                "Tessera: pack integrity check failed");
+    im.pack.swap(candidate);
+    return Result<void>::ok();
+  }
   Impl &im = *impl_;
   namespace fs = std::filesystem;
 
@@ -483,10 +536,11 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
 }
 
 Result<void> AytherSession::reload_pack() {
-  if (impl_->native)
-    return Result<void>::fail(
-        ErrorCode::Unsupported,
-        "Tessera: native pack composition is unavailable in this increment");
+  if (impl_->native) {
+    if (impl_->pack.path().empty())
+      return Result<void>::ok();
+    return set_pack(impl_->pack.path());
+  }
   if (impl_->pack.path().empty())
     return Result<void>::ok();
   return set_pack(impl_->pack.path());
@@ -6147,7 +6201,13 @@ AytherSession::validate_pack(const std::string &pack_path) const {
   // assuming it is fine. A frontend that does have it (the Lab does: the
   // project's game_id is "crc32:...") can call the FFI with that itself.
   session::PackRuntime::ValidateContext context;
-  context.platform = impl_->runner.cd_media() ? "segacd" : "megadrive";
+  context.platform = impl_->native
+                         ? "megadrive"
+                         : impl_->runner.cd_media() ? "segacd" : "megadrive";
+  if (impl_->native) {
+    context.has_rom = true;
+    context.rom_crc32 = impl_->native_rom_crc32;
+  }
   // The core's build_id is NOT NUL-terminated (it is an ABI span), so it
   // is copied: passing the raw pointer would read past the end.
   if (const ayther_interface_v1 *api = impl_->runner.ayther_api()) {

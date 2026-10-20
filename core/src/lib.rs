@@ -2001,6 +2001,16 @@ pub unsafe extern "C" fn ayther_pack_file_size(
     }
 }
 
+/// Streams and verifies every entry against the signed integrity index.
+/// Returns false for any unreadable, truncated or mismatched entry.
+#[unsafe(no_mangle)]
+/// # Safety
+/// The caller must pass a live archive pointer or null.
+pub unsafe extern "C" fn ayther_pack_verify_all(ptr: *const AyArchive) -> bool {
+    // SAFETY: A non-null pointer must remain live for the duration of the call.
+    unsafe { !ptr.is_null() && (*ptr).verify_all() }
+}
+
 /// Read a logical asset into `out_buf` (capacity `buf_cap` bytes).
 ///
 /// Returns the number of bytes written, or -1 if the path is not found

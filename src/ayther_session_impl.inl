@@ -352,6 +352,7 @@ struct AytherSession::Impl {
   /// Registry the pack is opened under. Held so reload_pack and a later
   /// set_pack use the same trust the session was created with.
   std::string pack_trust_registry;
+  uint32_t native_rom_crc32 = 0;
 
   bool audio_enabled = false; // HD audio output (motor-owned)
   bool vram_warned = false;   // one-shot: core exposes no VRAM

@@ -18,6 +18,14 @@ std::string field(AyArchive* archive, uint32_t index, const char* name) {
 
 PackRuntime::~PackRuntime() { close(); }
 
+void PackRuntime::swap(PackRuntime& other) noexcept {
+    using std::swap;
+    swap(archive_, other.archive_);
+    path_.swap(other.path_);
+    trust_registry_.swap(other.trust_registry_);
+    profile_hint_.swap(other.profile_hint_);
+}
+
 void PackRuntime::close() noexcept {
     if (archive_ != nullptr) {
         ayther_pack_close(archive_);

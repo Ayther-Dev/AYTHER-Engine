@@ -1221,6 +1221,34 @@ impl AyArchive {
         }
     }
 
+    /// Verify every signed entry before activating a pack. This streams each
+    /// entry through a fixed-size buffer so preflight does not need to hold a
+    /// potentially gigabyte-sized asset in memory.
+    pub fn verify_all(&self) -> bool {
+        let Backend::Lazy { zip, index, .. } = &self.backend else {
+            // Legacy resident packs were verified in full while opening.
+            return true;
+        };
+        let Ok(mut archive) = zip.lock() else { return false };
+        let mut buffer = [0u8; 64 * 1024];
+        for (name, expected) in index {
+            let Ok(mut entry) = archive.by_name(name) else { return false };
+            let mut digest = Sha256::new();
+            let mut total = 0u64;
+            loop {
+                let Ok(count) = entry.read(&mut buffer) else { return false };
+                if count == 0 { break; }
+                total += count as u64;
+                if total > expected.size { return false; }
+                digest.update(&buffer[..count]);
+            }
+            if total != expected.size || digest.finalize()[..] != expected.sha256 {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Read a logical asset. Returns owned bytes: resident packs copy from
     /// RAM; lazy packs decompress from disk and verify the per-entry hash
     /// — a mismatch (tamper or torn hotreload write) logs and returns
@@ -2091,6 +2119,7 @@ systems = ["tiles"]
         assert_eq!(arch.file_size("graphics/a.png"), Some(asset.len()));
         // read descomprime + verifica hash.
         assert_eq!(arch.read("graphics/a.png"), Some(asset.clone()));
+        assert!(arch.verify_all());
         // iter_paths no expone integrity.toml.
         assert!(
             arch.iter_paths()
@@ -2125,6 +2154,7 @@ systems = ["tiles"]
             None,
             "asset alterado debe fallar el hash por entrada"
         );
+        assert!(!arch.verify_all(), "preflight must reject a tampered asset");
         // El resto del pack sigue sano.
         assert!(arch.read("manifest.toml").is_some());
         let _ = std::fs::remove_file(&out);
