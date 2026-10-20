@@ -218,6 +218,16 @@ TEST_CASE("Native pack validation rejects bad candidates without losing the sele
   CHECK_FALSE(missing);
   CHECK(session->has_pack());
   CHECK(session->game_id() == old);
+  const auto corrupt = fixture.pack_path() + ".corrupt.ay";
+  std::filesystem::copy_file(fixture.pack_path(), corrupt);
+  {
+    std::fstream output(corrupt, std::ios::binary | std::ios::in | std::ios::out);
+    REQUIRE(output.good());
+    output.put('X'); // Invalidate the ZIP header without changing the selected file.
+  }
+  CHECK_FALSE(session->set_pack(corrupt));
+  CHECK(session->has_pack());
+  CHECK(session->game_id() == old);
   std::unique_ptr<AytherTileSubstitutor, decltype(&ayther_tile_sub_free)> catalog(
       ayther_tile_sub_new(), &ayther_tile_sub_free);
   REQUIRE(catalog != nullptr);
