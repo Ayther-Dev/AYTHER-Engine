@@ -522,7 +522,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: Ayther-Dev/AYTHER-Tessera
-          ref: dfef7223af0928f89fa0db97bb754cc64a417aed
+          ref: 006f4618845d01a9f14dcae94386119bf8bd492f
           path: build/tessera-source
           persist-credentials: false
 
@@ -534,8 +534,9 @@ jobs:
           Push-Location $source
           try {
             ./tools/bootstrap-dependencies.ps1 -Download
+            ./tools/bootstrap-backends.ps1 -Download -SelectedOnly
             ./tools/check.ps1 -Preset windows-release -Stage Configure -Jobs 1
-            cmake --build build/windows-release --target tessera_core tessera_cli --parallel 1
+            cmake --build build/windows-release --target tessera_core tessera_cli tessera_generate_fixture_roms tessera_audio_fixture_generator --parallel 1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             cmake --install build/windows-release --prefix "$env:RUNNER_TEMP/tessera-install"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -615,12 +616,46 @@ jobs:
         run: |
           $nativeArgs = @()
           if ($env:TESSERA_PREFIX) {
+            # The pack builder belongs to Engine. Build it before configuring
+            # native tests, whose fixtures are deliberately absent from Git.
+            cmake --preset ${{ matrix.preset }} -DAYTHER_ENABLE_TESSERA=OFF
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            cmake --build "build/${{ matrix.preset }}" --target make_test_pack --parallel 1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $source = Join-Path $PWD 'build/tessera-source'
+            $fixtures = Join-Path $source 'build/windows-release/native-fixtures'
+            & (Join-Path $source 'tools/generate-native-fixtures.ps1') `
+              -TesseraBuild (Join-Path $source 'build/windows-release') `
+              -EnginePackTool (Join-Path $PWD "build/${{ matrix.preset }}/bin/make_test_pack.exe")
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ('${{ matrix.preset }}' -eq 'windows-native') {
+              cmake --build (Join-Path $source 'build/windows-release') `
+                --target tessera_megadrive_replay_test --parallel 1
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              ctest --test-dir (Join-Path $source 'build/windows-release') `
+                -R '^integration.megadrive_replay$' --output-on-failure -j 1
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              $evidenceRoot = Join-Path $source 'build/evidence/phase3-Release-OFF'
+              $evidence = Get-ChildItem $evidenceRoot -Directory |
+                Where-Object { Test-Path (Join-Path $_.FullName 'summary.json') } |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+              if (-not $evidence) { throw 'Tessera replay produced no phase 3 evidence.' }
+              $nativeArgs += "-DAYTHER_TESSERA_PHASE3_EVIDENCE_DIR=$($evidence.FullName)"
+            }
             $nativeArgs += '-DAYTHER_ENABLE_TESSERA=ON'
             $nativeArgs += "-DTessera_DIR=$env:TESSERA_PREFIX/lib/cmake/Tessera"
-            $nativeArgs += "-DAYTHER_TESSERA_TEST_SOURCE_DIR=$($PWD.Path)/build/tessera-source"
+            $nativeArgs += "-DAYTHER_TESSERA_TEST_SOURCE_DIR=$source"
+            $nativeArgs += "-DAYTHER_TESSERA_TEST_FIXTURE_DIR=$fixtures"
           }
           cmake --preset ${{ matrix.preset }} @nativeArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:TESSERA_PREFIX -and '${{ matrix.preset }}' -eq 'windows-native') {
+            $registered = ctest --test-dir 'build/windows-native' -N `
+              -R '^ayther.integration.tessera_checkpoint$'
+            if ($LASTEXITCODE -ne 0 -or ($registered -join [Environment]::NewLine) -notmatch 'Total Tests: 1') {
+              throw 'Native checkpoint CTest was omitted after fixture generation.'
+            }
+          }
 
       - name: Verify required audio QA CTest families
         if: env.WARM_ONLY != 'true'
