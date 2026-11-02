@@ -165,6 +165,10 @@ void ayther_pack_set_tier_for_height(AyArchive *pack, int out_height_px);
 /// Return the size in bytes of a logical asset, or -1 if not found.
 int64_t ayther_pack_file_size(const AyArchive *pack, const char *logical_path);
 
+/// Verify all signed entries before activating the pack. Reads in fixed-size
+/// chunks and returns false for corrupted or missing content.
+bool ayther_pack_verify_all(const AyArchive *pack);
+
 /// Read a logical asset into out_buf (capacity buf_cap bytes).
 /// Returns bytes written, or -1 if path not found or buffer too small.
 /// Pre-allocate using ayther_pack_file_size().

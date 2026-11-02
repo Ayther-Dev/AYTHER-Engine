@@ -68,7 +68,14 @@ Concurrency, Source files, and Performance sections.
 `AytherSession` coordinates the emulator host, Rust identity/substitution
 handles, scripting, pack state, audio, recording, rewind, and frame extraction.
 
-Creation is transactional from the caller's perspective:
+Provider selection is explicit. `Config::provider` defaults to `libretro`;
+`tessera_native` prepares the installed Tessera module before any Rust identity
+handles or libretro initialization. Native preparation failure is returned with
+its exact `NativeResult` by the creation overload; there is no provider fallback.
+See [native Tessera consumption](TESSERA_NATIVE.md) for configuration, formats,
+lifetimes, capabilities and the current synthetic-only scope.
+
+For the legacy provider, creation is transactional from the caller's perspective:
 
 1. `create()` receives immutable configuration.
 2. It allocates the Rust-side handles.
@@ -94,7 +101,8 @@ trust or schema failures are not optional and must remain observable errors.
 
 ## Frame pipeline
 
-One successful `step()` represents exactly one emulated frame:
+The following pipeline describes the legacy provider. One successful legacy
+`step()` represents exactly one emulated frame:
 
 1. apply current input;
 2. execute the libretro frame;
@@ -108,6 +116,16 @@ One successful `step()` represents exactly one emulated frame:
 Deterministic inputs, pack data, and emulator state must produce deterministic
 identity and scheduling decisions. Presentation and device timing must not alter
 identity generation.
+
+The native provider is driven through `native_emulation()`, which requires a
+complete input state for the next frame or a validated bound trace. Its results
+preserve EOF, pending transactions, confirmation and cancellation independently
+of the event queue. Legacy `set_input()` and `step()` reject the native route
+without advancing; clients inspect `FrameView::native_result` and use the typed
+driver. `native_frame()` then exposes borrowed original RGBA8 and PCM, with
+`pack_not_integrated` as the explicit original presentation reason. It clears
+expired views after a direct-driver reset or close. Real pack composition and
+Runtime presentation are separate MVP acceptance tasks.
 
 ## Subsystem contracts
 
@@ -157,7 +175,7 @@ callers intentionally selecting the public C ABI and for Engine internals.
 fallible; `shutdown()` is idempotent and is also called by the destructor.
 Emulator batches and replacement voices share a frame-aligned staging timeline.
 
-Current mix-ready PCM is interleaved signed 16-bit stereo at 44.1 kHz. Units
+Legacy AudioPlayer mix-ready PCM is interleaved signed 16-bit stereo at 44.1 kHz. Native Tessera original PCM carries its own rate and lifetime; FX-01 is 48 kHz and is not submitted to the legacy device. Units
 must be explicit: APIs distinguish sample frames, scalar samples, emulation
 frames, seconds, and absolute stream positions. Borrowed PCM pointers are valid
 only for the duration of the call unless copied into a documented cache.

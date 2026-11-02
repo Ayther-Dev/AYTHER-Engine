@@ -293,4 +293,42 @@ mod tests {
         }];
         assert!(validate_archive_metadata(1, 1, bomb).is_err());
     }
+
+    #[test]
+    fn rejects_declared_sizes_above_each_pack_limit_without_allocating_them() {
+        assert!(validate_archive_size(MAX_ARCHIVE_BYTES).is_ok());
+        assert!(validate_archive_size(MAX_ARCHIVE_BYTES + 1).is_err());
+        assert!(validate_archive_metadata(1, MAX_ENTRY_COUNT + 1, []).is_err());
+
+        let over_entry = [EntryMetadata {
+            path: "assets/large.bin",
+            uncompressed_size: MAX_ENTRY_BYTES + 1,
+            compressed_size: MAX_ENTRY_BYTES + 1,
+        }];
+        assert!(validate_archive_metadata(1, 1, over_entry).is_err());
+
+        let over_metadata = [EntryMetadata {
+            path: "manifest.toml",
+            uncompressed_size: MAX_METADATA_BYTES + 1,
+            compressed_size: MAX_METADATA_BYTES + 1,
+        }];
+        assert!(validate_archive_metadata(1, 1, over_metadata).is_err());
+
+        let total = (0..9).map(|index| EntryMetadata {
+            path: match index {
+                0 => "assets/0",
+                1 => "assets/1",
+                2 => "assets/2",
+                3 => "assets/3",
+                4 => "assets/4",
+                5 => "assets/5",
+                6 => "assets/6",
+                7 => "assets/7",
+                _ => "assets/8",
+            },
+            uncompressed_size: MAX_ENTRY_BYTES,
+            compressed_size: MAX_ENTRY_BYTES,
+        });
+        assert!(validate_archive_metadata(1, 9, total).is_err());
+    }
 }
