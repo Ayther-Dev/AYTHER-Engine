@@ -1,53 +1,55 @@
 # Current release gate: go / no-go decision
 
-**Pre-release decision: GO for `v0.1.0-rc.20`.**
+**Pre-release decision: GO for `v0.1.0-rc.21`.**
 
 **Stable-release decision: NO-GO for `v0.1.0`.**
 
-**Decision date:** 2026-10-20
+**Decision date:** 2026-11-02
 
-**Evidence cutoff:** 2026-10-20T12:00:00-03:00
+**Evidence cutoff:** 2026-11-02T21:39:00Z
 
 **Candidate identity:** the commit targeted by the annotated tag
-`v0.1.0-rc.20`. The tag object records the exact candidate SHA and is the
+`v0.1.0-rc.21`. The tag object records the exact candidate SHA and is the
 authoritative binding between this decision and the immutable source revision.
 
 **Evidence baseline before the decision record:**
-`5db91f1` (`main` after merging pull request #46, on top of `6f272c8`, the
-published candidate `v0.1.0-rc.19`).
+`c53794e` (`main` after merging pull request #49, on top of `14e82c5`, pull
+request #48, and of `5db91f1`, the base of the published candidate
+`v0.1.0-rc.20`).
 
 **Decider:** the sole maintainer, operating under
 [GOV-2026-001](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review)
 
-This record supersedes the operational GO for `v0.1.0-rc.19`, which was
+This record supersedes the operational GO for `v0.1.0-rc.20`, which was
 published successfully as a pre-release. The earlier decisions remain
 immutable historical snapshots in this file's history and in
 [RELEASE_GO_NO_GO.md](RELEASE_GO_NO_GO.md).
 
 ## Why a new candidate
 
-The HD Panorama of "Go to Turtle Town" (Golden Axe) stops short of the screen
-edge: at the end of the pan a strip of the backdrop shows through. The camera
-rests on a fine offset there, and the background stitcher read whole cells
-only, so the last column on screen was never stitched (191 columns where the
-screen shows 192) while the content index still had cells in it; those cells
-were claimed, hiding the original tiles, and the HD quad, which covers
-exactly the stored rectangle, drew nothing over them. Since `rc.19`, `main`
-gained:
+Since `rc.20`, `main` gained two pull requests:
 
-- pull request #46: a resting camera has its partial column and row
-  stitched (a new capture can be one column or row larger than an older one
-  of the same stretch, and a camera left of the origin starts at column -1);
-  `define_panorama` and pack loading ignore the cells outside the Panorama's
-  rectangle, which also protects packs baked before the fix; the per-seek
-  `replay_seek` diagnostic moves from Warning to Debug.
+- pull request #48: a native Tessera session. `AytherSession` can drive a
+  native emulation provider (Mega Drive detection and dispatch, observation,
+  deterministic replay, graphics composition and audio control) next to
+  Libretro, through the new public header `ayther/engine/native_emulation.hpp`.
+  The provider is the CMake option `AYTHER_ENABLE_TESSERA`, OFF by default, so
+  the `v*` archives of this release do not link it; the Windows software
+  candidates that do are published separately under `native-v*` tags. The
+  pull request also added the flat C function `ayther_pack_verify_all()`.
+- pull request #49: the authoring identity Object is renamed Drawing.
+  `MatchRank::Drawing` replaces `MatchRank::Prop` (kept as a deprecated alias
+  for one release), `rank_name` returns `"drawing"` and plane sets written
+  without a `type` read as `"drawing"`. The Engine never branches on `type`, so
+  packs that carry `type = "utileria"` load exactly as before.
+
+The authoring applications (AYTHER Lab, Runtime) can lock a single Engine that
+carries both changes.
 
 ## Decision scope
 
-The GO authorizes publishing `v0.1.0-rc.20` as a **pre-release candidate** so
-that AYTHER Lab can lock the Engine that stitches the partial edge and
-recapture its Panoramas. It does not authorize publishing the stable `v0.1.0`
-release.
+The GO authorizes publishing `v0.1.0-rc.21` as a **pre-release candidate**. It
+does not authorize publishing the stable `v0.1.0` release.
 
 Stable remains NO-GO because supported-release blockers and the required
 rollback rehearsal are not yet closed.
@@ -56,17 +58,17 @@ rollback rehearsal are not yet closed.
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.20` passes for prerelease `rc.20` of `0.1.0`; every surface keeps the core `0.1.0`, as in `rc.11` to `rc.19` |
-| Required CI on the changes | **Pass** | [Pull request #46](https://github.com/Ayther-Dev/AYTHER-Engine/pull/46): 18 checks green on head `f2243cf` ([CI](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/39359417249)), including the C++ coverage gate, ASan + UBSan, fuzz smoke, clang-format 18, clang-tidy, `cargo audit` and CodeQL; the opt-in GPU job was skipped |
-| Required CI on the merged baseline | **Pass by construction** | A push to `main` only configures (it keeps the vcpkg cache) and does not rebuild or retest. `Protect main` requires an up-to-date branch, so `5db91f1` is the tree pull request #46 validated; the release workflow builds and tests the four artifacts again from the tag |
+| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.21` passes for prerelease `rc.21` of `0.1.0`; every surface keeps the core `0.1.0`, as in `rc.11` to `rc.20` |
+| Required CI on the changes | **Pass** | [Pull request #48](https://github.com/Ayther-Dev/AYTHER-Engine/pull/48): 20 checks green and the opt-in GPU job skipped on head `4a6ce4d`. [Pull request #49](https://github.com/Ayther-Dev/AYTHER-Engine/pull/49): 19 checks green and the opt-in GPU job skipped on head `3bad09d`, after its clang-format 18 failure was fixed |
+| Required CI on the merged baseline | **Pass** | The `CI` workflow on `main` succeeded at `c53794e` and at `14e82c5`. `Protect main` requires an up-to-date branch; the release workflow builds and tests the four artifacts again from the tag |
 | Open code-scanning findings | **Pass** | GitHub returned no open code-scanning alerts at the evidence cutoff |
-| Dependency advisories | **Pass** | `cargo audit --deny warnings` passed on `Cargo.lock` and `fuzz/Cargo.lock` in the CI of #46; no dependency changed since `rc.19` |
-| The changes have tests | **Pass** | `tests/unit/bg_capture_window_test.cpp` (the edge rule) and `tests/integration/bg_partial_edge_session_test.cpp` on the new `AYTHER-PAN-SCENARIO` of `tools/test_core`: a resting fine offset stitches the full width, aligned and moving captures are unchanged, a pan left of the origin starts at -1, and cells outside the rectangle are not claimed; without the fix exactly four of its checks fail, among them a strip one column short as in Golden Axe. Locally on the candidate sources: `ctest --preset windows-native` 214/214 (4 skipped by environment), `tools/gen_api_reference.ps1 -Check` and `tools/check_doc_references.ps1` clean |
-| Consumer integration | **Pass** | AYTHER Lab `feat/pano-export-progress` drives "Recapturar en su sitio" and the Panorama export end to end over MCP on a copy of the Golden Axe QA project (17/17 checks against `rc.19`); its re-run against these sources, where "Go to Turtle Town" grows to 192 columns, is the Lab's lock gate |
-| ABI and package surface | **Pass, unchanged** | No public header declaration, flat C ABI (revision `8`), header inventory, recording format (`.arp` v10) or package change since `rc.19`; `ayther_session.h` changed in comments only |
-| `rc.19` release outcome | **Pass** | Published 2026-10-19 as [pre-release `v0.1.0-rc.19`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.19) |
-| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.20` did not exist at the evidence cutoff |
-| Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment requires the maintainer's approval |
+| Dependency advisories | **Pass** | `Cargo.lock`, `fuzz/Cargo.lock` and `vcpkg.json` are identical to `rc.20`; `cargo audit --deny warnings` ran in the CI of both pull requests |
+| The changes have tests | **Pass** | #48: provider, controls, pack, presentation and native-session tests, plus a long Release replay reported in its description (18,000 frames, 4,500 continuations, zero divergences). #49: `tests/integration/elements_toml_test.cpp` now checks that a `[[set]]` with `type = "utileria"` (an old pack) keeps its value, that an empty type reads as `"drawing"`, and that both load identically; `pack_removal_test`, `plane_set_*` and `panorama_cover_test` pass locally on the candidate sources. The full local `ctest` of the candidate was not rerun for this record: the tag workflow does it |
+| Consumer integration | **Not yet exercised against this candidate** | AYTHER Lab [pull request #24](https://github.com/Ayther-Dev/AYTHER-Lab/pull/24) (the Drawing rename, written against `rc.20`) is green and reads old and new ids. Locking Lab and Runtime onto `rc.21` is the consumers' own gate after publication |
+| ABI and package surface | **Pass, changed and documented** | Flat C ABI revision `8` becomes `9` (`ayther_pack_verify_all()` is new; `docs/API_COMPATIBILITY.md` records it). New public header `engine/native_emulation.hpp` is in `cmake/AytherPublicHeaders.txt`, and `ayther_session.h` gains the native-provider API additively. `MatchRank::Prop` is deprecated, not removed. The recording format (`.arp` v10) did not change. The package config finds Tessera only when `AYTHER_ENABLE_TESSERA` is on |
+| `rc.20` release outcome | **Pass** | Published 2026-10-20 as [pre-release `v0.1.0-rc.20`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.20) |
+| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.21` did not exist at the evidence cutoff |
+| Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment has a branch policy and required reviewers |
 
 The final candidate commit is the merge result containing this record. Before
 tag creation, the pull request that adds it must be green and up to date with
@@ -111,22 +113,21 @@ If publication or post-publication verification exposes a defect, follow
 evidence, withdraw affected release assets as documented, notify consumers,
 and publish a fix-forward candidate under a new version.
 
-After publication, AYTHER Lab moves its Engine lock to this candidate so that
-"Recapturar en su sitio" stitches the full Panorama. A pack baked from the
-recaptured strip draws without the strip in the current Runtime; the Runtime
-picks up the rectangle guard with its next lock, before the stable `v0.1.0`
-gate is re-evaluated.
+After publication, AYTHER Lab and Runtime can move their Engine lock to this
+candidate. The Lab writes `type = "drawing"` and still reads the old ids, so it
+works against `rc.20` and `rc.21` alike. A consumer that calls
+`ayther_pack_verify_all()` must require ABI revision `9`.
 
 ## Reproducing the pre-tag checks
 
 ```text
 git rev-parse main
-pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.20
+pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.21
 gh run list --branch main --limit 12
 gh api 'repos/Ayther-Dev/AYTHER-Engine/code-scanning/alerts?state=open'
 gh api repos/Ayther-Dev/AYTHER-Engine/environments/release
 gh api repos/Ayther-Dev/AYTHER-Engine/rulesets
-gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.20
+gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.21
 ```
 
 Ruleset identifiers are not treated as stable evidence. Enumerate the active
