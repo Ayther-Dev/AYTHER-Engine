@@ -157,17 +157,10 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   corrected with the asset's own horizontal flip. The same applies when such a
   pose's stored flips are shifted by a global mirror from the captured face.
   Single-sprite poses keep the previous behavior.
-- The authoring identity formerly called Object (earlier: Utilería/Prop) is now
-  the Drawing. Plane sets written without a `type` now read as `"drawing"`, and
-  `rank_name(MatchRank::Drawing)` returns `"drawing"` (it was `"utileria"`).
-  The Engine never branches on `type`, so packs that carry `type = "utileria"`
-  load exactly as before. Newly baked `plane_sets.toml`/`elements.toml` differ
-  from older bakes only in that default value and in their header comments.
 
 ### Deprecated
 
-- `MatchRank::Prop` is kept as a deprecated alias of `MatchRank::Drawing` for
-  one release.
+- None.
 
 ### Removed
 
@@ -257,6 +250,44 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - A release build could open no pack whatsoever through `AytherSession`: an
   unsigned pack is refused, the development key is refused in an optimized
   build, and `Config` had no way to name a production trust registry.
+
+## [0.1.0-rc.21] - 2026-11-02
+
+The authoring identity Object is now the Drawing, and a session can drive the
+native Tessera provider.
+
+### Added
+
+- `AytherSession` can run a native emulation provider next to Libretro:
+  `EmulationProvider::tessera_native`, `AytherSession::create(cfg,
+  native_result)`, `native_step_frame`, `native_replay_next`,
+  `native_restore_checkpoint`, `native_submit_presentation_policy` and
+  `native_close`, over the new public header
+  `ayther/engine/native_emulation.hpp`. Frames can be RGBA8
+  (`FramePixelEncoding::rgba8`); a frame that cannot be composed reports why
+  through `NativeOriginalReason`. The provider is the CMake option
+  `AYTHER_ENABLE_TESSERA`, which is OFF by default: the `v*` release archives
+  do not include it (the Windows software candidates are published separately
+  under `native-v*` tags).
+- Flat C ABI revision 9: `ayther_pack_verify_all()` verifies every signed entry
+  of an open pack before a host activates it. Pack validation also rejects
+  oversized and corrupt graphics packs for the native path.
+
+### Changed
+
+- The authoring identity formerly called Object (earlier: Utilería/Prop) is now
+  the Drawing. Plane sets written without a `type` now read as `"drawing"`, and
+  `rank_name(MatchRank::Drawing)` returns `"drawing"` (it was `"utileria"`).
+  The Engine never branches on `type`, so packs that carry `type = "utileria"`
+  load exactly as before. Newly baked `plane_sets.toml`/`elements.toml` differ
+  from older bakes only in that default value and in their header comments.
+- `AYTHER_CORE_C_ABI_REVISION` (and `ayther_core_version()`) is `9`; it was `8`.
+  `ayther_pack_verify_all()` had reached `main` without the bump.
+
+### Deprecated
+
+- `MatchRank::Prop` is kept as a deprecated alias of `MatchRank::Drawing` for
+  one release.
 
 ## [0.1.0-rc.20] - 2026-10-20
 

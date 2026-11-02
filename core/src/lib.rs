@@ -75,7 +75,7 @@ pub const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// This counter is independent from [`RELEASE_VERSION`] and changes only when
 /// that ABI contract changes.
-pub const CORE_C_ABI_REVISION: u32 = 8;
+pub const CORE_C_ABI_REVISION: u32 = 9;
 
 use audio_hasher::{AudioHasher, AudioOccurrence, AudioSubstitutor};
 use vram_sprite::{SpriteHasher, SpriteSubstitutor};
