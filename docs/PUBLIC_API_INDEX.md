@@ -272,7 +272,7 @@ Formats:
     asset     = "audio/music/zone1.ogg"
     loop      = true              # optional (default false)
 
-  plane_sets.toml — Props (CU002) and Glyphs (CU005): HD substitution per
+  plane_sets.toml — Drawings (CU002) and Glyphs (CU005): HD substitution per
   multi-tile plane ELEMENT. Until now the Paint catalogue existed only in the
   authoring session (injected through the API), so the delivered `.ay` did
   NOT reproduce any multi-tile substitution; this file closes that gap.
@@ -281,7 +281,7 @@ Formats:
     [[set]]
     id      = "0x<16hex>"        # pintar_element_id (deterministic per
     capture) name    = "Chest"            # informational (overlay/debug)
-    type    = "utileria"         # utileria | glifo
+    type    = "drawing"          # drawing | glifo   (old packs: "utileria")
     plane   = 0                   # 0=A · 1=B · 2=Window
     w_cells = 3 · h_cells = 2     # bbox
     asset   = "cofre.png"         # basename (the bake routes it to the tier)
@@ -290,7 +290,7 @@ Formats:
 
   The FLIPS observed at capture time are deliberately NOT baked: the plane
   tile hash is flip-invariant and the matcher does not require them (a
-  mirrored prop matches all the same). They live only in
+  mirrored Drawing matches all the same). They live only in
   pintar_elements.toml, which uses them for the faithful export of the base
   PNG.
 

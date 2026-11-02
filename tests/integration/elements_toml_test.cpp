@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // elements_toml_test — el documento único de Identidades de Pintar (#365).
 //
-// POR QUÉ EXISTE. Cuadro, Panorámica, Cinemática, Animación, Utilería, Carácter
+// POR QUÉ EXISTE. Cuadro, Panorámica, Cinemática, Animación, Dibujo, Carácter
 // y UI son la misma familia para el artista, y viajaban en cinco archivos
 // distintos porque cinco MECANISMOS del motor las sirven. Fundirlos en uno es
 // un cambio de layout de la entrega: si algo se pierde en el camino, el pack
@@ -133,7 +133,7 @@ void make_sets(std::vector<PackPlaneSet> &sets,
   PackPlaneSet s;
   s.id = 0x5E700006;
   s.name = "Cartel";
-  s.type = "utileria";
+  s.type = "drawing";
   s.plane = 2;
   s.w_cells = 4;
   s.h_cells = 3;
@@ -154,7 +154,7 @@ void make_sets(std::vector<PackPlaneSet> &sets,
   PackPlaneSet s2;
   s2.id = 0x5E700007;
   s2.name = "Cartel sin tinte";
-  s2.type = "utileria";
+  s2.type = "drawing";
   s2.plane = 0;
   s2.w_cells = 1;
   s2.h_cells = 1;
@@ -304,7 +304,23 @@ int main() {
         "Cinematica: ida y vuelta, con paso sin asset y offset de video");
   check(same(seqs0, u.seqs),
         "Animacion: ida y vuelta, con duraciones por paso");
-  check(same(sets0, u.sets), "Utileria: ida y vuelta, con fuente y caracter");
+  check(same(sets0, u.sets), "Dibujo: ida y vuelta, con fuente y caracter");
+  {
+    // Packs viejos: `type = "utileria"` se conserva tal cual (el Engine no
+    // ramifica por ese valor) y un set sin type se hornea como "drawing".
+    std::vector<PackPlaneSet> legacy = sets0;
+    legacy[0].type = "utileria";
+    legacy[1].type.clear();
+    Bag l;
+    parse_plane_sets_toml(bake_plane_sets_toml(legacy, fonts0), l.sets,
+                          l.fonts);
+    check(l.sets.size() == 2 && l.sets[0].type == "utileria" &&
+              l.sets[1].type == "drawing",
+          "Dibujo: type heredado 'utileria' se conserva; vacio -> 'drawing'");
+    check(l.sets[0].members.size() == sets0[0].members.size() &&
+              l.sets[0].id == sets0[0].id,
+          "Dibujo: un pack con 'utileria' carga igual que con 'drawing'");
+  }
   check(u.fonts.size() == fonts0.size() && !u.fonts.empty() &&
             u.fonts[0].id == fonts0[0].id &&
             u.fonts[0].cell_h == fonts0[0].cell_h,

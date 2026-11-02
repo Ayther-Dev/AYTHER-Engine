@@ -123,12 +123,12 @@ reason to fabricate an anchor.
 
 ## Plane-set substitution
 
-Plane-set substitution matches an object's relative cell layout within any one
+Plane-set substitution matches a Drawing's relative cell layout within any one
 of the three VDP planes. Capture-plane metadata is provenance, not part of that
 match. Visible members must all be present in the same plane, while members
 outside the viewport are excused. Cells claimed by higher-ranked content cannot
 participate. The resulting overlay uses the occurrence's plane and its anchor's
-priority, so matching and composition refer to the same visible object.
+priority, so matching and composition refer to the same visible Drawing.
 
 ## RAM anchoring (Mode 3)
 

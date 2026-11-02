@@ -4134,7 +4134,7 @@ struct AytherSession::Impl {
       }
     }
     // : las Identidades autorables de Pintar —Cuadro, Panorámica,
-    // Cinemática, Animación, Utilería, Carácter, UI— viajan en UN
+    // Cinemática, Animación, Dibujo, Carácter, UI— viajan en UN
     // documento. Antes eran cinco archivos separados por el MECANISMO del
     // motor que las sirve, que es un detalle de implementación decidiendo
     // el layout de la entrega.
@@ -4186,7 +4186,7 @@ struct AytherSession::Impl {
           pk_enh.size(), n);
     }
 
-    // Utilería (CU002) y Glifos (CU005): el catálogo multi-tile de Pintar.
+    // Dibujos (CU002) y Glifos (CU005): el catálogo multi-tile de Pintar.
     // Hasta que este archivo existió, los sets sólo vivían en la sesión de
     // autoría (inyectados por API) y el pack entregado NO reproducía
     // ninguna sustitución multi-tile de plano.
@@ -4244,7 +4244,7 @@ struct AytherSession::Impl {
     // PANORÁMICAS (CU003): la tira del nivel de una capa. Sin esto, una
     // panorámica autorada vivía sólo en la sesión del Lab — el pack
     // entregado no la reproducía, que es el mismo agujero que tenían la
-    // Utilería y los Glifos antes de plane_sets.toml.
+    // Dibujo y los Glifos antes de plane_sets.toml.
     {
       for (const PackPanorama &p : pk_pans) {
         std::vector<AytherSession::PanoramaCell> cs;

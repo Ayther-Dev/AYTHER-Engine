@@ -552,12 +552,12 @@ AudioContinuityCatalog parse_audio_continuity_toml(const std::string &text) {
   return out;
 }
 
-// -- plane_sets.toml (Utilería CU002 · Glifos CU005) --------------------------
+// -- plane_sets.toml (Dibujos CU002 · Glifos CU005) --------------------------
 
 std::string bake_plane_sets_toml(const std::vector<PackPlaneSet> &sets,
                                  const std::vector<PackPlaneFont> &fonts) {
   std::string out =
-      "# plane_sets.toml — Utilería y Glifos: sustitución HD por ELEMENTO\n"
+      "# plane_sets.toml — Dibujos y Glifos: sustitución HD por ELEMENTO\n"
       "# multi-tile de plano. Horneado por el Deliver de Ayther Lab; cargado\n"
       "# por AytherSession (define_plane_set). Los offsets son en CELDAS,\n"
       "# relativos al top-left del conjunto. Los flips NO viajan: el hash de\n"
@@ -582,7 +582,7 @@ std::string bake_plane_sets_toml(const std::vector<PackPlaneSet> &sets,
     std::snprintf(buf, sizeof(buf),
                   "name = \"%s\"\ntype = \"%s\"\nplane = %u\n"
                   "w_cells = %u\nh_cells = %u\nasset = \"%s\"\n",
-                  s.name.c_str(), s.type.empty() ? "utileria" : s.type.c_str(),
+                  s.name.c_str(), s.type.empty() ? "drawing" : s.type.c_str(),
                   unsigned(s.plane), unsigned(s.w_cells), unsigned(s.h_cells),
                   s.asset.c_str());
     out += buf;
@@ -668,8 +668,7 @@ size_t parse_plane_sets_from(const toml::table &tbl,
       continue;
     d.asset = *asset;
     d.name = (*s)["name"].value<std::string>().value_or(std::string());
-    d.type =
-        (*s)["type"].value<std::string>().value_or(std::string("utileria"));
+    d.type = (*s)["type"].value<std::string>().value_or(std::string("drawing"));
     d.plane = uint8_t((*s)["plane"].value<int64_t>().value_or(0));
     d.w_cells = uint16_t((*s)["w_cells"].value<int64_t>().value_or(0));
     d.h_cells = uint16_t((*s)["h_cells"].value<int64_t>().value_or(0));
@@ -877,7 +876,7 @@ std::string bake_panoramas_toml(const std::vector<PackPanorama> &pans) {
       "# El reconocimiento es por ANCLAJE: cada celda visible cuyo hash está "
       "en\n"
       "# la tira vota dónde está la cámara, y gana la moda. Por eso conviene\n"
-      "# MÁS celdas, al revés que una Utilería (que las exige todas "
+      "# MÁS celdas, al revés que un Dibujo (que las exige todas "
       "presentes).\n"
       "# `cells` lleva una entrada por FILA: \"ly: lx:hash|lx:hash|…\". El lx "
       "va\n"
@@ -1479,7 +1478,7 @@ std::string bake_elements_toml(const std::vector<PackScreen> &screens,
       "# plane_sequences · plane_sets— y los cinco guardaban la MISMA "
       "familia:\n"
       "# lo que el artista autora como Cuadro, Panorámica, Cinemática,\n"
-      "# Animación, Utilería, Carácter o UI. Lo que los separaba no era la\n"
+      "# Animación, Dibujo, Carácter o UI. Lo que los separaba no era la\n"
       "# Identidad sino el MECANISMO del motor que las sirve, o sea un "
       "detalle\n"
       "# de implementación decidiendo el layout de la entrega ().\n"

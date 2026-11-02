@@ -373,7 +373,7 @@ struct FrameView {
   /// E1 tint per plane sub (stride 3, Q2.6 — the same contract as
   /// sprite_sub_tint). Today only the SET quads with an authored reference
   /// (the element's `ref`) come out other than 64/64/64: live/ref PER CHANNEL
-  /// of the anchor's CRAM line, so the Object follows the game's palette fades
+  /// of the anchor's CRAM line, so the Drawing follows the game's palette fades
   /// (the GA title logo used to appear in full colour over the black pre-fade
   /// CRAM, report 2026-08-19). Without a reference = neutral (byte-exact with
   /// the previous behaviour).
@@ -1990,8 +1990,8 @@ public:
   struct TweenPreview {
     std::string from;                ///< source asset ("" = wildcard)
     std::string target;              ///< destination asset
-    std::vector<std::string> frames; ///< ordered drawings
-    uint32_t ticks = 3;              ///< game frames per drawing
+    std::vector<std::string> frames; ///< ordered frames
+    uint32_t ticks = 3;              ///< game frames per step
   };
   void set_tween_preview(const std::vector<TweenPreview> &tweens);
   // Look up the current assignment for a hash ("" if none).
@@ -2066,7 +2066,7 @@ public:
   // → asset A. That is enough when the game already animates and each phase has
   // its own hash. Animation is for what THAT cannot do: letting the HD have
   // MORE phases than the original (the game alternates A·B and the artist wants
-  // a cycle of six drawings), or run at a different cadence. That is why it is
+  // a cycle of six frames), or run at a different cadence. That is why it is
   // a PLAYER WITH ITS OWN CLOCK and not a follower of the content — a follower
   // could not show a step that is not on screen.
   //
@@ -2077,7 +2077,7 @@ public:
   // matched — the steps of a flicker share a footprint; if they do not, the art
   // of each step has to be composed over that same footprint.
   struct PlaneSequenceStep {
-    uint64_t set_id = 0;         ///< the Object (plane set) it references
+    uint64_t set_id = 0;         ///< the Drawing (plane set) it references
     const char *asset = nullptr; ///< HD of THIS step (nullptr = the set's)
     uint16_t duration = 0;       ///< game frames it is held (0 = default)
   };
@@ -2281,7 +2281,7 @@ public:
   ///                 SUPERSET (a menu drawn over the title) would match the
   ///                 title with perfect coverage.
   /// The asset is drawn FULL SCREEN in its own lane, below the plane overlays
-  /// — so a Prop or a glyph authored over that same screen is still seen on
+  /// — so a Drawing or a glyph authored over that same screen is still seen on
   /// top. Since it is opaque and covers everything, nothing needs to be
   /// suppressed.
   void define_screen(uint64_t id, uint8_t plane_mask, const ScreenCell *cells,
@@ -2291,7 +2291,7 @@ public:
   void clear_screens();
 
   // -- KINEMATIC (CU004): an ordered sequence of Pictures --------------------
-  // What it adds over individual Pictures is NOT the drawing —the Picture
+  // What it adds over individual Pictures is NOT the artwork —the Picture
   // already does that— but the ORDER: it disambiguates two identical screens
   // appearing in different cutscenes, and it provides the cancellation
   // semantics of the spec (if the player presses Start and the game jumps to a

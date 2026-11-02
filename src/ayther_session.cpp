@@ -3219,7 +3219,7 @@ const FrameView &AytherSession::produce_frame() {
         // ── Firma de PANTALLA (Cuadro · CU001) ───────────────────────
         // Se computa ACÁ, después de collect() y ANTES del matcher de
         // sets: la firma describe la pantalla ORIGINAL. Si los sets
-        // consumieran celdas primero, autorar una Utilería cambiaría la
+        // consumieran celdas primero, autorar un Dibujo cambiaría la
         // firma del Cuadro que la contiene.
         //
         // Término por celda = mix(plano, col, fila, hash) con
@@ -3280,7 +3280,7 @@ const FrameView &AytherSession::produce_frame() {
           // Reconocimiento EXACTO, capa por capa. Toda variación —por
           // mínima que sea— es otro Cuadro: una llama que titila no es
           // ruido a filtrar, es contenido, y le corresponde su propio
-          // Cuadro (o factorizarla como Utilería, o taparla con un
+          // Cuadro (o factorizarla como Dibujo, o taparla con un
           // video en la Cinemática). Antes esto era cobertura con
           // umbral (0.92/0.08), que descartaba en silencio lo que
           // cambiaba y hacía que dos pantallas parecidas colapsaran
@@ -3717,7 +3717,7 @@ const FrameView &AytherSession::produce_frame() {
 
         // ── Rango CUADRO: reclama la pantalla de sus capas ───────────
         // Un Cuadro es la pantalla entera en HD, así que la Panorámica,
-        // la Utilería y los tiles 1×1 que caen DENTRO suyo ya están
+        // el Dibujo y los tiles 1×1 que caen DENTRO suyo ya están
         // dibujados en ese asset: emitirlos otra vez los duplicaría
         // encima. Antes esto no se hacía y el renderer los pintaba
         // sobre el Cuadro — con un comentario que decía que era a
@@ -3726,24 +3726,24 @@ const FrameView &AytherSession::produce_frame() {
         // Cinemática se sostiene en un frame sin confirmación (el hueco
         // de un frame que deja toda transición limpia), el paso que la
         // Cinemática está esperando. Sin esto, en ese frame la
-        // Panorámica, la Utilería y los tiles 1×1 se dibujan ENCIMA del
+        // Panorámica, el Dibujo y los tiles 1×1 se dibujan ENCIMA del
         // quad full-screen — un parpadeo de un frame por cada corte.
         // SÓLO reclama si hay algo que DIBUJAR. Un Cuadro reconocido
         // pero sin asset asignado no tapa nada: el artista todavía no
-        // decidió reemplazar esa pantalla, así que la Utilería y los
+        // decidió reemplazar esa pantalla, así que el Dibujo y los
         // tiles 1×1 que sí tengan asset se siguen dibujando sobre el
         // original. Es lo que habilita el flujo de la estrella que
-        // titila — se autora sólo la estrella como Utilería y el resto
+        // titila — se autora sólo la estrella como Dibujo y el resto
         // de la pantalla queda como está.
         //
         // En cuanto el Cuadro RECIBE un asset, se lleva la capa entera
-        // y la Utilería deja de contar: ya está pintada en esa imagen.
+        // y el Dibujo deja de contar: ya está pintado en esa imagen.
         // `screen_sub_n` es exactamente esa condición — se emitió más
         // arriba, y vale igual si el asset lo puso la Cinemática.
         // `vid_on` cuenta igual que `screen_sub_n` (): un paso-video
         // NO emite quad, pero cubre la pantalla entera exactamente
         // igual. Sin incluirlo acá, el reclamo no ocurre y la
-        // Panorámica, las Utilerías y los tiles de plano se dibujan
+        // Panorámica, los Dibujos y los tiles de plano se dibujan
         // ENCIMA del video — el mismo bug de cobertura que el diseño ya
         // vivió dos veces.
         const bool covers = im.screen_sub_n || im.vid_on;
@@ -3761,7 +3761,7 @@ const FrameView &AytherSession::produce_frame() {
             // completas, no un subconjunto de celdas. Su asset es
             // una imagen opaca de toda la pantalla, así que TODO lo
             // de esas capas ya está pintado ahí — incluida una
-            // Utilería que caiga adentro.
+            // Dibujo que caiga adentro.
             for (uint32_t i = 0; i < npick; ++i) {
               const PlaneCellHit &pc = im.plane_cells[i];
               if (pc.plane > 2 || !(it->second.mask & (1u << pc.plane)))
@@ -3788,7 +3788,7 @@ const FrameView &AytherSession::produce_frame() {
         // reemplaza, tampoco hace falta suprimir el original — el mismo
         // argumento del Cuadro, y se evita la latencia de 1 frame del
         // canal de supresión y el problema de los hashes compartidos con
-        // una Utilería.
+        // un Dibujo.
         //
         // La pertenencia se decide por CONTENIDO, no por posición: se
         // exige que el hash observado sea el que la tira tiene en esa

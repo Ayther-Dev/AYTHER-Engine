@@ -11,7 +11,7 @@ strip and can let a pack select the effective width per frame.
 > [!WARNING]
 > This feature remains pre-release. The extension path, gate, and sprite
 > behavior have focused tests, but the default aspect policy, author-facing safe
-> zone, per-object HUD offsets, and broad real-game coverage are incomplete.
+> zone, per-Drawing HUD offsets, and broad real-game coverage are incomplete.
 
 ## Output geometry
 
@@ -86,8 +86,8 @@ Widening the background does not reposition the game's HUD. Elements anchored
 to the old left or right edge can appear to float near the center of a wider
 output.
 
-The planned model treats HUD elements as existing Objects rather than creating
-a parallel entity type. Each Object may carry an optional offset edited in its
+The planned model treats HUD elements as existing Drawings rather than creating
+a parallel entity type. Each Drawing may carry an optional offset edited in its
 normal property surface:
 
 - left-anchored elements move toward the new left edge;
@@ -113,11 +113,11 @@ one heuristic for every title.
 
 ### Remaining implementation sequence
 
-1. define the serialized safe-zone and per-Object offset contract;
+1. define the serialized safe-zone and per-Drawing offset contract;
 2. apply offsets in rendering, with zero-offset pixel identity as the
    non-regression oracle;
 3. transport the fields through pack build, parse, and compatibility checks;
-4. expose authoring visualization and Object properties in the owning product;
+4. expose authoring visualization and Drawing properties in the owning product;
 5. connect Mode 3 and Lua for per-frame dynamic behavior;
 6. add synthetic and legally distributable fixtures before declaring support.
 
