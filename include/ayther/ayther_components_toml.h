@@ -79,7 +79,8 @@ struct PackPlaneSetMember {
 struct PackPlaneSet {
   uint64_t id = 0;   ///< pintar_element_id (deterministic per capture)
   std::string name;  ///< informational (overlay / debug)
-  std::string type;  ///< "drawing" | "glifo" (old packs wrote "utileria"; the Engine never branches on it)
+  std::string type;  ///< "drawing" | "glifo" (old packs wrote "utileria"; the
+                     ///< Engine never branches on it)
   uint8_t plane = 0; ///< 0=A · 1=B · 2=Window
   uint16_t w_cells = 0, h_cells = 0;
   std::string asset; ///< basename inside the pack
@@ -370,9 +371,9 @@ size_t parse_plane_sets_toml(const std::string &text,
 ///
 /// The authorable Paint Identities in ONE document. They used to be five files,
 /// and what separated them was not the Identity but the motor MECHANISM that
-/// serves them: Picture, Panorama, Kinematic, Animation, Drawing, Character and UI
-/// are all the same family to the artist. Here the mechanism is the name of the
-/// array and not a file.
+/// serves them: Picture, Panorama, Kinematic, Animation, Drawing, Character and
+/// UI are all the same family to the artist. Here the mechanism is the name of
+/// the array and not a file.
 ///
 /// The shape of each entry does NOT change: the document is the concatenation
 /// of what used to come out separately. That is why `parse_elements_toml` can

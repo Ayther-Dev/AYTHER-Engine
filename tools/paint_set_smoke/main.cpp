@@ -310,8 +310,8 @@ int main() {
         s->clear_plane_sets();
         std::vector<ayther::PackPlaneSet> sets(1);
         sets[0].id      = 0xCAFE01;
-        sets[0].name    = "Dibujo del pack";
-        sets[0].type    = "drawing";
+        sets[0].name    = "Utileria del pack";
+        sets[0].type    = "utileria";
         sets[0].plane   = 0;
         sets[0].w_cells = 2;
         sets[0].h_cells = 1;

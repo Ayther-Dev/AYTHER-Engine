@@ -668,8 +668,7 @@ size_t parse_plane_sets_from(const toml::table &tbl,
       continue;
     d.asset = *asset;
     d.name = (*s)["name"].value<std::string>().value_or(std::string());
-    d.type =
-        (*s)["type"].value<std::string>().value_or(std::string("drawing"));
+    d.type = (*s)["type"].value<std::string>().value_or(std::string("drawing"));
     d.plane = uint8_t((*s)["plane"].value<int64_t>().value_or(0));
     d.w_cells = uint16_t((*s)["w_cells"].value<int64_t>().value_or(0));
     d.h_cells = uint16_t((*s)["h_cells"].value<int64_t>().value_or(0));
