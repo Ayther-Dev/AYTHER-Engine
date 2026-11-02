@@ -378,7 +378,7 @@ uint32_t ayther_credits_assets(const AytherCredits *c, uint32_t i);
 
 /// The attribution of asset `asset_id` — what Play shows for the asset it is
 /// using. The id is the content name of the entry, without `assets/` and
-/// without the tier prefix: the same drawing across four tiers is ONE asset and
+/// without the tier prefix: the same artwork across four tiers is ONE asset and
 /// has ONE provenance. NULL if that asset declares nothing.
 const char *ayther_credits_attribution(const AytherCredits *c,
                                        const char *asset_id);
@@ -1001,7 +1001,7 @@ uint32_t ayther_pose_sub_resolve_owned(const PoseSetSubstitutor *p,
 // TweenPlayer v2 — in-betweens by TRANSITION (§6.1/6.2). It filters the
 // already-resolved HD PER INSTANCE (tracks by pose_key + bbox centre): when a
 // track's POSE changes towards a target with an authored transition, it plays
-// the intermediate drawings in the first frames of the destination's hold.
+// the in-between steps in the first frames of the destination's hold.
 // Ladder: exact pair (from→target) > wildcard (target) > direct pop.
 // `tween_sequences.toml`: [[tween]] target / from (optional) / frames / ticks.
 // ---------------------------------------------------------------------------

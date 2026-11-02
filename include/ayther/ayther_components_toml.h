@@ -28,7 +28,7 @@
 //     asset     = "audio/music/zone1.ogg"
 //     loop      = true              # optional (default false)
 //
-//   plane_sets.toml — Props (CU002) and Glyphs (CU005): HD substitution per
+//   plane_sets.toml — Drawings (CU002) and Glyphs (CU005): HD substitution per
 //   multi-tile plane ELEMENT. Until now the Paint catalogue existed only in the
 //   authoring session (injected through the API), so the delivered `.ay` did
 //   NOT reproduce any multi-tile substitution; this file closes that gap.
@@ -37,7 +37,7 @@
 //     [[set]]
 //     id      = "0x<16hex>"        # pintar_element_id (deterministic per
 //     capture) name    = "Chest"            # informational (overlay/debug)
-//     type    = "utileria"         # utileria | glifo
+//     type    = "drawing"          # drawing | glifo   (old packs: "utileria")
 //     plane   = 0                   # 0=A · 1=B · 2=Window
 //     w_cells = 3 · h_cells = 2     # bbox
 //     asset   = "cofre.png"         # basename (the bake routes it to the tier)
@@ -46,7 +46,7 @@
 //
 //   The FLIPS observed at capture time are deliberately NOT baked: the plane
 //   tile hash is flip-invariant and the matcher does not require them (a
-//   mirrored prop matches all the same). They live only in
+//   mirrored Drawing matches all the same). They live only in
 //   pintar_elements.toml, which uses them for the faithful export of the base
 //   PNG.
 // ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@
 
 namespace ayther {
 
-// -- Props / Glyphs: plane sets in the pack (CU002 · CU005) ------------------
+// -- Drawings / Glyphs: plane sets in the pack (CU002 · CU005) ----------------
 
 /// Member of a set: plane tile hash + RELATIVE offset in CELLS from the
 /// top-left of the set. Mirrors `AytherSession::PlaneSetMember` (no flips: the
@@ -79,7 +79,7 @@ struct PackPlaneSetMember {
 struct PackPlaneSet {
   uint64_t id = 0;   ///< pintar_element_id (deterministic per capture)
   std::string name;  ///< informational (overlay / debug)
-  std::string type;  ///< "utileria" | "glifo"
+  std::string type;  ///< "drawing" | "glifo" (old packs wrote "utileria"; the Engine never branches on it)
   uint8_t plane = 0; ///< 0=A · 1=B · 2=Window
   uint16_t w_cells = 0, h_cells = 0;
   std::string asset; ///< basename inside the pack
@@ -89,9 +89,9 @@ struct PackPlaneSet {
   /// HUD RE-ANCHORING offset, in pixels. When the screen widens (16:9) the
   /// game keeps drawing its interface in the coordinates of the original
   /// screen, so a readout pinned to the left edge ends up floating towards
-  /// the centre. The author looks, sees which Object fell outside the safe
+  /// the centre. The author looks, sees which Drawing fell outside the safe
   /// area, and enters here the values that bring it back in.
-  /// (0,0) = untouched, which is the case for every Object that already
+  /// (0,0) = untouched, which is the case for every Drawing that already
   /// lands correctly.
   int16_t off_x = 0, off_y = 0;
   /// E1 tint reference (RGB 0-255 average of the element's CRAM line at
@@ -109,7 +109,7 @@ struct PackPlaneFont {
 
 /// Cap on members per set. It was 64, on the theory that "hundreds of cells =
 /// a Picture" — the Golden Axe title logo refuted it: it TRANSLATES (rising
-/// 1 px/frame), so a Picture cannot match it and it has to be an Object of 277
+/// 1 px/frame), so a Picture cannot match it and it has to be a Drawing of 277
 /// cells... which the bake used to skip SILENTLY. 512 gives it room; the
 /// matcher cost (O(members × appearances), all present) stays bounded because
 /// the anchored appearances of a large set are few. What is no longer silent:
@@ -269,7 +269,7 @@ size_t parse_panoramas_toml(const std::string &text,
 /// ids: it fits comfortably on one line and needs no dialect of its own. The
 /// per-step asset is optional — empty = the Picture's own is used, which is the
 /// normal case (what the Kinematic contributes is the ORDER, not another
-/// drawing).
+/// artwork).
 struct PackKinematicStep {
   uint64_t screen_id = 0;
   std::string asset;
@@ -324,7 +324,7 @@ struct PackInstrument {
 size_t parse_instruments_toml(const std::string &text,
                               std::vector<PackInstrument> &out);
 
-/// ANIMATION: a sequence of plane sets (Objects) with its own clock.
+/// ANIMATION: a sequence of plane sets (Drawings) with its own clock.
 /// It goes in `plane_sequences.toml` and not in `animations.toml`, which
 /// already belongs to the ACTIONS (HD poses in phase): they are two different
 /// things and sharing a file would mix them. The name ties it to
@@ -370,7 +370,7 @@ size_t parse_plane_sets_toml(const std::string &text,
 ///
 /// The authorable Paint Identities in ONE document. They used to be five files,
 /// and what separated them was not the Identity but the motor MECHANISM that
-/// serves them: Picture, Panorama, Kinematic, Animation, Prop, Character and UI
+/// serves them: Picture, Panorama, Kinematic, Animation, Drawing, Character and UI
 /// are all the same family to the artist. Here the mechanism is the name of the
 /// array and not a file.
 ///

@@ -1702,7 +1702,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
       //     el quad del Cuadro o los píxeles del video, nunca los dos — ver el
       //     enrutado del `pick` en ayther_session.cpp). Hereda la semántica
       //     declarada abajo para 4Q: cubre el 100% y es opaco, así que la
-      //     Utilería y los glifos autorados sobre esa misma pantalla se siguen
+      //     Dibujo y los glifos autorados sobre esa misma pantalla se siguen
       //     dibujando ENCIMA.
       // : con escena compuesta el video ya se dibujó INLINE en el
       //     pase del plano más alto de su máscara (arriba). Acá queda
@@ -1726,7 +1726,7 @@ void AytherRenderer::render(const ayther::engine::VulkanContextView &ctx,
       // 4Q. CUADRO (CU001) — pantalla estática completa reemplazada por UN
       // asset.
       //     Va ANTES de 4P a propósito: el Cuadro es opaco y cubre el 100%, así
-      //     que una Utilería o un glifo autorado sobre esa misma pantalla se
+      //     que un Dibujo o un glifo autorado sobre esa misma pantalla se
       //     sigue dibujando ENCIMA (el menú cuyo texto cambia). Y como cubre
       //     todo, no hace falta suprimir los tiles originales — se evita la
       //     latencia de 1 frame del canal de supresión.

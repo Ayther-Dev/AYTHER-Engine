@@ -53,7 +53,7 @@ std::string elements_toml() {
   ayther::PackPlaneSet set;
   set.id = 0x5E700006;
   set.name = "Sign";
-  set.type = "utileria";
+  set.type = "drawing";
   set.plane = 0;
   set.w_cells = 2;
   set.h_cells = 1;

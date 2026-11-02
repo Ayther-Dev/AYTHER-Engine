@@ -11,8 +11,8 @@
 // Why here and not in the renderer: lane order is a consequence, not the
 // decision. When priority lives in the draw order, two entities end up painting
 // the same region and the result depends on which one goes last — which is
-// exactly the bug the Picture had (the Prop quads of that screen were drawn ON
-// TOP OF the Picture that already contained them).
+// exactly the bug the Picture had (the Drawing quads of that screen were
+// drawn ON TOP OF the Picture that already contained them).
 //
 // Before this there was no notion of priority BETWEEN types: six matchers ran
 // in isolation, each one wrote its own FrameView buffer and the renderer drew
@@ -40,8 +40,9 @@ namespace ayther {
 /// and a loose tile a single hash.
 enum class MatchRank : uint8_t {
     Tile      = 0,   ///< 1×1 plane tile / loose sprite matched by hash
-    Glyph     = 1,   ///< glyph: prop + a character of a font
-    Prop      = 2,   ///< Prop: co-present set with relative offsets
+    Glyph     = 1,   ///< glyph: drawing + a character of a font
+    Drawing   = 2,   ///< Drawing: co-present set with relative offsets
+    Prop [[deprecated("renamed to MatchRank::Drawing")]] = 2,  ///< old name of Drawing
     Pose      = 3,   ///< pose: set of co-present sprites
     Keyframe  = 4,   ///< pose IN ONE observed STATE (palette · flip · signature)
     Entity    = 5,   ///< Mode 3: identity by RAM, exact per instance
@@ -62,7 +63,7 @@ inline const char* rank_name(MatchRank r) {
         case MatchRank::Entity:    return "entidad";
         case MatchRank::Keyframe:  return "keyframe";
         case MatchRank::Pose:      return "pose";
-        case MatchRank::Prop:      return "utileria";
+        case MatchRank::Drawing:   return "drawing";
         case MatchRank::Glyph:     return "glifo";
         default:                   return "tile";
     }

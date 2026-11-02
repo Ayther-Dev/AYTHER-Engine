@@ -417,7 +417,7 @@ int main(int argc, char** argv) {
     }
 
     // ── 7. EL kPictureId VIENE DEL PACK ───────────────────────────────────────
-    // La lección de la Utilería: un reconocimiento que sólo existe en la
+    // La lección del Dibujo: un reconocimiento que sólo existe en la
     // sesión de autoría no llega al `.ay` entregado. Se hornea un pack real
     // con screens.toml, se abre, y el Cuadro tiene que matchear sin que nadie
     // haya llamado define_screen.
@@ -480,10 +480,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ── 8. LA ESCALERA: el Cuadro le gana a la Utilería ────────────────────
+    // ── 8. LA ESCALERA: el Cuadro le gana al Dibujo ────────────────────
     // Regla del producto: el match prioriza de complejidad MAYOR a MENOR, y la
     // entidad que gana RECLAMA su cobertura — las contenidas en ella NO se
-    // emiten. Un Cuadro es la pantalla entera en HD, así que la Utilería que
+    // emiten. Un Cuadro es la pantalla entera en HD, así que el Dibujo que
     // cae dentro ya está dibujada en ese asset: emitirla otra vez la duplicaría
     // encima. Ningún smoke cubría la interacción ENTRE tipos.
     {
@@ -491,7 +491,7 @@ int main(int argc, char** argv) {
         s->clear_plane_sets();
         const uint32_t f = N / 2;
 
-        // Una Utilería de dos celdas adyacentes de plano A, tomadas del frame.
+        // Un Dibujo de dos celdas adyacentes de plano A, tomadas del frame.
         uint64_t ha = 0, hb = 0; int ax = -1, ay = -1;
         if (const FrameView* fv = s->replay_seek(take, f)) {
             for (uint32_t i = 0; i < fv->plane_cell_count && ax < 0; ++i) {
@@ -508,14 +508,14 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        check(ax >= 0, "hay un par de celdas adyacentes para la Utilería");
+        check(ax >= 0, "hay un par de celdas adyacentes para el Dibujo");
 
         auto props_visible = [&]() {
             s->replay_invalidate(); s->replay_seek(take, f);
             s->replay_invalidate();
             const FrameView* fv = s->replay_seek(take, f);
             for (uint32_t j = 0; fv && j < fv->plane_tile_sub_count; ++j)
-                if (!std::strcmp(fv->plane_tile_subs[j].asset_path, "utileria.png"))
+                if (!std::strcmp(fv->plane_tile_subs[j].asset_path, "dibujo.png"))
                     return true;
             return false;
         };
@@ -523,8 +523,8 @@ int main(int argc, char** argv) {
         if (ax >= 0) {
             const ayther::AytherSession::PlaneSetMember ms[2] = {
                 { ha, 0, 0 }, { hb, 1, 0 } };
-            s->define_plane_set(0x5E70, 0, 2, 1, ms, 2, "utileria.png");
-        check(props_visible(), "sola, la Utilería SÍ se dibuja (control)");
+            s->define_plane_set(0x5E70, 0, 2, 1, ms, 2, "dibujo.png");
+        check(props_visible(), "sola, el Dibujo SÍ se dibuja (control)");
 
             // Ahora el Cuadro de esa misma pantalla, que la contiene.
             std::vector<ayther::AytherSession::ScreenCell> cap;
@@ -540,16 +540,16 @@ int main(int argc, char** argv) {
             s->define_screen(0xC0AD09, kAll, cap.data(), (uint32_t)cap.size(),
                              0.92f, 0.08f, "cuadro.png");
         check(!props_visible(),
-                  "con el Cuadro activo, la Utilería que contiene NO se emite");
+                  "con el Cuadro activo, el Dibujo que contiene NO se emite");
 
             // EL CASO QUE DECIDE: el mismo Cuadro reconocido pero SIN asset.
-            // Un Cuadro es sus capas completas y le gana a la Utilería, pero
+            // Un Cuadro es sus capas completas y le gana al Dibujo, pero
             // sólo cuando tiene algo que dibujar: si el artista todavía no le
-            // asignó nada, no tapa nada y la Utilería se sigue dibujando sobre
+            // asignó nada, no tapa nada y el Dibujo se sigue dibujando sobre
             // el original. Es el flujo de la estrella que titila — se autora
-            // sólo la estrella como Utilería y el resto de la pantalla queda
+            // sólo la estrella como Dibujo y el resto de la pantalla queda
             // como está. En cuanto el Cuadro recibe un asset, se lleva la capa
-            // entera y la Utilería deja de contar.
+            // entera y el Dibujo deja de contar.
             //
             // Excluir celdas de la definición NO es la salida: el Cuadro
             // reclama la capa, no su subconjunto de celdas.
@@ -558,20 +558,20 @@ int main(int argc, char** argv) {
                 s->define_screen(0xC0AD0A, kAll, cap.data(), (uint32_t)cap.size(),
                                  0.92f, 0.08f, "");        // <- sin asset
         check(props_visible(),
-                      "Cuadro reconocido SIN asset: no tapa, la Utilería se dibuja");
+                      "Cuadro reconocido SIN asset: no tapa, el Dibujo se dibuja");
                 s->clear_screens();
                 s->define_screen(0xC0AD0A, kAll, cap.data(), (uint32_t)cap.size(),
                                  0.92f, 0.08f, "cuadro.png");   // <- con asset
         check(!props_visible(),
                       "al asignarle un asset, el Cuadro se lleva la capa entera y "
-                      "la Utilería deja de contar");
+                      "el Dibujo deja de contar");
             }
 
             // Y al retirar el Cuadro vuelve: la supresión es del Cuadro, no un
             // efecto colateral de haber redefinido el set.
             s->clear_screens();
         check(props_visible(),
-                  "al retirar el Cuadro, la Utilería vuelve a dibujarse");
+                  "al retirar el Cuadro, el Dibujo vuelve a dibujarse");
             s->clear_plane_sets();
         }
     }

@@ -571,7 +571,7 @@ int main(int argc, char** argv) {
     // ── 6. PERSISTENCIA: la tira sobrevive al TOML ────────────────────────────
     // Sin esto la Panorámica vivía sólo en la sesión de autoría: reiniciar el
     // Lab la perdía y el pack entregado no la tenía — el mismo agujero que la
-    // Utilería y los Glifos antes de plane_sets.toml. El round-trip es donde un
+    // Dibujo y los Glifos antes de plane_sets.toml. El round-trip es donde un
     // escritor/parser a mano se delata, y acá hay dos trampas concretas: las
     // posiciones de nivel van con SIGNO (el dialecto de screens.toml las tiene
     // sin signo y truncaría la tira) y las filas se emiten agrupadas.

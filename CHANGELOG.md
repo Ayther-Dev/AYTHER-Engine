@@ -157,10 +157,17 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   corrected with the asset's own horizontal flip. The same applies when such a
   pose's stored flips are shifted by a global mirror from the captured face.
   Single-sprite poses keep the previous behavior.
+- The authoring identity formerly called Object (earlier: Utilería/Prop) is now
+  the Drawing. Plane sets written without a `type` now read as `"drawing"`, and
+  `rank_name(MatchRank::Drawing)` returns `"drawing"` (it was `"utileria"`).
+  The Engine never branches on `type`, so packs that carry `type = "utileria"`
+  load exactly as before. Newly baked `plane_sets.toml`/`elements.toml` differ
+  from older bakes only in that default value and in their header comments.
 
 ### Deprecated
 
-- None.
+- `MatchRank::Prop` is kept as a deprecated alias of `MatchRank::Drawing` for
+  one release.
 
 ### Removed
 
