@@ -1465,6 +1465,42 @@ supported = ["NTSC", "JP"]
         assert!(a.compat.rom_crc32.is_none());
     }
 
+    /// Spec 008 (TP-008.4, RF-6.2): un manifest de schema 2 con las tablas
+    /// `[emulator]` e `[identity]` abre igual, con sus metadatos intactos. El
+    /// lector ignora las tablas que no conoce, así que añadirlas no obliga a
+    /// subir el schema: se queda en 2 y los lectores actuales siguen abriendo
+    /// el pack.
+    #[test]
+    fn schema_2_ignores_emulator_and_identity_tables() {
+        let m = r#"
+[pack]
+name       = "Test Pack"
+version    = "1.0.0"
+game_id    = "crc32:7b905383"
+author     = "CI"
+ayther_min = "0.8.0"
+schema     = 2
+license    = "CC-BY-4.0"
+
+[compat]
+rom_crc32 = "7b905383"
+platform  = "megadrive"
+
+[emulator]
+id                   = "tessera"
+version              = "0.1.0-dev"
+determinism_contract = 1
+
+[identity]
+contract = 1
+"#;
+        let a = open_with_manifest(m)
+            .expect("las tablas [emulator] e [identity] no pueden impedir abrir el pack");
+        assert_eq!(a.schema, 2, "el schema declarado no cambia");
+        assert_eq!(a.meta.license.as_deref(), Some("CC-BY-4.0"));
+        assert_eq!(a.compat.platform.as_deref(), Some("megadrive"));
+    }
+
     /// El manifest nuevo entero, ida y vuelta.
     #[test]
     fn new_manifest_is_fully_read() {

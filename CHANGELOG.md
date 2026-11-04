@@ -17,6 +17,11 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   `unknown`, contract 1. Because the
   C++ struct grew, `AytherRecording::abi_size()` changes: rebuild against the
   Engine headers you link. Older readers cannot open version 11 files.
+- Manifest schema 2 readers already ignore unknown tables, so the planned
+  `[emulator]` and `[identity]` tables will be added without raising the schema:
+  it stays at 2. A test (`schema_2_ignores_emulator_and_identity_tables`) pins
+  that a schema 2 pack carrying both tables still opens with its metadata
+  intact.
 
 ### Security
 
