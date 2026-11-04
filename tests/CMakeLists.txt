@@ -325,6 +325,13 @@ target_compile_definitions(ayther_render_observation_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_render_observation_session_test ayther_test_core)
 
+# Spec 008 (TP-005.13): plane 3 of the Tessera parity bench.
+if(AYTHER_BUILD_PARITY_BENCH)
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench"
+        "${PROJECT_BINARY_DIR}/tools/parity_bench")
+endif()
+
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
 # the deprecated memory ids retain a stale non-empty prefix.
 ayther_add_native_test(

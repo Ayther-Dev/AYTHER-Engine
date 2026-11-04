@@ -34,6 +34,11 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   installed header `ayther/emulation_generation.h` holds the pure mapping.
 - `AytherSession::take_recording()` stamps the session generation into the take,
   so a take recorded with a libretro core carries that core's id and version.
+- `tools/parity_bench` (option `AYTHER_BUILD_PARITY_BENCH`, ON in the
+  `windows-native` preset): skeleton of plane 3 of the Tessera parity bench with
+  the `dump`, `compare` and `trace-from-arp` subcommands and
+  `--provider libretro|tessera_native`. The subcommands validate their
+  arguments and report that they are not implemented yet.
 
 ### Security
 
