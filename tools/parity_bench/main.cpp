@@ -7,9 +7,13 @@
 // Skeleton: the subcommands validate their arguments and report that they are
 // not implemented yet. dump arrives in TP-005.15 and compare in TP-005.16;
 // trace-from-arp (TP-005.14) is implemented in trace_arp.cpp.
+#include "frame_dump.h"
 #include "trace_arp.h"
 
+#include <ayther/ayther_recording.h>
+
 #include <cstdio>
+#include <fstream>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -32,6 +36,7 @@ void print_help(std::FILE *out) {
         "  trace-from-arp   convert the inputs of a take (.arp) to a TSTRACE1 trace\n"
         "\n"
         "options:\n"
+        "  --core DLL --rom FILE --arp FILE --out FILE   (dump: inputs come from the take)\n"
         "  --arp FILE --out FILE --content-sha HEX --config-sha HEX  (trace-from-arp)\n"
         "  --provider libretro|tessera_native   emulation provider of the session\n"
         "  --help                               show this help\n",
@@ -62,7 +67,7 @@ int main(int argc, char **argv) {
     }
 
     std::string provider = "libretro";
-    std::string arp, out, content_sha, config_sha;
+    std::string arp, out, content_sha, config_sha, core, rom;
     for (int i = 2; i < argc; ++i) {
         const std::string_view arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -87,6 +92,8 @@ int main(int argc, char **argv) {
                               : arg == "--out"           ? &out
                               : arg == "--content-sha"   ? &content_sha
                               : arg == "--config-sha"    ? &config_sha
+                              : arg == "--core"          ? &core
+                              : arg == "--rom"           ? &rom
                                                          : nullptr;
         if (target != nullptr) {
             if (i + 1 >= argc) {
@@ -110,6 +117,31 @@ int main(int argc, char **argv) {
         if (rc == 2) std::fprintf(stderr, "trace-from-arp: hashes must be 64 hex digits\n");
         if (rc == 4) std::fprintf(stderr, "trace-from-arp: cannot write: %s\n", out.c_str());
         return rc;
+    }
+
+    if (subcommand == "dump") {
+        if (core.empty() || rom.empty() || arp.empty() || out.empty()) {
+            std::fprintf(stderr, "dump needs --core, --rom, --arp, --out\n");
+            return kExitUsage;
+        }
+        if (provider != "libretro") {
+            std::fprintf(stderr, "dump: provider tessera_native is not available yet (TP-301)\n");
+            return kExitNotImplemented;
+        }
+        const auto take = ayther::AytherRecording::load(arp);
+        if (!take || take->inputs.empty()) {
+            std::fprintf(stderr, "dump: cannot read take: %s\n", arp.c_str());
+            return 1;
+        }
+        const auto text = ayther::parity::dump_session(core, rom, take->inputs);
+        if (!text) {
+            std::fprintf(stderr, "dump: the session could not be created\n");
+            return 1;
+        }
+        std::ofstream file(out, std::ios::binary | std::ios::trunc);
+        file.write(text->data(), static_cast<std::streamsize>(text->size()));
+        file.close();
+        return file.good() ? kExitOk : 4;
     }
 
     std::fprintf(stderr, "%s: not implemented yet (provider %s)\n",

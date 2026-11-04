@@ -340,6 +340,16 @@ if(AYTHER_BUILD_PARITY_BENCH)
     target_compile_definitions(ayther_parity_trace_test PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
     add_dependencies(ayther_parity_trace_test ayther_test_core)
+
+    # TP-005.15: FrameView dump with a hash per subplane.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_dump_test.cpp"
+        integration)
+    target_sources(ayther_parity_dump_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp")
+    target_compile_definitions(ayther_parity_dump_test PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_dump_test ayther_test_core)
 endif()
 
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
