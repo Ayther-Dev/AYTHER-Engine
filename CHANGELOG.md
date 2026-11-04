@@ -22,6 +22,11 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   it stays at 2. A test (`schema_2_ignores_emulator_and_identity_tables`) pins
   that a schema 2 pack carrying both tables still opens with its metadata
   intact.
+- `pack_builder::stamp_manifest_provenance()` writes `[emulator]` and
+  `[identity]` into a manifest, and `pack_validate` now rejects a pack whose
+  `identity.contract` is newer than this build's (`IDENTITY_CONTRACT = 1`) with
+  `pack.identity_contract_too_new`. `[emulator]` is informational and never
+  rejects a pack.
 
 ### Security
 

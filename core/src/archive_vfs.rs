@@ -138,6 +138,11 @@ pub fn is_stored_entry(path: &str) -> bool {
 /// rejected because it may require semantics this build does not implement.
 pub const MANIFEST_SCHEMA: u32 = 2;
 
+/// Identity contract (`docs/IDENTITY_CONTRACT.md`) this build computes and
+/// understands. A pack baked under a newer one is rejected by the validator
+/// with `pack.identity_contract_too_new`.
+pub const IDENTITY_CONTRACT: u32 = 1;
+
 /// Newest `.ay` container format written and understood by this build.
 ///
 /// This is independent from [`MANIFEST_SCHEMA`]: `schema` versions the metadata
