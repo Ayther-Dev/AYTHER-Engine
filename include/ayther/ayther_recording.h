@@ -59,6 +59,16 @@ struct AytherRecording {
   uint64_t take_id = 0;
   /// First format version that carries `take_id`.
   static constexpr uint32_t kFormatVersionTakeId = 10;
+  /// Emulator provenance (.arp v11, spec 008): which emulator produced the
+  /// take, its version and its determinism-contract number. Files up to v10
+  /// load as `gpgx` with an empty version and contract 0 (they could only
+  /// come from Genesis Plus GX). slice() copies it: the tail has the same
+  /// origin as its source.
+  std::string emulator_id = "gpgx";
+  std::string emulator_version;
+  uint32_t determinism_contract = 0;
+  /// First format version that carries the provenance block.
+  static constexpr uint32_t kFormatVersionProvenance = 11;
   std::vector<uint16_t> inputs; ///< port-0 RetroPad bitmask per frame
   std::vector<FrameStat> stats; ///< per-frame occurrence summary (R7b)
   uint32_t trim_in = 0;         ///< non-destructive in-mark  (frame)
@@ -194,5 +204,8 @@ struct AytherRecording {
 #define AYTHER_RECORDING_ABI_SIZE 1
 /// Marks that AytherRecording carries `take_id` and patch/peek_take_id (v10).
 #define AYTHER_RECORDING_TAKE_ID 1
+/// Marks that AytherRecording carries `emulator_id`, `emulator_version` and
+/// `determinism_contract` (v11, spec 008).
+#define AYTHER_RECORDING_PROVENANCE 1
 
 } // namespace ayther

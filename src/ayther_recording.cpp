@@ -37,8 +37,17 @@
 //   u32 fm_regs_size     (0 = sin sombra, o 512)
 //   fm_regs_size × u8    banco 0 (0x000-0x0FF) y banco 1 (0x100-0x1FF)
 //   --- v10 (spec 007: id estable de la toma) ---
-//   u64 take_id          (0 = sin asignar). SIEMPRE los últimos 8 bytes del
-//                        archivo: peek/patch_take_id dependen de eso.
+//   u64 take_id          (0 = sin asignar). En v10 son SIEMPRE los últimos 8
+//                        bytes del archivo; en v11 los sigue el bloque de
+//                        procedencia (ver abajo).
+//   --- v11 (spec 008: procedencia del emulador) ---
+//   u32 emulator_id_len      + emulator_id bytes
+//   u32 emulator_version_len + emulator_version bytes
+//   u32 determinism_contract
+//   u32 provenance_size  (bytes del bloque anterior, sin este campo). SIEMPRE
+//                        los últimos 4 bytes: peek/patch_take_id ubican el id
+//                        en size - 4 - provenance_size - 8. v <= 10 se lee como
+//                        gpgx.
 // ---------------------------------------------------------------------------
 #include "ayther_recording.h"
 #include "log.h"
@@ -251,11 +260,27 @@ namespace {
 
 constexpr char kMagic[4] = {'A', 'R', 'P', '1'};
 constexpr uint32_t kVersion =
-    10; // v10: + id estable de la toma (spec 007), al final del archivo
+    11; // v11: + procedencia del emulador (spec 008) tras el id de la toma
+constexpr uint32_t kVersionTakeId = 10; // última versión sin procedencia
+constexpr std::size_t kMaxProvenanceString = 256;
 constexpr int kZstdLevel = 9; // takes are saved rarely — favour ratio
 constexpr std::size_t kMaxRecordingBytes = 64U * 1024U * 1024U;
 constexpr std::size_t kMaxInitialStateBytes = 64U * 1024U * 1024U;
 constexpr std::uint32_t kMaxRecordingFrames = 54'000U;
+
+// v11: offset of take_id inside a whole image, from the trailing u32 that
+// holds the provenance block size. nullopt when the tail is inconsistent.
+std::optional<std::size_t> provenance_take_id_offset(std::size_t file_size,
+                                                     std::uint32_t block_size) {
+  constexpr std::size_t kMinBlock = 12; // two empty strings + contract
+  if (block_size < kMinBlock ||
+      block_size > 2 * kMaxProvenanceString + kMinBlock)
+    return std::nullopt;
+  if (file_size < 16 + 8 + kMinBlock + 4 ||
+      file_size - 4 < static_cast<std::size_t>(block_size) + 8)
+    return std::nullopt;
+  return file_size - 4 - block_size - 8;
+}
 
 class RecordingCursor {
 public:
@@ -1139,8 +1164,25 @@ bool AytherRecording::save(const std::string &path) const {
     f.write(reinterpret_cast<const char *>(audio_fm_regs.data()),
             audio_fm_regs.size());
 
-  // v10: el id de la toma, siempre los últimos 8 bytes.
+  // v10: el id de la toma; en v11 le sigue el bloque de procedencia.
   put_u64(f, take_id);
+
+  // v11: procedencia del emulador y su tamaño como últimos 4 bytes.
+  if (emulator_id.size() > kMaxProvenanceString ||
+      emulator_version.size() > kMaxProvenanceString) {
+    ayther::log::write(ayther::log::Severity::Error, "recording",
+                       "provenance_too_long", "provenance too long: %s",
+                       path.c_str());
+    return false;
+  }
+  put_u32(f, static_cast<uint32_t>(emulator_id.size()));
+  f.write(emulator_id.data(), static_cast<std::streamsize>(emulator_id.size()));
+  put_u32(f, static_cast<uint32_t>(emulator_version.size()));
+  f.write(emulator_version.data(),
+          static_cast<std::streamsize>(emulator_version.size()));
+  put_u32(f, determinism_contract);
+  put_u32(f, static_cast<uint32_t>(12U + emulator_id.size() +
+                                   emulator_version.size()));
 
   if (!f.good()) {
     ayther::log::write(ayther::log::Severity::Error, "recording",
@@ -1270,6 +1312,25 @@ bool AytherRecording::patch_take_id(const std::string &path,
           out.push_back(static_cast<char>((v >> (8 * i)) & 0xFFU));
       };
       std::vector<char> image;
+      if (version >= kFormatVersionProvenance) {
+        // v11: el id precede al bloque de procedencia; se parchea in situ.
+        std::uint32_t block = 0;
+        for (int i = 0; i < 4; ++i)
+          block |= std::uint32_t(std::uint8_t(buf[buf.size() - 4 + i]))
+                   << (8 * i);
+        const auto at = provenance_take_id_offset(buf.size(), block);
+        if (!at)
+          return false;
+        std::uint64_t current = 0;
+        for (int i = 0; i < 8; ++i)
+          current |= std::uint64_t(std::uint8_t(buf[*at + i])) << (8 * i);
+        if (current == new_take_id)
+          return true;
+        image = buf;
+        for (int i = 0; i < 8; ++i)
+          image[*at + i] = static_cast<char>((new_take_id >> (8 * i)) & 0xFFU);
+        return write_replacement(destination, image);
+      }
       if (version >= kFormatVersionTakeId) {
         if (buf.size() < 24)
           return false;
@@ -1286,7 +1347,7 @@ bool AytherRecording::patch_take_id(const std::string &path,
           put_le(image, 0U, 4); // v9: sombra FM ausente
       }
       put_le(image, new_take_id, 8);
-      const std::uint32_t v10 = kVersion;
+      const std::uint32_t v10 = kVersionTakeId; // sin bloque de procedencia
       for (int i = 0; i < 4; ++i)
         image[4 + i] = static_cast<char>((v10 >> (8 * i)) & 0xFFU);
       if (image.size() > kMaxRecordingBytes)
@@ -1318,7 +1379,25 @@ std::optional<uint64_t> AytherRecording::peek_take_id(const std::string &path) {
     return std::nullopt;
   if (version < kFormatVersionTakeId)
     return std::uint64_t{0};
-  f.seekg(-8, std::ios::end);
+  if (version >= kFormatVersionProvenance) {
+    // v11: el tamaño del bloque está en los últimos 4 bytes.
+    f.seekg(0, std::ios::end);
+    const auto end = f.tellg();
+    f.seekg(-4, std::ios::end);
+    char size_tail[4]{};
+    if (!f || end < 0 || !f.read(size_tail, sizeof(size_tail)))
+      return std::nullopt;
+    std::uint32_t block = 0;
+    for (int i = 0; i < 4; ++i)
+      block |= std::uint32_t(std::uint8_t(size_tail[i])) << (8 * i);
+    const auto at =
+        provenance_take_id_offset(static_cast<std::size_t>(end), block);
+    if (!at)
+      return std::nullopt;
+    f.seekg(static_cast<std::streamoff>(*at), std::ios::beg);
+  } else {
+    f.seekg(-8, std::ios::end);
+  }
   char tail[8]{};
   if (!f || !f.read(tail, sizeof(tail)))
     return std::nullopt;
@@ -1468,6 +1547,16 @@ std::optional<AytherRecording> AytherRecording::load(const std::string &path) {
     if (version >= AytherRecording::kFormatVersionTakeId &&
         !cursor.read_u64(rec.take_id))
       return std::nullopt;
+    if (version >= AytherRecording::kFormatVersionProvenance) {
+      std::uint32_t block = 0;
+      if (!cursor.read_string(rec.emulator_id) ||
+          rec.emulator_id.size() > kMaxProvenanceString ||
+          !cursor.read_string(rec.emulator_version) ||
+          rec.emulator_version.size() > kMaxProvenanceString ||
+          !cursor.read_u32(rec.determinism_contract) || !cursor.read_u32(block) ||
+          block != 12U + rec.emulator_id.size() + rec.emulator_version.size())
+        return std::nullopt;
+    }
     if (!cursor.empty())
       return std::nullopt;
 
@@ -1529,6 +1618,9 @@ AytherRecording AytherRecording::slice(uint32_t begin, uint32_t end,
   r.game_id = game_id;
   r.name = name;           // el caller renombra el tail
   r.take_id = 0;           // v10: el tail es otra toma; el caller le da id
+  r.emulator_id = emulator_id; // v11: el tail nace del mismo emulador
+  r.emulator_version = emulator_version;
+  r.determinism_contract = determinism_contract;
   r.hash_algo = hash_algo; // la sub-toma hereda el algo de su historia
   r.initial_state = std::move(state);
   // v9: la sombra FM va con el savestate del mismo punto. Un tamaño que no
