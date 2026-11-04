@@ -361,6 +361,15 @@ if(AYTHER_BUILD_PARITY_BENCH)
     target_compile_definitions(ayther_parity_bench_synthetic PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
     add_dependencies(ayther_parity_bench_synthetic ayther_test_core)
+
+    # TP-005.17: the native job runs parity_bench on both scenes.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_selftest.cpp"
+        integration)
+    target_compile_definitions(ayther_parity_bench_selftest PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+        PARITY_BENCH_PATH="$<TARGET_FILE:parity_bench>")
+    add_dependencies(ayther_parity_bench_selftest ayther_test_core parity_bench)
 endif()
 
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when

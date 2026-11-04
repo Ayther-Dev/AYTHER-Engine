@@ -24,6 +24,21 @@ struct Acc {
   }
 };
 
+// SceneElement has padding bytes that are not initialised: hashing the raw
+// array made two identical runs differ, so it is hashed field by field.
+void scene_element(Acc &a, const SceneElement &e) {
+  a.value(e.hash);
+  a.value(e.x); a.value(e.y); a.value(e.w); a.value(e.h);
+  a.value(e.pattern); a.value(e.palette); a.value(e.flips);
+  a.value(e.layer); a.value(e.priority); a.value(e.slot); a.value(e.chain);
+  a.value(e.sub_kind); a.value(e.hidden); a.value(e.claimed);
+  a.bytes(e.fx_tint, sizeof e.fx_tint);
+  a.value(e.fx_opacity); a.value(e.fx_outline); a.value(e.fx_enhance);
+  a.value(e.fx_enhance_k); a.value(e.owner); a.value(e.sub);
+  a.value(e.clip_x0); a.value(e.clip_y0); a.value(e.clip_x1); a.value(e.clip_y1);
+  a.value(e.raster_identity_known);
+}
+
 void emit(std::string &out, const char *name, const Acc &a, bool last) {
   char buf[96];
   std::snprintf(buf, sizeof buf, "\"%s\":{\"hash\":\"%016llx\",\"count\":%u}%s", name,
@@ -48,7 +63,9 @@ std::string line(std::uint32_t frame, const FrameView &v, std::uint64_t &fb_hash
     fb.n = fb_count;
   }
   Acc scene, sprites, tiles, cells, raster, chip, palette, attr;
-  scene.array(v.scene, v.scene_count);
+  for (std::uint32_t i = 0; v.scene != nullptr && i < v.scene_count; ++i)
+    scene_element(scene, v.scene[i]);
+  scene.n = v.scene_count;
   scene.value(v.scene_backdrop);
   scene.value(v.scene_left_blank);
   sprites.array(v.sprite_occs, v.sprite_occ_count);
