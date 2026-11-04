@@ -122,11 +122,18 @@ revision-9 core. The function reached `main` with the native Tessera session
 while the revision was still 8, so a revision-8 core may or may not export it:
 only a revision-9 core guarantees it.
 
-The take recording format (`AytherRecording`, `.arp`) is version 10: it
-appends the take's stable id (`take_id`) and adds `patch_take_id()` and
-`peek_take_id()`. Version 9 and older files load with `take_id = 0`. The C++
-struct gained a member, so `AytherRecording::abi_size()` changes and a
-frontend must rebuild against the headers of the Engine it links.
+The take recording format (`AytherRecording`, `.arp`) is version 11. Version 10
+appended the take's stable id (`take_id`) and added `patch_take_id()` and
+`peek_take_id()`; version 9 and older files load with `take_id = 0`. Version 11
+appends the emulator provenance after the id (`emulator_id`,
+`emulator_version`, `determinism_contract`) closed by a `u32` with the block
+size, and adds `peek_provenance()` and `patch_provenance()`
+(`AYTHER_RECORDING_PROVENANCE`). Files up to version 10 load as `gpgx` with an
+empty version and contract 0, since they could only come from Genesis Plus GX;
+`patch_take_id()` on such a file still stamps version 10. The C++ struct gained
+members each time, so `AytherRecording::abi_size()` changes and a frontend must
+rebuild against the headers of the Engine it links. A version 10 reader cannot
+open a version 11 file: it reports the file as unreadable rather than guessing.
 
 ## Compatibility window
 

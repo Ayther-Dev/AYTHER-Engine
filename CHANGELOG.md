@@ -7,6 +7,16 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Take recordings (`.arp`) are now version 11 and carry the emulator provenance
+  (`emulator_id`, `emulator_version`, `determinism_contract`) after the take
+  id. `AytherRecording::peek_provenance()` and `patch_provenance()` read and
+  write it without recompressing the take, and `AYTHER_RECORDING_PROVENANCE`
+  lets frontends guard on it. Files up to version 10 load as `gpgx`. Because the
+  C++ struct grew, `AytherRecording::abi_size()` changes: rebuild against the
+  Engine headers you link. Older readers cannot open version 11 files.
+
 ### Security
 
 - Added explicit production pack trust registries with Ed25519 signer identity,

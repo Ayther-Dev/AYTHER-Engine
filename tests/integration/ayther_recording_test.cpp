@@ -1101,6 +1101,9 @@ int main() {
     fs::remove(concurrent, ec);
   }
 
+  CHECK(AytherRecording::abi_size() == sizeof(AytherRecording),
+        "abi_size() coincide con sizeof de la struct compilada en el Engine");
+
   // Spec 008 (RF-6.1, TP-008.1): v11 carries the emulator provenance after
   // take_id, closed by a u32 holding the block size; <= v10 reads as gpgx.
   {
