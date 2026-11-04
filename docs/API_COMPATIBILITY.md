@@ -128,8 +128,8 @@ appended the take's stable id (`take_id`) and added `patch_take_id()` and
 appends the emulator provenance after the id (`emulator_id`,
 `emulator_version`, `determinism_contract`) closed by a `u32` with the block
 size, and adds `peek_provenance()` and `patch_provenance()`
-(`AYTHER_RECORDING_PROVENANCE`). Files up to version 10 load as `gpgx` with an
-empty version and contract 0, since they could only come from Genesis Plus GX;
+(`AYTHER_RECORDING_PROVENANCE`). Files up to version 10 load as `gpgx`, version `unknown`
+and contract 1, since they could only come from Genesis Plus GX;
 `patch_take_id()` on such a file still stamps version 10. The C++ struct gained
 members each time, so `AytherRecording::abi_size()` changes and a frontend must
 rebuild against the headers of the Engine it links. A version 10 reader cannot

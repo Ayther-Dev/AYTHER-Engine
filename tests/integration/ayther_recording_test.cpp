@@ -1139,9 +1139,10 @@ int main() {
     CHECK(write_bytes(v10p, to_v10_image(read_bytes(v11))),
           "v10: derivar el fixture de v11");
     back = AytherRecording::load(v10p.string());
-    CHECK(back && back->emulator_id == "gpgx" && back->emulator_version.empty() &&
-              back->determinism_contract == 0U && back->take_id == 0xABCDULL,
-          "v<=10: se lee como gpgx sin versión ni contrato");
+    CHECK(back && back->emulator_id == "gpgx" &&
+              back->emulator_version == "unknown" &&
+              back->determinism_contract == 1U && back->take_id == 0xABCDULL,
+          "v<=10: se lee como gpgx / unknown / 1");
 
     std::vector<char> bad = read_bytes(v11);
     CHECK(write_u32_le(bad, bad.size() - 4, 0x00FFFFFFU),
@@ -1165,16 +1166,17 @@ int main() {
 
     // peek on a v11 file with the default provenance.
     auto peek = AytherRecording::peek_provenance(src.string());
-    CHECK(peek && peek->id == "gpgx" && peek->version.empty() &&
-              peek->contract == 0U,
-          "peek: v11 por defecto = gpgx");
+    CHECK(peek && peek->id == "gpgx" && peek->version == "unknown" &&
+              peek->contract == 1U,
+          "peek: v11 por defecto = gpgx / unknown / 1");
 
     // A v10 take is patched up to v11 without touching the payload.
     const fs::path v10 = test_directory / "prov_patch_v10.arp";
     CHECK(write_bytes(v10, to_v10_image(v11_bytes)), "patch: fixture v10");
     peek = AytherRecording::peek_provenance(v10.string());
-    CHECK(peek && peek->id == "gpgx" && peek->contract == 0U,
-          "peek: v10 se lee como gpgx");
+    CHECK(peek && peek->id == "gpgx" && peek->version == "unknown" &&
+              peek->contract == 1U,
+          "peek: v10 se lee como gpgx / unknown / 1");
     CHECK(AytherRecording::patch_provenance(v10.string(), "tessera",
                                             "0.1.0-dev", 5U),
           "patch: v10 sube a v11 con la procedencia");
@@ -1201,12 +1203,12 @@ int main() {
               read_bytes(v10) == before,
           "patch: los mismos valores son un no-op");
     // Different (longer) values on a v11 take.
-    CHECK(AytherRecording::patch_provenance(v10.string(), "gpgx", "1.2.3", 0U),
+    CHECK(AytherRecording::patch_provenance(v10.string(), "gpgx", "1.2.3", 2U),
           "patch: v11 cambia la procedencia");
     back = AytherRecording::load(v10.string());
     CHECK(back && back->emulator_id == "gpgx" &&
               back->emulator_version == "1.2.3" &&
-              back->determinism_contract == 0U && back->take_id == 0x77ULL &&
+              back->determinism_contract == 2U && back->take_id == 0x77ULL &&
               back->inputs == t.inputs,
           "patch: v11 conserva id de toma y payload");
     CHECK(AytherRecording::peek_take_id(v10.string()) == 0x77ULL,
@@ -1215,9 +1217,15 @@ int main() {
     // Rejections: oversized strings and unreadable files change nothing.
     const std::vector<char> kept = read_bytes(v10);
     CHECK(!AytherRecording::patch_provenance(v10.string(),
-                                             std::string(257, 'x'), "", 0U) &&
+                                             std::string(33, 'x'), "", 0U) &&
+              !AytherRecording::patch_provenance(v10.string(), "gpgx",
+                                                 std::string(65, 'x'), 0U) &&
+              !AytherRecording::patch_provenance(v10.string(), "t\xC3\xA9ssera",
+                                                 "", 0U) &&
+              !AytherRecording::patch_provenance(v10.string(), "gpgx",
+                                                 "a\nb", 0U) &&
               read_bytes(v10) == kept,
-          "patch: rechaza un id de más de 256 bytes sin tocar el archivo");
+          "patch: rechaza id > 32, versión > 64 y no ASCII sin tocar el archivo");
     const fs::path junk = test_directory / "prov_junk.arp";
     CHECK(write_bytes(junk, std::vector<char>{'n', 'o', 'p', 'e'}),
           "patch: fixture basura");

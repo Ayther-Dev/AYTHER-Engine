@@ -262,7 +262,18 @@ constexpr char kMagic[4] = {'A', 'R', 'P', '1'};
 constexpr uint32_t kVersion =
     11; // v11: + procedencia del emulador (spec 008) tras el id de la toma
 constexpr uint32_t kVersionTakeId = 10; // última versión sin procedencia
-constexpr std::size_t kMaxProvenanceString = 256;
+constexpr std::size_t kMaxProvenanceId = 32;
+constexpr std::size_t kMaxProvenanceVersion = 64;
+
+// Cadena de procedencia: ASCII imprimible (0x20-0x7E) y dentro del límite.
+bool valid_provenance_text(const std::string &text, std::size_t limit) {
+  if (text.size() > limit)
+    return false;
+  for (const unsigned char ch : text)
+    if (ch < 0x20 || ch > 0x7E)
+      return false;
+  return true;
+}
 constexpr int kZstdLevel = 9; // takes are saved rarely — favour ratio
 constexpr std::size_t kMaxRecordingBytes = 64U * 1024U * 1024U;
 constexpr std::size_t kMaxInitialStateBytes = 64U * 1024U * 1024U;
@@ -274,7 +285,7 @@ std::optional<std::size_t> provenance_take_id_offset(std::size_t file_size,
                                                      std::uint32_t block_size) {
   constexpr std::size_t kMinBlock = 12; // two empty strings + contract
   if (block_size < kMinBlock ||
-      block_size > 2 * kMaxProvenanceString + kMinBlock)
+      block_size > kMaxProvenanceId + kMaxProvenanceVersion + kMinBlock)
     return std::nullopt;
   if (file_size < 16 + 8 + kMinBlock + 4 ||
       file_size - 4 < static_cast<std::size_t>(block_size) + 8)
@@ -1168,8 +1179,8 @@ bool AytherRecording::save(const std::string &path) const {
   put_u64(f, take_id);
 
   // v11: procedencia del emulador y su tamaño como últimos 4 bytes.
-  if (emulator_id.size() > kMaxProvenanceString ||
-      emulator_version.size() > kMaxProvenanceString) {
+  if (!valid_provenance_text(emulator_id, kMaxProvenanceId) ||
+      !valid_provenance_text(emulator_version, kMaxProvenanceVersion)) {
     ayther::log::write(ayther::log::Severity::Error, "recording",
                        "provenance_too_long", "provenance too long: %s",
                        path.c_str());
@@ -1473,9 +1484,10 @@ AytherRecording::peek_provenance(const std::string &path) {
     return std::nullopt;
   RecordingCursor cursor(bytes);
   Provenance out;
-  if (!cursor.read_string(out.id) || out.id.size() > kMaxProvenanceString ||
+  if (!cursor.read_string(out.id) ||
+      !valid_provenance_text(out.id, kMaxProvenanceId) ||
       !cursor.read_string(out.version) ||
-      out.version.size() > kMaxProvenanceString ||
+      !valid_provenance_text(out.version, kMaxProvenanceVersion) ||
       !cursor.read_u32(out.contract) || !cursor.empty())
     return std::nullopt;
   return out;
@@ -1485,8 +1497,8 @@ bool AytherRecording::patch_provenance(const std::string &path,
                                        const std::string &id,
                                        const std::string &version,
                                        std::uint32_t contract) {
-  if (id.size() > kMaxProvenanceString ||
-      version.size() > kMaxProvenanceString)
+  if (!valid_provenance_text(id, kMaxProvenanceId) ||
+      !valid_provenance_text(version, kMaxProvenanceVersion))
     return false;
   const std::vector<char> block = encode_provenance(id, version, contract);
   {
@@ -1684,9 +1696,9 @@ std::optional<AytherRecording> AytherRecording::load(const std::string &path) {
     if (version >= AytherRecording::kFormatVersionProvenance) {
       std::uint32_t block = 0;
       if (!cursor.read_string(rec.emulator_id) ||
-          rec.emulator_id.size() > kMaxProvenanceString ||
+          !valid_provenance_text(rec.emulator_id, kMaxProvenanceId) ||
           !cursor.read_string(rec.emulator_version) ||
-          rec.emulator_version.size() > kMaxProvenanceString ||
+          !valid_provenance_text(rec.emulator_version, kMaxProvenanceVersion) ||
           !cursor.read_u32(rec.determinism_contract) || !cursor.read_u32(block) ||
           block != 12U + rec.emulator_id.size() + rec.emulator_version.size())
         return std::nullopt;

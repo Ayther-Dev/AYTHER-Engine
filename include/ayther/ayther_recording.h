@@ -61,12 +61,14 @@ struct AytherRecording {
   static constexpr uint32_t kFormatVersionTakeId = 10;
   /// Emulator provenance (.arp v11, spec 008): which emulator produced the
   /// take, its version and its determinism-contract number. Files up to v10
-  /// load as `gpgx` with an empty version and contract 0 (they could only
-  /// come from Genesis Plus GX). slice() copies it: the tail has the same
-  /// origin as its source.
+  /// load as `gpgx`, version "unknown" and contract 1 (they could only come
+  /// from Genesis Plus GX). `emulator_id` is ASCII, at most 32 bytes
+  /// (`gpgx` or `tessera`); `emulator_version` is the core's build id, ASCII,
+  /// at most 64 bytes. slice() copies it: the tail has the same origin as its
+  /// source.
   std::string emulator_id = "gpgx";
-  std::string emulator_version;
-  uint32_t determinism_contract = 0;
+  std::string emulator_version = "unknown";
+  uint32_t determinism_contract = 1;
   /// First format version that carries the provenance block.
   static constexpr uint32_t kFormatVersionProvenance = 11;
   std::vector<uint16_t> inputs; ///< port-0 RetroPad bitmask per frame
@@ -190,20 +192,21 @@ struct AytherRecording {
   /// Emulator provenance as stored in a file (see `emulator_id` above).
   struct Provenance {
     std::string id = "gpgx";
-    std::string version;
-    uint32_t contract = 0;
+    std::string version = "unknown";
+    uint32_t contract = 1;
     bool operator==(const Provenance &) const = default;
   };
 
   /// Reads the provenance without decompressing anything: files up to v10 give
-  /// {"gpgx", "", 0}. std::nullopt when the file is not a readable recording.
+  /// {"gpgx", "unknown", 1}. std::nullopt when the file is not a readable recording.
   static std::optional<Provenance> peek_provenance(const std::string &path);
 
   /// Writes the provenance into an existing file without recompressing
   /// anything: v11 replaces its block, v10 and v8/v9 are stamped v11 with the
   /// block appended (v8/v9 first gain the empty FM shadow and take id 0, as in
-  /// patch_take_id); older files go through load()+save(). Strings longer than
-  /// 256 bytes are rejected before touching the file. Same lock, sibling and
+  /// patch_take_id); older files go through load()+save(). Strings that are not
+  /// printable ASCII, an id over 32 bytes or a version over 64 bytes are
+  /// rejected before touching the file. Same lock, sibling and
   /// replacement discipline as patch_take_id().
   static bool patch_provenance(const std::string &path, const std::string &id,
                                const std::string &version, uint32_t contract);
