@@ -7849,7 +7849,12 @@ size_t AytherSession::recorded_frames() const noexcept {
 
 AytherRecording AytherSession::take_recording() {
   Impl &im = *impl_;
-  return im.recording.take(game_id());
+  AytherRecording take = im.recording.take(game_id());
+  // Spec 008 (RF-6.1): the take says which emulator made it.
+  take.emulator_id = im.generation.id;
+  take.emulator_version = im.generation.version;
+  take.determinism_contract = im.generation.determinism_contract;
+  return take;
 }
 
 std::vector<uint8_t> AytherSession::audio_fm_registers() const {

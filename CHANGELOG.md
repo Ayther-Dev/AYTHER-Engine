@@ -32,6 +32,8 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   core's name) with the core's own version for the libretro provider, and
   `tessera` with the hex backend build id for the native provider. The new
   installed header `ayther/emulation_generation.h` holds the pure mapping.
+- `AytherSession::take_recording()` stamps the session generation into the take,
+  so a take recorded with a libretro core carries that core's id and version.
 
 ### Security
 
