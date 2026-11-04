@@ -330,6 +330,16 @@ if(AYTHER_BUILD_PARITY_BENCH)
     add_subdirectory(
         "${PROJECT_SOURCE_DIR}/tools/parity_bench"
         "${PROJECT_BINARY_DIR}/tools/parity_bench")
+
+    # TP-005.14: take inputs -> TSTRACE1 -> replay gives the take's frame hashes.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_trace_test.cpp"
+        integration)
+    target_sources(ayther_parity_trace_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/trace_arp.cpp")
+    target_compile_definitions(ayther_parity_trace_test PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_trace_test ayther_test_core)
 endif()
 
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
