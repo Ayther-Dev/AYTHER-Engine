@@ -4,6 +4,7 @@
 struct AytherSession::Impl {
   std::unique_ptr<engine::NativeEmulation> native;
   engine::NativeResult native_result;
+  EmulationGeneration generation;
   NativePresentationPolicy native_policy;
   std::vector<std::uint8_t> native_presented_pixels;
   std::unordered_map<std::uint64_t, std::string> native_tile_overrides;

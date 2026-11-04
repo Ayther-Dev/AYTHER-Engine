@@ -10,7 +10,7 @@ The installed surface and its stability are described in
 [`API_COMPATIBILITY.md`](API_COMPATIBILITY.md).
 Appearing in this index does not by itself imply a stability guarantee.
 
-## The 64 headers
+## The 65 headers
 
 | header | what it provides |
 |---|---|
@@ -32,6 +32,7 @@ Appearing in this index does not by itself imply a stability guarantee.
 | [`ayther_sdk.h`](#ayther_sdkh) | Installed public header. |
 | [`ayther_session.h`](#ayther_sessionh) | Installed public header. |
 | [`ayther_version.h`](#ayther_versionh) | Installed public header. |
+| [`emulation_generation.h`](#emulation_generationh) | Installed public header. |
 | [`engine/audio_fact_queue.hpp`](#engineaudio_fact_queuehpp) | Installed public header. |
 | [`engine/audio_hd_state.hpp`](#engineaudio_hd_statehpp) | Installed public header. |
 | [`engine/audio_initial_snapshot.hpp`](#engineaudio_initial_snapshothpp) | Installed public header. |
@@ -634,6 +635,16 @@ native SDK, the engine compatibility check, and the Lua API. The remaining
 values are independent protocol revisions and do not follow SemVer.
 
 _The installed header (`include/ayther/ayther_version.h`) carries the full documentation of every symbol._
+
+---
+
+<a id="emulation_generationh"></a>
+
+## emulation_generation.h
+
+**Declares:** `ayther`, `detail`, `EmulationGeneration`, `printable_ascii`, `slug`
+
+_The installed header (`include/ayther/emulation_generation.h`) carries the full documentation of every symbol._
 
 ---
 

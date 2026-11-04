@@ -307,6 +307,15 @@ target_compile_definitions(ayther_plane_set_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_plane_set_session_test ayther_test_core)
 
+# Spec 008 (TP-008.6): the generation (emulator id, version, contract) a live
+# libretro session publishes, driven with the test core.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/emulation_generation_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_emulation_generation_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_emulation_generation_session_test ayther_test_core)
+
 # Spec 002 (contracts.md C3): the render observation a live session publishes
 # through Config::render_observer, driven with the test core.
 ayther_add_native_test(

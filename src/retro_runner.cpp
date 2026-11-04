@@ -97,9 +97,11 @@ bool RetroRunner::init(const std::string &core_path,
 
   retro_system_info sysinfo{};
   fn_retro_get_system_info(&sysinfo);
+  library_name_ = sysinfo.library_name ? sysinfo.library_name : "";
+  library_version_ = sysinfo.library_version ? sysinfo.library_version : "";
   ayther::log::write(ayther::log::Severity::Info, "emulator", "core",
-                     "Core: %s %s", sysinfo.library_name,
-                     sysinfo.library_version);
+                     "Core: %s %s", library_name_.c_str(),
+                     library_version_.c_str());
 
   if (!load_rom(rom_path))
     return false;

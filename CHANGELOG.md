@@ -27,6 +27,11 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   `identity.contract` is newer than this build's (`IDENTITY_CONTRACT = 1`) with
   `pack.identity_contract_too_new`. `[emulator]` is informational and never
   rejects a pack.
+- `AytherSession::emulation_generation()` publishes the emulator id, version and
+  determinism contract of a session: `gpgx` (or the slug of another libretro
+  core's name) with the core's own version for the libretro provider, and
+  `tessera` with the hex backend build id for the native provider. The new
+  installed header `ayther/emulation_generation.h` holds the pure mapping.
 
 ### Security
 
