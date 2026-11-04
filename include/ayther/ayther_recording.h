@@ -61,13 +61,13 @@ struct AytherRecording {
   static constexpr uint32_t kFormatVersionTakeId = 10;
   /// Emulator provenance (.arp v11, spec 008): which emulator produced the
   /// take, its version and its determinism-contract number. Files up to v10
-  /// load as `gpgx`, version "unknown" and contract 1 (they could only come
+  /// load as `gpgx`, an empty version and contract 1 (they could only come
   /// from Genesis Plus GX). `emulator_id` is ASCII, at most 32 bytes
   /// (`gpgx` or `tessera`); `emulator_version` is the core's build id, ASCII,
   /// at most 64 bytes. slice() copies it: the tail has the same origin as its
   /// source.
   std::string emulator_id = "gpgx";
-  std::string emulator_version = "unknown";
+  std::string emulator_version;
   uint32_t determinism_contract = 1;
   /// First format version that carries the provenance block.
   static constexpr uint32_t kFormatVersionProvenance = 11;
@@ -192,13 +192,13 @@ struct AytherRecording {
   /// Emulator provenance as stored in a file (see `emulator_id` above).
   struct Provenance {
     std::string id = "gpgx";
-    std::string version = "unknown";
+    std::string version;
     uint32_t contract = 1;
     bool operator==(const Provenance &) const = default;
   };
 
   /// Reads the provenance without decompressing anything: files up to v10 give
-  /// {"gpgx", "unknown", 1}. std::nullopt when the file is not a readable recording.
+  /// {"gpgx", "", 1}. std::nullopt when the file is not a readable recording.
   static std::optional<Provenance> peek_provenance(const std::string &path);
 
   /// Writes the provenance into an existing file without recompressing

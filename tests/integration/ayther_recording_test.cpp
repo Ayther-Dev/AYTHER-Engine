@@ -1140,9 +1140,9 @@ int main() {
           "v10: derivar el fixture de v11");
     back = AytherRecording::load(v10p.string());
     CHECK(back && back->emulator_id == "gpgx" &&
-              back->emulator_version == "unknown" &&
+              back->emulator_version.empty() &&
               back->determinism_contract == 1U && back->take_id == 0xABCDULL,
-          "v<=10: se lee como gpgx / unknown / 1");
+          "v<=10: se lee como gpgx / vacío / 1");
 
     std::vector<char> bad = read_bytes(v11);
     CHECK(write_u32_le(bad, bad.size() - 4, 0x00FFFFFFU),
@@ -1166,17 +1166,17 @@ int main() {
 
     // peek on a v11 file with the default provenance.
     auto peek = AytherRecording::peek_provenance(src.string());
-    CHECK(peek && peek->id == "gpgx" && peek->version == "unknown" &&
+    CHECK(peek && peek->id == "gpgx" && peek->version.empty() &&
               peek->contract == 1U,
-          "peek: v11 por defecto = gpgx / unknown / 1");
+          "peek: v11 por defecto = gpgx / vacío / 1");
 
     // A v10 take is patched up to v11 without touching the payload.
     const fs::path v10 = test_directory / "prov_patch_v10.arp";
     CHECK(write_bytes(v10, to_v10_image(v11_bytes)), "patch: fixture v10");
     peek = AytherRecording::peek_provenance(v10.string());
-    CHECK(peek && peek->id == "gpgx" && peek->version == "unknown" &&
+    CHECK(peek && peek->id == "gpgx" && peek->version.empty() &&
               peek->contract == 1U,
-          "peek: v10 se lee como gpgx / unknown / 1");
+          "peek: v10 se lee como gpgx / vacío / 1");
     CHECK(AytherRecording::patch_provenance(v10.string(), "tessera",
                                             "0.1.0-dev", 5U),
           "patch: v10 sube a v11 con la procedencia");

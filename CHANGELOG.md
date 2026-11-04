@@ -13,8 +13,8 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   (`emulator_id`, `emulator_version`, `determinism_contract`) after the take
   id. `AytherRecording::peek_provenance()` and `patch_provenance()` read and
   write it without recompressing the take, and `AYTHER_RECORDING_PROVENANCE`
-  lets frontends guard on it. Files up to version 10 load as `gpgx`, version
-  `unknown`, contract 1. Because the
+  lets frontends guard on it. Files up to version 10 load as `gpgx`, empty
+  version, contract 1. Because the
   C++ struct grew, `AytherRecording::abi_size()` changes: rebuild against the
   Engine headers you link. Older readers cannot open version 11 files.
 - Manifest schema 2 readers already ignore unknown tables, so the planned
