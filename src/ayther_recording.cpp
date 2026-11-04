@@ -1408,6 +1408,140 @@ std::optional<uint64_t> AytherRecording::peek_take_id(const std::string &path) {
 }
 
 // ---------------------------------------------------------------------------
+// peek_provenance / patch_provenance — procedencia sin recomprimir (v11)
+// ---------------------------------------------------------------------------
+namespace {
+
+void append_le(std::vector<char> &out, std::uint64_t value, int bytes) {
+  for (int i = 0; i < bytes; ++i)
+    out.push_back(static_cast<char>((value >> (8 * i)) & 0xFFU));
+}
+
+// Bloque de procedencia v11 completo, incluido el tamaño final.
+std::vector<char> encode_provenance(const std::string &id,
+                                    const std::string &version,
+                                    std::uint32_t contract) {
+  std::vector<char> block;
+  append_le(block, id.size(), 4);
+  block.insert(block.end(), id.begin(), id.end());
+  append_le(block, version.size(), 4);
+  block.insert(block.end(), version.begin(), version.end());
+  append_le(block, contract, 4);
+  append_le(block, 12U + id.size() + version.size(), 4);
+  return block;
+}
+
+std::uint32_t le32(const std::vector<char> &buf, std::size_t at) {
+  return std::uint32_t(std::uint8_t(buf[at])) |
+         (std::uint32_t(std::uint8_t(buf[at + 1])) << 8U) |
+         (std::uint32_t(std::uint8_t(buf[at + 2])) << 16U) |
+         (std::uint32_t(std::uint8_t(buf[at + 3])) << 24U);
+}
+
+} // namespace
+
+std::optional<AytherRecording::Provenance>
+AytherRecording::peek_provenance(const std::string &path) {
+  std::ifstream f(std::filesystem::path(path), std::ios::binary);
+  if (!f)
+    return std::nullopt;
+  char head[8]{};
+  if (!f.read(head, sizeof(head)) || std::memcmp(head, kMagic, 4) != 0)
+    return std::nullopt;
+  const std::uint32_t version = std::uint32_t(std::uint8_t(head[4])) |
+                                (std::uint32_t(std::uint8_t(head[5])) << 8U) |
+                                (std::uint32_t(std::uint8_t(head[6])) << 16U) |
+                                (std::uint32_t(std::uint8_t(head[7])) << 24U);
+  if (version < 2 || version > kVersion)
+    return std::nullopt;
+  if (version < kFormatVersionProvenance)
+    return Provenance{};
+  f.seekg(0, std::ios::end);
+  const auto end = f.tellg();
+  f.seekg(-4, std::ios::end);
+  char size_tail[4]{};
+  if (!f || end < 0 || !f.read(size_tail, sizeof(size_tail)))
+    return std::nullopt;
+  std::uint32_t block = 0;
+  for (int i = 0; i < 4; ++i)
+    block |= std::uint32_t(std::uint8_t(size_tail[i])) << (8 * i);
+  if (!provenance_take_id_offset(static_cast<std::size_t>(end), block))
+    return std::nullopt;
+  std::vector<char> bytes(block);
+  f.seekg(-4 - static_cast<std::streamoff>(block), std::ios::end);
+  if (!f || !f.read(bytes.data(), static_cast<std::streamsize>(block)))
+    return std::nullopt;
+  RecordingCursor cursor(bytes);
+  Provenance out;
+  if (!cursor.read_string(out.id) || out.id.size() > kMaxProvenanceString ||
+      !cursor.read_string(out.version) ||
+      out.version.size() > kMaxProvenanceString ||
+      !cursor.read_u32(out.contract) || !cursor.empty())
+    return std::nullopt;
+  return out;
+}
+
+bool AytherRecording::patch_provenance(const std::string &path,
+                                       const std::string &id,
+                                       const std::string &version,
+                                       std::uint32_t contract) {
+  if (id.size() > kMaxProvenanceString ||
+      version.size() > kMaxProvenanceString)
+    return false;
+  const std::vector<char> block = encode_provenance(id, version, contract);
+  {
+    const std::filesystem::path destination(path);
+    const DestinationLock destination_lock(destination);
+    if (!destination_lock)
+      return false;
+    std::vector<char> buf;
+    if (!read_regular_file(destination, buf))
+      return false;
+    if (buf.size() < 16 || std::memcmp(buf.data(), kMagic, 4) != 0)
+      return false;
+    const std::uint32_t file_version = le32(buf, 4);
+    if (file_version < 2 || file_version > kVersion)
+      return false;
+    if (file_version >= 8U) {
+      std::vector<char> image;
+      if (file_version >= kFormatVersionProvenance) {
+        const auto at =
+            provenance_take_id_offset(buf.size(), le32(buf, buf.size() - 4));
+        if (!at)
+          return false;
+        const std::size_t block_at = *at + 8;
+        if (buf.size() - block_at == block.size() &&
+            std::equal(block.begin(), block.end(), buf.begin() + block_at))
+          return true;
+        image.assign(buf.begin(),
+                     buf.begin() + static_cast<std::ptrdiff_t>(block_at));
+      } else {
+        image = buf;
+        if (file_version == 8U)
+          append_le(image, 0U, 4); // v9: sombra FM ausente
+        if (file_version < kFormatVersionTakeId)
+          append_le(image, 0U, 8); // v10: toma sin id asignado
+        for (int i = 0; i < 4; ++i)
+          image[4 + i] =
+              static_cast<char>((kVersion >> (8 * i)) & 0xFFU);
+      }
+      image.insert(image.end(), block.begin(), block.end());
+      if (image.size() > kMaxRecordingBytes)
+        return false;
+      return write_replacement(destination, image);
+    }
+  }
+  // < v8: reescritura completa; el lock se soltó: save() toma el suyo.
+  auto rec = load(path);
+  if (!rec)
+    return false;
+  rec->emulator_id = id;
+  rec->emulator_version = version;
+  rec->determinism_contract = contract;
+  return rec->save(path);
+}
+
+// ---------------------------------------------------------------------------
 // load
 // ---------------------------------------------------------------------------
 std::optional<AytherRecording> AytherRecording::load(const std::string &path) {

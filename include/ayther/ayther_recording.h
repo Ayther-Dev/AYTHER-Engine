@@ -187,6 +187,27 @@ struct AytherRecording {
   /// a readable recording (bad magic, unsupported version, too short).
   static std::optional<uint64_t> peek_take_id(const std::string &path);
 
+  /// Emulator provenance as stored in a file (see `emulator_id` above).
+  struct Provenance {
+    std::string id = "gpgx";
+    std::string version;
+    uint32_t contract = 0;
+    bool operator==(const Provenance &) const = default;
+  };
+
+  /// Reads the provenance without decompressing anything: files up to v10 give
+  /// {"gpgx", "", 0}. std::nullopt when the file is not a readable recording.
+  static std::optional<Provenance> peek_provenance(const std::string &path);
+
+  /// Writes the provenance into an existing file without recompressing
+  /// anything: v11 replaces its block, v10 and v8/v9 are stamped v11 with the
+  /// block appended (v8/v9 first gain the empty FM shadow and take id 0, as in
+  /// patch_take_id); older files go through load()+save(). Strings longer than
+  /// 256 bytes are rejected before touching the file. Same lock, sibling and
+  /// replacement discipline as patch_take_id().
+  static bool patch_provenance(const std::string &path, const std::string &id,
+                               const std::string &version, uint32_t contract);
+
   /// Load a `.arp` file. Returns std::nullopt on any error (bad magic,
   /// truncated, decompression failure).
   static std::optional<AytherRecording> load(const std::string &path);
