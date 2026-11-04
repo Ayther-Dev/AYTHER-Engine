@@ -7,6 +7,7 @@
 // Skeleton: the subcommands validate their arguments and report that they are
 // not implemented yet. dump arrives in TP-005.15 and compare in TP-005.16;
 // trace-from-arp (TP-005.14) is implemented in trace_arp.cpp.
+#include "frame_compare.h"
 #include "frame_dump.h"
 #include "trace_arp.h"
 
@@ -14,8 +15,10 @@
 
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <string_view>
 
 namespace {
@@ -36,6 +39,7 @@ void print_help(std::FILE *out) {
         "  trace-from-arp   convert the inputs of a take (.arp) to a TSTRACE1 trace\n"
         "\n"
         "options:\n"
+        "  --golden FILE --candidate FILE [--except SUBPLANE]...   (compare)\n"
         "  --core DLL --rom FILE --arp FILE --out FILE   (dump: inputs come from the take)\n"
         "  --arp FILE --out FILE --content-sha HEX --config-sha HEX  (trace-from-arp)\n"
         "  --provider libretro|tessera_native   emulation provider of the session\n"
@@ -67,7 +71,8 @@ int main(int argc, char **argv) {
     }
 
     std::string provider = "libretro";
-    std::string arp, out, content_sha, config_sha, core, rom;
+    std::string arp, out, content_sha, config_sha, core, rom, golden, candidate;
+    std::vector<std::string> except;
     for (int i = 2; i < argc; ++i) {
         const std::string_view arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -88,12 +93,18 @@ int main(int argc, char **argv) {
             }
             continue;
         }
+        if (arg == "--except" && i + 1 < argc) {
+            except.emplace_back(argv[++i]);
+            continue;
+        }
         std::string *target = arg == "--arp"             ? &arp
                               : arg == "--out"           ? &out
                               : arg == "--content-sha"   ? &content_sha
                               : arg == "--config-sha"    ? &config_sha
                               : arg == "--core"          ? &core
                               : arg == "--rom"           ? &rom
+                              : arg == "--golden"        ? &golden
+                              : arg == "--candidate"     ? &candidate
                                                          : nullptr;
         if (target != nullptr) {
             if (i + 1 >= argc) {
@@ -142,6 +153,28 @@ int main(int argc, char **argv) {
         file.write(text->data(), static_cast<std::streamsize>(text->size()));
         file.close();
         return file.good() ? kExitOk : 4;
+    }
+
+    if (subcommand == "compare") {
+        if (golden.empty() || candidate.empty()) {
+            std::fprintf(stderr, "compare needs --golden and --candidate\n");
+            return kExitUsage;
+        }
+        const auto read = [](const std::string &path) {
+            std::ifstream f(path, std::ios::binary);
+            return std::string{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+        };
+        const auto result =
+            ayther::parity::compare_dumps(read(golden), read(candidate), except);
+        if (!result.ok) {
+            std::fprintf(stderr, "compare: %s\n", result.error.c_str());
+            return 1;
+        }
+        for (const auto &d : result.divergences)
+            std::printf("divergence %s frame %u golden %s candidate %s\n", d.subplane.c_str(),
+                        d.frame, d.a_hash.c_str(), d.b_hash.c_str());
+        std::printf("compare: %zu divergent subplane(s)\n", result.divergences.size());
+        return result.divergences.empty() ? kExitOk : 5;
     }
 
     std::fprintf(stderr, "%s: not implemented yet (provider %s)\n",

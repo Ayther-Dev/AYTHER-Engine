@@ -350,6 +350,17 @@ if(AYTHER_BUILD_PARITY_BENCH)
     target_compile_definitions(ayther_parity_dump_test PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
     add_dependencies(ayther_parity_dump_test ayther_test_core)
+
+    # TP-005.16: first divergence per subplane against a golden dump.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_synthetic.cpp"
+        integration)
+    target_sources(ayther_parity_bench_synthetic PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp")
+    target_compile_definitions(ayther_parity_bench_synthetic PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_bench_synthetic ayther_test_core)
 endif()
 
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
