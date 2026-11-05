@@ -111,9 +111,16 @@ pub fn fm_signature(fm_regs: &[u8], ch: usize) -> u64 {
     let bank = if ch < 3 { 0usize } else { 0x100 };
     let idx = ch % 3;
     let mut h = ay_fnv_mix(ay_fnv_mix(AY_FNV_SEED, 0), ch as u8);
+    let carriers = FM_CARRIERS[(fm_regs.get(bank + 0xB0 + idx).copied().unwrap_or(0) & 7) as usize];
     let mut base = 0x30usize;
     while base <= 0x9C {
-        h = ay_fnv_mix(h, fm_regs.get(bank + base + idx).copied().unwrap_or(0));
+        // The total level (0x40..0x4C) of a carrier operator is volume, not
+        // identity (kAudioEventAlgo 3): skipped. A modulator's stays.
+        let op = FM_SLOT_OPERATOR[((base - 0x30) / 4) % 4];
+        let is_tl = (base & 0xF0) == 0x40;
+        if !(is_tl && carriers & (1 << op) != 0) {
+            h = ay_fnv_mix(h, fm_regs.get(bank + base + idx).copied().unwrap_or(0));
+        }
         base += 4;
     }
     for off in [0xA0usize, 0xA4, 0xB0, 0xB4] {
@@ -121,6 +128,11 @@ pub fn fm_signature(fm_regs: &[u8], ch: usize) -> u64 {
     }
     h
 }
+
+/// Carrier operators per FM algorithm (bit n = operator n), as in the detector.
+const FM_CARRIERS: [u8; 8] = [0x8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF];
+/// Register slot order S1, S3, S2, S4 mapped to operator numbers.
+const FM_SLOT_OPERATOR: [u8; 4] = [0, 2, 1, 3];
 
 // ---------------------------------------------------------------------------
 // Los vectores
@@ -434,7 +446,11 @@ mod tests {
         assert_eq!(plane_tile_hash(&vram, 1, 0), 0x98d3_6be2_cd04_adb9);
         assert_eq!(
             fm_signature(&synthetic_fm_registers(), 0),
-            0xab38_7bbb_7090_249b
+            0x6a77_5e4a_e772_8677
+        );
+        assert_eq!(
+            fm_signature(&synthetic_fm_registers(), 4),
+            0xa144_8c41_1d57_2053
         );
     }
 
@@ -561,6 +577,45 @@ mod tests {
             mix(AY_FNV_SEED, &[3, 2, 0x10, 0x23, 0x01, 0x00, 0x04]),
             ids[3].1
         );
+    }
+
+    /// The pure FM identity must be the one the detector computes: load the
+    /// synthetic register bank through bus writes, key channel 0 and 4 on and
+    /// compare. A drift between this file and the detector fails here.
+    #[test]
+    fn fm_signature_equals_the_detectors() {
+        use crate::audio_event::{AudioEventDetector, AudioWrite, CHIP_FM};
+        let regs = synthetic_fm_registers();
+        let write = |addr: u16, data: u8| AudioWrite {
+            cycle: 0,
+            addr,
+            data,
+            chip: CHIP_FM,
+        };
+        let mut d = AudioEventDetector::new();
+        let mut loads = Vec::new();
+        for addr in 0x30u16..0x1B8 {
+            if (0x100..0x130).contains(&addr) {
+                continue; // second-bank 0x00..0x2F are not channel registers
+            }
+            loads.push(write(addr, regs[addr as usize]));
+        }
+        d.process_frame(0, &loads);
+        d.process_frame(1, &[write(0x28, 0xF0), write(0x28, 0xF5)]);
+        d.process_frame(2, &[write(0x28, 0x00), write(0x28, 0x05)]);
+        d.finish();
+        let mut found = [false; 2];
+        for e in d.events() {
+            if e.chip == CHIP_FM && e.channel == 0 {
+                assert_eq!(e.signature, fm_signature(&regs, 0));
+                found[0] = true;
+            }
+            if e.chip == CHIP_FM && e.channel == 4 {
+                assert_eq!(e.signature, fm_signature(&regs, 4));
+                found[1] = true;
+            }
+        }
+        assert_eq!(found, [true, true], "both channels produced an event");
     }
 
     /// Grupo de animación y panorama: valores escritos a mano. El grupo es
@@ -722,9 +777,16 @@ contract = {IDENTITY_CONTRACT}"
             let mut h = AY_FNV_SEED;
             h = (h ^ 0u64).wrapping_mul(1_099_511_628_211);
             h = (h ^ ch as u64).wrapping_mul(1_099_511_628_211);
+            let carriers =
+                [0x8u8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF][(regs[bank + 0xB0 + idx] & 7) as usize];
             let mut base = 0x30usize;
             while base <= 0x9C {
-                h = (h ^ regs[bank + base + idx] as u64).wrapping_mul(1_099_511_628_211);
+                let slot = (base - 0x30) / 4;
+                let op = [0u8, 2, 1, 3][slot % 4];
+                let skip = (base & 0xF0) == 0x40 && carriers & (1 << op) != 0;
+                if !skip {
+                    h = (h ^ regs[bank + base + idx] as u64).wrapping_mul(1_099_511_628_211);
+                }
                 base += 4;
             }
             for off in [0xA0usize, 0xA4, 0xB0, 0xB4] {

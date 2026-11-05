@@ -400,7 +400,8 @@ Published anchors include:
 | Sprite, tile 0, 1×1 | `0x41573b4753eaaeb4` |
 | Sprite, tile 3, 4×4 | `0xadba9fc9e8c721a7` |
 | Plane tile, pattern 1, palette 0 | `0x98d36be2cd04adb9` |
-| FM event over the synthetic register bank, channel 0 | `0xab387bbb7090249b` |
+| FM event over the synthetic register bank, channel 0 (algorithm 3, carrier total levels skipped) | `0x6a775e4ae7728677` |
+| FM event over the synthetic register bank, channel 4 | `0xa1448c411d572053` |
 
 The KAT suite also checks equivalence with the production `SpriteHasher`,
 palette sensitivity differences, zero-fill behavior, the exact FNV prime in
