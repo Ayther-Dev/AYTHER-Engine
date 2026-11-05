@@ -92,7 +92,8 @@ int main() {
   for (size_t i = 0; i < fm.size(); ++i)
     fm[i] = static_cast<uint8_t>((i * 53 + 7) & 0xFF);
   const auto fm_identity = [&fm](unsigned ch, bool instrument) {
-    static const uint8_t carriers_of[8] = {0x8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF};
+    static const uint8_t carriers_of[8] = {0x8, 0x8, 0x8, 0x8,
+                                           0xA, 0xE, 0xE, 0xF};
     static const uint8_t slot_op[4] = {0, 2, 1, 3};
     const size_t bank = ch < 3 ? 0 : 0x100, idx = ch % 3;
     const uint8_t carriers = carriers_of[fm[bank + 0xB0 + idx] & 7];
@@ -112,7 +113,8 @@ int main() {
       add(fm[bank + 0xB0 + idx]);
       add(fm[bank + 0xB4 + idx] & 0x3F);
     } else {
-      for (const size_t off : {size_t{0xA0}, size_t{0xA4}, size_t{0xB0}, size_t{0xB4}})
+      for (const size_t off :
+           {size_t{0xA0}, size_t{0xA4}, size_t{0xB0}, size_t{0xB4}})
         add(fm[bank + off + idx]);
     }
     return h;
