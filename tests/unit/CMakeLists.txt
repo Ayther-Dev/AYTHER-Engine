@@ -22,6 +22,7 @@ foreach(_source IN ITEMS
         failure_escalation_test.cpp
         frame_composability_test.cpp
         frame_view_digest_test.cpp
+        identity_contract_kat_test.cpp
         log_test.cpp
         loop_region_test.cpp
         music_sequence_model_test.cpp
