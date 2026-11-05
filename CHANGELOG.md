@@ -7,6 +7,39 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Take recordings (`.arp`) are now version 11 and carry the emulator provenance
+  (`emulator_id`, `emulator_version`, `determinism_contract`) after the take
+  id. `AytherRecording::peek_provenance()` and `patch_provenance()` read and
+  write it without recompressing the take, and `AYTHER_RECORDING_PROVENANCE`
+  lets frontends guard on it. Files up to version 10 load as `gpgx`, empty
+  version, contract 1. Because the
+  C++ struct grew, `AytherRecording::abi_size()` changes: rebuild against the
+  Engine headers you link. Older readers cannot open version 11 files.
+- Manifest schema 2 readers already ignore unknown tables, so the planned
+  `[emulator]` and `[identity]` tables will be added without raising the schema:
+  it stays at 2. A test (`schema_2_ignores_emulator_and_identity_tables`) pins
+  that a schema 2 pack carrying both tables still opens with its metadata
+  intact.
+- `pack_builder::stamp_manifest_provenance()` writes `[emulator]` and
+  `[identity]` into a manifest, and `pack_validate` now rejects a pack whose
+  `identity.contract` is newer than this build's (`IDENTITY_CONTRACT = 1`) with
+  `pack.identity_contract_too_new`. `[emulator]` is informational and never
+  rejects a pack.
+- `AytherSession::emulation_generation()` publishes the emulator id, version and
+  determinism contract of a session: `gpgx` (or the slug of another libretro
+  core's name) with the core's own version for the libretro provider, and
+  `tessera` with the hex backend build id for the native provider. The new
+  installed header `ayther/emulation_generation.h` holds the pure mapping.
+- `AytherSession::take_recording()` stamps the session generation into the take,
+  so a take recorded with a libretro core carries that core's id and version.
+- `tools/parity_bench` (option `AYTHER_BUILD_PARITY_BENCH`, ON in the
+  `windows-native` preset): skeleton of plane 3 of the Tessera parity bench with
+  the `dump`, `compare` and `trace-from-arp` subcommands and
+  `--provider libretro|tessera_native`. The subcommands validate their
+  arguments and report that they are not implemented yet.
+
 ### Security
 
 - Added explicit production pack trust registries with Ed25519 signer identity,

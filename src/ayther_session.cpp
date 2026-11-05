@@ -231,6 +231,13 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
                        std::to_string(native_result.code) + ")"};
     }
     im.native_result = native_result;
+    {
+      engine::NativeSessionInfo native_info;
+      if (im.native && im.native->info(native_info).code == 0)
+        im.generation = tessera_generation(native_info.backend_build_id);
+      else
+        im.generation = tessera_generation({});
+    }
     im.native_rom_crc32 = content_crc32(cfg.native_config.content);
     im.pack_trust_registry = cfg.trust_registry;
     if (!cfg.pack_path.empty()) {
@@ -293,6 +300,8 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
     return Error{ErrorCode::NotFound,
                  "RetroRunner::init failed (core or ROM): " + cfg.core_path};
   }
+  im.generation =
+      libretro_generation(im.runner.library_name(), im.runner.library_version());
   im.core_path = cfg.core_path; // : para instanciar el shadow core (lazy)
   im.rom_path = cfg.rom_path;
   im.pack_trust_registry = cfg.trust_registry;
@@ -588,6 +597,10 @@ engine::NativeEmulation *AytherSession::native_emulation() noexcept {
 const engine::NativeEmulation *
 AytherSession::native_emulation() const noexcept {
   return impl_->native.get();
+}
+
+const EmulationGeneration &AytherSession::emulation_generation() const noexcept {
+  return impl_->generation;
 }
 
 engine::NativeResult AytherSession::native_submit_presentation_policy(
@@ -7836,7 +7849,12 @@ size_t AytherSession::recorded_frames() const noexcept {
 
 AytherRecording AytherSession::take_recording() {
   Impl &im = *impl_;
-  return im.recording.take(game_id());
+  AytherRecording take = im.recording.take(game_id());
+  // Spec 008 (RF-6.1): the take says which emulator made it.
+  take.emulator_id = im.generation.id;
+  take.emulator_version = im.generation.version;
+  take.determinism_contract = im.generation.determinism_contract;
+  return take;
 }
 
 std::vector<uint8_t> AytherSession::audio_fm_registers() const {

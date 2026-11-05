@@ -113,7 +113,8 @@
       "description": "Complete C++ engine with manifest-mode native dependencies",
       "inherits": ["windows-base", "native-base"],
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "AYTHER_BUILD_PARITY_BENCH": "ON"
       }
     },
     {
@@ -191,7 +192,8 @@
       "description": "Complete C++ engine with manifest-mode native dependencies",
       "inherits": ["linux-base", "native-base"],
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "AYTHER_BUILD_PARITY_BENCH": "ON"
       }
     },
     {

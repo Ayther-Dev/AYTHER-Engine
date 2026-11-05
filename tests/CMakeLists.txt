@@ -307,6 +307,15 @@ target_compile_definitions(ayther_plane_set_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_plane_set_session_test ayther_test_core)
 
+# Spec 008 (TP-008.6): the generation (emulator id, version, contract) a live
+# libretro session publishes, driven with the test core.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/emulation_generation_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_emulation_generation_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_emulation_generation_session_test ayther_test_core)
+
 # Spec 002 (contracts.md C3): the render observation a live session publishes
 # through Config::render_observer, driven with the test core.
 ayther_add_native_test(
@@ -315,6 +324,53 @@ ayther_add_native_test(
 target_compile_definitions(ayther_render_observation_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_render_observation_session_test ayther_test_core)
+
+# Spec 008 (TP-005.13): plane 3 of the Tessera parity bench.
+if(AYTHER_BUILD_PARITY_BENCH)
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench"
+        "${PROJECT_BINARY_DIR}/tools/parity_bench")
+
+    # TP-005.14: take inputs -> TSTRACE1 -> replay gives the take's frame hashes.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_trace_test.cpp"
+        integration)
+    target_sources(ayther_parity_trace_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/trace_arp.cpp")
+    target_compile_definitions(ayther_parity_trace_test PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_trace_test ayther_test_core)
+
+    # TP-005.15: FrameView dump with a hash per subplane.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_dump_test.cpp"
+        integration)
+    target_sources(ayther_parity_dump_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp")
+    target_compile_definitions(ayther_parity_dump_test PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_dump_test ayther_test_core)
+
+    # TP-005.16: first divergence per subplane against a golden dump.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_synthetic.cpp"
+        integration)
+    target_sources(ayther_parity_bench_synthetic PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp")
+    target_compile_definitions(ayther_parity_bench_synthetic PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_bench_synthetic ayther_test_core)
+
+    # TP-005.17: the native job runs parity_bench on both scenes.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_selftest.cpp"
+        integration)
+    target_compile_definitions(ayther_parity_bench_selftest PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+        PARITY_BENCH_PATH="$<TARGET_FILE:parity_bench>")
+    add_dependencies(ayther_parity_bench_selftest ayther_test_core parity_bench)
+endif()
 
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
 # the deprecated memory ids retain a stale non-empty prefix.

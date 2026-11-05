@@ -19,6 +19,7 @@ foreach(_source IN ITEMS
         decode_limits_test.cpp
         element_record_test.cpp
         element_scene_test.cpp
+        emulation_generation_test.cpp
         failure_escalation_test.cpp
         frame_composability_test.cpp
         frame_view_digest_test.cpp

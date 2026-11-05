@@ -272,6 +272,18 @@ static bool write_u32_le(std::vector<char> &bytes, std::size_t offset,
   return true;
 }
 
+// A v11 image minus its provenance block (the trailing u32 is the block size),
+// stamped 10: the take id is again the last 8 bytes.
+static std::vector<char> to_v10_image(const std::vector<char> &v11) {
+  std::uint32_t block = 0;
+  if (!read_u32_le(v11, v11.size() - 4, block) || block > v11.size() - 4)
+    return {};
+  std::vector<char> image(v11.begin(),
+                          v11.end() - 4 - static_cast<std::ptrdiff_t>(block));
+  write_u32_le(image, 4, 10U);
+  return image;
+}
+
 static bool locate_sprite_counts(const std::vector<char> &bytes,
                                  std::size_t &counts_offset,
                                  std::uint32_t &frame_count,
@@ -621,9 +633,13 @@ int main() {
       std::vector<char> image;
       std::ifstream in(p, std::ios::binary);
       image.assign(std::istreambuf_iterator<char>(in), {});
-      // v10: the 8-byte take id follows the shadow.
-      const size_t size_pos =
-          image.size() - 8 - AytherRecording::kAudioFmRegisterBytes - 4;
+      // v11: the 8-byte take id and the provenance block (its size is the
+      // trailing u32) follow the shadow.
+      std::uint32_t provenance = 0;
+      CHECK(read_u32_le(image, image.size() - 4, provenance),
+            "v11: tamaño del bloque de procedencia");
+      const size_t size_pos = image.size() - 4 - provenance - 8 -
+                              AytherRecording::kAudioFmRegisterBytes - 4;
       image[size_pos] = static_cast<char>(0x01);
       image[size_pos + 1] = static_cast<char>(0x02);
       const fs::path bad = test_directory / "fm-regs-bad.arp";
@@ -1085,6 +1101,152 @@ int main() {
     fs::remove(concurrent, ec);
   }
 
+  CHECK(AytherRecording::abi_size() == sizeof(AytherRecording),
+        "abi_size() coincide con sizeof de la struct compilada en el Engine");
+
+  // Spec 008 (RF-6.1, TP-008.1): v11 carries the emulator provenance after
+  // take_id, closed by a u32 holding the block size; <= v10 reads as gpgx.
+  {
+    AytherRecording t = make_rec();
+    t.take_id = 0x0123456789ABCDEFULL;
+    t.emulator_id = "tessera";
+    t.emulator_version = "0.1.0-dev";
+    t.determinism_contract = 3U;
+    const fs::path v11 = test_directory / "provenance_v11.arp";
+    CHECK(t.save(v11.string()), "v11: guardar con procedencia");
+    std::uint32_t version = 0;
+    CHECK(read_u32_le(read_bytes(v11), 4, version) && version == 11U,
+          "v11: versión sellada 11");
+    auto back = AytherRecording::load(v11.string());
+    CHECK(back && back->emulator_id == "tessera" &&
+              back->emulator_version == "0.1.0-dev" &&
+              back->determinism_contract == 3U &&
+              back->take_id == 0x0123456789ABCDEFULL &&
+              back->inputs == t.inputs && back->audio_hashes == t.audio_hashes,
+          "v11: procedencia y toma hacen ida y vuelta");
+    auto peeked = AytherRecording::peek_take_id(v11.string());
+    CHECK(peeked && *peeked == 0x0123456789ABCDEFULL,
+          "v11: peek_take_id localiza el id antes del bloque");
+    CHECK(AytherRecording::patch_take_id(v11.string(), 0xABCDULL),
+          "v11: patch_take_id cambia el id");
+    back = AytherRecording::load(v11.string());
+    CHECK(back && back->take_id == 0xABCDULL && back->emulator_id == "tessera" &&
+              back->emulator_version == "0.1.0-dev" &&
+              back->determinism_contract == 3U,
+          "v11: patch_take_id conserva la procedencia");
+
+    const fs::path v10p = test_directory / "provenance_v10.arp";
+    CHECK(write_bytes(v10p, to_v10_image(read_bytes(v11))),
+          "v10: derivar el fixture de v11");
+    back = AytherRecording::load(v10p.string());
+    CHECK(back && back->emulator_id == "gpgx" &&
+              back->emulator_version.empty() &&
+              back->determinism_contract == 1U && back->take_id == 0xABCDULL,
+          "v<=10: se lee como gpgx / vacío / 1");
+
+    std::vector<char> bad = read_bytes(v11);
+    CHECK(write_u32_le(bad, bad.size() - 4, 0x00FFFFFFU),
+          "v11: corromper el tamaño del bloque");
+    const fs::path bad_path = test_directory / "provenance_bad.arp";
+    CHECK(write_bytes(bad_path, bad) &&
+              !AytherRecording::load(bad_path.string()),
+          "v11: un tamaño de bloque inconsistente no carga");
+    CHECK(!AytherRecording::peek_take_id(bad_path.string()),
+          "v11: peek_take_id rechaza un tamaño de bloque inconsistente");
+  }
+
+  // Spec 008 (RF-6.1, TP-008.2): peek/patch of the provenance without
+  // decompressing, same discipline as patch_take_id.
+  {
+    AytherRecording t = make_rec();
+    t.take_id = 0x77ULL;
+    const fs::path src = test_directory / "prov_src.arp";
+    CHECK(t.save(src.string()), "peek/patch: guardar la toma base");
+    const std::vector<char> v11_bytes = read_bytes(src);
+
+    // peek on a v11 file with the default provenance.
+    auto peek = AytherRecording::peek_provenance(src.string());
+    CHECK(peek && peek->id == "gpgx" && peek->version.empty() &&
+              peek->contract == 1U,
+          "peek: v11 por defecto = gpgx / vacío / 1");
+
+    // A v10 take is patched up to v11 without touching the payload.
+    const fs::path v10 = test_directory / "prov_patch_v10.arp";
+    CHECK(write_bytes(v10, to_v10_image(v11_bytes)), "patch: fixture v10");
+    peek = AytherRecording::peek_provenance(v10.string());
+    CHECK(peek && peek->id == "gpgx" && peek->version.empty() &&
+              peek->contract == 1U,
+          "peek: v10 se lee como gpgx / vacío / 1");
+    CHECK(AytherRecording::patch_provenance(v10.string(), "tessera",
+                                            "0.1.0-dev", 5U),
+          "patch: v10 sube a v11 con la procedencia");
+    std::uint32_t version = 0;
+    CHECK(read_u32_le(read_bytes(v10), 4, version) && version == 11U,
+          "patch: versión sellada 11");
+    auto back = AytherRecording::load(v10.string());
+    CHECK(back && back->emulator_id == "tessera" &&
+              back->emulator_version == "0.1.0-dev" &&
+              back->determinism_contract == 5U && back->take_id == 0x77ULL &&
+              back->inputs == t.inputs &&
+              back->initial_state == t.initial_state &&
+              back->audio_hashes == t.audio_hashes,
+          "patch: el resto de la toma queda intacto");
+    peek = AytherRecording::peek_provenance(v10.string());
+    CHECK(peek && peek->id == "tessera" && peek->version == "0.1.0-dev" &&
+              peek->contract == 5U,
+          "peek: lee lo parcheado");
+
+    // Same values: successful no-op, byte for byte.
+    const std::vector<char> before = read_bytes(v10);
+    CHECK(AytherRecording::patch_provenance(v10.string(), "tessera",
+                                            "0.1.0-dev", 5U) &&
+              read_bytes(v10) == before,
+          "patch: los mismos valores son un no-op");
+    // Different (longer) values on a v11 take.
+    CHECK(AytherRecording::patch_provenance(v10.string(), "gpgx", "1.2.3", 2U),
+          "patch: v11 cambia la procedencia");
+    back = AytherRecording::load(v10.string());
+    CHECK(back && back->emulator_id == "gpgx" &&
+              back->emulator_version == "1.2.3" &&
+              back->determinism_contract == 2U && back->take_id == 0x77ULL &&
+              back->inputs == t.inputs,
+          "patch: v11 conserva id de toma y payload");
+    CHECK(AytherRecording::peek_take_id(v10.string()) == 0x77ULL,
+          "patch: peek_take_id sigue localizando el id");
+
+    // Rejections: oversized strings and unreadable files change nothing.
+    const std::vector<char> kept = read_bytes(v10);
+    CHECK(!AytherRecording::patch_provenance(v10.string(),
+                                             std::string(33, 'x'), "", 0U) &&
+              !AytherRecording::patch_provenance(v10.string(), "gpgx",
+                                                 std::string(65, 'x'), 0U) &&
+              !AytherRecording::patch_provenance(v10.string(), "t\xC3\xA9ssera",
+                                                 "", 0U) &&
+              !AytherRecording::patch_provenance(v10.string(), "gpgx",
+                                                 "a\nb", 0U) &&
+              read_bytes(v10) == kept,
+          "patch: rechaza id > 32, versión > 64 y no ASCII sin tocar el archivo");
+    const fs::path junk = test_directory / "prov_junk.arp";
+    CHECK(write_bytes(junk, std::vector<char>{'n', 'o', 'p', 'e'}),
+          "patch: fixture basura");
+    CHECK(!AytherRecording::peek_provenance(junk.string()) &&
+              !AytherRecording::patch_provenance(junk.string(), "x", "", 0U),
+          "peek/patch: un archivo no legible falla");
+
+    // v9 take: gets the empty shadow, id 0 and the provenance.
+    std::vector<char> v9_bytes = to_v10_image(v11_bytes);
+    v9_bytes.resize(v9_bytes.size() - 8);
+    CHECK(write_u32_le(v9_bytes, 4, 9U), "patch: sellar versión 9");
+    const fs::path v9 = test_directory / "prov_patch_v9.arp";
+    CHECK(write_bytes(v9, v9_bytes), "patch: fixture v9");
+    CHECK(AytherRecording::patch_provenance(v9.string(), "tessera", "x", 2U),
+          "patch: v9 sube a v11");
+    back = AytherRecording::load(v9.string());
+    CHECK(back && back->emulator_id == "tessera" && back->take_id == 0U &&
+              back->determinism_contract == 2U && back->inputs == t.inputs,
+          "patch: v9 conserva el payload y no inventa id de toma");
+  }
+
   // Spec 007 (RF-3.1, RF-3.2): v10 carries the take id as the trailing 8
   // bytes; v8/v9 files load 0 and patch_take_id upgrades them in place.
   {
@@ -1100,7 +1262,9 @@ int main() {
           "v10: peek_take_id lee el id sin descomprimir");
 
     // A v9 image is the v10 one without its trailing id, version stamped 9.
-    std::vector<char> bytes = read_bytes(v10);
+    // save() now writes v11, so first strip the provenance block (its size is
+    // the trailing u32) and stamp 10 to obtain the v10 image.
+    std::vector<char> bytes = to_v10_image(read_bytes(v10));
     CHECK(bytes.size() > 24, "v10: bytes del fixture");
     std::vector<char> v9_bytes(bytes.begin(), bytes.end() - 8);
     CHECK(write_u32_le(v9_bytes, 4, 9U), "v9: sellar versión 9");

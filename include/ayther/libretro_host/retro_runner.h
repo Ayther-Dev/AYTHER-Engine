@@ -55,6 +55,10 @@ public:
   }
   size_t work_ram_size() const { return ram_size_; }
 
+  /// `retro_system_info` strings of the loaded core (empty before init()).
+  const std::string &library_name() const { return library_name_; }
+  const std::string &library_version() const { return library_version_; }
+
   // Returns the core-owned mutable work-RAM view. Writes are immediately
   // visible to the emulated CPU. AytherSession owns the policy that marks the
   // session modified and prevents invalid recording assumptions.
@@ -754,6 +758,7 @@ private:
 
   void *ram_ptr_ = nullptr;
   size_t ram_size_ = 0;
+  std::string library_name_, library_version_;
   double fps_ = 60.0;         // filled by load_rom() from retro_system_av_info
   unsigned pixel_format_ = 2; // default: RGB565 (Genesis Plus GX)
   bool running_ = false;
