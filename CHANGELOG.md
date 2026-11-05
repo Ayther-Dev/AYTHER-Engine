@@ -68,6 +68,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Core probe contract v2 (`docs/CORE_PROBE_CONTRACT.md`): `probe_core_v2`
+  reports a verdict, the PE/ELF architecture, the AYTHER ABI and the capability
+  mask against the required `0xEFFFF`; the installed `bin/ayther_core_probe`
+  command prints the `AYTHER_STATUS` line and exits 0, 2, 3 or 4; the package
+  publishes the shared probe vectors in `share/ayther/probe-vectors/` with the
+  fixture cores `ayther_test_core_partial` and `ayther_test_core_hang`. The
+  parent process sets the verdicts `timeout` (10 s limit, exit 5) and `crashed`
+  (exit 6); the integration guide is in the contract.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions

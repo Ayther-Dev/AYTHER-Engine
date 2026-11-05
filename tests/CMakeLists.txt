@@ -271,9 +271,11 @@ endfunction()
 # The ABI oracles need an emulator core that speaks the extension. Building one
 # here -- rather than pointing at a binary that /third_party/cores/* gitignores
 # -- is what lets the positive half of the negotiation run on a clean checkout.
-add_subdirectory(
-    "${PROJECT_SOURCE_DIR}/tools/test_core"
-    "${PROJECT_BINARY_DIR}/tools/test_core")
+if(NOT TARGET ayther_test_core)
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/test_core"
+        "${PROJECT_BINARY_DIR}/tools/test_core")
+endif()
 
 # A loadable library without Libretro entry points makes the negative probe
 # case deterministic on every platform and independent of system DLL layout.
@@ -296,6 +298,26 @@ target_compile_definitions(ayther_core_probe_test PRIVATE
     AYTHER_MISSING_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}/missing-core")
 add_dependencies(ayther_core_probe_test
     ayther_test_core
+    ayther_not_a_core)
+
+# Contract v2 (docs/CORE_PROBE_CONTRACT.md, TP-013.4): the in-process vectors,
+# named ayther.contract.core_probe_vectors. The hang fixture is only located,
+# never loaded: its verdict belongs to the supervising parent.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/contracts/core_probe_vectors.cpp"
+    contract)
+target_compile_definitions(ayther_core_probe_vectors PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+    AYTHER_TEST_CORE_STOCK_PATH="$<TARGET_FILE:ayther_test_core_stock>"
+    AYTHER_TEST_CORE_PARTIAL_PATH="$<TARGET_FILE:ayther_test_core_partial>"
+    AYTHER_TEST_CORE_HANG_PATH="$<TARGET_FILE:ayther_test_core_hang>"
+    AYTHER_NOT_A_CORE_PATH="$<TARGET_FILE:ayther_not_a_core>"
+    AYTHER_MISSING_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}/missing-core")
+add_dependencies(ayther_core_probe_vectors
+    ayther_test_core
+    ayther_test_core_stock
+    ayther_test_core_partial
+    ayther_test_core_hang
     ayther_not_a_core)
 
 # The plane-set catalogue mutations (define, undefine, clear) rebuild the
