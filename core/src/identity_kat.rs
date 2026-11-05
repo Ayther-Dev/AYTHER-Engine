@@ -152,6 +152,31 @@ pub fn synthetic_fm_registers() -> Vec<u8> {
     (0..0x200).map(|i| ((i * 53 + 7) & 0xFF) as u8).collect()
 }
 
+/// Identity of an animation group: xxh3 of the member hashes, sorted ascending,
+/// as little-endian bytes. Member order is deliberately discarded.
+pub fn anim_group_id(members: &[u64]) -> u64 {
+    let mut sorted = members.to_vec();
+    sorted.sort_unstable();
+    let mut buf = Vec::with_capacity(sorted.len() * 8);
+    for h in sorted {
+        buf.extend_from_slice(&h.to_le_bytes());
+    }
+    xxh3_64(&buf)
+}
+
+/// Contribution of one non-empty cell to the screen-plane (panorama) signature.
+/// `column` and `row` are `screen >> 3`; `plane` is 0 (B), 1 (A) or 2 (W). The
+/// plane signature is the wrapping sum of these terms.
+pub fn screen_plane_term(cell_hash: u64, column: u32, row: u32, plane: u32) -> u64 {
+    let mut x = cell_hash;
+    x ^= u64::from(column).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    x ^= u64::from(row).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    x ^= u64::from(plane + 1).wrapping_mul(0x1656_67B1_9E37_79F9);
+    x ^= x >> 33;
+    x = x.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+    x ^ (x >> 29)
+}
+
 /// Member hashes of the synthetic pose used by the pose vectors.
 const POSE_HASHES: [u64; 2] = [0x41573b4753eaaeb4, 0xadba9fc9e8c721a7];
 
@@ -270,6 +295,16 @@ pub fn vectors() -> Vec<Kat> {
             id: "pose",
             case_description: "flips 2|3: desplazamiento global de 0|1, misma clave",
             expected: pose_key_with_flips(&POSE_HASHES, Some(&[2, 3])),
+        },
+        Kat {
+            id: "animation_group",
+            case_description: "dos miembros: el orden de entrada no cuenta",
+            expected: anim_group_id(&[POSE_HASHES[1], POSE_HASHES[0]]),
+        },
+        Kat {
+            id: "panorama",
+            case_description: "termino de una celda: hash del tile 1, columna 3, fila 5, plano A",
+            expected: screen_plane_term(0x98d36be2cd04adb9, 3, 5, 1),
         },
         Kat {
             id: "palette_variant",
@@ -526,6 +561,32 @@ mod tests {
             mix(AY_FNV_SEED, &[3, 2, 0x10, 0x23, 0x01, 0x00, 0x04]),
             ids[3].1
         );
+    }
+
+    /// Grupo de animación y panorama: valores escritos a mano. El grupo es
+    /// independiente del orden de entrada (la spec lo ordena), y con los
+    /// miembros ya ordenados coincide con la clave de pose sin flips porque la
+    /// construcción es la misma (xxh3 de los hashes little-endian).
+    #[test]
+    fn animation_group_and_panorama_answers_are_pinned() {
+        assert_eq!(
+            anim_group_id(&[POSE_HASHES[1], POSE_HASHES[0]]),
+            0x43f1af85db6d39d0
+        );
+        assert_eq!(
+            anim_group_id(&POSE_HASHES),
+            anim_group_id(&[POSE_HASHES[1], POSE_HASHES[0]])
+        );
+        assert_eq!(
+            screen_plane_term(0x98d36be2cd04adb9, 3, 5, 1),
+            0x4baccc35b93adb02
+        );
+        // Sumar las celdas es conmutativo: el orden de observación no cuenta.
+        let a = screen_plane_term(1, 0, 0, 0).wrapping_add(screen_plane_term(2, 1, 0, 0));
+        let b = screen_plane_term(2, 1, 0, 0).wrapping_add(screen_plane_term(1, 0, 0, 0));
+        assert_eq!(a, b);
+        // Dos planos distintos con la misma celda dan términos distintos.
+        assert_ne!(screen_plane_term(7, 2, 2, 0), screen_plane_term(7, 2, 2, 1));
     }
 
     /// El TOML publicable trae todos los vectores y el seed, que es el dato sin

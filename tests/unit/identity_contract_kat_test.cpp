@@ -72,5 +72,19 @@ int main() {
         "DAC signature matches the published vector");
   check(mix({3, 2, 0x10, 0x23, 0x01, 0x00, 0x04}) == 0x5975df5f33250ed2ULL,
         "PCM signature matches the published vector");
+  // Panorama: the contribution of one cell, from the screen-plane recipe.
+  const auto plane_term = [](uint64_t hash, uint32_t col, uint32_t row,
+                             uint32_t plane) {
+    uint64_t x = hash;
+    x ^= static_cast<uint64_t>(col) * 0x9E3779B97F4A7C15ULL;
+    x ^= static_cast<uint64_t>(row) * 0xC2B2AE3D27D4EB4FULL;
+    x ^= static_cast<uint64_t>(plane + 1) * 0x165667B19E3779F9ULL;
+    x ^= x >> 33;
+    x *= 0xFF51AFD7ED558CCDULL;
+    x ^= x >> 29;
+    return x;
+  };
+  check(plane_term(0x98d36be2cd04adb9ULL, 3, 5, 1) == 0x4baccc35b93adb02ULL,
+        "panorama cell term matches the published vector");
   return failures ? 1 : 0;
 }
