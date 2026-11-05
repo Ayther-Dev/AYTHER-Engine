@@ -125,6 +125,10 @@ pub fn fm_signature(fm_regs: &[u8], ch: usize) -> u64 {
 // Los vectores
 // ---------------------------------------------------------------------------
 
+/// Version of the identity contract (`AYTHER_IDENTITY_CONTRACT` in
+/// `ayther_identity_contract.h`). Changes only when an identity changes.
+pub const IDENTITY_CONTRACT: u32 = 1;
+
 /// One known-answer identity test vector.
 pub struct Kat {
     /// Identity family: `sprite`, `plane_tile`, or `fm_event`.
@@ -207,6 +211,10 @@ pub fn vectors_toml() -> String {
                 # `pack-identities.md` §9 lista los siete errores que compilan\n\
                 # y no matchean nada.\n\n",
     );
+    s.push_str(&format!("[identity]
+contract = {}
+
+", IDENTITY_CONTRACT));
     s.push_str("seed_fnv  = \"0x14650fb0739d0383\"   # NO es el basis canonico\n");
     s.push_str("prime_fnv = \"0x00000100000001b3\"\n\n");
     for k in vectors() {
@@ -333,6 +341,8 @@ mod tests {
     fn published_toml_is_complete() {
         let t = vectors_toml();
         assert_eq!(t.matches("[[vector]]").count(), vectors().len());
+        assert!(t.contains(&format!("[identity]
+contract = {IDENTITY_CONTRACT}")));
         assert!(
             t.contains("0x14650fb0739d0383"),
             "sin el seed no se reproduce nada"
