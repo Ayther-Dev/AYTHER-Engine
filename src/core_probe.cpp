@@ -549,15 +549,18 @@ ProbeReport probe_core_v2(const std::filesystem::path &core_path) {
                        " and this process is " + std::string{kHostArchitecture};
       return report;
     }
-    if (report.architecture.empty()) {
-      report.architecture = std::string{kHostArchitecture};
-    }
 
     auto loaded = load_libretro_core(core_path);
     if (!loaded) {
+      // Not a library the loader accepts: the architecture is only reported
+      // for a file that was read as a binary of this host.
+      report.architecture.clear();
       report.verdict = ProbeVerdict::not_a_core;
       report.message = loaded.error.message;
       return report;
+    }
+    if (report.architecture.empty()) {
+      report.architecture = std::string{kHostArchitecture};
     }
     return probe_loaded_core(std::move(report), *loaded);
   } catch (const std::exception &failure) {
