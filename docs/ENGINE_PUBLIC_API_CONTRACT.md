@@ -253,8 +253,22 @@ releases any handle acquired before the failure.
 
 `CoreInfo::serialize()` and `CoreProbe::serialize()` return the same compact
 JSON object. Strings supplied by the core escape quotes, reverse solidi, and
-all JSON control characters. Protocol framing such as `AYTHER_STATUS`, event
-names, and process exit codes remains a Runtime responsibility.
+all JSON control characters. These two serializers do not frame a protocol
+line.
+
+`probe_core_v2(path)` implements the core probe contract
+([`CORE_PROBE_CONTRACT.md`](CORE_PROBE_CONTRACT.md)): it returns a `ProbeReport`
+by value and never throws. It checks the file, reads the PE or ELF architecture
+from the headers, loads the library, and then, for a core that exports
+`ayther_get_interface`, calls `retro_set_environment`, `retro_init`,
+`ayther_get_interface` and `retro_deinit` (never loading content) and compares
+the announced capability mask with `kRequiredCapabilities`. `ProbeVerdict`,
+`verdict_name`, `verdict_reason` and `verdict_exit_code` carry the verdict
+table; `ProbeReport::status_line()` is the `AYTHER_STATUS` line of protocol
+version 2. Because a core can hang or crash in `retro_init`, a product calls it
+in a child process with a time limit; the installed `bin/ayther_core_probe`
+command does exactly that call, and the parent sets the verdicts `timeout` and
+`crashed`.
 
 Loading a native library executes code under platform-loader rules and is not
 a sandbox or trust decision. `CoreProbe` is single-owner; destruction or moves

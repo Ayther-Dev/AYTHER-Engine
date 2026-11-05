@@ -741,7 +741,7 @@ _The installed header (`include/ayther/engine/capabilities.hpp`) carries the ful
 
 ## engine/core_probe.hpp
 
-**Declares:** `CoreInfo`, `CoreProbe`
+**Declares:** `CoreInfo`, `CoreProbe`, `ProbeReport`, `ProbeVerdict`
 
 _The installed header (`include/ayther/engine/core_probe.hpp`) carries the full documentation of every symbol._
 
