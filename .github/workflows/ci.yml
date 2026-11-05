@@ -504,12 +504,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Read the Tessera lock
+        if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
+        id: tessera_lock
+        shell: pwsh
+        run: |
+          # dependencies/tessera.lock.json is the only place the Tessera commit
+          # is written down (TP-016.1). CMake checks the installed package
+          # against the same file when AYTHER_ENABLE_TESSERA is on.
+          $lock = Get-Content dependencies/tessera.lock.json -Raw | ConvertFrom-Json
+          if ($lock.sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'The Tessera lock has no source commit.' }
+          "commit=$($lock.sourceCommit)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Check out the pinned Tessera provider
         if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
         uses: actions/checkout@v5
         with:
           repository: Ayther-Dev/AYTHER-Tessera
-          ref: 57046055ddff8afbdf2abe445b00403e17e3afb6
+          ref: ${{ steps.tessera_lock.outputs.commit }}
           path: build/tessera-source
           persist-credentials: false
 
@@ -523,9 +535,15 @@ jobs:
             ./tools/bootstrap-dependencies.ps1 -Download
             ./tools/bootstrap-backends.ps1 -Download -SelectedOnly
             ./tools/check.ps1 -Preset windows-release -Stage Configure -Jobs 1
-            cmake --build build/windows-release --target tessera_core tessera_cli tessera_generate_fixture_roms tessera_audio_fixture_generator --parallel 1
+            cmake --build build/windows-release --target tessera_core tessera_cli --parallel 1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             cmake --install build/windows-release --prefix "$env:RUNNER_TEMP/tessera-install"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # Since the API 1.1 line the fixture ROM and audio generators exist
+            # only in the reference configuration (ClownMDEmu, never installed).
+            # It supplies fixtures and the replay evidence, not the package.
+            ./tools/check.ps1 -Preset windows-clown-reference -Stage Configure -Jobs 1
+            cmake --build build/windows-clown-reference --target tessera_generate_fixture_roms tessera_audio_fixture_generator --parallel 1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Pop-Location }
           "TESSERA_PREFIX=$env:RUNNER_TEMP/tessera-install" |
@@ -610,20 +628,22 @@ jobs:
             cmake --build "build/${{ matrix.preset }}" --target make_test_pack --parallel 1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $source = Join-Path $PWD 'build/tessera-source'
-            $fixtures = Join-Path $source 'build/windows-release/native-fixtures'
+            $fixtures = Join-Path $source 'build/windows-clown-reference/native-fixtures'
             & (Join-Path $source 'tools/generate-native-fixtures.ps1') `
-              -TesseraBuild (Join-Path $source 'build/windows-release') `
+              -TesseraBuild (Join-Path $source 'build/windows-clown-reference') `
               -EnginePackTool (Join-Path $PWD "build/${{ matrix.preset }}/bin/make_test_pack.exe")
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             if ('${{ matrix.preset }}' -eq 'windows-native-vpx') {
-              cmake --build (Join-Path $source 'build/windows-release') `
+              cmake --build (Join-Path $source 'build/windows-clown-reference') `
                 --target tessera_megadrive_replay_test --parallel 1
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              ctest --test-dir (Join-Path $source 'build/windows-release') `
+              ctest --test-dir (Join-Path $source 'build/windows-clown-reference') `
                 -R '^integration.megadrive_replay$' --output-on-failure -j 1
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              $evidenceRoot = Join-Path $source 'build/evidence/phase3-Release-OFF'
-              $evidence = Get-ChildItem $evidenceRoot -Directory |
+              # The directory is named after the build type of the reference
+              # preset (phase3-<type>-OFF): take the newest run with a summary.
+              $evidence = Get-ChildItem (Join-Path $source 'build/evidence') -Directory -Filter 'phase3-*' |
+                ForEach-Object { Get-ChildItem $_.FullName -Directory } |
                 Where-Object { Test-Path (Join-Path $_.FullName 'summary.json') } |
                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
               if (-not $evidence) { throw 'Tessera replay produced no phase 3 evidence.' }
@@ -748,7 +768,7 @@ jobs:
         shell: pwsh
         run: |
           $source = Join-Path $PWD 'build/tessera-source'
-          $fixtures = Join-Path $source 'build/windows-release/native-fixtures'
+          $fixtures = Join-Path $source 'build/windows-clown-reference/native-fixtures'
           cmake --preset windows-native-coverage `
             -DAYTHER_ENABLE_TESSERA=ON `
             "-DTessera_DIR=$env:TESSERA_PREFIX/lib/cmake/Tessera" `

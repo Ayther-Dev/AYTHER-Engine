@@ -74,6 +74,68 @@ set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
     LABELS  "native;package")
 
+# The Tessera lock (TP-016.1): the real lock is well formed, and the checker
+# rejects a lock or an installed package that does not match it. Each rejection
+# case passes only when the checker fails with the expected diagnostic.
+set(AYTHER_TESSERA_LOCK_FILE
+    "${PROJECT_SOURCE_DIR}/dependencies/tessera.lock.json")
+set(_tessera_fixtures "${PROJECT_SOURCE_DIR}/tests/fixtures/tessera_lock")
+function(ayther_add_tessera_lock_test _name _lock _prefix _expect)
+    set(_command "${CMAKE_COMMAND}" "-DAYTHER_TESSERA_LOCK=${_lock}")
+    if(_prefix)
+        list(APPEND _command "-DAYTHER_TESSERA_PREFIX=${_prefix}")
+    endif()
+    list(APPEND _command -P "${PROJECT_SOURCE_DIR}/tools/check_tessera_lock.cmake")
+    add_test(NAME "ayther.package.tessera_lock.${_name}" COMMAND ${_command})
+    set_tests_properties("ayther.package.tessera_lock.${_name}" PROPERTIES
+        TIMEOUT 30
+        LABELS  "native;package"
+        PASS_REGULAR_EXPRESSION "${_expect}")
+endfunction()
+
+ayther_add_tessera_lock_test(well_formed
+    "${AYTHER_TESSERA_LOCK_FILE}" "" "Tessera lock: .* is well formed")
+ayther_add_tessera_lock_test(unreleased_matches_package
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_unreleased" "matches")
+ayther_add_tessera_lock_test(released_matches_package
+    "${_tessera_fixtures}/lock_released.json"
+    "${_tessera_fixtures}/pkg_released" "matches")
+ayther_add_tessera_lock_test(rejects_other_commit
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_other_commit"
+    "TESSERA_LOCK_MISMATCH: the package at .* was built from")
+ayther_add_tessera_lock_test(rejects_other_version
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_other_version"
+    "TESSERA_LOCK_MISMATCH: the package version is 0.2.0")
+ayther_add_tessera_lock_test(rejects_tag_when_package_is_another_version
+    "${_tessera_fixtures}/lock_released.json"
+    "${_tessera_fixtures}/pkg_unreleased"
+    "TESSERA_LOCK_MISMATCH: the package version is 0.1.0, the lock names 0.2.0 .tag v0.2.0-rc.1.")
+ayther_add_tessera_lock_test(rejects_api_1_0_package
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_api10"
+    "TESSERA_API_TOO_OLD: .*provides 1.0")
+ayther_add_tessera_lock_test(rejects_tag_without_sha256
+    "${_tessera_fixtures}/lock_half_released.json" ""
+    "needs artifact.sha256")
+ayther_add_tessera_lock_test(rejects_tag_that_names_another_version
+    "${_tessera_fixtures}/lock_tag_version_mismatch.json" ""
+    "does not match package.version")
+ayther_add_tessera_lock_test(rejects_lock_below_required_api
+    "${_tessera_fixtures}/lock_old_api.json" ""
+    "TESSERA_LOCK_API")
+ayther_add_tessera_lock_test(rejects_short_commit
+    "${_tessera_fixtures}/lock_short_commit.json" ""
+    "sourceCommit must be a full lowercase SHA-1")
+# With the Tessera provider enabled, the installed package must be the locked one.
+if(AYTHER_ENABLE_TESSERA AND Tessera_DIR AND NOT AYTHER_TESSERA_ALLOW_UNLOCKED)
+    get_filename_component(_tessera_lock_prefix "${Tessera_DIR}/../../.." ABSOLUTE)
+    ayther_add_tessera_lock_test(installed_package
+        "${AYTHER_TESSERA_LOCK_FILE}" "${_tessera_lock_prefix}" "matches")
+endif()
+
 find_program(AYTHER_PWSH_EXECUTABLE NAMES pwsh)
 add_subdirectory(audio_qa/observer_contract)
 if(AYTHER_PWSH_EXECUTABLE)
