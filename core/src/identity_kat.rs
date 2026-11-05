@@ -36,6 +36,7 @@
 // ROM comercial no lo puede correr un tercero, que es justamente para quien
 // existe esto (BYOR: el SDK no distribuye ROMs).
 
+use crate::vram_sprite::{palette_signature, pose_key_with_flips};
 use xxhash_rust::xxh3::xxh3_64;
 
 /// AYTHER-specific FNV-1a seed used by pack identities.
@@ -151,6 +152,14 @@ pub fn synthetic_fm_registers() -> Vec<u8> {
     (0..0x200).map(|i| ((i * 53 + 7) & 0xFF) as u8).collect()
 }
 
+/// Member hashes of the synthetic pose used by the pose vectors.
+const POSE_HASHES: [u64; 2] = [0x41573b4753eaaeb4, 0xadba9fc9e8c721a7];
+
+/// Deterministic synthetic CRAM: word `i` is `(i * 29 + 5) & 0x1FF`.
+pub fn synthetic_cram() -> Vec<u16> {
+    (0..64).map(|i| ((i * 29 + 5) & 0x1FF) as u16).collect()
+}
+
 /// Returns the canonical known-answer vectores.
 ///
 /// Expected values are part of the public pack-identity contract.
@@ -180,6 +189,31 @@ pub fn vectors() -> Vec<Kat> {
             id: "plane_tile",
             case_description: "mismo patrón, línea de paleta 2",
             expected: plane_tile_hash(&synthetic_vram(4096), 1, 2),
+        },
+        Kat {
+            id: "pose",
+            case_description: "dos miembros sin flips (clave solo de hashes)",
+            expected: pose_key_with_flips(&POSE_HASHES, None),
+        },
+        Kat {
+            id: "pose",
+            case_description: "flips mixtos 0|1 (suma los flips relativos)",
+            expected: pose_key_with_flips(&POSE_HASHES, Some(&[0, 1])),
+        },
+        Kat {
+            id: "pose",
+            case_description: "flips 2|3: desplazamiento global de 0|1, misma clave",
+            expected: pose_key_with_flips(&POSE_HASHES, Some(&[2, 3])),
+        },
+        Kat {
+            id: "palette_variant",
+            case_description: "linea 0, slots 1..15 (mascara 0xFFFE)",
+            expected: palette_signature(&synthetic_cram(), 0, 0xFFFE),
+        },
+        Kat {
+            id: "palette_variant",
+            case_description: "linea 2, slots 1 y 4 (mascara 0x0012)",
+            expected: palette_signature(&synthetic_cram(), 2, 0x0012),
         },
         Kat {
             id: "fm_event",
@@ -333,6 +367,35 @@ mod tests {
         assert_ne!(h, sprite_hash(&synthetic_vram(4096), 1, 2, 2));
         // Y es determinista: dos llamadas con la misma VRAM corta dan lo mismo.
         assert_eq!(h, sprite_hash(&short_vram, 1, 2, 2));
+    }
+
+    /// Pose y variante de paleta: valores escritos a mano (ver el comentario de
+    /// «LOS NÚMEROS» arriba). Un desplazamiento global de flips (0|1 y
+    /// 2|3) conserva la clave; sin flips la clave es la de solo hashes.
+    #[test]
+    fn pose_and_palette_variant_answers_are_pinned() {
+        assert_eq!(pose_key_with_flips(&POSE_HASHES, None), 0x43f1af85db6d39d0);
+        assert_eq!(
+            pose_key_with_flips(&POSE_HASHES, Some(&[0, 1])),
+            0x39375f8df926189e
+        );
+        assert_eq!(
+            pose_key_with_flips(&POSE_HASHES, Some(&[2, 3])),
+            0x39375f8df926189e
+        );
+        assert_eq!(
+            pose_key_with_flips(&POSE_HASHES, Some(&[1, 1])),
+            0x43f1af85db6d39d0,
+            "flips uniformes no cambian la clave"
+        );
+        assert_eq!(
+            palette_signature(&synthetic_cram(), 0, 0xFFFE),
+            0x327269cf7f752943
+        );
+        assert_eq!(
+            palette_signature(&synthetic_cram(), 2, 0x0012),
+            0xe602f24f070befbc
+        );
     }
 
     /// El TOML publicable trae todos los vectores y el seed, que es el dato sin
