@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "dependency": "AYTHER Tessera",
+  "repository": "https://github.com/Ayther-Dev/AYTHER-Tessera",
+  "sourceCommit": "c67892978d8c263ad32baf6ff8b45587d062eb4b",
+  "api": {
+    "major": 1,
+    "minor": 1
+  },
+  "package": {
+    "version": "0.1.0"
+  },
+  "release": {
+    "tag": null,
+    "status": "unreleased",
+    "note": "Tessera main with the API 1.1 observation surface. No tag carries API 1.1 yet; the tag and the package SHA-256 are filled in when Tessera publishes v0.2.0-rc.1 (TP-112.3)."
+  },
+  "artifact": {
+    "fileName": null,
+    "sha256": null
+  }
+}

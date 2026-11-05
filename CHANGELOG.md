@@ -35,6 +35,14 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `dependencies/tessera.lock.json` pins the Tessera the Engine builds against
+  (source commit, API version and, once Tessera publishes a tag with that API,
+  the tag and the package SHA-256). CI and the native release candidate read the
+  commit from it, `AYTHER_ENABLE_TESSERA` now requires a package that declares
+  the Tessera API 1.1 or a later 1.x (`TESSERA_API_TOO_OLD` otherwise) and
+  compares the installed package with the lock (`TESSERA_LOCK_MISMATCH`;
+  `AYTHER_TESSERA_ALLOW_UNLOCKED=ON` for local development). The
+  `ayther.package.tessera_lock.*` tests cover the lock and the rejections.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions

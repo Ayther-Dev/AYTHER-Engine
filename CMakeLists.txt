@@ -9,6 +9,7 @@ option(AYTHER_BUILD_RENDERER  "Build the Vulkan renderer"             OFF)
 option(AYTHER_BUILD_GPU_TESTS "Build tests that require a Vulkan GPU" OFF)
 option(AYTHER_ENABLE_VPX      "Enable VPX video decoding"             OFF)
 option(AYTHER_ENABLE_TESSERA  "Enable the installed native Tessera provider" OFF)
+option(AYTHER_TESSERA_ALLOW_UNLOCKED "Accept a Tessera package other than the one in dependencies/tessera.lock.json (local development only)" OFF)
 option(AYTHER_CARGO_LOCKED    "Pass --locked to Cargo"                ON)
 option(AYTHER_ENABLE_ASAN     "Enable AddressSanitizer on native targets" OFF)
 option(AYTHER_ENABLE_UBSAN    "Enable UndefinedBehaviorSanitizer on native targets" OFF)
@@ -330,7 +331,30 @@ if(AYTHER_ENABLE_TESSERA)
     if(NOT AYTHER_BUILD_ENGINE)
         message(FATAL_ERROR "TESSERA_ENGINE_REQUIRED: enable AYTHER_BUILD_ENGINE.")
     endif()
-    find_package(Tessera 0.1 CONFIG REQUIRED)
+    # The package version is not constrained here: Tessera's release tags move
+    # (v0.1.x, v0.2.x) while the Engine depends on the API it declares
+    # (Tessera_ABI_MAJOR/MINOR) and on the exact package the lock names.
+    find_package(Tessera CONFIG REQUIRED)
+    include(AytherTesseraLock)
+    get_filename_component(_ayther_tessera_prefix
+        "${Tessera_DIR}/../../.." ABSOLUTE)
+    ayther_require_tessera_api(
+        ${AYTHER_TESSERA_MIN_API_MAJOR} ${AYTHER_TESSERA_MIN_API_MINOR}
+        "${_ayther_tessera_prefix}")
+    if(NOT AYTHER_TESSERA_ALLOW_UNLOCKED)
+        ayther_verify_tessera_lock(_ayther_tessera_problems
+            LOCK "${PROJECT_SOURCE_DIR}/dependencies/tessera.lock.json"
+            PREFIX "${_ayther_tessera_prefix}")
+        if(_ayther_tessera_problems)
+            list(JOIN _ayther_tessera_problems "\n  " _ayther_tessera_text)
+            message(FATAL_ERROR
+                "The Tessera package is not the one the Engine locks:\n"
+                "  ${_ayther_tessera_text}\n"
+                "Build the commit in dependencies/tessera.lock.json, or pass "
+                "-DAYTHER_TESSERA_ALLOW_UNLOCKED=ON to develop against another "
+                "Tessera (CI never does).")
+        endif()
+    endif()
     if((Tessera_DIAGNOSTICS AND NOT AYTHER_ENABLE_ASAN) OR
        (AYTHER_ENABLE_ASAN AND NOT Tessera_DIAGNOSTICS))
         message(FATAL_ERROR "Engine and the Tessera provider must use matching AddressSanitizer configurations")
