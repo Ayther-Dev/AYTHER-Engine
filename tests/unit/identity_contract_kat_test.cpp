@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
 #include <vector>
 
 namespace {
@@ -54,5 +55,22 @@ int main() {
   check(ayther_palette_signature(cram.data(), 64, 2, 0x0012) ==
             0xe602f24f070befbcULL,
         "palette variant, line 2, slots 1 and 4 matches the published vector");
+  // Audio classes: FNV-1a with the AYTHER seed, written out here from
+  // docs/IDENTITY_SPECIFICATION.md and compared with the values the Rust
+  // detector produces for the synthetic stream of audio_class_identities().
+  const auto mix = [](std::initializer_list<uint8_t> bytes) {
+    uint64_t h = 0x14650FB0739D0383ULL;
+    for (const uint8_t b : bytes) {
+      h ^= b;
+      h *= 0x00000100000001B3ULL;
+    }
+    return h;
+  };
+  check(mix({1, 0, 0x0E, 0x00}) == 0x917b96983089543cULL,
+        "PSG tone signature matches the published vector");
+  check(mix({0, 5, 0xDA, 0x10, 0xF0}) == 0x9fafa7e158f9353aULL,
+        "DAC signature matches the published vector");
+  check(mix({3, 2, 0x10, 0x23, 0x01, 0x00, 0x04}) == 0x5975df5f33250ed2ULL,
+        "PCM signature matches the published vector");
   return failures ? 1 : 0;
 }

@@ -160,6 +160,72 @@ pub fn synthetic_cram() -> Vec<u16> {
     (0..64).map(|i| ((i * 29 + 5) & 0x1FF) as u16).collect()
 }
 
+/// Drives the event detector with a fixed synthetic stream and returns the
+/// `(class, signature, instrument)` of each event: PSG tone, PSG noise, DAC and
+/// PCM (the FM class is covered by `fm_event`). The stream is described in the
+/// published vectors; `cycle` is zero because it takes no part in identity.
+pub fn audio_class_identities() -> Vec<(&'static str, u64, u64)> {
+    use crate::audio_event::{
+        AudioEventDetector, AudioWrite, CHIP_FM, CHIP_PSG, PCM_KEY_OFF, PCM_KEY_ON, PcmEvent,
+    };
+    let psg = |data: u8| AudioWrite {
+        cycle: 0,
+        addr: 0,
+        data,
+        chip: CHIP_PSG,
+    };
+    let fm = |addr: u16, data: u8| AudioWrite {
+        cycle: 0,
+        addr,
+        data,
+        chip: CHIP_FM,
+    };
+    let mut d = AudioEventDetector::new();
+    // PSG channel 0, tone n = 0x0E: latch frequency, attenuation 0 (on), then off.
+    d.process_frame(0, &[psg(0x80 | 0x0E), psg(0x90)]);
+    d.process_frame(1, &[psg(0x9F)]);
+    // PSG noise, control 0x04.
+    d.process_frame(2, &[psg(0xE4), psg(0xF0)]);
+    d.process_frame(3, &[psg(0xFF)]);
+    // DAC: enable (0x2B bit 7) and two loud ordered samples 0x10, 0xF0.
+    d.process_frame(4, &[fm(0x2B, 0x80), fm(0x2A, 0x10), fm(0x2A, 0xF0)]);
+    for f in 5..12 {
+        d.process_frame(f, &[]);
+    }
+    // PCM channel 2: key-on (start 0x10, loop 0x0123, delta 0x0400), key-off.
+    let on = PcmEvent {
+        kind: PCM_KEY_ON,
+        channel: 2,
+        env: 0xFF,
+        pan: 0xFF,
+        st: 0x10,
+        _pad: 0,
+        ls: 0x0123,
+        fd: 0x0400,
+    };
+    let off = PcmEvent {
+        kind: PCM_KEY_OFF,
+        channel: 2,
+        ..PcmEvent::default()
+    };
+    d.process_frame_ex(12, &[], &[on]);
+    d.process_frame_ex(13, &[], &[off]);
+    d.finish();
+    d.events()
+        .iter()
+        .map(|e| {
+            let class = match (e.chip, e.channel) {
+                (1, 3) => "psg_noise",
+                (1, _) => "psg_tone",
+                (0, 5) => "dac",
+                (3, _) => "pcm",
+                _ => "other",
+            };
+            (class, e.signature, e.instrument)
+        })
+        .collect()
+}
+
 /// Returns the canonical known-answer vectores.
 ///
 /// Expected values are part of the public pack-identity contract.
@@ -216,6 +282,36 @@ pub fn vectors() -> Vec<Kat> {
             expected: palette_signature(&synthetic_cram(), 2, 0x0012),
         },
         Kat {
+            id: "audio_psg",
+            case_description: "PSG canal 0, tono n = 0x0E (flujo sintetico de audio_class_identities)",
+            expected: audio_class_identities()[0].1,
+        },
+        Kat {
+            id: "audio_dac",
+            case_description: "DAC, muestras 0x10 y 0xF0 del bloque de apertura",
+            expected: audio_class_identities()[2].1,
+        },
+        Kat {
+            id: "audio_pcm",
+            case_description: "PCM canal 2, inicio 0x10, loop 0x0123, delta 0x0400",
+            expected: audio_class_identities()[3].1,
+        },
+        Kat {
+            id: "instrument",
+            case_description: "PSG tono: instrumento compartido por todos los canales de tono",
+            expected: audio_class_identities()[0].2,
+        },
+        Kat {
+            id: "instrument",
+            case_description: "PSG ruido, control 0x04",
+            expected: audio_class_identities()[1].2,
+        },
+        Kat {
+            id: "instrument",
+            case_description: "PCM canal 2 (espacio 0xF2, sin canal ni delta)",
+            expected: audio_class_identities()[3].2,
+        },
+        Kat {
             id: "fm_event",
             case_description: "canal 0 (banco 0)",
             expected: fm_signature(&synthetic_fm_registers(), 0),
@@ -245,10 +341,13 @@ pub fn vectors_toml() -> String {
                 # `pack-identities.md` §9 lista los siete errores que compilan\n\
                 # y no matchean nada.\n\n",
     );
-    s.push_str(&format!("[identity]
+    s.push_str(&format!(
+        "[identity]
 contract = {}
 
-", IDENTITY_CONTRACT));
+",
+        IDENTITY_CONTRACT
+    ));
     s.push_str("seed_fnv  = \"0x14650fb0739d0383\"   # NO es el basis canonico\n");
     s.push_str("prime_fnv = \"0x00000100000001b3\"\n\n");
     for k in vectors() {
@@ -398,14 +497,47 @@ mod tests {
         );
     }
 
+    /// Audio por clase: PSG tono y ruido, DAC y PCM. Los valores están escritos
+    /// a mano; además las firmas de PSG, DAC y PCM se recalculan acá con la
+    /// receta de `IDENTITY_SPECIFICATION.md` (no con el detector), de modo que
+    /// una divergencia entre spec y detector también se ve.
+    #[test]
+    fn audio_class_answers_are_pinned() {
+        let ids = audio_class_identities();
+        let pins: [(&str, u64, u64); 4] = [
+            ("psg_tone", 0x917b96983089543c, 0x9a64dd00c5447462),
+            ("psg_noise", 0x88a287982b78e953, 0x9dd7ee4f3351c952),
+            ("dac", 0x9fafa7e158f9353a, 0x9fafa7e158f9353a),
+            ("pcm", 0x5975df5f33250ed2, 0x0474ccd04894a026),
+        ];
+        assert_eq!(ids.len(), pins.len());
+        for (got, want) in ids.iter().zip(pins.iter()) {
+            assert_eq!(got.0, want.0);
+            assert_eq!(got.1, want.1, "signature of {}", want.0);
+            assert_eq!(got.2, want.2, "instrument of {}", want.0);
+        }
+        let mix = |h: u64, bytes: &[u8]| bytes.iter().fold(h, |h, &b| ay_fnv_mix(h, b));
+        // PSG: mix(mix(SEED,1), channel), frequency low byte then high byte.
+        assert_eq!(mix(AY_FNV_SEED, &[1, 0, 0x0E, 0x00]), ids[0].1);
+        // DAC: mix(mix(mix(SEED,0),5),0xDA), then each ordered 0x2A sample.
+        assert_eq!(mix(AY_FNV_SEED, &[0, 5, 0xDA, 0x10, 0xF0]), ids[2].1);
+        // PCM: mix(mix(SEED,3), channel), start, loop low/high, delta low/high.
+        assert_eq!(
+            mix(AY_FNV_SEED, &[3, 2, 0x10, 0x23, 0x01, 0x00, 0x04]),
+            ids[3].1
+        );
+    }
+
     /// El TOML publicable trae todos los vectores y el seed, que es el dato sin
     /// el cual ninguno se puede reproducir.
     #[test]
     fn published_toml_is_complete() {
         let t = vectors_toml();
         assert_eq!(t.matches("[[vector]]").count(), vectors().len());
-        assert!(t.contains(&format!("[identity]
-contract = {IDENTITY_CONTRACT}")));
+        assert!(t.contains(&format!(
+            "[identity]
+contract = {IDENTITY_CONTRACT}"
+        )));
         assert!(
             t.contains("0x14650fb0739d0383"),
             "sin el seed no se reproduce nada"
