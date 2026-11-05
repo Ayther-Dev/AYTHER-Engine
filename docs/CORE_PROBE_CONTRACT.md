@@ -37,10 +37,10 @@ AYTHER_STATUS {"protocol_version":2,"event":"probe","ok":true,"verdict":"ok",
   "api":1,"library_name":"Genesis Plus GX","library_version":"v1.7.4 7109a7c2",
   "architecture":"x64","ayther_abi":"1.10",
   "ayther_build_id":"Genesis Plus GX AYTHER ABI 1.10; core v1.7.4 7109a7c2",
-  "capabilities":"0xFFFFF","required_capabilities":"0xFFFFF","missing_capabilities":[]}
+  "capabilities":"0xEFFFF","required_capabilities":"0xEFFFF","missing_capabilities":[]}
 
 AYTHER_STATUS {"protocol_version":2,"event":"probe","ok":false,"verdict":"capabilities_incomplete",
-  "reason":"core.capabilities_incomplete","capabilities":"0x7FFFF","required_capabilities":"0xFFFFF",
+  "reason":"core.capabilities_incomplete","capabilities":"0x6FFFF","required_capabilities":"0xEFFFF",
   "missing_capabilities":["SPRITE_OUTCOME_V1"],"message":"..."}
 ```
 
@@ -58,11 +58,16 @@ Fields:
 
 ## Required capabilities
 
-`required_capabilities` is the constant of the Engine, `0xFFFFF`: bits 0 to 19
-(`LEGACY_MEMORY` to `SPRITE_OUTCOME_V1`). It is the mask announced by the gpgx
-r4 fork with the AYTHER observation (ABI 1.10); the measurement is recorded in
-`evidence/g0/gpgx-capabilities.json` of the Tessera specification (TP-013.2).
-A new ABI bit enters the mask only with a new minor version of the contract.
+`required_capabilities` is the constant of the Engine, `0xEFFFF`: bits 0 to 15
+and 17 to 19 of `ayther_api.h` (`LEGACY_MEMORY` to `SYSTEM_V1`, then
+`LINE_STATE_V1`, `OBSERVABILITY_V1` and `SPRITE_OUTCOME_V1`). Bit 16,
+`MODE4_CONTROLS` (render controls in Mode 4), is **not** required: the gpgx r4
+fork with the AYTHER observation (ABI 1.10, build id `Genesis Plus GX AYTHER ABI
+1.10; core v1.7.4 7109a7c2`) announces `0xEFFFF`, without it, and it is the only
+external core supported. The measurement is in `evidence/g0/gpgx-capabilities.json`
+of the Tessera specification (TP-013.2). A bit enters the mask only with a new
+minor version of the contract; `MODE4_CONTROLS` is a candidate when SMS, Game
+Gear or SG-1000 arrive (phase 6).
 
 ## Test vectors
 
