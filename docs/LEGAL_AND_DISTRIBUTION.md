@@ -106,9 +106,11 @@ integration materials.
 ## Integración opcional de Tessera
 
 El proveedor de T015–T018 enlaza el paquete instalado de AYTHER Tessera,
-con su build ID y prefijo explícitos. El código propio de Tessera es MIT,
-pero su backend Mega Drive incluye bibliotecas estáticas ClownMDEmu,
-clown68000 y clownz80 bajo AGPL-3.0. El lock de fuente usado por CI es el SHA
+con su build ID y prefijo explícitos. El código propio de Tessera es MPL-2.0
+desde el cambio de licencia; los paquetes `v0.1.0-mvp.1` y `v0.1.0-mvp.2`
+conservan MIT y su backend Mega Drive incluye bibliotecas estáticas
+ClownMDEmu, clown68000 y clownz80 bajo AGPL-3.0. Los paquetes posteriores no
+instalan esos componentes AGPL. El lock de fuente usado por CI es el SHA
 fijo declarado en `.github/workflows/ci.yml`. El paquete de Tessera instala
 licencias de los componentes Clown, PicoSHA2 y nlohmann/json, además de su
 inventario y avisos en `share/tessera`. Una distribución de Engine con ese

@@ -153,10 +153,14 @@ and packs derived from commercial games. The guard
 ## Optional Tessera native provider
 
 The `AYTHER_ENABLE_TESSERA` build links an independently installed Tessera
-package. Tessera's own source is MIT, while its Mega Drive backend includes
-ClownMDEmu, clown68000, and clownz80 under AGPL-3.0; see the exact revisions,
-notices, licenses, source locations, and build patch in the matching Tessera
-package's `share/tessera` directory and source repository. Distributing an
-Engine binary with this provider requires the corresponding Tessera package
-and source availability for the combined build. This notice does not cover
+package. Tessera's own source is MPL-2.0 for packages published after the
+license change; the packages `v0.1.0-mvp.1` and `v0.1.0-mvp.2` keep MIT for
+that code and their Mega Drive backend includes ClownMDEmu, clown68000, and
+clownz80 under AGPL-3.0. Newer packages do not install or ship those AGPL
+components (they are only a local reference build of Tessera that is never
+installed). See the exact revisions, notices, licenses, source locations, and
+build patch in the matching Tessera package's `share/tessera` directory and
+source repository. Distributing an Engine binary with this provider requires
+the corresponding Tessera package and, for the AGPL-3.0 packages, source
+availability for the combined build. This notice does not cover
 ROMs, content packs, trust metadata, or the fixture generator.
