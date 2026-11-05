@@ -129,6 +129,27 @@ pub fn fm_signature(fm_regs: &[u8], ch: usize) -> u64 {
     h
 }
 
+/// Instrument identity of an FM channel (namespace 0xF1): the patch without the
+/// frequency, the channel, the pan bits of 0xB4 and the carrier total levels.
+pub fn fm_instrument(fm_regs: &[u8], ch: usize) -> u64 {
+    let bank = if ch < 3 { 0usize } else { 0x100 };
+    let idx = ch % 3;
+    let reg = |a: usize| fm_regs.get(bank + a + idx).copied().unwrap_or(0);
+    let carriers = FM_CARRIERS[(reg(0xB0) & 7) as usize];
+    let mut h = ay_fnv_mix(ay_fnv_mix(AY_FNV_SEED, 0), 0xF1);
+    let mut base = 0x30usize;
+    while base <= 0x9C {
+        let op = FM_SLOT_OPERATOR[((base - 0x30) / 4) % 4];
+        let is_tl = (base & 0xF0) == 0x40;
+        if !(is_tl && carriers & (1 << op) != 0) {
+            h = ay_fnv_mix(h, reg(base));
+        }
+        base += 4;
+    }
+    h = ay_fnv_mix(h, reg(0xB0));
+    ay_fnv_mix(h, reg(0xB4) & 0x3F)
+}
+
 /// Carrier operators per FM algorithm (bit n = operator n), as in the detector.
 const FM_CARRIERS: [u8; 8] = [0x8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF];
 /// Register slot order S1, S3, S2, S4 mapped to operator numbers.
@@ -327,6 +348,11 @@ pub fn vectors() -> Vec<Kat> {
             id: "palette_variant",
             case_description: "linea 2, slots 1 y 4 (mascara 0x0012)",
             expected: palette_signature(&synthetic_cram(), 2, 0x0012),
+        },
+        Kat {
+            id: "instrument",
+            case_description: "FM canal 0 sobre el banco sintetico (sin frecuencia, canal, pan ni TL de portadoras)",
+            expected: fm_instrument(&synthetic_fm_registers(), 0),
         },
         Kat {
             id: "audio_psg",
@@ -608,14 +634,26 @@ mod tests {
         for e in d.events() {
             if e.chip == CHIP_FM && e.channel == 0 {
                 assert_eq!(e.signature, fm_signature(&regs, 0));
+                assert_eq!(e.instrument, fm_instrument(&regs, 0));
                 found[0] = true;
             }
             if e.chip == CHIP_FM && e.channel == 4 {
                 assert_eq!(e.signature, fm_signature(&regs, 4));
+                assert_eq!(e.instrument, fm_instrument(&regs, 4));
                 found[1] = true;
             }
         }
         assert_eq!(found, [true, true], "both channels produced an event");
+    }
+
+    /// Instrumento FM: valor escrito a mano; `fm_signature_equals_the_detectors`
+    /// comprueba además que coincide con el del detector en dos canales.
+    #[test]
+    fn fm_instrument_answer_is_pinned() {
+        assert_eq!(
+            fm_instrument(&synthetic_fm_registers(), 0),
+            0x2dcd_729b_a7e4_081a
+        );
     }
 
     /// Grupo de animación y panorama: valores escritos a mano. El grupo es
