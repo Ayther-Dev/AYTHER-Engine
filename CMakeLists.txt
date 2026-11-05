@@ -467,6 +467,19 @@ if(AYTHER_ENABLE_VPX AND NOT AYTHER_BUILD_ENGINE)
     message(FATAL_ERROR "AYTHER_ENABLE_VPX requires AYTHER_BUILD_ENGINE=ON.")
 endif()
 
+if(AYTHER_BUILD_ENGINE)
+    # The installed core probe (TP-013.5) and the fixture cores that go with it
+    # as probe vectors (TP-013.6). The tests reuse the same fixture targets.
+    if(NOT TARGET ayther_test_core)
+        add_subdirectory(
+            "${PROJECT_SOURCE_DIR}/tools/test_core"
+            "${PROJECT_BINARY_DIR}/tools/test_core")
+    endif()
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/ayther_core_probe"
+        "${PROJECT_BINARY_DIR}/tools/ayther_core_probe")
+endif()
+
 if(AYTHER_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

@@ -245,6 +245,12 @@ foreach(_ayther_shader IN LISTS _ayther_required_shaders)
     endif()
 endforeach()
 
+# The installed core probe (TP-013.5) over the published vectors (TP-013.6):
+# the same check runs standalone with
+#   cmake -DAYTHER_PACKAGE_PREFIX=<prefix> -P check_core_probe.cmake
+set(AYTHER_PACKAGE_PREFIX "${_ayther_package_prefix}")
+include("${CMAKE_CURRENT_LIST_DIR}/check_core_probe.cmake")
+
 add_executable(ayther_package_consumer main.cpp)
 target_compile_features(ayther_package_consumer PRIVATE cxx_std_20)
 target_link_libraries(ayther_package_consumer PRIVATE Ayther::engine)

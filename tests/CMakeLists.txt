@@ -271,9 +271,11 @@ endfunction()
 # The ABI oracles need an emulator core that speaks the extension. Building one
 # here -- rather than pointing at a binary that /third_party/cores/* gitignores
 # -- is what lets the positive half of the negotiation run on a clean checkout.
-add_subdirectory(
-    "${PROJECT_SOURCE_DIR}/tools/test_core"
-    "${PROJECT_BINARY_DIR}/tools/test_core")
+if(NOT TARGET ayther_test_core)
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/test_core"
+        "${PROJECT_BINARY_DIR}/tools/test_core")
+endif()
 
 # A loadable library without Libretro entry points makes the negative probe
 # case deterministic on every platform and independent of system DLL layout.

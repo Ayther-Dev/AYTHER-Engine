@@ -68,6 +68,21 @@ if(AYTHER_BUILD_ENGINE)
     install(FILES ${AYTHER_SHADER_BINARIES}
         DESTINATION "${AYTHER_INSTALL_SHADERDIR}")
 
+    # The core probe command (TP-013.5) and its vectors (TP-013.6): the fixture
+    # cores that make each verdict reproducible, and the expected answers.
+    # A consumer runs bin/ayther_core_probe over every vector and compares.
+    set(AYTHER_INSTALL_PROBE_VECTORSDIR "share/ayther/probe-vectors")
+    install(TARGETS ayther_core_probe
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    install(FILES
+        "$<TARGET_FILE:ayther_test_core>"
+        "$<TARGET_FILE:ayther_test_core_stock>"
+        "$<TARGET_FILE:ayther_test_core_partial>"
+        "$<TARGET_FILE:ayther_test_core_hang>"
+        "${PROJECT_SOURCE_DIR}/tools/ayther_core_probe/probe-vectors.json"
+        "${PROJECT_SOURCE_DIR}/tools/ayther_core_probe/not-a-core.txt"
+        DESTINATION "${AYTHER_INSTALL_PROBE_VECTORSDIR}")
+
     install(FILES
         "${PROJECT_SOURCE_DIR}/third_party/ymfm/LICENSE"
         "${PROJECT_SOURCE_DIR}/third_party/ymfm/README.md"

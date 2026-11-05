@@ -8,8 +8,9 @@
 # is additive and may not break anyone.
 #
 # These are MODULE libraries: they are dlopen'd by the engine at runtime, never
-# linked against. They are also NOT installed -- a test fixture has no business
-# in a release artifact.
+# linked against. The oracles use them from the build tree. The release package
+# installs them only as the probe vectors of the core probe contract, in
+# share/ayther/probe-vectors/ (TP-013.6); nothing else links or loads them.
 # ---------------------------------------------------------------------------
 
 function(ayther_add_test_core _target)
