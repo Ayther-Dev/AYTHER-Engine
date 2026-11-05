@@ -86,5 +86,42 @@ int main() {
   };
   check(plane_term(0x98d36be2cd04adb9ULL, 3, 5, 1) == 0x4baccc35b93adb02ULL,
         "panorama cell term matches the published vector");
+  // FM event and instrument over the synthetic register bank (reg i =
+  // (i * 53 + 7) & 0xFF): the carrier total levels are skipped.
+  std::vector<uint8_t> fm(0x200);
+  for (size_t i = 0; i < fm.size(); ++i)
+    fm[i] = static_cast<uint8_t>((i * 53 + 7) & 0xFF);
+  const auto fm_identity = [&fm](unsigned ch, bool instrument) {
+    static const uint8_t carriers_of[8] = {0x8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF};
+    static const uint8_t slot_op[4] = {0, 2, 1, 3};
+    const size_t bank = ch < 3 ? 0 : 0x100, idx = ch % 3;
+    const uint8_t carriers = carriers_of[fm[bank + 0xB0 + idx] & 7];
+    uint64_t h = 0x14650FB0739D0383ULL;
+    const auto add = [&h](uint8_t b) {
+      h ^= b;
+      h *= 0x00000100000001B3ULL;
+    };
+    add(0);
+    add(instrument ? 0xF1 : static_cast<uint8_t>(ch));
+    for (size_t base = 0x30; base <= 0x9C; base += 4) {
+      const bool tl = (base & 0xF0) == 0x40;
+      if (!(tl && (carriers & (1u << slot_op[((base - 0x30) / 4) % 4])) != 0))
+        add(fm[bank + base + idx]);
+    }
+    if (instrument) {
+      add(fm[bank + 0xB0 + idx]);
+      add(fm[bank + 0xB4 + idx] & 0x3F);
+    } else {
+      for (const size_t off : {size_t{0xA0}, size_t{0xA4}, size_t{0xB0}, size_t{0xB4}})
+        add(fm[bank + off + idx]);
+    }
+    return h;
+  };
+  check(fm_identity(0, false) == 0x6a775e4ae7728677ULL,
+        "FM event, channel 0, matches the published vector");
+  check(fm_identity(4, false) == 0xa1448c411d572053ULL,
+        "FM event, channel 4, matches the published vector");
+  check(fm_identity(0, true) == 0x2dcd729ba7e4081aULL,
+        "FM instrument, channel 0, matches the published vector");
   return failures ? 1 : 0;
 }
