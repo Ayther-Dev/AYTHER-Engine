@@ -99,9 +99,16 @@ public:
 
   [[nodiscard]] std::string open(const std::filesystem::path &path) {
 #if defined(_WIN32)
+    // A file that is not a valid image makes the loader raise a system error
+    // box ("Bad Image") and wait for someone to close it: a probe with no
+    // desktop (CI, a service, a launcher child) would hang on it. Fail the
+    // load instead, and put the error mode back.
+    const UINT previous_mode =
+        SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
     handle_ = LoadLibraryW(path.c_str());
+    const DWORD error_code = GetLastError();
+    SetErrorMode(previous_mode);
     if (handle_ == nullptr) {
-      const DWORD error_code = GetLastError();
       return "LoadLibraryW failed for '" + display_path(path) +
              "' with Windows error " + std::to_string(error_code);
     }
