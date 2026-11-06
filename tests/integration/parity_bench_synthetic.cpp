@@ -2,8 +2,8 @@
 // per subplane between two FrameView dumps, honouring an exception list.
 // Synthetic: a golden dump from ayther_test_core and a seeded divergence.
 #include "../../tools/common/synth_rom.h"
-#include "../../tools/parity_bench/frame_dump.h"
 #include "../../tools/parity_bench/frame_compare.h"
+#include "../../tools/parity_bench/frame_dump.h"
 
 #include <cstdio>
 #include <string>
@@ -30,8 +30,8 @@ std::string seed(std::string dump, int frame, const std::string &subplane) {
 int main() {
   using namespace ayther::parity;
   const std::vector<std::uint16_t> pads(20, 0);
-  const auto golden = dump_session(AYTHER_TEST_CORE_PATH,
-                                   ayther::synth::fx03_rom_path(), pads);
+  const auto golden =
+      dump_session(AYTHER_TEST_CORE_PATH, ayther::synth::fx03_rom_path(), pads);
   check(golden.has_value(), "golden dump");
   if (!golden)
     return 1;
@@ -41,7 +41,8 @@ int main() {
 
   const auto seeded = seed(*golden, 7, "sprites");
   auto r = compare_dumps(*golden, seeded, {});
-  check(r.ok && r.divergences.size() == 1 && r.divergences[0].subplane == "sprites" &&
+  check(r.ok && r.divergences.size() == 1 &&
+            r.divergences[0].subplane == "sprites" &&
             r.divergences[0].frame == 7,
         "a seeded divergence is found at its subplane and frame");
 

@@ -300,8 +300,8 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
     return Error{ErrorCode::NotFound,
                  "RetroRunner::init failed (core or ROM): " + cfg.core_path};
   }
-  im.generation =
-      libretro_generation(im.runner.library_name(), im.runner.library_version());
+  im.generation = libretro_generation(im.runner.library_name(),
+                                      im.runner.library_version());
   im.core_path = cfg.core_path; // : para instanciar el shadow core (lazy)
   im.rom_path = cfg.rom_path;
   im.pack_trust_registry = cfg.trust_registry;
@@ -599,7 +599,8 @@ AytherSession::native_emulation() const noexcept {
   return impl_->native.get();
 }
 
-const EmulationGeneration &AytherSession::emulation_generation() const noexcept {
+const EmulationGeneration &
+AytherSession::emulation_generation() const noexcept {
   return impl_->generation;
 }
 

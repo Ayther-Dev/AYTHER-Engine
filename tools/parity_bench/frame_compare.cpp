@@ -24,7 +24,8 @@ bool parse_line(const std::string &text, Line &out) {
   if (comma == std::string::npos)
     return false;
   try {
-    out.frame = static_cast<std::uint32_t>(std::stoul(text.substr(at, comma - at)));
+    out.frame =
+        static_cast<std::uint32_t>(std::stoul(text.substr(at, comma - at)));
   } catch (...) {
     return false;
   }
@@ -69,7 +70,8 @@ CompareResult compare_dumps(const std::string &a, const std::string &b,
     return result;
   }
   for (const char *name : kSubplaneNames) {
-    if (std::find(exceptions.begin(), exceptions.end(), name) != exceptions.end())
+    if (std::find(exceptions.begin(), exceptions.end(), name) !=
+        exceptions.end())
       continue;
     for (std::size_t i = 0; i < la.size(); ++i) {
       if (la[i].frame != lb[i].frame) {

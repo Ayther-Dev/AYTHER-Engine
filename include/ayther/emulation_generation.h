@@ -70,9 +70,8 @@ inline std::string slug(std::string_view name) {
 libretro_generation(std::string_view library_name,
                     std::string_view library_version) {
   EmulationGeneration generation;
-  generation.id = library_name == "Genesis Plus GX"
-                      ? "gpgx"
-                      : detail::slug(library_name);
+  generation.id =
+      library_name == "Genesis Plus GX" ? "gpgx" : detail::slug(library_name);
   if (generation.id.empty())
     generation.id = "libretro";
   generation.version =

@@ -1130,7 +1130,8 @@ int main() {
     CHECK(AytherRecording::patch_take_id(v11.string(), 0xABCDULL),
           "v11: patch_take_id cambia el id");
     back = AytherRecording::load(v11.string());
-    CHECK(back && back->take_id == 0xABCDULL && back->emulator_id == "tessera" &&
+    CHECK(back && back->take_id == 0xABCDULL &&
+              back->emulator_id == "tessera" &&
               back->emulator_version == "0.1.0-dev" &&
               back->determinism_contract == 3U,
           "v11: patch_take_id conserva la procedencia");
@@ -1216,16 +1217,17 @@ int main() {
 
     // Rejections: oversized strings and unreadable files change nothing.
     const std::vector<char> kept = read_bytes(v10);
-    CHECK(!AytherRecording::patch_provenance(v10.string(),
-                                             std::string(33, 'x'), "", 0U) &&
-              !AytherRecording::patch_provenance(v10.string(), "gpgx",
-                                                 std::string(65, 'x'), 0U) &&
-              !AytherRecording::patch_provenance(v10.string(), "t\xC3\xA9ssera",
-                                                 "", 0U) &&
-              !AytherRecording::patch_provenance(v10.string(), "gpgx",
-                                                 "a\nb", 0U) &&
-              read_bytes(v10) == kept,
-          "patch: rechaza id > 32, versión > 64 y no ASCII sin tocar el archivo");
+    CHECK(
+        !AytherRecording::patch_provenance(v10.string(), std::string(33, 'x'),
+                                           "", 0U) &&
+            !AytherRecording::patch_provenance(v10.string(), "gpgx",
+                                               std::string(65, 'x'), 0U) &&
+            !AytherRecording::patch_provenance(v10.string(), "t\xC3\xA9ssera",
+                                               "", 0U) &&
+            !AytherRecording::patch_provenance(v10.string(), "gpgx", "a\nb",
+                                               0U) &&
+            read_bytes(v10) == kept,
+        "patch: rechaza id > 32, versión > 64 y no ASCII sin tocar el archivo");
     const fs::path junk = test_directory / "prov_junk.arp";
     CHECK(write_bytes(junk, std::vector<char>{'n', 'o', 'p', 'e'}),
           "patch: fixture basura");

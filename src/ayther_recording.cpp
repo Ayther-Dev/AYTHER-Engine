@@ -1534,8 +1534,7 @@ bool AytherRecording::patch_provenance(const std::string &path,
         if (file_version < kFormatVersionTakeId)
           append_le(image, 0U, 8); // v10: toma sin id asignado
         for (int i = 0; i < 4; ++i)
-          image[4 + i] =
-              static_cast<char>((kVersion >> (8 * i)) & 0xFFU);
+          image[4 + i] = static_cast<char>((kVersion >> (8 * i)) & 0xFFU);
       }
       image.insert(image.end(), block.begin(), block.end());
       if (image.size() > kMaxRecordingBytes)
@@ -1699,7 +1698,8 @@ std::optional<AytherRecording> AytherRecording::load(const std::string &path) {
           !valid_provenance_text(rec.emulator_id, kMaxProvenanceId) ||
           !cursor.read_string(rec.emulator_version) ||
           !valid_provenance_text(rec.emulator_version, kMaxProvenanceVersion) ||
-          !cursor.read_u32(rec.determinism_contract) || !cursor.read_u32(block) ||
+          !cursor.read_u32(rec.determinism_contract) ||
+          !cursor.read_u32(block) ||
           block != 12U + rec.emulator_id.size() + rec.emulator_version.size())
         return std::nullopt;
     }
@@ -1762,8 +1762,8 @@ AytherRecording AytherRecording::slice(uint32_t begin, uint32_t end,
                                        std::vector<uint8_t> fm_regs) const {
   AytherRecording r;
   r.game_id = game_id;
-  r.name = name;           // el caller renombra el tail
-  r.take_id = 0;           // v10: el tail es otra toma; el caller le da id
+  r.name = name;               // el caller renombra el tail
+  r.take_id = 0;               // v10: el tail es otra toma; el caller le da id
   r.emulator_id = emulator_id; // v11: el tail nace del mismo emulador
   r.emulator_version = emulator_version;
   r.determinism_contract = determinism_contract;

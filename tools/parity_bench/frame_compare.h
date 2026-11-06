@@ -15,7 +15,7 @@ struct Divergence {
 };
 
 struct CompareResult {
-  bool ok = false;           ///< false: a dump is malformed or lengths differ
+  bool ok = false; ///< false: a dump is malformed or lengths differ
   std::string error;
   std::vector<Divergence> divergences; ///< one per diverging subplane
 };

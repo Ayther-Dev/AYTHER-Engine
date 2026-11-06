@@ -28,26 +28,44 @@ struct Acc {
 // array made two identical runs differ, so it is hashed field by field.
 void scene_element(Acc &a, const SceneElement &e) {
   a.value(e.hash);
-  a.value(e.x); a.value(e.y); a.value(e.w); a.value(e.h);
-  a.value(e.pattern); a.value(e.palette); a.value(e.flips);
-  a.value(e.layer); a.value(e.priority); a.value(e.slot); a.value(e.chain);
-  a.value(e.sub_kind); a.value(e.hidden); a.value(e.claimed);
+  a.value(e.x);
+  a.value(e.y);
+  a.value(e.w);
+  a.value(e.h);
+  a.value(e.pattern);
+  a.value(e.palette);
+  a.value(e.flips);
+  a.value(e.layer);
+  a.value(e.priority);
+  a.value(e.slot);
+  a.value(e.chain);
+  a.value(e.sub_kind);
+  a.value(e.hidden);
+  a.value(e.claimed);
   a.bytes(e.fx_tint, sizeof e.fx_tint);
-  a.value(e.fx_opacity); a.value(e.fx_outline); a.value(e.fx_enhance);
-  a.value(e.fx_enhance_k); a.value(e.owner); a.value(e.sub);
-  a.value(e.clip_x0); a.value(e.clip_y0); a.value(e.clip_x1); a.value(e.clip_y1);
+  a.value(e.fx_opacity);
+  a.value(e.fx_outline);
+  a.value(e.fx_enhance);
+  a.value(e.fx_enhance_k);
+  a.value(e.owner);
+  a.value(e.sub);
+  a.value(e.clip_x0);
+  a.value(e.clip_y0);
+  a.value(e.clip_x1);
+  a.value(e.clip_y1);
   a.value(e.raster_identity_known);
 }
 
 void emit(std::string &out, const char *name, const Acc &a, bool last) {
   char buf[96];
-  std::snprintf(buf, sizeof buf, "\"%s\":{\"hash\":\"%016llx\",\"count\":%u}%s", name,
-                static_cast<unsigned long long>(a.h), a.n, last ? "" : ",");
+  std::snprintf(buf, sizeof buf, "\"%s\":{\"hash\":\"%016llx\",\"count\":%u}%s",
+                name, static_cast<unsigned long long>(a.h), a.n,
+                last ? "" : ",");
   out += buf;
 }
 
-std::string line(std::uint32_t frame, const FrameView &v, std::uint64_t &fb_hash,
-                 std::uint32_t &fb_count) {
+std::string line(std::uint32_t frame, const FrameView &v,
+                 std::uint64_t &fb_hash, std::uint32_t &fb_count) {
   Acc fb;
   if (v.fb_pixels != nullptr) {
     const auto *p = static_cast<const std::uint8_t *>(v.fb_pixels);
@@ -86,7 +104,8 @@ std::string line(std::uint32_t frame, const FrameView &v, std::uint64_t &fb_hash
   attr.array(v.audio_occs, v.audio_occ_count);
 
   std::string out = "{\"frame\":" + std::to_string(frame) + ",";
-  const Acc *all[] = {&fb, &scene, &sprites, &cells, &raster, &chip, &palette, &attr};
+  const Acc *all[] = {&fb,     &scene, &sprites, &cells,
+                      &raster, &chip,  &palette, &attr};
   (void)all;
   emit(out, "fb", fb, false);
   emit(out, "scene", scene, false);
@@ -103,9 +122,9 @@ std::string line(std::uint32_t frame, const FrameView &v, std::uint64_t &fb_hash
 
 } // namespace
 
-std::optional<std::string> dump_session(const std::string &core_path,
-                                        const std::string &rom_path,
-                                        const std::vector<std::uint16_t> &pads) {
+std::optional<std::string>
+dump_session(const std::string &core_path, const std::string &rom_path,
+             const std::vector<std::uint16_t> &pads) {
   AytherSession::Config config;
   config.core_path = core_path;
   config.rom_path = rom_path;

@@ -105,8 +105,8 @@ int main() {
       take.string(), trace_path.string(), sha_a, sha_b);
   check(rc == 0, "trace-from-arp succeeds");
   const auto bytes = read_all(trace_path);
-  check(bytes.size() > 8 && std::string(bytes.begin(), bytes.begin() + 8) ==
-                                "TSTRACE1",
+  check(bytes.size() > 8 &&
+            std::string(bytes.begin(), bytes.begin() + 8) == "TSTRACE1",
         "output starts with the TSTRACE1 magic");
 
   const auto trace = ayther::parity::decode_trace(bytes);
@@ -137,9 +137,9 @@ int main() {
   }
 
   // 5. a missing take fails with a distinct code
-  check(ayther::parity::trace_from_arp_command(
-            (dir / "missing.arp").string(), trace_path.string(), sha_a,
-            sha_b) != 0,
+  check(ayther::parity::trace_from_arp_command((dir / "missing.arp").string(),
+                                               trace_path.string(), sha_a,
+                                               sha_b) != 0,
         "a missing take is an error");
   return failures == 0 ? 0 : 1;
 }

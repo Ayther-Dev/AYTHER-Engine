@@ -17,6 +17,10 @@
 #include <memory>
 #include <string>
 
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
+
 namespace {
 int failures = 0;
 void check(bool condition, const char *message) {
@@ -34,7 +38,13 @@ int run(const std::string &args) {
 #endif
   // The bench is a separate executable by design (it is what the job runs).
   // NOLINTNEXTLINE(bugprone-command-processor,concurrency-mt-unsafe)
-  return std::system(command.c_str());
+  const int status = std::system(command.c_str());
+#ifdef _WIN32
+  return status;
+#else
+  // POSIX system() returns the wait status, not the exit code.
+  return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
 }
 std::string q(const fs::path &p) { return "\"" + p.string() + "\""; }
 
@@ -61,9 +71,10 @@ void scenario(const char *name, const std::string &rom, const fs::path &dir) {
   const std::string tag = name;
   const fs::path take = dir / (tag + ".arp"), a = dir / (tag + ".a.jsonl"),
                  b = dir / (tag + ".b.jsonl"), bad = dir / (tag + ".bad.jsonl");
-  check(!rom.empty() && record_take(rom, take), (tag + ": take recorded").c_str());
-  const std::string common = "--core " + q(AYTHER_TEST_CORE_PATH) + " --rom " + q(rom) +
-                             " --arp " + q(take) + " --out ";
+  check(!rom.empty() && record_take(rom, take),
+        (tag + ": take recorded").c_str());
+  const std::string common = "--core " + q(AYTHER_TEST_CORE_PATH) + " --rom " +
+                             q(rom) + " --arp " + q(take) + " --out ";
   check(run("dump " + common + q(a)) == 0 && run("dump " + common + q(b)) == 0,
         (tag + ": two dumps written").c_str());
   check(run("compare --golden " + q(a) + " --candidate " + q(b)) == 0,
@@ -71,7 +82,8 @@ void scenario(const char *name, const std::string &rom, const fs::path &dir) {
   std::string text;
   {
     std::ifstream in(a, std::ios::binary);
-    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    text.assign(std::istreambuf_iterator<char>(in),
+                std::istreambuf_iterator<char>());
   }
   const auto at = text.find("\"palette\":{\"hash\":\"") + 19;
   text[at] = text[at] == '0' ? '1' : '0';

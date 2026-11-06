@@ -181,8 +181,8 @@ std::optional<Trace> decode_trace(View bytes) {
     return std::nullopt;
   const auto f = record(bytes.subspan(8));
   if (!f || f->size() != 4 || !expect(*f, 0, 1, 5, 32) ||
-      !expect(*f, 1, 2, 5, 32) || !expect(*f, 2, 3, 3, 8) ||
-      (*f)[3].tag != 4 || (*f)[3].type != 8)
+      !expect(*f, 1, 2, 5, 32) || !expect(*f, 2, 3, 3, 8) || (*f)[3].tag != 4 ||
+      (*f)[3].type != 8)
     return std::nullopt;
   bool ok = true;
   const auto n = read((*f)[2].data, 0, 8, ok);
@@ -221,7 +221,8 @@ std::optional<Trace> decode_trace(View bytes) {
   return t;
 }
 
-int trace_from_arp_command(const std::string &arp_path, const std::string &out_path,
+int trace_from_arp_command(const std::string &arp_path,
+                           const std::string &out_path,
                            const std::string &content_sha_hex,
                            const std::string &config_sha_hex) {
   std::array<std::uint8_t, 32> content{}, config{};

@@ -34,7 +34,8 @@ int main() {
   const auto c = ayther::parity::dump_session(
       core, ayther::synth::canonical_rom_path(), pads(30, 5));
   const auto d = c;
-  check(a.has_value() && b.has_value() && c.has_value() && d.has_value(), "sessions dump");
+  check(a.has_value() && b.has_value() && c.has_value() && d.has_value(),
+        "sessions dump");
   if (!a || !b || !c)
     return 1;
   check(*a == *b, "two runs of the same scenario give identical dumps");
@@ -51,7 +52,8 @@ int main() {
                      std::string::npos;
   check(all, "every subplane (fb, scene, sprites, tiles, plane_cells, raster, "
              "chip_writes, palette, attribution) is dumped");
-  check(!ayther::parity::dump_session(core, "missing.rom", pads(3, 1)).has_value(),
+  check(!ayther::parity::dump_session(core, "missing.rom", pads(3, 1))
+             .has_value(),
         "a missing ROM is an error");
   return failures == 0 ? 0 : 1;
 }

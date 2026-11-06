@@ -35,6 +35,11 @@ env:
   CARGO_LLVM_COV_VERSION: 0.8.2
   FUZZ_NIGHTLY: nightly-2026-08-25
   CLANG_TIDY_VERSION: 18
+  # Tessera commit the Windows job builds. It must equal sourceCommit in
+  # dependencies/tessera.lock.json; the 'Verify the Tessera pin' step enforces
+  # it. It is a literal (not read from the file) so the checkout ref is not
+  # data derived from the repository (CodeQL cache-poisoning rule).
+  TESSERA_COMMIT: c67892978d8c263ad32baf6ff8b45587d062eb4b
 
 jobs:
   repository-policy:
@@ -504,24 +509,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read the Tessera lock
+      - name: Verify the Tessera pin
         if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
-        id: tessera_lock
         shell: pwsh
         run: |
-          # dependencies/tessera.lock.json is the only place the Tessera commit
-          # is written down (TP-016.1). CMake checks the installed package
-          # against the same file when AYTHER_ENABLE_TESSERA is on.
+          # dependencies/tessera.lock.json is the source of truth (TP-016.1);
+          # CMake checks the installed package against it as well. The
+          # workflow literal must follow the lock in the same change.
           $lock = Get-Content dependencies/tessera.lock.json -Raw | ConvertFrom-Json
-          if ($lock.sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'The Tessera lock has no source commit.' }
-          "commit=$($lock.sourceCommit)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          if ($lock.sourceCommit -ne $env:TESSERA_COMMIT) {
+            throw "TESSERA_COMMIT in ci.yml ($env:TESSERA_COMMIT) differs from the lock ($($lock.sourceCommit))."
+          }
 
       - name: Check out the pinned Tessera provider
         if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
         uses: actions/checkout@v5
         with:
           repository: Ayther-Dev/AYTHER-Tessera
-          ref: ${{ steps.tessera_lock.outputs.commit }}
+          ref: ${{ env.TESSERA_COMMIT }}
           path: build/tessera-source
           persist-credentials: false
 

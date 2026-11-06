@@ -27,8 +27,10 @@ API. Además, `dependencies/tessera.lock.json` fija el Tessera exacto:
   Mientras no exista, el lock es `unreleased` y fija el commit de `main`
   (TP-112.3 lo completa con `v0.2.0-rc.1`).
 
-El CI lee el commit del lock para compilar Tessera (`ci.yml`,
-`native-release.yml`), y la configuración compara el paquete instalado con el
+`native-release.yml` lee el commit del lock para compilar Tessera; `ci.yml` lo
+fija como literal (`TESSERA_COMMIT`, para que el `ref` del checkout no derive de
+un archivo del repositorio) y un paso falla si difiere del lock, de modo que el
+lock y el workflow cambian juntos. La configuración compara el paquete instalado con el
 lock (`source.revision`, `version`, API); si no coincide falla con
 `TESSERA_LOCK_MISMATCH`. Para desarrollar contra otro Tessera, local y nunca en
 CI: `-DAYTHER_TESSERA_ALLOW_UNLOCKED=ON`. Las pruebas `ayther.package.tessera_lock.*`
