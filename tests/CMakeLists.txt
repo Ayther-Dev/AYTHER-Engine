@@ -375,6 +375,7 @@ target_compile_definitions(ayther_core_probe_vectors PRIVATE
     AYTHER_TEST_CORE_HANG_PATH="$<TARGET_FILE:ayther_test_core_hang>"
     AYTHER_NOT_A_CORE_PATH="$<TARGET_FILE:ayther_not_a_core>"
     AYTHER_MISSING_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}/missing-core")
+set_tests_properties(ayther.contract.core_probe_vectors PROPERTIES TIMEOUT 30)
 add_dependencies(ayther_core_probe_vectors
     ayther_test_core
     ayther_test_core_stock
@@ -917,7 +918,7 @@ if(AYTHER_ENABLE_TESSERA)
                 "${AYTHER_TESSERA_PHASE3_EVIDENCE_DIR}"
                 "${AYTHER_TESSERA_TEST_FIXTURE_DIR}/roms/ayther_synthetic.md")
         set_tests_properties(ayther.integration.tessera_checkpoint PROPERTIES
-            TIMEOUT 1200 RUN_SERIAL TRUE
+            TIMEOUT 1200 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
             LABELS "engine;native;integration;checkpoint;FX-02;phase3")
     endif()
 endif()
@@ -931,7 +932,10 @@ if(AYTHER_ENABLE_TESSERA)
     target_compile_definitions(ayther_tessera_pack_test PRIVATE
         AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx03")
     tessera_copy_runtime_dependencies(ayther_tessera_pack_test)
+    # SKIP_RETURN_CODE 77: skipped when the Tessera package has no clownmdemu
+    # backend (tessera_clown_backend.hpp).
     set_tests_properties(ayther.integration.tessera_pack_test PROPERTIES
+        SKIP_RETURN_CODE 77
         LABELS "engine;native;integration;phase4;FX-03")
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/tessera_presentation_test.cpp" integration)
@@ -944,6 +948,7 @@ if(AYTHER_ENABLE_TESSERA)
         AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx03")
     tessera_copy_runtime_dependencies(ayther_tessera_presentation_test)
     set_tests_properties(ayther.integration.tessera_presentation_test PROPERTIES
+        SKIP_RETURN_CODE 77
         LABELS "engine;native;integration;phase4;FX-03")
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/tessera_controls_test.cpp" integration)

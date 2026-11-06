@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <type_traits>
 
 namespace ayther::parity {
 namespace {
@@ -18,6 +19,8 @@ struct Acc {
   }
   template <class T> void value(const T &v) { bytes(&v, sizeof v); }
   template <class T> void array(const T *p, std::size_t count) {
+    static_assert(std::has_unique_object_representations_v<T>,
+                  "padded record: hash it field by field (see records())");
     n += static_cast<std::uint32_t>(count);
     if (p != nullptr && count != 0)
       bytes(p, count * sizeof(T));
@@ -56,6 +59,50 @@ void scene_element(Acc &a, const SceneElement &e) {
   a.value(e.raster_identity_known);
 }
 
+// The same holds for these records: raw hashing picked up uninitialised tail
+// padding (visible under ASan), so each is hashed field by field.
+template <class T, class F>
+void records(Acc &a, const T *p, std::size_t count, F field) {
+  a.n += static_cast<std::uint32_t>(count);
+  for (std::size_t i = 0; p != nullptr && i < count; ++i)
+    field(a, p[i]);
+}
+
+void sprite_occurrence(Acc &a, const AytherSpriteOccurrence &e) {
+  a.value(e.hash);
+  a.value(e.anim_group_id);
+  a.value(e.w_tiles);
+  a.value(e.h_tiles);
+  a.value(e.screen_x);
+  a.value(e.screen_y);
+  a.value(e.link);
+  a.value(e.palette);
+  a.value(e.priority);
+  a.value(e.slot);
+  a.value(e.hflip);
+  a.value(e.vflip);
+}
+
+void plane_cell(Acc &a, const PlaneCellHit &e) {
+  a.value(e.hash);
+  a.value(e.screen_x);
+  a.value(e.screen_y);
+  a.value(e.plane);
+  a.value(e.pattern);
+  a.value(e.palette);
+  a.value(e.flags);
+}
+
+void entity_instance(Acc &a, const EntityInstance &e) {
+  a.value(e.id);
+  a.value(e.kind);
+  a.value(e.screen_x);
+  a.value(e.screen_y);
+  a.value(e.w_px);
+  a.value(e.h_px);
+  a.value(e.sprite_count);
+}
+
 void emit(std::string &out, const char *name, const Acc &a, bool last) {
   char buf[96];
   std::snprintf(buf, sizeof buf, "\"%s\":{\"hash\":\"%016llx\",\"count\":%u}%s",
@@ -86,9 +133,9 @@ std::string line(std::uint32_t frame, const FrameView &v,
   scene.n = v.scene_count;
   scene.value(v.scene_backdrop);
   scene.value(v.scene_left_blank);
-  sprites.array(v.sprite_occs, v.sprite_occ_count);
+  records(sprites, v.sprite_occs, v.sprite_occ_count, sprite_occurrence);
   tiles.array(v.tile_occs, v.tile_occ_count);
-  cells.array(v.plane_cells, v.plane_cell_count);
+  records(cells, v.plane_cells, v.plane_cell_count, plane_cell);
   raster.value(v.raster_reasons);
   raster.value(v.raster_band_count);
   raster.bytes(v.raster_bands, sizeof v.raster_bands);
@@ -100,7 +147,7 @@ std::string line(std::uint32_t frame, const FrameView &v,
   chip.array(v.chip_writes, v.chip_write_count);
   palette.array(v.scene_cram, v.scene_cram_size);
   attr.array(v.sprite_occ_core_drawn, v.sprite_occ_count);
-  attr.array(v.entity_instances, v.entity_instance_count);
+  records(attr, v.entity_instances, v.entity_instance_count, entity_instance);
   attr.array(v.audio_occs, v.audio_occ_count);
 
   std::string out = "{\"frame\":" + std::to_string(frame) + ",";

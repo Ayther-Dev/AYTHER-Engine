@@ -95,6 +95,8 @@ std::filesystem::path write_pe_stub(const std::string &file_name,
 
 int main() {
   namespace engine = ayther::engine;
+  // Unbuffered, so a timeout under CTest still shows the last vector reached.
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
 
   // Verdict table: names, reasons and exit codes of the contract.
   check(engine::verdict_exit_code(ProbeVerdict::timeout) == 5 &&
