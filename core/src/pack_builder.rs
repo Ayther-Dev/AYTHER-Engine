@@ -46,6 +46,55 @@ const DEV_SIGNING_SEED: [u8; 32] = [
     0x5b, 0x8a, 0x31, 0x9f, 0x35, 0xab, 0xa6, 0x24, 0xda, 0x8c, 0xf6, 0xed, 0x4d, 0x0b, 0xd6, 0xd9,
 ];
 
+/// Emulator that produced a pack's content (`manifest.toml → [emulator]`).
+///
+/// Informational: no reader rejects a pack because of it.
+#[derive(Debug, Clone, Copy)]
+pub struct EmulatorProvenance<'a> {
+    /// `gpgx` or `tessera`; printable ASCII, at most 32 bytes.
+    pub id: &'a str,
+    /// Build id of the core; printable ASCII, at most 64 bytes.
+    pub version: &'a str,
+    /// Determinism contract number of that emulator.
+    pub determinism_contract: u32,
+}
+
+fn printable_ascii(text: &str, limit: usize) -> bool {
+    text.len() <= limit && text.bytes().all(|b| (0x20..=0x7E).contains(&b))
+}
+
+/// Returns `manifest` with `[emulator]` and `[identity]` written (or replaced).
+///
+/// The result is re-serialised, so comments and key order of the input are not
+/// preserved; every value is. `identity_contract` is the identity contract the
+/// pack was baked under (`archive_vfs::IDENTITY_CONTRACT` for this build).
+pub fn stamp_manifest_provenance(
+    manifest: &str,
+    emulator: &EmulatorProvenance<'_>,
+    identity_contract: u32,
+) -> Result<String, String> {
+    if !printable_ascii(emulator.id, 32) {
+        return Err("emulator id must be printable ASCII, at most 32 bytes".into());
+    }
+    if !printable_ascii(emulator.version, 64) {
+        return Err("emulator version must be printable ASCII, at most 64 bytes".into());
+    }
+    let mut table: toml::Table =
+        toml::from_str(manifest).map_err(|e| format!("manifest.toml is not valid TOML: {e}"))?;
+    let mut emu = toml::Table::new();
+    emu.insert("id".into(), emulator.id.into());
+    emu.insert("version".into(), emulator.version.into());
+    emu.insert(
+        "determinism_contract".into(),
+        i64::from(emulator.determinism_contract).into(),
+    );
+    table.insert("emulator".into(), emu.into());
+    let mut identity = toml::Table::new();
+    identity.insert("contract".into(), i64::from(identity_contract).into());
+    table.insert("identity".into(), identity.into());
+    toml::to_string(&table).map_err(|e| format!("cannot serialise manifest.toml: {e}"))
+}
+
 /// Builds a deterministic `.ay` pack from staged entries.
 ///
 /// Assets are named by content hash rather than extension, so the caller may
@@ -326,6 +375,56 @@ mod tests {
     const MANIFEST: &str = "[pack]\nname = \"Test\"\nversion = \"1.0.0\"\n\
         game_id = \"sonic2\"\nayther_min = \"0.8.0\"\n\
         [regions]\ndefault = \"NTSC\"\nsupported = [\"NTSC\"]\n";
+
+    /// Spec 008 (TP-008.5): el empaquetador escribe `[emulator]` e `[identity]`
+    /// sin tocar el resto del manifest, y las reescribe si ya estaban.
+    #[test]
+    fn stamp_manifest_provenance_writes_both_tables() {
+        let emulator = EmulatorProvenance {
+            id: "tessera",
+            version: "0.1.0-dev",
+            determinism_contract: 3,
+        };
+        let out = stamp_manifest_provenance(MANIFEST, &emulator, 1).unwrap();
+        let t: toml::Table = toml::from_str(&out).unwrap();
+        assert_eq!(t["pack"]["name"].as_str(), Some("Test"));
+        assert_eq!(t["regions"]["default"].as_str(), Some("NTSC"));
+        assert_eq!(t["emulator"]["id"].as_str(), Some("tessera"));
+        assert_eq!(t["emulator"]["version"].as_str(), Some("0.1.0-dev"));
+        assert_eq!(t["emulator"]["determinism_contract"].as_integer(), Some(3));
+        assert_eq!(t["identity"]["contract"].as_integer(), Some(1));
+        let again = stamp_manifest_provenance(&out, &emulator, 2).unwrap();
+        let t2: toml::Table = toml::from_str(&again).unwrap();
+        assert_eq!(t2["identity"]["contract"].as_integer(), Some(2));
+        assert_eq!(t2["pack"]["name"].as_str(), Some("Test"));
+    }
+
+    #[test]
+    fn stamp_manifest_provenance_rejects_bad_input() {
+        let ok = EmulatorProvenance {
+            id: "gpgx",
+            version: "r4",
+            determinism_contract: 1,
+        };
+        assert!(stamp_manifest_provenance("no es [ toml", &ok, 1).is_err());
+        let long_id = "x".repeat(33);
+        let long_version = "v".repeat(65);
+        let accented = format!("t{}ssera", char::from_u32(0xE9).unwrap());
+        let newline = format!("a{}b", '\n');
+        for (id, version) in [
+            (long_id.as_str(), "r4"),
+            (accented.as_str(), "r4"),
+            ("gpgx", long_version.as_str()),
+            ("gpgx", newline.as_str()),
+        ] {
+            let bad = EmulatorProvenance {
+                id,
+                version,
+                determinism_contract: 1,
+            };
+            assert!(stamp_manifest_provenance(MANIFEST, &bad, 1).is_err());
+        }
+    }
 
     #[cfg(debug_assertions)]
     #[test]

@@ -4,6 +4,8 @@
 #include <nlohmann/json.hpp>
 #include <windows.h>
 
+#include "tessera_clown_backend.hpp"
+
 #include <algorithm>
 #include <array>
 #include <filesystem>
@@ -241,6 +243,8 @@ int main(int argc, char **argv) {
     require(argc == 3 || argc == 7, "ARGUMENTS_INVALID");
     const std::filesystem::path evidence = argv[1];
     const std::filesystem::path original = argv[2];
+    if (argc == 3 && ayther::tests::skip_without_tessera_clown_backend())
+      return ayther::tests::kSkipExitCode;
     if (argc == 7) {
       work(evidence, argv[3], argv[4], std::stoul(argv[5]),
            std::string_view(argv[4]) != "original",

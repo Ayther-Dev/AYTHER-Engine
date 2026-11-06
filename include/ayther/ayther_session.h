@@ -52,9 +52,10 @@
 #include "ayther_core_ffi.h" // AytherTileSub, AytherSpriteSub, *Occurrence (POD)
 #include "ayther_layers.h"   // AytherLayerContent (the pack's Acetates)
 #include "ayther_mode3.h" // Mode3Resolver / EntityInstance (Mode 3, RAM anchoring)
-#include "ayther_result.h"  // ayther::Result / Error
-#include "engine/input.hpp" // typed public joypad input contract
-#include "engine/pack.hpp"  // typed, non-owning pack boundary for frontends
+#include "ayther_result.h"        // ayther::Result / Error
+#include "emulation_generation.h" // EmulationGeneration (D-4)
+#include "engine/input.hpp"       // typed public joypad input contract
+#include "engine/pack.hpp" // typed, non-owning pack boundary for frontends
 #include <ayther/engine/audio_hd_state.hpp>
 #include <ayther/engine/audio_initial_snapshot.hpp>
 #include <ayther/engine/audio_observer.hpp>
@@ -887,6 +888,12 @@ public:
   [[nodiscard]] engine::NativeEmulation *native_emulation() noexcept;
   [[nodiscard]] const engine::NativeEmulation *
   native_emulation() const noexcept;
+  /// Emulator id, version and determinism contract of this session (spec 008,
+  /// D-4): `gpgx` for Genesis Plus GX (or the slug of another libretro core's
+  /// name) with the core's version, and `tessera` with the hex backend build id
+  /// for the native provider. Recordings and packs stamp it as their origin.
+  [[nodiscard]] const EmulationGeneration &
+  emulation_generation() const noexcept;
   /// Submit both observation masks atomically for the next executable frame.
   [[nodiscard]] engine::NativeResult
   native_submit_presentation_policy(std::uint64_t regions,

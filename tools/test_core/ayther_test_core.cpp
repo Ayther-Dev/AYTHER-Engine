@@ -27,9 +27,11 @@
 #include "libretro_host/libretro.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -646,6 +648,24 @@ constexpr uint64_t kGeometrySettlesAtFrame = 3;
 
 constexpr uint32_t kSupportedSubscriptions = AYTHER_SUB_ALL;
 
+/// Bits this fixture announces so that the core probe contract
+/// (docs/CORE_PROBE_CONTRACT.md, `required_capabilities` = 0xEFFFF) gives it
+/// the verdict `ok`. None of them has an entry point in the descriptor: they
+/// are observation channels the Engine reads through regions, and every
+/// consumer gates on the region query succeeding, which this core answers as
+/// "unknown region". Declaring them is therefore inert here; the probe vectors
+/// need it. SPRITE_OUTCOME_V1 is the one the `partial` variant leaves out.
+#ifdef AYTHER_TEST_CORE_NO_SPRITE_OUTCOME
+constexpr uint64_t kSpriteOutcomeCapability = 0;
+#else
+constexpr uint64_t kSpriteOutcomeCapability = AYTHER_CAP_SPRITE_OUTCOME_V1;
+#endif
+constexpr uint64_t kProbeContractCapabilities =
+    AYTHER_CAP_RASTER_FALLBACK_V1 | AYTHER_CAP_AUDIO_PROBE_V1 |
+    AYTHER_CAP_RECOMPOSE_STATS_V1 | AYTHER_CAP_ATTRIBUTION_V1 |
+    AYTHER_CAP_FRAME_DELTA_SINCE_V1 | AYTHER_CAP_LINE_STATE_V1 |
+    AYTHER_CAP_OBSERVABILITY_V1 | kSpriteOutcomeCapability;
+
 /// Only what this core actually implements. Declaring a capability it does not
 /// honour would make the frontend take a path that then returns nothing, which
 /// is worse than declaring nothing: the engine checks these before calling.
@@ -655,7 +675,7 @@ constexpr uint64_t kCapabilities =
     AYTHER_CAP_PARSED_SPRITES_V1 | AYTHER_CAP_AUDIO_WRITES_V1 |
     AYTHER_CAP_CONTROL_WRITE | AYTHER_CAP_RECOMPOSE_V1 |
     AYTHER_CAP_FRAME_DELTA_V1 | AYTHER_CAP_SUBSCRIPTIONS_V1 |
-    AYTHER_CAP_SYSTEM_V1;
+    AYTHER_CAP_SYSTEM_V1 | kProbeContractCapabilities;
 
 // Recomposed layers, cached by (frame, control generation). Not part of the
 // savestate: they are derived, and a savestate that carried them would let a
@@ -1137,7 +1157,17 @@ RETRO_API void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) {
 RETRO_API void retro_set_input_poll(retro_input_poll_t cb) { g_poll = cb; }
 RETRO_API void retro_set_input_state(retro_input_state_t cb) { g_input = cb; }
 
-RETRO_API void retro_init(void) { reset_state(true); }
+RETRO_API void retro_init(void) {
+#ifdef AYTHER_TEST_CORE_HANG
+  // Probe fixture: a core that never returns from retro_init, so the parent
+  // has to enforce the time limit. The cap keeps an orphaned child from
+  // outliving a test run that was killed.
+  for (int i = 0; i < 600; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+#endif
+  reset_state(true);
+}
 RETRO_API void retro_deinit(void) { g_rom.clear(); }
 
 RETRO_API void retro_get_system_info(struct retro_system_info *info) {

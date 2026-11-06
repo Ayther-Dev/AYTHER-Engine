@@ -14,6 +14,35 @@ compilador y versión; sus pruebas copian el runtime ASAN local junto al binario
 La opción desactivada mantiene el proveedor existente y stubs nativos que
 responden `unsupported_capability`. No hay descargas implícitas de Tessera.
 
+### Versión exigida y lock
+
+Engine exige un paquete que declare la **API de Tessera 1.1 o una 1.x posterior**
+(`Tessera_ABI_MAJOR`/`Tessera_ABI_MINOR` de `TesseraConfig.cmake`); un paquete
+1.0 se rechaza al configurar con `TESSERA_API_TOO_OLD`. La versión del paquete
+(`0.x`) no se restringe, porque los tags de Tessera avanzan por separado de la
+API. Además, `dependencies/tessera.lock.json` fija el Tessera exacto:
+
+- `sourceCommit`, `api` y `package.version` siempre;
+- `release.tag` y `artifact.sha256` cuando Tessera publica un tag con esa API.
+  Mientras no exista, el lock es `unreleased` y fija el commit de `main`
+  (TP-112.3 lo completa con `v0.2.0-rc.1`).
+
+`native-release.yml` lee el commit del lock para compilar Tessera; `ci.yml` lo
+fija como literal (`TESSERA_COMMIT`, para que el `ref` del checkout no derive de
+un archivo del repositorio) y un paso falla si difiere del lock, de modo que el
+lock y el workflow cambian juntos. La configuración compara el paquete instalado con el
+lock (`source.revision`, `version`, API); si no coincide falla con
+`TESSERA_LOCK_MISMATCH`. Para desarrollar contra otro Tessera, local y nunca en
+CI: `-DAYTHER_TESSERA_ALLOW_UNLOCKED=ON`. Las pruebas `ayther.package.tessera_lock.*`
+comprueban el lock y que el verificador rechaza un commit, versión, tag o API
+distintos. Para subir de versión se cambia el lock en el mismo PR que el código
+que lo necesita:
+
+```powershell
+cmake -DAYTHER_TESSERA_LOCK=dependencies/tessera.lock.json `
+      -DAYTHER_TESSERA_PREFIX=<prefijo Tessera> -P tools/check_tessera_lock.cmake
+```
+
 ```cpp
 ayther::AytherSession::Config configuration;
 configuration.provider = ayther::EmulationProvider::tessera_native;

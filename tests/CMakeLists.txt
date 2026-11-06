@@ -74,6 +74,68 @@ set_tests_properties(ayther.package.engine_public_contract PROPERTIES
     TIMEOUT 30
     LABELS  "native;package")
 
+# The Tessera lock (TP-016.1): the real lock is well formed, and the checker
+# rejects a lock or an installed package that does not match it. Each rejection
+# case passes only when the checker fails with the expected diagnostic.
+set(AYTHER_TESSERA_LOCK_FILE
+    "${PROJECT_SOURCE_DIR}/dependencies/tessera.lock.json")
+set(_tessera_fixtures "${PROJECT_SOURCE_DIR}/tests/fixtures/tessera_lock")
+function(ayther_add_tessera_lock_test _name _lock _prefix _expect)
+    set(_command "${CMAKE_COMMAND}" "-DAYTHER_TESSERA_LOCK=${_lock}")
+    if(_prefix)
+        list(APPEND _command "-DAYTHER_TESSERA_PREFIX=${_prefix}")
+    endif()
+    list(APPEND _command -P "${PROJECT_SOURCE_DIR}/tools/check_tessera_lock.cmake")
+    add_test(NAME "ayther.package.tessera_lock.${_name}" COMMAND ${_command})
+    set_tests_properties("ayther.package.tessera_lock.${_name}" PROPERTIES
+        TIMEOUT 30
+        LABELS  "native;package"
+        PASS_REGULAR_EXPRESSION "${_expect}")
+endfunction()
+
+ayther_add_tessera_lock_test(well_formed
+    "${AYTHER_TESSERA_LOCK_FILE}" "" "Tessera lock: .* is well formed")
+ayther_add_tessera_lock_test(unreleased_matches_package
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_unreleased" "matches")
+ayther_add_tessera_lock_test(released_matches_package
+    "${_tessera_fixtures}/lock_released.json"
+    "${_tessera_fixtures}/pkg_released" "matches")
+ayther_add_tessera_lock_test(rejects_other_commit
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_other_commit"
+    "TESSERA_LOCK_MISMATCH: the package at")
+ayther_add_tessera_lock_test(rejects_other_version
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_other_version"
+    "TESSERA_LOCK_MISMATCH: the package version is 0.2.0")
+ayther_add_tessera_lock_test(rejects_tag_when_package_is_another_version
+    "${_tessera_fixtures}/lock_released.json"
+    "${_tessera_fixtures}/pkg_unreleased"
+    "TESSERA_LOCK_MISMATCH: the package version is 0.1.0")
+ayther_add_tessera_lock_test(rejects_api_1_0_package
+    "${_tessera_fixtures}/lock_unreleased.json"
+    "${_tessera_fixtures}/pkg_api10"
+    "TESSERA_API_TOO_OLD")
+ayther_add_tessera_lock_test(rejects_tag_without_sha256
+    "${_tessera_fixtures}/lock_half_released.json" ""
+    "needs artifact.sha256")
+ayther_add_tessera_lock_test(rejects_tag_that_names_another_version
+    "${_tessera_fixtures}/lock_tag_version_mismatch.json" ""
+    "does not match package.version")
+ayther_add_tessera_lock_test(rejects_lock_below_required_api
+    "${_tessera_fixtures}/lock_old_api.json" ""
+    "TESSERA_LOCK_API")
+ayther_add_tessera_lock_test(rejects_short_commit
+    "${_tessera_fixtures}/lock_short_commit.json" ""
+    "sourceCommit must be a full lowercase SHA-1")
+# With the Tessera provider enabled, the installed package must be the locked one.
+if(AYTHER_ENABLE_TESSERA AND Tessera_DIR AND NOT AYTHER_TESSERA_ALLOW_UNLOCKED)
+    get_filename_component(_tessera_lock_prefix "${Tessera_DIR}/../../.." ABSOLUTE)
+    ayther_add_tessera_lock_test(installed_package
+        "${AYTHER_TESSERA_LOCK_FILE}" "${_tessera_lock_prefix}" "matches")
+endif()
+
 find_program(AYTHER_PWSH_EXECUTABLE NAMES pwsh)
 add_subdirectory(audio_qa/observer_contract)
 if(AYTHER_PWSH_EXECUTABLE)
@@ -271,9 +333,11 @@ endfunction()
 # The ABI oracles need an emulator core that speaks the extension. Building one
 # here -- rather than pointing at a binary that /third_party/cores/* gitignores
 # -- is what lets the positive half of the negotiation run on a clean checkout.
-add_subdirectory(
-    "${PROJECT_SOURCE_DIR}/tools/test_core"
-    "${PROJECT_BINARY_DIR}/tools/test_core")
+if(NOT TARGET ayther_test_core)
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/test_core"
+        "${PROJECT_BINARY_DIR}/tools/test_core")
+endif()
 
 # A loadable library without Libretro entry points makes the negative probe
 # case deterministic on every platform and independent of system DLL layout.
@@ -298,6 +362,27 @@ add_dependencies(ayther_core_probe_test
     ayther_test_core
     ayther_not_a_core)
 
+# Contract v2 (docs/CORE_PROBE_CONTRACT.md, TP-013.4): the in-process vectors,
+# named ayther.contract.core_probe_vectors. The hang fixture is only located,
+# never loaded: its verdict belongs to the supervising parent.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/contracts/core_probe_vectors.cpp"
+    contract)
+target_compile_definitions(ayther_core_probe_vectors PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+    AYTHER_TEST_CORE_STOCK_PATH="$<TARGET_FILE:ayther_test_core_stock>"
+    AYTHER_TEST_CORE_PARTIAL_PATH="$<TARGET_FILE:ayther_test_core_partial>"
+    AYTHER_TEST_CORE_HANG_PATH="$<TARGET_FILE:ayther_test_core_hang>"
+    AYTHER_NOT_A_CORE_PATH="$<TARGET_FILE:ayther_not_a_core>"
+    AYTHER_MISSING_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}/missing-core")
+set_tests_properties(ayther.contract.core_probe_vectors PROPERTIES TIMEOUT 30)
+add_dependencies(ayther_core_probe_vectors
+    ayther_test_core
+    ayther_test_core_stock
+    ayther_test_core_partial
+    ayther_test_core_hang
+    ayther_not_a_core)
+
 # The plane-set catalogue mutations (define, undefine, clear) rebuild the
 # matcher's order; a live session with the test core drives them.
 ayther_add_native_test(
@@ -307,6 +392,15 @@ target_compile_definitions(ayther_plane_set_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_plane_set_session_test ayther_test_core)
 
+# Spec 008 (TP-008.6): the generation (emulator id, version, contract) a live
+# libretro session publishes, driven with the test core.
+ayther_add_native_test(
+    "${PROJECT_SOURCE_DIR}/tests/integration/emulation_generation_session_test.cpp"
+    integration)
+target_compile_definitions(ayther_emulation_generation_session_test PRIVATE
+    AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+add_dependencies(ayther_emulation_generation_session_test ayther_test_core)
+
 # Spec 002 (contracts.md C3): the render observation a live session publishes
 # through Config::render_observer, driven with the test core.
 ayther_add_native_test(
@@ -315,6 +409,53 @@ ayther_add_native_test(
 target_compile_definitions(ayther_render_observation_session_test PRIVATE
     AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
 add_dependencies(ayther_render_observation_session_test ayther_test_core)
+
+# Spec 008 (TP-005.13): plane 3 of the Tessera parity bench.
+if(AYTHER_BUILD_PARITY_BENCH)
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench"
+        "${PROJECT_BINARY_DIR}/tools/parity_bench")
+
+    # TP-005.14: take inputs -> TSTRACE1 -> replay gives the take's frame hashes.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_trace_test.cpp"
+        integration)
+    target_sources(ayther_parity_trace_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/trace_arp.cpp")
+    target_compile_definitions(ayther_parity_trace_test PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_trace_test ayther_test_core)
+
+    # TP-005.15: FrameView dump with a hash per subplane.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_dump_test.cpp"
+        integration)
+    target_sources(ayther_parity_dump_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp")
+    target_compile_definitions(ayther_parity_dump_test PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_dump_test ayther_test_core)
+
+    # TP-005.16: first divergence per subplane against a golden dump.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_synthetic.cpp"
+        integration)
+    target_sources(ayther_parity_bench_synthetic PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp")
+    target_compile_definitions(ayther_parity_bench_synthetic PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
+    add_dependencies(ayther_parity_bench_synthetic ayther_test_core)
+
+    # TP-005.17: the native job runs parity_bench on both scenes.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_selftest.cpp"
+        integration)
+    target_compile_definitions(ayther_parity_bench_selftest PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+        PARITY_BENCH_PATH="$<TARGET_FILE:parity_bench>")
+    add_dependencies(ayther_parity_bench_selftest ayther_test_core parity_bench)
+endif()
 
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
 # the deprecated memory ids retain a stale non-empty prefix.
@@ -777,7 +918,7 @@ if(AYTHER_ENABLE_TESSERA)
                 "${AYTHER_TESSERA_PHASE3_EVIDENCE_DIR}"
                 "${AYTHER_TESSERA_TEST_FIXTURE_DIR}/roms/ayther_synthetic.md")
         set_tests_properties(ayther.integration.tessera_checkpoint PROPERTIES
-            TIMEOUT 1200 RUN_SERIAL TRUE
+            TIMEOUT 1200 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
             LABELS "engine;native;integration;checkpoint;FX-02;phase3")
     endif()
 endif()
@@ -791,7 +932,10 @@ if(AYTHER_ENABLE_TESSERA)
     target_compile_definitions(ayther_tessera_pack_test PRIVATE
         AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx03")
     tessera_copy_runtime_dependencies(ayther_tessera_pack_test)
+    # SKIP_RETURN_CODE 77: skipped when the Tessera package has no clownmdemu
+    # backend (tessera_clown_backend.hpp).
     set_tests_properties(ayther.integration.tessera_pack_test PROPERTIES
+        SKIP_RETURN_CODE 77
         LABELS "engine;native;integration;phase4;FX-03")
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/tessera_presentation_test.cpp" integration)
@@ -804,6 +948,7 @@ if(AYTHER_ENABLE_TESSERA)
         AYTHER_FX03_ROOT="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx03")
     tessera_copy_runtime_dependencies(ayther_tessera_presentation_test)
     set_tests_properties(ayther.integration.tessera_presentation_test PROPERTIES
+        SKIP_RETURN_CODE 77
         LABELS "engine;native;integration;phase4;FX-03")
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/tessera_controls_test.cpp" integration)
