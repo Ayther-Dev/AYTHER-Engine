@@ -7,39 +7,6 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
-
-- Take recordings (`.arp`) are now version 11 and carry the emulator provenance
-  (`emulator_id`, `emulator_version`, `determinism_contract`) after the take
-  id. `AytherRecording::peek_provenance()` and `patch_provenance()` read and
-  write it without recompressing the take, and `AYTHER_RECORDING_PROVENANCE`
-  lets frontends guard on it. Files up to version 10 load as `gpgx`, empty
-  version, contract 1. Because the
-  C++ struct grew, `AytherRecording::abi_size()` changes: rebuild against the
-  Engine headers you link. Older readers cannot open version 11 files.
-- Manifest schema 2 readers already ignore unknown tables, so the planned
-  `[emulator]` and `[identity]` tables will be added without raising the schema:
-  it stays at 2. A test (`schema_2_ignores_emulator_and_identity_tables`) pins
-  that a schema 2 pack carrying both tables still opens with its metadata
-  intact.
-- `pack_builder::stamp_manifest_provenance()` writes `[emulator]` and
-  `[identity]` into a manifest, and `pack_validate` now rejects a pack whose
-  `identity.contract` is newer than this build's (`IDENTITY_CONTRACT = 1`) with
-  `pack.identity_contract_too_new`. `[emulator]` is informational and never
-  rejects a pack.
-- `AytherSession::emulation_generation()` publishes the emulator id, version and
-  determinism contract of a session: `gpgx` (or the slug of another libretro
-  core's name) with the core's own version for the libretro provider, and
-  `tessera` with the hex backend build id for the native provider. The new
-  installed header `ayther/emulation_generation.h` holds the pure mapping.
-- `AytherSession::take_recording()` stamps the session generation into the take,
-  so a take recorded with a libretro core carries that core's id and version.
-- `tools/parity_bench` (option `AYTHER_BUILD_PARITY_BENCH`, ON in the
-  `windows-native` preset): skeleton of plane 3 of the Tessera parity bench with
-  the `dump`, `compare` and `trace-from-arp` subcommands and
-  `--provider libretro|tessera_native`. The subcommands validate their
-  arguments and report that they are not implemented yet.
-
 ### Security
 
 - Added explicit production pack trust registries with Ed25519 signer identity,
@@ -68,23 +35,6 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Core probe contract v2 (`docs/CORE_PROBE_CONTRACT.md`): `probe_core_v2`
-  reports a verdict, the PE/ELF architecture, the AYTHER ABI and the capability
-  mask against the required `0xEFFFF`; the installed `bin/ayther_core_probe`
-  command prints the `AYTHER_STATUS` line and exits 0, 2, 3 or 4; the package
-  publishes the shared probe vectors in `share/ayther/probe-vectors/` with the
-  fixture cores `ayther_test_core_partial` and `ayther_test_core_hang`. The
-  parent process sets the verdicts `timeout` (10 s limit, exit 5) and `crashed`
-  (exit 6); the integration guide is in the contract.
-
-- `dependencies/tessera.lock.json` pins the Tessera the Engine builds against
-  (source commit, API version and, once Tessera publishes a tag with that API,
-  the tag and the package SHA-256). CI and the native release candidate read the
-  commit from it, `AYTHER_ENABLE_TESSERA` now requires a package that declares
-  the Tessera API 1.1 or a later 1.x (`TESSERA_API_TOO_OLD` otherwise) and
-  compares the installed package with the lock (`TESSERA_LOCK_MISMATCH`;
-  `AYTHER_TESSERA_ALLOW_UNLOCKED=ON` for local development). The
-  `ayther.package.tessera_lock.*` tests cover the lock and the rejections.
 - `AytherSession::set_audio_events` restores the events of an earlier
   `analyze_audio_events` of the same take without replaying it, so a frontend
   can cache them next to the take; `AytherSession::kAudioEventAlgo` versions
@@ -300,6 +250,74 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 - A release build could open no pack whatsoever through `AytherSession`: an
   unsigned pack is refused, the development key is refused in an optimized
   build, and `Config` had no way to name a production trust registry.
+
+## [0.1.0-rc.22] - 2026-11-06
+
+Emulator provenance in takes and sessions, the core probe contract v2, and the
+pinned Tessera.
+
+### Added
+
+- Take recordings (`.arp`) are now version 11 and carry the emulator provenance
+  (`emulator_id`, `emulator_version`, `determinism_contract`) after the take
+  id. `AytherRecording::peek_provenance()` and `patch_provenance()` read and
+  write it without recompressing the take, and `AYTHER_RECORDING_PROVENANCE`
+  lets frontends guard on it. Files up to version 10 load as `gpgx`, empty
+  version, contract 1. Because the
+  C++ struct grew, `AytherRecording::abi_size()` changes: rebuild against the
+  Engine headers you link. Older readers cannot open version 11 files.
+- Manifest schema 2 readers already ignore unknown tables, so the planned
+  `[emulator]` and `[identity]` tables will be added without raising the schema:
+  it stays at 2. A test (`schema_2_ignores_emulator_and_identity_tables`) pins
+  that a schema 2 pack carrying both tables still opens with its metadata
+  intact.
+- `pack_builder::stamp_manifest_provenance()` writes `[emulator]` and
+  `[identity]` into a manifest, and `pack_validate` now rejects a pack whose
+  `identity.contract` is newer than this build's (`IDENTITY_CONTRACT = 1`) with
+  `pack.identity_contract_too_new`. `[emulator]` is informational and never
+  rejects a pack.
+- `AytherSession::emulation_generation()` publishes the emulator id, version and
+  determinism contract of a session: `gpgx` (or the slug of another libretro
+  core's name) with the core's own version for the libretro provider, and
+  `tessera` with the hex backend build id for the native provider. The new
+  installed header `ayther/emulation_generation.h` holds the pure mapping.
+- `AytherSession::take_recording()` stamps the session generation into the take,
+  so a take recorded with a libretro core carries that core's id and version.
+- `tools/parity_bench` (option `AYTHER_BUILD_PARITY_BENCH`, ON in the
+  `windows-native` preset): skeleton of plane 3 of the Tessera parity bench with
+  the `dump`, `compare` and `trace-from-arp` subcommands and
+  `--provider libretro|tessera_native`. The subcommands validate their
+  arguments and report that they are not implemented yet.
+- Core probe contract v2 (`docs/CORE_PROBE_CONTRACT.md`): `probe_core_v2`
+  reports a verdict, the PE/ELF architecture, the AYTHER ABI and the capability
+  mask against the required `0xEFFFF`; the installed `bin/ayther_core_probe`
+  command prints the `AYTHER_STATUS` line and exits 0, 2, 3 or 4; the package
+  publishes the shared probe vectors in `share/ayther/probe-vectors/` with the
+  fixture cores `ayther_test_core_partial` and `ayther_test_core_hang`. The
+  parent process sets the verdicts `timeout` (10 s limit, exit 5) and `crashed`
+  (exit 6); the integration guide is in the contract.
+- `dependencies/tessera.lock.json` pins the Tessera the Engine builds against
+  (source commit, API version and, once Tessera publishes a tag with that API,
+  the tag and the package SHA-256). CI and the native release candidate read the
+  commit from it, `AYTHER_ENABLE_TESSERA` now requires a package that declares
+  the Tessera API 1.1 or a later 1.x (`TESSERA_API_TOO_OLD` otherwise) and
+  compares the installed package with the lock (`TESSERA_LOCK_MISMATCH`;
+  `AYTHER_TESSERA_ALLOW_UNLOCKED=ON` for local development). The
+  `ayther.package.tessera_lock.*` tests cover the lock and the rejections.
+
+### Changed
+
+- `AytherRecording::abi_size()` changes with the take format (see Added). A
+  frontend that links the Engine must rebuild against the headers of this
+  release; AYTHER Lab with the previous header refuses to start instead of
+  misreading takes.
+
+### Fixed
+
+- Probing a file that is not a valid image no longer hangs on Windows when the
+  process has no desktop: `LoadLibraryW` raised a system "Bad Image" box and
+  waited for it to be closed. The loader now runs with `SEM_FAILCRITICALERRORS`
+  and the probe returns its normal `not_a_core` verdict.
 
 ## [0.1.0-rc.21] - 2026-11-02
 
