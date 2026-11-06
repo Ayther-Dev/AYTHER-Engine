@@ -21,6 +21,13 @@ Set-StrictMode -Version Latest
 try {
     $log = Get-Content -LiteralPath $LogPath -Raw
     $optionalCoreTests = @('audio_mute', 'audio_output', 'render_output', 'subsystem_routing')
+    # Real Mega Drive ROM tests: they skip (exit 77) when the linked Tessera
+    # package has no clownmdemu backend (reference builds only).
+    $optionalBackendTests = @(
+        'ayther.integration.tessera_checkpoint',
+        'ayther.integration.tessera_pack_test',
+        'ayther.integration.tessera_presentation_test'
+    )
     $requiredCoreTests = @(
         'abi_negociacion', 'abi_frame_delta', 'abi_multilayer',
         'abi_lecturas', 'abi_escrituras', 'e2e_determinismo'
@@ -42,7 +49,9 @@ try {
     foreach ($testName in $expectedTests) {
         if (-not $seenTests.ContainsKey($testName)) { throw "Missing result for $testName." }
     }
-    $unexpectedSkips = @($skippedTests | Where-Object { $_ -notin $optionalCoreTests })
+    $unexpectedSkips = @($skippedTests | Where-Object {
+        $_ -notin $optionalCoreTests -and $_ -notin $optionalBackendTests
+    })
     if ($unexpectedSkips.Count -gt 0) {
         throw "These tests must run regardless of optional core availability: $($unexpectedSkips -join ', ')."
     }
@@ -71,6 +80,7 @@ try {
         }
     }
 
+    $skippedTests = @($skippedTests | Where-Object { $_ -notin $optionalBackendTests })
     if ($skippedTests.Count -eq 0) {
         Write-Output 'All ten core-related tests passed; no CTest results were skipped.'
     } elseif ($coreAvailable) {
