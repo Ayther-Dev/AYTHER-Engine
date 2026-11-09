@@ -974,3 +974,16 @@ if(AYTHER_ENABLE_TESSERA)
     set_tests_properties(ayther.integration.tessera_controls_test PROPERTIES
         LABELS "engine;native;integration;phase4;controls")
 endif()
+
+# TP-301.2: TesseraBackend as an ObservationSource, against the ABI's null
+# scene (synthetic.complete) and on the native megadrive machine.
+if(AYTHER_ENABLE_TESSERA)
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/contracts/tessera_observation_source.cpp" contract)
+    target_include_directories(ayther_tessera_observation_source SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
+    target_compile_options(ayther_tessera_observation_source PRIVATE /EHsc)
+    tessera_copy_runtime_dependencies(ayther_tessera_observation_source)
+    set_tests_properties(ayther.contract.tessera_observation_source PROPERTIES
+        LABELS "engine;native;contract")
+endif()
