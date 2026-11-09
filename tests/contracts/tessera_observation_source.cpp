@@ -237,11 +237,9 @@ TEST_CASE("the megadrive machine announces the r4 surface and translates") {
       ayther::engine::detail::observation_source(*emulation);
 
   REQUIRE(tessera.has_ayther_v1());
-  // gpgx r4's 0xEFFFF, without FRAME_SNAPSHOT while the package lacks the
-  // call (v0.2.0-rc.2).
-  CHECK(tessera.observation_capabilities() ==
-        (UINT64_C(0xEFFFF) & ~std::uint64_t{AYTHER_CAP_FRAME_SNAPSHOT}));
-  CHECK_FALSE(tessera.provides(ObservationFn::capture_snapshot));
+  // gpgx r4's 0xEFFFF, FRAME_SNAPSHOT included since v0.2.0-rc.3.
+  CHECK(tessera.observation_capabilities() == UINT64_C(0xEFFFF));
+  CHECK(tessera.provides(ObservationFn::capture_snapshot));
   CHECK(tessera.provides(ObservationFn::get_subscriptions));
   CHECK(tessera.observation_build_id().starts_with("tessera/megadrive/"));
 
@@ -259,6 +257,26 @@ TEST_CASE("the megadrive machine announces the r4 surface and translates") {
                             static_cast<std::uint32_t>(vram.size()),
                             AYTHER_GENERATION_ANY)
             .status == AYTHER_STATUS_NOT_SUBSCRIBED);
+
+  // The snapshot needs no subscription and carries the generation region
+  // reads check (TP-302). Below its size it is BUFFER_TOO_SMALL with `out`
+  // untouched.
+  ayther_frame_snapshot_v1 snapshot{};
+  snapshot.struct_size = sizeof(snapshot);
+  REQUIRE(tessera.capture_frame_snapshot(snapshot).ok());
+  CHECK(snapshot.snapshot_version == 1);
+  CHECK((snapshot.flags & AYTHER_SNAPSHOT_CONTENT_LOADED) != 0);
+  CHECK((snapshot.flags & AYTHER_SNAPSHOT_FRAME_ACTIVE) == 0);
+  std::array<std::uint8_t, 1> mask{};
+  const auto layer = tessera.read_region_v1(
+      AYTHER_REGION_LAYER_MASK, mask.data(), 1, snapshot.snapshot_generation);
+  CHECK(layer.ok());
+  CHECK(layer.generation == snapshot.snapshot_generation);
+  ayther_frame_snapshot_v1 small{};
+  small.snapshot_version = 0xA5A5A5A5u;
+  CHECK(tessera.capture_snapshot(&small, sizeof(small) - 1) ==
+        AYTHER_STATUS_BUFFER_TOO_SMALL);
+  CHECK(small.snapshot_version == 0xA5A5A5A5u);
 
   // The Engine's subscriptions, bounded by what the machine supports.
   const auto subscribed = tessera.subscribe_all_supported();

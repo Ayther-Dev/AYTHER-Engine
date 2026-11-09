@@ -107,10 +107,8 @@ void TesseraBackend::bind_observation(
   }
 
   info_.abi_version = AYTHER_ABI_VERSION_1_10;
-  // FRAME_SNAPSHOT is not announced while the package lacks the call.
   info_.capabilities =
-      (subscriptions_ ? kMachineCapabilities : kFixedRegionCapabilities) &
-      ~std::uint64_t{AYTHER_CAP_FRAME_SNAPSHOT};
+      subscriptions_ ? kMachineCapabilities : kFixedRegionCapabilities;
   info_.build_id = build_id_text_;
   info_.region_info_size = sizeof(tessera_obs_region_info_v1);
   info_.frame_snapshot_size = sizeof(tessera_obs_frame_snapshot_v1);
@@ -136,12 +134,7 @@ bool TesseraBackend::provides(ObservationFn fn) const {
   case ObservationFn::read_region:
   case ObservationFn::write_control:
     return true;
-  case ObservationFn::capture_snapshot:
-    // Tessera v0.2.0-rc.2 declares tessera_observation_snapshot_capture_v1
-    // but does not implement it (the symbol is not in the package). Until
-    // the release that does, the snapshot is unavailable and this source
-    // cannot feed a FrameView (TP-301.3 waits for it).
-    return false;
+  case ObservationFn::capture_snapshot: // Tessera v0.2.0-rc.3 (TP-302)
   case ObservationFn::recompose_frame:
   case ObservationFn::poll_audio_events:
   case ObservationFn::get_audio_transport_stats:
@@ -224,10 +217,19 @@ TesseraBackend::write_control(std::uint32_t region_id, std::uint32_t offset,
 
 std::int32_t TesseraBackend::capture_snapshot(ayther_frame_snapshot_v1 *out,
                                               std::uint32_t out_size) const {
-  // See provides(): not in the v0.2.0-rc.2 package.
+#if AYTHER_HAS_TESSERA
+  // The counters of the last frame run, with the session generation region
+  // reads check. Below the 48 bytes it is BUFFER_TOO_SMALL with `out`
+  // untouched, as in gpgx; inside a frame, BUSY.
+  AYTHER_TESSERA_GUARD(ObservationFn::capture_snapshot);
+  return to_abi(tessera_observation_snapshot_capture_v1(
+      handle, reinterpret_cast<tessera_obs_frame_snapshot_v1 *>(out), out_size,
+      &ctx));
+#else
   (void)out;
   (void)out_size;
   return AYTHER_STATUS_UNSUPPORTED;
+#endif
 }
 
 std::int32_t TesseraBackend::recompose_rejection(std::int32_t status,
