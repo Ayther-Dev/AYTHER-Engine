@@ -1,4 +1,5 @@
 #include "audio_source_read.h"
+#include <ayther/libretro_host/retro_runner.h>
 
 #include <array>
 #include <iostream>

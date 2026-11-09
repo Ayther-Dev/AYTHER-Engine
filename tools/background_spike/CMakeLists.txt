@@ -9,6 +9,7 @@
 
 add_executable(background_spike
     spike.cpp
+    ${CMAKE_SOURCE_DIR}/src/observation_source.cpp
     ${CMAKE_SOURCE_DIR}/src/retro_runner.cpp
     ${CMAKE_SOURCE_DIR}/src/log.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime_options.cpp

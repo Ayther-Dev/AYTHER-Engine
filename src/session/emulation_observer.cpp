@@ -50,24 +50,23 @@ void normalize_legacy_sprites(const uint8_t *bytes, uint32_t count,
 
 } // namespace
 
-void EmulationObserver::activate_subscriptions(RetroRunner &runner) {
+void EmulationObserver::activate_subscriptions(ObservationSource &runner) {
   if (!runner.has_ayther_v1())
     return;
-  const ayther_interface_v1 *api = runner.ayther_api();
-  if (!(api->capabilities & AYTHER_CAP_SUBSCRIPTIONS_V1))
+  if (!runner.has_capability(AYTHER_CAP_SUBSCRIPTIONS_V1))
     return;
 
   ayther_subscription_state_v1 state{};
   state.struct_size = sizeof(state);
-  if (api->get_subscriptions(&state, sizeof(state)) != AYTHER_STATUS_OK) {
+  if (runner.get_subscriptions(&state, sizeof(state)) != AYTHER_STATUS_OK) {
     ayther::log::write(ayther::log::Severity::Error, "session",
                        "get_subscriptions_fallo_sin",
                        "get_subscriptions fallo — sin suscripciones");
     return;
   }
   const uint32_t wanted =
-      RetroRunner::kEngineSubscriptions & state.supported_mask;
-  const int32_t result = api->set_subscriptions(wanted);
+      ObservationSource::kEngineSubscriptions & state.supported_mask;
+  const int32_t result = runner.set_subscriptions(wanted);
   if (result != AYTHER_STATUS_OK) {
     ayther::log::write(ayther::log::Severity::Error, "session",
                        "set_subscriptions_fallo", "set_subscriptions fallo: %d",
@@ -83,16 +82,15 @@ void EmulationObserver::activate_subscriptions(RetroRunner &runner) {
                      wanted, state.supported_mask);
 }
 
-void EmulationObserver::verify_subscriptions(RetroRunner &runner) {
+void EmulationObserver::verify_subscriptions(ObservationSource &runner) {
   if (subscriptions_verified_ || !requested_ || !runner.has_ayther_v1())
     return;
-  const ayther_interface_v1 *api = runner.ayther_api();
-  if (!(api->capabilities & AYTHER_CAP_SUBSCRIPTIONS_V1))
+  if (!runner.has_capability(AYTHER_CAP_SUBSCRIPTIONS_V1))
     return;
 
   ayther_subscription_state_v1 state{};
   state.struct_size = sizeof(state);
-  if (api->get_subscriptions(&state, sizeof(state)) != AYTHER_STATUS_OK)
+  if (runner.get_subscriptions(&state, sizeof(state)) != AYTHER_STATUS_OK)
     return;
   if (state.active_mask == requested_) {
     ayther::log::write(ayther::log::Severity::Info, "session",
@@ -109,14 +107,14 @@ void EmulationObserver::verify_subscriptions(RetroRunner &runner) {
   subscriptions_verified_ = true;
 }
 
-void EmulationObserver::reapply_subscriptions(RetroRunner &runner) {
+void EmulationObserver::reapply_subscriptions(ObservationSource &runner) {
   if (!requested_ || !runner.has_ayther_v1())
     return;
   subscriptions_verified_ = false;
-  runner.ayther_api()->set_subscriptions(requested_);
+  runner.set_subscriptions(requested_);
 }
 
-void EmulationObserver::initialize_system(RetroRunner &runner) {
+void EmulationObserver::initialize_system(ObservationSource &runner) {
   if (runner.has_ayther_v1())
     system_ok_ = runner.read_system_v1(system_).ok();
 }
@@ -128,7 +126,7 @@ bool EmulationObserver::mirror_enabled() {
   return enabled;
 }
 
-void EmulationObserver::refresh(RetroRunner &runner) {
+void EmulationObserver::refresh(ObservationSource &runner) {
   snapshot_ok_ = false;
   system_ok_ = false;
   system_current_for_frame_ = !runner.has_ayther_v1();
@@ -163,52 +161,53 @@ void EmulationObserver::refresh(RetroRunner &runner) {
         static_cast<unsigned>(system_.flags & AYTHER_SYSTEM_GEOMETRY_PENDING));
   }
 
-  auto read_region = [&](std::vector<uint8_t> &destination, size_t legacy_size,
-                         uint32_t region,
-                         RetroRunner::AytherReadResult (RetroRunner::*read)(
-                             void *, const ayther_frame_snapshot_v1 &) const) {
-    const size_t abi_size = runner.abi_region_bytes(region);
-    const size_t size = (std::max)(abi_size, legacy_size);
-    if (!size) {
-      destination.clear();
-      return;
-    }
-    destination.resize(size);
-    const auto result = (runner.*read)(destination.data(), snapshot_);
-    if (!result.ok() || (result.count && result.count < size))
-      destination.clear();
-  };
+  auto read_region =
+      [&](std::vector<uint8_t> &destination, size_t legacy_size,
+          uint32_t region,
+          ObservationSource::AytherReadResult (ObservationSource::*read)(
+              void *, const ayther_frame_snapshot_v1 &) const) {
+        const size_t abi_size = runner.abi_region_bytes(region);
+        const size_t size = (std::max)(abi_size, legacy_size);
+        if (!size) {
+          destination.clear();
+          return;
+        }
+        destination.resize(size);
+        const auto result = (runner.*read)(destination.data(), snapshot_);
+        if (!result.ok() || (result.count && result.count < size))
+          destination.clear();
+      };
   read_region(vram_, runner.video_ram_size(), AYTHER_REGION_VRAM,
-              &RetroRunner::read_vram_v1);
+              &ObservationSource::read_vram_v1);
   read_region(cram_, runner.color_ram_size(), AYTHER_REGION_CRAM,
-              &RetroRunner::read_cram_v1);
+              &ObservationSource::read_cram_v1);
   read_region(regs_, runner.vdp_regs_size(), AYTHER_REGION_VDP_REGS,
-              &RetroRunner::read_vdp_regs_v1);
+              &ObservationSource::read_vdp_regs_v1);
   read_region(vsram_, runner.vsram_size(), AYTHER_REGION_VSRAM,
-              &RetroRunner::read_vsram_v1);
+              &ObservationSource::read_vsram_v1);
   snapshot_ok_ = true;
 }
 
 AYTHER_OBSERVER_LEGACY_BEGIN
-const uint8_t *EmulationObserver::vram(const RetroRunner &runner) const {
+const uint8_t *EmulationObserver::vram(const ObservationSource &runner) const {
   return !vram_.empty() ? vram_.data() : runner.video_ram();
 }
 
-const uint8_t *EmulationObserver::cram(const RetroRunner &runner) const {
+const uint8_t *EmulationObserver::cram(const ObservationSource &runner) const {
   return !cram_.empty() ? cram_.data() : runner.color_ram();
 }
 
-const uint8_t *EmulationObserver::regs(const RetroRunner &runner) const {
+const uint8_t *EmulationObserver::regs(const ObservationSource &runner) const {
   return !regs_.empty() ? regs_.data() : runner.vdp_regs();
 }
 
-const uint8_t *EmulationObserver::vsram(const RetroRunner &runner) const {
+const uint8_t *EmulationObserver::vsram(const ObservationSource &runner) const {
   return !vsram_.empty() ? vsram_.data() : runner.vsram();
 }
 AYTHER_OBSERVER_LEGACY_END
 
 EmulationObserver::AudioWritesView
-EmulationObserver::audio_writes(RetroRunner &runner) {
+EmulationObserver::audio_writes(ObservationSource &runner) {
   if (!snapshot_ok_) {
     AYTHER_OBSERVER_LEGACY_BEGIN
     return {runner.audio_writes(), runner.audio_write_count(), false};
@@ -218,17 +217,18 @@ EmulationObserver::audio_writes(RetroRunner &runner) {
 }
 
 EmulationObserver::AudioWritesView
-EmulationObserver::audio_writes(RetroRunner &runner,
+EmulationObserver::audio_writes(ObservationSource &runner,
                                 const ayther_frame_snapshot_v1 &snapshot,
                                 bool legacy_fallback) {
-  std::optional<RetroRunner::AytherReadResult> abi_read;
+  std::optional<ObservationSource::AytherReadResult> abi_read;
   if (runner.has_ayther_v1()) {
     audio_.resize(snapshot.audio_write_count);
     const auto result = runner.read_audio_writes_v1(
         audio_.data(), static_cast<uint32_t>(audio_.size()), snapshot);
     abi_read = result;
     if (result.ok()) {
-      return {reinterpret_cast<const RetroRunner::AudioWrite *>(audio_.data()),
+      return {reinterpret_cast<const ObservationSource::AudioWrite *>(
+                  audio_.data()),
               result.count, true, result};
     }
     if (result.status == AYTHER_STATUS_NOT_SUBSCRIBED && !audio_warned_) {
@@ -247,7 +247,7 @@ EmulationObserver::audio_writes(RetroRunner &runner,
 }
 
 EmulationObserver::ParsedSpritesView
-EmulationObserver::parsed_sprites(RetroRunner &runner) {
+EmulationObserver::parsed_sprites(ObservationSource &runner) {
   if (snapshot_ok_) {
     if (!parsed_sprite_capture_complete(snapshot_)) {
       sprites_.clear();
@@ -314,7 +314,7 @@ EmulationObserver::cached_parsed_sprites() const noexcept {
 
 EmulationObserver::ParsedSpritesView
 EmulationObserver::cached_or_legacy_parsed_sprites(
-    const RetroRunner &runner) const {
+    const ObservationSource &runner) const {
   const auto cached = cached_parsed_sprites();
   ParsedSpritesView legacy{};
   if (!cached) {

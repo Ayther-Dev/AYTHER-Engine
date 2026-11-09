@@ -9,7 +9,11 @@ struct AytherSession::Impl {
   std::vector<std::uint8_t> native_presented_pixels;
   std::unordered_map<std::uint64_t, std::string> native_tile_overrides;
   std::uint64_t next_native_policy_transaction = 1;
-  RetroRunner runner;                     // emulator host
+  RetroRunner runner; // emulator host
+  /// The observation surface FrameView is built from (TP-301.1). Today the
+  /// libretro runner; the native provider plugs in here (TP-301.2/301.3).
+  ObservationSource &source() noexcept { return runner; }
+  const ObservationSource &source() const noexcept { return runner; }
   session::EmulationObserver observer;    // ABI observation + legacy fallback
   session::RecordingController recording; // deterministic live capture
   engine::audio_observation::Observer qa_observer;
@@ -1380,8 +1384,6 @@ struct AytherSession::Impl {
   /// the frame. Off, the VDP shows the backdrop only: no HD is recognized or
   /// drawn over it.
   bool display_on = true;
-  void *multilayer_fn = nullptr; ///< el export, resuelto una vez
-  bool multilayer_fn_resolved = false;
   int32_t layers_error_status = AYTHER_STATUS_OK;
   /// El ultimo motivo YA LOGUEADO, para no repetirlo frame a frame. Distinto
   /// de `layers_error_status`, que es el de la ultima llamada: si el juego

@@ -200,6 +200,7 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/log.cpp
     src/pack.cpp
     src/psg_synth.cpp
+    src/observation_source.cpp
     src/retro_runner.cpp
     src/rewind_buffer.cpp
     src/runtime_options.cpp

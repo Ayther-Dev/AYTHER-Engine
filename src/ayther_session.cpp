@@ -1504,23 +1504,24 @@ const FrameView &AytherSession::produce_frame() {
     qa_source_interval.emplace();
     qa_source_interval->frame = im.frame_index;
     qa_source_interval->subscriptions =
-        audio_qa::read_audio_subscriptions(im.runner.ayther_api());
+        audio_qa::read_audio_subscriptions(im.source());
     qa_source_interval->snapshot_available = im.observer.snapshot_available();
     if (qa_source_interval->snapshot_available)
       qa_source_interval->snapshot = im.observer.snapshot();
   }
   // Copiar el log de escrituras de chip del produce ANTES de cualquier re-sim
   // bare/compose (línea ~923 corre run_frame de nuevo y pisaría el buffer del
-  // core). El layout de RetroRunner::AudioWrite es idéntico al
+  // core). El layout de ObservationSource::AudioWrite es idéntico al
   // AytherAudioWrite.
   {
-    // E-3 (): dual-path. `ayther_audio_write_v1` y RetroRunner::AudioWrite
-    // tienen el mismo layout (cycle u32, addr u16, data u8, chip u8), así que
-    // el consumidor de abajo no distingue de dónde vinieron.
+    // E-3 (): dual-path. `ayther_audio_write_v1` y
+    // ObservationSource::AudioWrite tienen el mismo layout (cycle u32, addr
+    // u16, data u8, chip u8), así que el consumidor de abajo no distingue de
+    // dónde vinieron.
     static_assert(sizeof(ayther_audio_write_v1) ==
-                      sizeof(RetroRunner::AudioWrite),
+                      sizeof(ObservationSource::AudioWrite),
                   "el layout de la escritura de chip tiene que coincidir");
-    const auto observed_audio = im.observer.audio_writes(im.runner);
+    const auto observed_audio = im.observer.audio_writes(im.source());
     im.qa_write_origin = observed_audio.abi
                              ? audio_qa::WriteOrigin::abi_snapshot
                              : audio_qa::WriteOrigin::legacy_core;
@@ -1534,7 +1535,8 @@ const FrameView &AytherSession::produce_frame() {
     }
     im.chip_writes.clear();
     if (aw && naw > 0) {
-      static_assert(sizeof(RetroRunner::AudioWrite) == sizeof(AytherAudioWrite),
+      static_assert(sizeof(ObservationSource::AudioWrite) ==
+                        sizeof(AytherAudioWrite),
                     "AudioWrite ABI must match AytherAudioWrite");
       static_assert(
           sizeof(AytherAudioEvent) == 32,
@@ -1556,7 +1558,7 @@ const FrameView &AytherSession::produce_frame() {
     // la cola es de consumo-al-leer— y se desempaqueta para que el detector
     // reciba los dos caminos en UNA llamada.
     im.pcm_events.clear();
-    if (im.runner.ayther_api()) {
+    if (im.source().has_ayther_v1()) {
       static constexpr uint32_t kMaxAudioEvents = 4096;
       im.audio_evt_scratch.resize(kMaxAudioEvents);
       if (qa_source_interval)
@@ -5496,18 +5498,18 @@ const FrameView &AytherSession::produce_frame() {
           std::vector<uint8_t> line_state_bytes;
           std::array<session::RasterLineLayout, 1024> line_layouts{};
           std::span<const session::RasterLineLayout> exact_line_layouts;
-          const ayther_interface_v1 *line_api = im.runner.ayther_api();
+          const ObservationSource &line_source = im.source();
+          const ObservationInfo *line_info = line_source.observation_info();
           if ((raster & session::kRasterReasonHscroll) != 0 &&
-              line_api != nullptr &&
-              (line_api->capabilities & AYTHER_CAP_LINE_STATE_V1) != 0 &&
+              line_info != nullptr &&
+              (line_info->capabilities & AYTHER_CAP_LINE_STATE_V1) != 0 &&
               (im.observer.requested_subscriptions() & AYTHER_SUB_LINE_STATE) !=
                   0 &&
-              line_api->region_info_size >= sizeof(ayther_region_info_v1) &&
-              AYTHER_IFACE_HAS(line_api, query_region) &&
-              line_api->query_region != nullptr) {
+              line_info->region_info_size >= sizeof(ayther_region_info_v1) &&
+              line_source.provides(ObservationFn::query_region)) {
             ayther_region_info_v1 line_state_info{};
             line_state_info.struct_size = sizeof(line_state_info);
-            const int32_t line_query = line_api->query_region(
+            const int32_t line_query = line_source.query_region(
                 AYTHER_REGION_LINE_REGS, &line_state_info,
                 sizeof(line_state_info));
             const size_t line_state_size = line_state_info.byte_size;
@@ -5519,7 +5521,7 @@ const FrameView &AytherSession::produce_frame() {
                                                          v.fb_height) &&
                 line_state_size <= max_line_state_size) {
               line_state_bytes.resize(line_state_size);
-              const auto line_read = im.runner.read_region_v1(
+              const auto line_read = line_source.read_region_v1(
                   AYTHER_REGION_LINE_REGS, line_state_bytes.data(),
                   static_cast<uint32_t>(line_state_bytes.size()),
                   frame_snapshot.snapshot_generation);
@@ -5550,19 +5552,20 @@ const FrameView &AytherSession::produce_frame() {
           // final state. DI-21: the same comparison bounds every raster band,
           // so it is taken for any raster reason.
           std::span<const uint8_t> diff_lines;
-          const ayther_interface_v1 *api = im.runner.ayther_api();
-          if (raster != 0 && api != nullptr &&
-              (api->capabilities & AYTHER_CAP_RECOMPOSE_V1) != 0 &&
-              AYTHER_IFACE_HAS(api, recompose_frame) &&
-              api->recompose_frame != nullptr && v.fb_pixels != nullptr &&
-              v.fb_format == 2 && v.fb_pitch >= v.fb_width * 2) {
+          const ObservationSource &recompose_source = im.source();
+          if (raster != 0 &&
+              recompose_source.has_capability(AYTHER_CAP_RECOMPOSE_V1) &&
+              recompose_source.provides(ObservationFn::recompose_frame) &&
+              v.fb_pixels != nullptr && v.fb_format == 2 &&
+              v.fb_pitch >= v.fb_width * 2) {
             const size_t px = size_t(v.fb_width) * v.fb_height;
             if (im.raster_recomposed.size() < px)
               im.raster_recomposed.resize(px);
             uint32_t rw = 0;
             uint32_t rh = 0;
-            if (api->recompose_frame(im.raster_recomposed.data(), uint32_t(px),
-                                     0, &rw, &rh) == AYTHER_STATUS_OK &&
+            if (recompose_source.recompose_frame(im.raster_recomposed.data(),
+                                                 uint32_t(px), 0, &rw,
+                                                 &rh) == AYTHER_STATUS_OK &&
                 rw == v.fb_width && rh == v.fb_height) {
               im.raster_diff_lines.assign(v.fb_height, 0);
               session::differing_lines(
@@ -6527,11 +6530,7 @@ AytherSession::validate_pack(const std::string &pack_path) const {
   }
   // The core's build_id is NOT NUL-terminated (it is an ABI span), so it
   // is copied: passing the raw pointer would read past the end.
-  if (const ayther_interface_v1 *api = impl_->runner.ayther_api()) {
-    if (api->build_id && api->build_id_size) {
-      context.core_build_id.assign(api->build_id, api->build_id_size);
-    }
-  }
+  context.core_build_id.assign(impl_->source().observation_build_id());
 #ifdef NDEBUG
   context.release_build = true;
 #else
@@ -8481,14 +8480,12 @@ uint32_t AytherSession::ayther_abi_version() const noexcept {
 
 const char *AytherSession::ayther_build_id() const noexcept {
   const Impl &im = *impl_;
-  if (!im.runner.has_ayther_v1())
+  if (!im.source().has_ayther_v1())
     return "";
-  const ayther_interface_v1 *api = im.runner.ayther_api();
   // `build_id` viaja con su tamaño y NO promete terminador: se copia una vez
   // a un buffer propio para poder devolver un C-string.
   static thread_local std::string cached;
-  cached.assign(api->build_id ? api->build_id : "",
-                api->build_id ? api->build_id_size : 0u);
+  cached.assign(im.source().observation_build_id());
   return cached.c_str();
 }
 
@@ -8523,14 +8520,13 @@ void AytherSession::ayther_subscriptions(uint32_t *requested, uint32_t *active,
     *active = 0;
   if (supported)
     *supported = 0;
-  if (!im.runner.has_ayther_v1())
+  if (!im.source().has_ayther_v1())
     return;
-  const ayther_interface_v1 *api = im.runner.ayther_api();
-  if (!(api->capabilities & AYTHER_CAP_SUBSCRIPTIONS_V1))
+  if (!im.source().has_capability(AYTHER_CAP_SUBSCRIPTIONS_V1))
     return;
   ayther_subscription_state_v1 st{};
   st.struct_size = sizeof(st);
-  if (api->get_subscriptions(&st, sizeof(st)) != AYTHER_STATUS_OK)
+  if (im.source().get_subscriptions(&st, sizeof(st)) != AYTHER_STATUS_OK)
     return;
   if (active)
     *active = st.active_mask;
@@ -9734,14 +9730,6 @@ void *AytherSession::core_export(const char *name) const {
 // E-7 (): las capas nativas del VDP en UNA llamada
 // ---------------------------------------------------------------------------
 namespace {
-/// El export directo del fork. No vive en `ayther_interface_v1`: se resuelve
-/// por símbolo, como las sondas de los spikes.
-using AytherMultilayerFn = int32_t(AYTHER_CALL *)(uint16_t *, uint16_t *,
-                                                  uint16_t *, uint16_t *,
-                                                  uint16_t *, uint32_t,
-                                                  uint32_t, uint32_t *,
-                                                  uint32_t *);
-
 /// El motivo, en castellano y en términos del JUEGO — tres de los cuatro no son
 /// errores nuestros sino lo que la ROM está haciendo en ese frame.
 const char *multilayer_motivo(int32_t st) {
@@ -9802,35 +9790,16 @@ AytherSession::Layers AytherSession::recompose_layers() {
     return out; // vacio: ni composite ni capas (transaccional)
   };
 
-  if (!im.runner.has_ayther_v1())
+  const ObservationSource &source = im.source();
+  if (!source.has_ayther_v1())
     return fallar(AYTHER_STATUS_UNSUPPORTED);
-  const ayther_interface_v1 *api = im.runner.ayther_api();
-  if (!(api->capabilities & AYTHER_CAP_RECOMPOSE_V1))
+  if (!source.has_capability(AYTHER_CAP_RECOMPOSE_V1))
     return fallar(AYTHER_STATUS_UNSUPPORTED);
   if (!(im.observer.requested_subscriptions() & AYTHER_SUB_RECOMPOSITION))
     return fallar(AYTHER_STATUS_NOT_SUBSCRIBED);
-
-  // El símbolo se resuelve UNA vez: es un lookup en la tabla de exports del
-  // DLL y esto se llama por frame.
-  //
-  // DOS CAMINOS, y el orden importa. Desde la ABI 1.2 la multicapa vive en el
-  // DESCRIPTOR y el símbolo suelto `ayther_recompose_multilayer` YA NO SE
-  // EXPORTA en el perfil standard: contra un core >= 1.2 el GetProcAddress
-  // devuelve NULL y la feature queda muda sin un error a la vista. Se prueba
-  // primero el descriptor —que es donde vive hoy— y se cae al export suelto
-  // para los cores 1.0/1.1, que siguen siendo válidos porque la ABI es
-  // aditiva y nada obliga a actualizar el binario.
-  if (!im.multilayer_fn_resolved) {
-    im.multilayer_fn_resolved = true;
-    if (AYTHER_IFACE_HAS(api, recompose_multilayer) &&
-        api->recompose_multilayer)
-      im.multilayer_fn = reinterpret_cast<void *>(api->recompose_multilayer);
-    else
-      im.multilayer_fn =
-          reinterpret_cast<void *>(im.runner.core_sym<AytherMultilayerFn>(
-              "ayther_recompose_multilayer"));
-  }
-  if (!im.multilayer_fn)
+  // Descriptor (ABI >= 1.2) or the loose export of a 1.0/1.1 core: the
+  // source decides which, and resolves the export once (RetroRunner).
+  if (!source.provides(ObservationFn::recompose_multilayer))
     return fallar(AYTHER_STATUS_UNSUPPORTED);
 
   // Buffers de la sesión, dimensionados por el frame vivo. El core escribe
@@ -9844,13 +9813,13 @@ AytherSession::Layers AytherSession::recompose_layers() {
       buf.resize(px);
 
   uint32_t rw = 0, rh = 0;
-  const auto fn = reinterpret_cast<AytherMultilayerFn>(im.multilayer_fn);
-  const int32_t st = fn(im.layer_bufs[1].data(), // plano A
-                        im.layer_bufs[0].data(), // plano B
-                        im.layer_bufs[2].data(), // ventana
-                        im.layer_bufs[3].data(), // sprites
-                        im.layer_bufs[4].data(), // composite
-                        uint32_t(px), /*flags=*/0, &rw, &rh);
+  const int32_t st =
+      source.recompose_multilayer(im.layer_bufs[1].data(), // plano A
+                                  im.layer_bufs[0].data(), // plano B
+                                  im.layer_bufs[2].data(), // ventana
+                                  im.layer_bufs[3].data(), // sprites
+                                  im.layer_bufs[4].data(), // composite
+                                  uint32_t(px), /*flags=*/0, &rw, &rh);
   if (st != AYTHER_STATUS_OK)
     return fallar(st);
   // Que devuelva OK con otras dimensiones que las del frame vivo significaria
