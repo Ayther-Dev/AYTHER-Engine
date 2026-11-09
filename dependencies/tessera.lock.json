@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "dependency": "AYTHER Tessera",
   "repository": "https://github.com/Ayther-Dev/AYTHER-Tessera",
-  "sourceCommit": "4c60965296c4b7b46d088600c8e0af3fe9b15bd9",
+  "sourceCommit": "a3afab2ca7752d93c09e6c0fdfa5cae4a3c701f3",
   "api": {
     "major": 1,
     "minor": 1
@@ -11,12 +11,12 @@
     "version": "0.2.0"
   },
   "release": {
-    "tag": "v0.2.0-rc.2",
+    "tag": "v0.2.0-rc.3",
     "status": "released",
-    "note": "First Tessera release with API 1.1 and the native megadrive core. v0.2.0-rc.1 failed in CI before packaging and has no release."
+    "note": "API 1.1 with tessera_observation_snapshot_capture_v1 (48-byte frame snapshot, TP-302) exported and linked. v0.2.0-rc.1 failed in CI before packaging and has no release."
   },
   "artifact": {
-    "fileName": "tessera-v0.2.0-rc.2-windows-x86_64.zip",
-    "sha256": "4a6f5ec7827fe3f006c9c8dc6bbd890fa80e19b9370107bb08b9c84c4836e877"
+    "fileName": "tessera-v0.2.0-rc.3-windows-x86_64.zip",
+    "sha256": "2422f075d266b386be75700cd3fe2f6c9b2a3b50601638d4e3bd0770b33a86f2"
   }
 }
