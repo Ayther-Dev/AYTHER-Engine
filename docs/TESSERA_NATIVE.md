@@ -24,8 +24,9 @@ API. AdemÃ¡s, `dependencies/tessera.lock.json` fija el Tessera exacto:
 
 - `sourceCommit`, `api` y `package.version` siempre;
 - `release.tag` y `artifact.sha256` cuando Tessera publica un tag con esa API.
-  Mientras no exista, el lock es `unreleased` y fija el commit de `main`
-  (TP-112.3 lo completa con `v0.2.0-rc.1`).
+  Mientras no exista, el lock es `unreleased` y fija un commit de `main`.
+  Hoy fija `v0.2.0-rc.2` (API 1.1, núcleo `megadrive`); `v0.2.0-rc.1`
+  falló en CI antes de empaquetar y no tiene release.
 
 `native-release.yml` lee el commit del lock para compilar Tessera; `ci.yml` lo
 fija como literal (`TESSERA_COMMIT`, para que el `ref` del checkout no derive de
