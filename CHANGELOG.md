@@ -288,6 +288,13 @@ pinned Tessera.
   the `dump`, `compare` and `trace-from-arp` subcommands and
   `--provider libretro|tessera_native`. The subcommands validate their
   arguments and report that they are not implemented yet.
+- `parity_bench check --exceptions FILE --catalog FILE --dumps DIR
+  [--registry FILE]`: strict exception accounting of plane 3 (TP-209.1). Each
+  divergence between `<rom>.libretro.jsonl` and `<rom>.tessera_native.jsonl`
+  must be declared as a `<rom> <frame> <subplane> <EXC-nnn>` tuple (`*` and
+  `N-M` allowed), and each declared tuple must still diverge; a tuple declared
+  twice, a ROM outside the catalog or an id missing from the registry is an
+  error. Exit 0 clean, 5 on undeclared or unproduced tuples, 1 on bad input.
 - Core probe contract v2 (`docs/CORE_PROBE_CONTRACT.md`): `probe_core_v2`
   reports a verdict, the PE/ELF architecture, the AYTHER ABI and the capability
   mask against the required `0xEFFFF`; the installed `bin/ayther_core_probe`

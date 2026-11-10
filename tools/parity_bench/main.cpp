@@ -3,22 +3,28 @@
 //   parity_bench dump          --provider libretro|tessera_native ...
 //   parity_bench compare       --provider libretro|tessera_native ...
 //   parity_bench trace-from-arp ...
+//   parity_bench check --exceptions FILE --catalog FILE --dumps DIR
 //
 // Skeleton: the subcommands validate their arguments and report that they are
 // not implemented yet. dump arrives in TP-005.15 and compare in TP-005.16;
 // trace-from-arp (TP-005.14) is implemented in trace_arp.cpp.
+#include "exception_accounting.h"
 #include "frame_compare.h"
 #include "frame_dump.h"
 #include "trace_arp.h"
 
 #include <ayther/ayther_recording.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,6 +46,7 @@ void print_help(std::FILE *out) {
       "  compare          compare two dumps, first divergence per subplane\n"
       "  trace-from-arp   convert the inputs of a take (.arp) to a TSTRACE1 "
       "trace\n"
+      "  check            strict exception accounting over a catalog of dumps\n"
       "\n"
       "options:\n"
       "  --golden FILE --candidate FILE [--except SUBPLANE]...   (compare)\n"
@@ -48,10 +55,109 @@ void print_help(std::FILE *out) {
       "       only with libretro, tessera_native reads the ROM itself)\n"
       "  --arp FILE --out FILE --content-sha HEX --config-sha HEX  "
       "(trace-from-arp)\n"
+      "  --exceptions FILE --catalog FILE --dumps DIR [--registry FILE]\n"
+      "      (check: DIR holds <rom>.libretro.jsonl and\n"
+      "       <rom>.tessera_native.jsonl for every catalogued ROM; fails on a\n"
+      "       divergence no tuple declares and on a declared tuple that no\n"
+      "       longer diverges; --registry = docs/parity-exceptions.md)\n"
       "  --provider libretro|tessera_native   emulation provider of the "
       "session\n"
       "  --help                               show this help\n",
       out);
+}
+
+std::optional<std::string> read_file(const std::string &path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f)
+    return std::nullopt;
+  return std::string{std::istreambuf_iterator<char>(f),
+                     std::istreambuf_iterator<char>()};
+}
+
+// parity_bench check: exit 0 when every divergence is declared and every
+// declared tuple is produced, 5 when the accounting fails, 1 on bad input.
+int check_command(const std::string &exceptions_path,
+                  const std::string &catalog_path, const std::string &dumps,
+                  const std::string &registry_path) {
+  namespace ap = ayther::parity;
+  const auto exceptions = read_file(exceptions_path);
+  const auto catalog = read_file(catalog_path);
+  if (!exceptions || !catalog) {
+    std::fprintf(stderr, "check: cannot read %s\n",
+                 !exceptions ? exceptions_path.c_str() : catalog_path.c_str());
+    return 1;
+  }
+  std::set<std::string> known;
+  if (!registry_path.empty()) {
+    const auto registry = read_file(registry_path);
+    if (!registry) {
+      std::fprintf(stderr, "check: cannot read %s\n", registry_path.c_str());
+      return 1;
+    }
+    known = ap::registry_ids(*registry);
+    if (known.empty()) {
+      std::fprintf(stderr, "check: no EXC rows in %s\n", registry_path.c_str());
+      return 1;
+    }
+  }
+  const auto file = ap::parse_exception_file(*exceptions);
+  if (!file.ok) {
+    std::fprintf(stderr, "check: %s: %s\n", exceptions_path.c_str(),
+                 file.error.c_str());
+    return 1;
+  }
+  std::vector<ap::RomDiff> roms;
+  std::istringstream lines(*catalog);
+  std::string rom;
+  const std::filesystem::path dir(dumps);
+  while (std::getline(lines, rom)) {
+    if (const auto hash = rom.find('#'); hash != std::string::npos)
+      rom.erase(hash);
+    while (!rom.empty() && std::isspace(static_cast<unsigned char>(rom.back())))
+      rom.pop_back();
+    if (rom.empty())
+      continue;
+    const auto golden = read_file((dir / (rom + ".libretro.jsonl")).string());
+    const auto candidate =
+        read_file((dir / (rom + ".tessera_native.jsonl")).string());
+    if (!golden || !candidate) {
+      std::fprintf(stderr, "check: missing dump of %s in %s\n", rom.c_str(),
+                   dumps.c_str());
+      return 1;
+    }
+    const auto diff = ap::diff_dumps(*golden, *candidate);
+    if (!diff.ok) {
+      std::fprintf(stderr, "check: %s: %s\n", rom.c_str(), diff.error.c_str());
+      return 1;
+    }
+    roms.push_back({rom, diff.frames, diff.divergences});
+  }
+  if (roms.empty()) {
+    std::fprintf(stderr, "check: the catalog is empty\n");
+    return 1;
+  }
+  const auto result = ap::account(file, roms, known);
+  if (!result.ok) {
+    std::fprintf(stderr, "check: %s: %s\n", exceptions_path.c_str(),
+                 result.error.c_str());
+    return 1;
+  }
+  for (const auto &t : result.undeclared)
+    std::printf("undeclared %s %u %s\n", t.rom.c_str(), t.frame,
+                t.subplane.c_str());
+  for (const auto &t : result.unproduced)
+    std::printf("unproduced %s %u %s %s\n", t.rom.c_str(), t.frame,
+                t.subplane.c_str(), t.id.c_str());
+  std::size_t declared = 0;
+  for (const auto &[id, count] : result.declared) {
+    std::printf("declared %s %zu\n", id.c_str(), count);
+    declared += count;
+  }
+  std::printf("check: roms=%zu uniform=%zu declared=%zu undeclared=%zu "
+              "unproduced=%zu\n",
+              roms.size(), result.uniform_roms, declared,
+              result.undeclared.size(), result.unproduced.size());
+  return result.clean() ? kExitOk : 5;
 }
 
 bool valid_provider(std::string_view name) {
@@ -71,7 +177,7 @@ int main(int argc, char **argv) {
     return kExitOk;
   }
   if (subcommand != "dump" && subcommand != "compare" &&
-      subcommand != "trace-from-arp") {
+      subcommand != "trace-from-arp" && subcommand != "check") {
     std::fprintf(stderr, "unknown subcommand: %s\n", argv[1]);
     print_help(stderr);
     return kExitUsage;
@@ -79,7 +185,7 @@ int main(int argc, char **argv) {
 
   std::string provider = "libretro";
   std::string arp, out, content_sha, config_sha, core, rom, golden, candidate,
-      frames;
+      frames, exceptions, catalog, dumps, registry;
   std::vector<std::string> except;
   for (int i = 2; i < argc; ++i) {
     const std::string_view arg = argv[i];
@@ -114,6 +220,10 @@ int main(int argc, char **argv) {
                           : arg == "--golden"      ? &golden
                           : arg == "--candidate"   ? &candidate
                           : arg == "--frames"      ? &frames
+                          : arg == "--exceptions"  ? &exceptions
+                          : arg == "--catalog"     ? &catalog
+                          : arg == "--dumps"       ? &dumps
+                          : arg == "--registry"    ? &registry
                                                    : nullptr;
     if (target != nullptr) {
       if (i + 1 >= argc) {
@@ -125,6 +235,14 @@ int main(int argc, char **argv) {
     }
     std::fprintf(stderr, "unknown option: %s\n", argv[i]);
     return kExitUsage;
+  }
+
+  if (subcommand == "check") {
+    if (exceptions.empty() || catalog.empty() || dumps.empty()) {
+      std::fprintf(stderr, "check needs --exceptions, --catalog, --dumps\n");
+      return kExitUsage;
+    }
+    return check_command(exceptions, catalog, dumps, registry);
   }
 
   if (subcommand == "trace-from-arp") {

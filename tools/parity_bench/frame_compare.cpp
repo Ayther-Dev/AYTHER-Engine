@@ -78,22 +78,51 @@ CompareResult compare_dumps(const std::string &a, const std::string &b,
     result.error = "dumps have a different number of frames";
     return result;
   }
+  for (std::size_t i = 0; i < la.size(); ++i) {
+    if (la[i].frame != lb[i].frame) {
+      result.error = "dumps have different frame numbering";
+      return result;
+    }
+    result.frames.push_back(la[i].frame);
+  }
   for (const char *name : kSubplaneNames) {
     if (std::find(exceptions.begin(), exceptions.end(), name) !=
         exceptions.end())
       continue;
     for (std::size_t i = 0; i < la.size(); ++i) {
-      if (la[i].frame != lb[i].frame) {
-        result.error = "dumps have different frame numbering";
-        result.divergences.clear();
-        return result;
-      }
       if (la[i].hash.at(name) != lb[i].hash.at(name)) {
         result.divergences.push_back(
             {name, la[i].frame, la[i].hash.at(name), lb[i].hash.at(name)});
         break;
       }
     }
+  }
+  result.ok = true;
+  return result;
+}
+
+CompareResult diff_dumps(const std::string &a, const std::string &b) {
+  CompareResult result;
+  std::vector<Line> la, lb;
+  if (!parse(a, la) || !parse(b, lb)) {
+    result.error = "malformed dump";
+    return result;
+  }
+  if (la.size() != lb.size()) {
+    result.error = "dumps have a different number of frames";
+    return result;
+  }
+  for (std::size_t i = 0; i < la.size(); ++i) {
+    if (la[i].frame != lb[i].frame) {
+      result.error = "dumps have different frame numbering";
+      result.divergences.clear();
+      return result;
+    }
+    result.frames.push_back(la[i].frame);
+    for (const char *name : kSubplaneNames)
+      if (la[i].hash.at(name) != lb[i].hash.at(name))
+        result.divergences.push_back(
+            {name, la[i].frame, la[i].hash.at(name), lb[i].hash.at(name)});
   }
   result.ok = true;
   return result;

@@ -447,6 +447,14 @@ if(AYTHER_BUILD_PARITY_BENCH)
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
     add_dependencies(ayther_parity_bench_synthetic ayther_test_core)
 
+    # TP-209.1: strict exception accounting of parity_bench check.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/unit/parity_exception_accounting_test.cpp"
+        unit)
+    target_sources(ayther_parity_exception_accounting_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/exception_accounting.cpp")
+
     # TP-005.17: the native job runs parity_bench on both scenes.
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_selftest.cpp"
