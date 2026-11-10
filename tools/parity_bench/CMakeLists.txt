@@ -4,7 +4,7 @@
 # a Tessera input trace. This is the skeleton: the subcommands parse their
 # arguments and report "not implemented" until TP-005.14 onwards.
 add_executable(parity_bench main.cpp trace_arp.cpp frame_dump.cpp frame_compare.cpp
-    exception_accounting.cpp)
+    exception_accounting.cpp identities.cpp)
 target_link_libraries(parity_bench PRIVATE ayther_engine ayther_core)
 target_compile_features(parity_bench PRIVATE cxx_std_20)
 set_target_properties(parity_bench PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -37,6 +37,18 @@ set_tests_properties(ayther.unit.parity_bench_trace_needs_args PROPERTIES
 add_test(NAME ayther.unit.parity_bench_compare_needs_args COMMAND parity_bench compare)
 set_tests_properties(ayther.unit.parity_bench_compare_needs_args PROPERTIES
     PASS_REGULAR_EXPRESSION "compare needs --golden"
+    LABELS "engine;native;unit;parity" TIMEOUT 30)
+
+add_test(NAME ayther.unit.parity_bench_compare_identities_needs_args
+    COMMAND parity_bench compare-identities)
+set_tests_properties(ayther.unit.parity_bench_compare_identities_needs_args PROPERTIES
+    PASS_REGULAR_EXPRESSION "compare-identities needs --golden"
+    LABELS "engine;native;unit;parity" TIMEOUT 30)
+
+add_test(NAME ayther.unit.parity_bench_identities_need_segments
+    COMMAND parity_bench dump --provider libretro --core x --rom x --frames 1 --out x --identities x)
+set_tests_properties(ayther.unit.parity_bench_identities_need_segments PROPERTIES
+    PASS_REGULAR_EXPRESSION "--identities and --segments go together"
     LABELS "engine;native;unit;parity" TIMEOUT 30)
 
 add_test(NAME ayther.unit.parity_bench_check_needs_args COMMAND parity_bench check)

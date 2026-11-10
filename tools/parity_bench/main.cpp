@@ -4,6 +4,7 @@
 //   parity_bench compare       --provider libretro|tessera_native ...
 //   parity_bench trace-from-arp ...
 //   parity_bench check --exceptions FILE --catalog FILE --dumps DIR
+//   parity_bench compare-identities --golden FILE --candidate FILE
 //
 // Skeleton: the subcommands validate their arguments and report that they are
 // not implemented yet. dump arrives in TP-005.15 and compare in TP-005.16;
@@ -11,6 +12,7 @@
 #include "exception_accounting.h"
 #include "frame_compare.h"
 #include "frame_dump.h"
+#include "identities.h"
 #include "trace_arp.h"
 
 #include <ayther/ayther_recording.h>
@@ -22,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -47,12 +50,19 @@ void print_help(std::FILE *out) {
       "  trace-from-arp   convert the inputs of a take (.arp) to a TSTRACE1 "
       "trace\n"
       "  check            strict exception accounting over a catalog of dumps\n"
+      "  compare-identities  compare two identity files (dump --identities)\n"
       "\n"
       "options:\n"
       "  --golden FILE --candidate FILE [--except SUBPLANE]...   (compare)\n"
       "  [--core DLL] --rom FILE (--arp FILE | --frames N) --out FILE\n"
       "      (dump: inputs from the take or N frames of neutral pad; --core\n"
       "       only with libretro, tessera_native reads the ROM itself)\n"
+      "  [--identities FILE --segments A-B[,A-B]...]\n"
+      "      (dump: also write the canonical identities per segment and\n"
+      "       class of the identity contract, RF-10.1; frames from 1)\n"
+      "  --golden FILE --candidate FILE [--out FILE]\n"
+      "      (compare-identities: exit 0 equal sets, 5 different; --out\n"
+      "       writes the comparison as JSON)\n"
       "  --arp FILE --out FILE --content-sha HEX --config-sha HEX  "
       "(trace-from-arp)\n"
       "  --exceptions FILE --catalog FILE --dumps DIR [--registry FILE]\n"
@@ -177,7 +187,8 @@ int main(int argc, char **argv) {
     return kExitOk;
   }
   if (subcommand != "dump" && subcommand != "compare" &&
-      subcommand != "trace-from-arp" && subcommand != "check") {
+      subcommand != "trace-from-arp" && subcommand != "check" &&
+      subcommand != "compare-identities") {
     std::fprintf(stderr, "unknown subcommand: %s\n", argv[1]);
     print_help(stderr);
     return kExitUsage;
@@ -185,7 +196,7 @@ int main(int argc, char **argv) {
 
   std::string provider = "libretro";
   std::string arp, out, content_sha, config_sha, core, rom, golden, candidate,
-      frames, exceptions, catalog, dumps, registry;
+      frames, exceptions, catalog, dumps, registry, identities, segments;
   std::vector<std::string> except;
   for (int i = 2; i < argc; ++i) {
     const std::string_view arg = argv[i];
@@ -224,6 +235,8 @@ int main(int argc, char **argv) {
                           : arg == "--catalog"     ? &catalog
                           : arg == "--dumps"       ? &dumps
                           : arg == "--registry"    ? &registry
+                          : arg == "--identities"  ? &identities
+                          : arg == "--segments"    ? &segments
                                                    : nullptr;
     if (target != nullptr) {
       if (i + 1 >= argc) {
@@ -243,6 +256,49 @@ int main(int argc, char **argv) {
       return kExitUsage;
     }
     return check_command(exceptions, catalog, dumps, registry);
+  }
+
+  if (subcommand == "compare-identities") {
+    if (golden.empty() || candidate.empty()) {
+      std::fprintf(stderr,
+                   "compare-identities needs --golden and --candidate\n");
+      return kExitUsage;
+    }
+    namespace ap = ayther::parity;
+    std::optional<ap::Identities> sets[2];
+    const std::string *paths[2] = {&golden, &candidate};
+    for (int k = 0; k < 2; ++k) {
+      const auto text = read_file(*paths[k]);
+      std::string error = "cannot read";
+      if (text)
+        sets[k] = ap::parse_identities(*text, &error);
+      if (!sets[k]) {
+        std::fprintf(stderr, "compare-identities: %s: %s\n", paths[k]->c_str(),
+                     error.c_str());
+        return 1;
+      }
+    }
+    const auto cmp = ap::compare_identities(*sets[0], *sets[1]);
+    if (!cmp.ok) {
+      std::fprintf(stderr, "compare-identities: %s\n", cmp.error.c_str());
+      return 1;
+    }
+    for (const auto &seg : cmp.segments)
+      for (const auto &c : seg.classes)
+        std::printf("segment %u-%u %s distinct %zu/%zu missing %zu extra %zu\n",
+                    seg.range.first, seg.range.last, c.name.c_str(), c.golden,
+                    c.candidate, c.missing, c.extra);
+    if (!out.empty()) {
+      const std::string json = ap::comparison_json(cmp) + "\n";
+      std::ofstream file(out, std::ios::binary | std::ios::trunc);
+      file.write(json.data(), static_cast<std::streamsize>(json.size()));
+      file.close();
+      if (!file.good())
+        return 4;
+    }
+    std::printf("compare-identities: %s\n",
+                cmp.equal() ? "equal" : "different");
+    return cmp.equal() ? kExitOk : 5;
   }
 
   if (subcommand == "trace-from-arp") {
@@ -275,6 +331,19 @@ int main(int argc, char **argv) {
                                  "--frames, --out\n");
       return kExitUsage;
     }
+    if (identities.empty() != segments.empty()) {
+      std::fprintf(stderr, "dump: --identities and --segments go together\n");
+      return kExitUsage;
+    }
+    std::unique_ptr<ayther::parity::IdentityCollector> collector;
+    if (!segments.empty()) {
+      const auto ranges = ayther::parity::parse_segments(segments);
+      if (!ranges) {
+        std::fprintf(stderr, "dump: bad --segments: %s\n", segments.c_str());
+        return kExitUsage;
+      }
+      collector = std::make_unique<ayther::parity::IdentityCollector>(*ranges);
+    }
     std::vector<std::uint16_t> pads;
     if (!arp.empty()) {
       const auto take = ayther::AytherRecording::load(arp);
@@ -303,9 +372,9 @@ int main(int argc, char **argv) {
       }
       const std::vector<std::uint8_t> image{std::istreambuf_iterator<char>(in),
                                             std::istreambuf_iterator<char>()};
-      text = ayther::parity::dump_native_session(image, pads);
+      text = ayther::parity::dump_native_session(image, pads, collector.get());
     } else {
-      text = ayther::parity::dump_session(core, rom, pads);
+      text = ayther::parity::dump_session(core, rom, pads, collector.get());
     }
     if (!text) {
       std::fprintf(stderr, "dump: the session could not be created\n");
@@ -314,7 +383,18 @@ int main(int argc, char **argv) {
     std::ofstream file(out, std::ios::binary | std::ios::trunc);
     file.write(text->data(), static_cast<std::streamsize>(text->size()));
     file.close();
-    return file.good() ? kExitOk : 4;
+    if (!file.good())
+      return 4;
+    if (collector) {
+      const std::string ids =
+          ayther::parity::format_identities(collector->finish());
+      std::ofstream idf(identities, std::ios::binary | std::ios::trunc);
+      idf.write(ids.data(), static_cast<std::streamsize>(ids.size()));
+      idf.close();
+      if (!idf.good())
+        return 4;
+    }
+    return kExitOk;
   }
 
   if (subcommand == "compare") {

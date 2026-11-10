@@ -1,4 +1,5 @@
 #include "frame_dump.h"
+#include "identities.h"
 #include "native_config.h"
 
 #include <ayther/ayther_session.h>
@@ -206,22 +207,30 @@ std::string line(std::uint32_t frame, const FrameView &v,
 } // namespace
 
 namespace {
-std::string run(AytherSession &s, const std::vector<std::uint16_t> &pads) {
+std::string run(AytherSession &s, const std::vector<std::uint16_t> &pads,
+                IdentityCollector *ids) {
   std::string out;
   std::uint64_t fb_hash = 0;
   std::uint32_t fb_count = 0;
   std::uint32_t frame = 1;
   for (const auto pad : pads) {
     s.set_input(0, pad);
-    out += line(frame++, s.step(), fb_hash, fb_count);
+    const FrameView &view = s.step();
+    if (ids != nullptr) {
+      std::size_t cram_size = 0;
+      const std::uint8_t *cram = s.color_ram(&cram_size);
+      ids->frame(frame, view, cram, cram_size);
+    }
+    out += line(frame++, view, fb_hash, fb_count);
   }
   return out;
 }
 } // namespace
 
-std::optional<std::string>
-dump_session(const std::string &core_path, const std::string &rom_path,
-             const std::vector<std::uint16_t> &pads) {
+std::optional<std::string> dump_session(const std::string &core_path,
+                                        const std::string &rom_path,
+                                        const std::vector<std::uint16_t> &pads,
+                                        IdentityCollector *ids) {
   AytherSession::Config config;
   config.core_path = core_path;
   config.rom_path = rom_path;
@@ -231,12 +240,13 @@ dump_session(const std::string &core_path, const std::string &rom_path,
   if (!created)
     return std::nullopt;
   std::unique_ptr<AytherSession> s = std::move(*created);
-  return run(*s, pads);
+  return run(*s, pads, ids);
 }
 
 std::optional<std::string>
 dump_native_session(const std::vector<std::uint8_t> &rom,
-                    const std::vector<std::uint16_t> &pads) {
+                    const std::vector<std::uint16_t> &pads,
+                    IdentityCollector *ids) {
   auto native = megadrive_native_config(rom, std::vector<std::uint8_t>(65536));
   if (!native)
     return std::nullopt;
@@ -250,7 +260,7 @@ dump_native_session(const std::vector<std::uint8_t> &rom,
   if (!created || !*created)
     return std::nullopt;
   std::unique_ptr<AytherSession> s = std::move(*created);
-  return run(*s, pads);
+  return run(*s, pads, ids);
 }
 
 } // namespace ayther::parity

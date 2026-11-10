@@ -431,7 +431,8 @@ if(AYTHER_BUILD_PARITY_BENCH)
         "${PROJECT_SOURCE_DIR}/tests/integration/parity_dump_test.cpp"
         integration)
     target_sources(ayther_parity_dump_test PRIVATE
-        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp")
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
     target_compile_definitions(ayther_parity_dump_test PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
     add_dependencies(ayther_parity_dump_test ayther_test_core)
@@ -442,6 +443,7 @@ if(AYTHER_BUILD_PARITY_BENCH)
         integration)
     target_sources(ayther_parity_bench_synthetic PRIVATE
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp"
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp")
     target_compile_definitions(ayther_parity_bench_synthetic PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
@@ -454,6 +456,14 @@ if(AYTHER_BUILD_PARITY_BENCH)
     target_sources(ayther_parity_exception_accounting_test PRIVATE
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp"
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/exception_accounting.cpp")
+
+    # TP-209.2: identity files of parity_bench dump --identities and their
+    # comparison (RF-10.2).
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/unit/parity_identities_test.cpp"
+        unit)
+    target_sources(ayther_parity_identities_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
 
     # TP-005.17: the native job runs parity_bench on both scenes.
     ayther_add_native_test(
@@ -471,6 +481,7 @@ if(AYTHER_BUILD_PARITY_BENCH)
         contract)
     target_sources(ayther_observation_source_parity PRIVATE
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp"
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp")
     target_compile_definitions(ayther_observation_source_parity PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
