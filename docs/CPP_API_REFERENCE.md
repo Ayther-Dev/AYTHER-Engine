@@ -124,8 +124,9 @@ of the event queue. Since spec 008 TP-301.3, `set_input()` and `step()` also
 drive the native machine through the frame pipeline. Each step assigns every
 control the configuration's control map declares, mapping the RetroPad as gpgx
 does (A=Y, B=B, C=A). The FrameView carries the original as XRGB8888 and the
-observation of `TesseraBackend`. The native route has no work RAM yet: Tessera
-API 1.1 does not publish it. A failed advance is reported in
+observation of `TesseraBackend`. The work RAM is Tessera region `0x1000`
+(v0.2.0-rc.4), in libretro `SYSTEM_RAM` layout; `poke()` and cheats write it
+through `write_control`. A failed advance is reported in
 `FrameView::native_result`. `native_frame()` exposes borrowed original RGBA8 and PCM, with
 `pack_not_integrated` as the explicit original presentation reason. It clears
 expired views after a direct-driver reset or close. Real pack composition and

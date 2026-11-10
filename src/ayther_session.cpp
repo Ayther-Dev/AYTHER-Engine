@@ -809,6 +809,7 @@ engine::NativeResult AytherSession::native_restore_checkpoint(
     return im.native_result;
   }
   const auto restored = im.native->restore_checkpoint(checkpoint, trace);
+  im.invalidate_native_work_ram();
   if (restored.code == 0) {
     // Restore retains Tessera's effective observation masks. A pending
     // request, if any, was cancelled and must not leak into the new epoch.
@@ -838,6 +839,7 @@ engine::NativeResult AytherSession::native_close() noexcept {
     return im.native_result;
   }
   const auto closed = im.native->close();
+  im.invalidate_native_work_ram();
   if (closed.code == 0) {
     im.native_policy = {};
     im.view = {};
@@ -993,8 +995,6 @@ const FrameView &AytherSession::step() {
   // core de prueba reescribe 0x100 en cada frame, y por eso el caso de la
   // suite de conformidad es el que decide esto y no un razonamiento.
   if (!im.cheats.empty()) {
-    uint8_t *ram = im.work_ram_mut();
-    const size_t n = im.work_ram_size();
     for (const Impl::CheatEntry &c : im.cheats) {
       // Los cheats vienen en direcciones del BUS 68k; work RAM empieza en
       // 0xFF0000. Un cheat al cartucho (ROM) no se puede aplicar aca: la
@@ -1003,13 +1003,13 @@ const FrameView &AytherSession::step() {
       if (c.address < 0xFF0000u)
         continue;
       const uint32_t off = c.address - 0xFF0000u;
-      if (!ram || off + 2 > n)
-        continue;
       // Big-endian del bus, y con el `^1` del word-swap — el mismo camino
       // que `poke`, para que las direcciones que el jugador copio de una
-      // revista sean las que documentan RetroAchievements.
-      ram[(off) ^ 1u] = (uint8_t)(c.value >> 8);
-      ram[(off + 1) ^ 1u] = (uint8_t)(c.value & 0xFF);
+      // revista sean las que documentan RetroAchievements. Nativo: region
+      // 0x1000 de Tessera via write_control (TP-301.3).
+      const uint8_t word[2] = {(uint8_t)(c.value >> 8),
+                               (uint8_t)(c.value & 0xFF)};
+      (void)im.write_work_ram(off, word, sizeof word);
     }
     im.poke_dirty = true; // escribir fuera del input stream ensucia la sesion
   }
@@ -6102,6 +6102,7 @@ void AytherSession::reset() {
   Impl &im = *impl_;
   if (im.native) {
     im.native_result = im.native->reset();
+    im.invalidate_native_work_ram();
     if (im.native_result.code == 0) {
       im.view = {};
       im.frame_index = 0;
@@ -10940,12 +10941,9 @@ uint32_t AytherSession::ram_u32(uint32_t off) const noexcept {
 // vive en ningún input stream, así que un replay no la reproduce: REC queda
 // bloqueado hasta unserialize (marcador) o reset, que limpian el flag.
 bool AytherSession::poke(uint32_t off, const uint8_t *data, size_t len) {
-  uint8_t *r = impl_->work_ram_mut();
-  const size_t n = impl_->work_ram_size();
-  if (!r || !data || !len || off + len > n)
+  // host LE: array word-swapped; native via Tessera region 0x1000.
+  if (!impl_->write_work_ram(off, data, len))
     return false;
-  for (size_t i = 0; i < len; ++i)
-    r[(off + i) ^ 1u] = data[i]; // host LE: array word-swapped
   impl_->poke_dirty = true;
   return true;
 }

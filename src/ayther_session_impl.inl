@@ -38,17 +38,73 @@ struct AytherSession::Impl {
   std::vector<std::uint8_t> native_xrgb;
   double native_fps = 0.0;
 
-  /// The work RAM. The native backend does not publish it yet (no region in
-  /// Tessera API 1.1): until it does, the gates, cheats, Mode 3 camera and
-  /// scripts that read it see none, as with a core without SYSTEM_RAM.
+  /// The work RAM, in libretro SYSTEM_RAM layout (word-swapped: the 68000
+  /// byte at $FF0000 + n is element n ^ 1). The native session publishes it
+  /// as Tessera's region 0x1000 (v0.2.0-rc.4) in that same layout; the Engine
+  /// keeps a mirror, re-read lazily after anything that changes the machine
+  /// (invalidate_native_work_ram). A native backend without the region (a
+  /// fixed-region test backend) has none, as a core without SYSTEM_RAM.
+  static constexpr std::uint32_t kNativeWorkRamRegion = 0x1000;
+  mutable std::array<std::uint8_t, 0x10000> native_ram{};
+  mutable bool native_ram_stale = true;
+  mutable bool native_ram_ok = false;
+  void invalidate_native_work_ram() noexcept { native_ram_stale = true; }
+  [[nodiscard]] bool native_work_ram_fresh() const noexcept {
+    if (native_ram_stale) {
+      native_ram_stale = false;
+      std::uint64_t generation = 0;
+      native_ram_ok =
+          source().read_region(kNativeWorkRamRegion, 0, native_ram.data(),
+                               static_cast<std::uint32_t>(native_ram.size()),
+                               AYTHER_GENERATION_ANY,
+                               &generation) == AYTHER_STATUS_OK;
+    }
+    return native_ram_ok;
+  }
   [[nodiscard]] const uint8_t *work_ram() const noexcept {
-    return native ? nullptr : runner.work_ram();
+    if (native)
+      return native_work_ram_fresh() ? native_ram.data() : nullptr;
+    return runner.work_ram();
   }
   [[nodiscard]] size_t work_ram_size() const noexcept {
-    return native ? 0 : runner.work_ram_size();
+    if (native)
+      return native_work_ram_fresh() ? native_ram.size() : 0;
+    return runner.work_ram_size();
   }
-  [[nodiscard]] uint8_t *work_ram_mut() noexcept {
-    return native ? nullptr : runner.work_ram_mut();
+  /// Writes `len` bytes at 68000 offset `off` from $FF0000 (big-endian bus
+  /// order). libretro: straight into the core's array. Native: one
+  /// write_control over the covered words of region 0x1000, so the poke is
+  /// machine state (checkpoints carry it) and advances the generation.
+  bool write_work_ram(std::uint32_t off, const std::uint8_t *data,
+                      std::size_t len) noexcept {
+    if (!data || len == 0)
+      return false;
+    if (!native) {
+      uint8_t *r = runner.work_ram_mut();
+      const size_t n = runner.work_ram_size();
+      if (!r || off + len > n)
+        return false;
+      for (size_t i = 0; i < len; ++i)
+        r[(off + i) ^ 1u] = data[i];
+      return true;
+    }
+    if (!native_work_ram_fresh() || off + len > native_ram.size())
+      return false;
+    // Patch the mirror, then send the covered words in region order; a
+    // rejected write leaves the mirror to be re-read from the machine.
+    const std::size_t lo = off & ~std::size_t{1};
+    const std::size_t hi = (off + len + 1) & ~std::size_t{1};
+    for (std::size_t i = 0; i < len; ++i)
+      native_ram[(off + i) ^ 1u] = data[i];
+    std::uint64_t generation = 0;
+    if (source().write_control(
+            kNativeWorkRamRegion, static_cast<std::uint32_t>(lo),
+            native_ram.data() + lo, static_cast<std::uint32_t>(hi - lo),
+            AYTHER_GENERATION_ANY, &generation) != AYTHER_STATUS_OK) {
+      invalidate_native_work_ram();
+      return false;
+    }
+    return true;
   }
   [[nodiscard]] double emu_fps() const noexcept {
     return native ? native_fps : emu_fps();
@@ -82,6 +138,7 @@ struct AytherSession::Impl {
   /// when this frame applied its transaction.
   engine::NativeResult
   note_native_advance(const engine::NativeResult &advanced) {
+    invalidate_native_work_ram();
     if (advanced.code == 0 && native_policy.pending_transaction != 0 &&
         (advanced.flags & engine::native_controls_applied) != 0 &&
         advanced.transaction == native_policy.pending_transaction &&

@@ -74,10 +74,12 @@ configuración (campo 6), con el mapeo de gpgx: A=Y, B=B, C=A, más las
 direcciones y start. X, Y, Z y mode quedan sueltos. El original RGBA8 pasa a
 XRGB8888, de modo que `FrameView` tiene el formato de un core libretro, y la
 observación (VRAM, CRAM, registros, VSRAM, sprites, escrituras de audio) sale
-de `TesseraBackend` como `ObservationSource`. La work RAM todavía no existe en
-la vía nativa: Tessera API 1.1 no la publica, así que los gates, cheats,
-cámara de Modo 3 y scripts que la leen no ven nada, como con un core sin
-`SYSTEM_RAM`. El rewind y los keyframes de grabación tampoco existen en esta
+de `TesseraBackend` como `ObservationSource`. La work RAM sale de la región
+`0x1000` de Tessera (v0.2.0-rc.4) con el layout de `SYSTEM_RAM` de libretro
+(word-swapped): la sesión guarda un espejo que se relee tras cada avance,
+restore, reset o close, y `poke()` y los cheats escriben con `write_control`,
+así que la escritura es estado de la máquina (los checkpoints la llevan). El
+rewind y los keyframes de grabación tampoco existen en esta
 vía. Si el avance falla, `step()` devuelve el código en
 `FrameView::native_result`. Los clientes nativos deben conservar cada
 `NativeResult`: las consultas siguientes tienen su propio resultado. El overload de creación permite conservar también el

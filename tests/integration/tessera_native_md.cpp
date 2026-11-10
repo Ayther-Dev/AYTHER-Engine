@@ -152,8 +152,30 @@ TEST_CASE("FX-02 runs on the native machine through set_input and step") {
   CHECK(chip_writes > 0);
   CHECK(psg_writes_pressed > 0);
 
-  // Declared gap until Tessera publishes it (rc.4): no work RAM.
-  size_t ram_size = 1;
-  CHECK(session->work_ram(&ram_size) == nullptr);
-  CHECK(ram_size == 0);
+  // Work RAM: Tessera region 0x1000 (v0.2.0-rc.4), the 64 KiB in libretro
+  // SYSTEM_RAM layout (word-swapped).
+  size_t ram_size = 0;
+  const std::uint8_t *ram = session->work_ram(&ram_size);
+  REQUIRE(ram != nullptr);
+  CHECK(ram_size == 65536);
+
+  // A poke reaches the machine, not just the mirror: after a frame (the
+  // mirror is re-read from Tessera) the byte is still there, at its
+  // word-swapped place, and the session is dirty.
+  const std::uint8_t poked[3] = {0xAB, 0xCD, 0xEF};
+  REQUIRE(session->poke(0x8001, poked, sizeof poked));
+  CHECK(session->ram_u8(0x8001) == 0xAB);
+  session->set_input(0, 0);
+  REQUIRE(session->step().native_result.code == 0);
+  ram = session->work_ram(&ram_size);
+  REQUIRE(ram != nullptr);
+  CHECK(ram[0x8001 ^ 1u] == 0xAB);
+  CHECK(session->ram_u8(0x8001) == 0xAB);
+  CHECK(session->ram_u8(0x8002) == 0xCD);
+  CHECK(session->ram_u8(0x8003) == 0xEF);
+  CHECK(session->ram_u16(0x8002) == 0xCDEF);
+
+  // Out of range: refused, nothing written.
+  CHECK_FALSE(session->poke(0xFFFF, poked, 2));
+  CHECK_FALSE(session->poke(0x10000, poked, 1));
 }
