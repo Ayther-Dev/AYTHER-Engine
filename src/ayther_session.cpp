@@ -335,6 +335,10 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
     // session: its input layout and its observation surface.
     if (im.native) {
       im.native_controls = native_control_map(cfg.native_config.config);
+      // TP-209.1 (D-3): the megadrive machine's frame goes down the pipeline
+      // as RGB565, the format gpgx gives, so the tile hasher, the sprite
+      // judge and the raster recomposition see the same pixels.
+      im.native_rgb565 = cfg.native_config.backend_id == "megadrive";
       im.activate_ayther_subscriptions();
       im.observer.initialize_system(im.source());
     }
@@ -746,12 +750,30 @@ engine::NativeResult AytherSession::Impl::run_emulator_frame() {
     native_fps = static_cast<double>(current.tick_hz_num) /
                  static_cast<double>(current.tick_hz_den) /
                  static_cast<double>(original.tick_end - original.tick_begin);
-  // RGBA8 (bytes R, G, B, A) to libretro XRGB8888 (a little-endian 0x00RRGGBB
-  // word: bytes B, G, R, 0).
+  // RGBA8 (bytes R, G, B, A) to libretro RGB565 for the megadrive machine
+  // (lossless: Tessera expands its own RGB565, D-3), otherwise to XRGB8888
+  // (a little-endian 0x00RRGGBB word: bytes B, G, R, 0).
   const std::uint32_t w = original.width, h = original.height;
   if (original.video_format == engine::native_video_rgba8 && w && h &&
       original.row_bytes >= w * 4u &&
-      original.pixels.size() >= std::size_t{original.row_bytes} * h) {
+      original.pixels.size() >= std::size_t{original.row_bytes} * h &&
+      native_rgb565) {
+    native_xrgb.resize(std::size_t{w} * h * 2u);
+    for (std::uint32_t y = 0; y < h; ++y) {
+      const std::uint8_t *src =
+          original.pixels.data() + std::size_t{original.row_bytes} * y;
+      std::uint8_t *dst = native_xrgb.data() + std::size_t{w} * 2u * y;
+      for (std::uint32_t x = 0; x < w; ++x, src += 4, dst += 2) {
+        const auto p = static_cast<std::uint16_t>(
+            ((src[0] >> 3) << 11) | ((src[1] >> 2) << 5) | (src[2] >> 3));
+        dst[0] = static_cast<std::uint8_t>(p);
+        dst[1] = static_cast<std::uint8_t>(p >> 8);
+      }
+    }
+    on_video_frame(native_xrgb.data(), w, h, std::size_t{w} * 2u);
+  } else if (original.video_format == engine::native_video_rgba8 && w && h &&
+             original.row_bytes >= w * 4u &&
+             original.pixels.size() >= std::size_t{original.row_bytes} * h) {
     native_xrgb.resize(std::size_t{w} * h * 4u);
     for (std::uint32_t y = 0; y < h; ++y) {
       const std::uint8_t *src =

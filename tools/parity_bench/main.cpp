@@ -14,9 +14,11 @@
 #include <ayther/ayther_recording.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,8 +43,9 @@ void print_help(std::FILE *out) {
       "\n"
       "options:\n"
       "  --golden FILE --candidate FILE [--except SUBPLANE]...   (compare)\n"
-      "  --core DLL --rom FILE --arp FILE --out FILE   (dump: inputs come from "
-      "the take)\n"
+      "  [--core DLL] --rom FILE (--arp FILE | --frames N) --out FILE\n"
+      "      (dump: inputs from the take or N frames of neutral pad; --core\n"
+      "       only with libretro, tessera_native reads the ROM itself)\n"
       "  --arp FILE --out FILE --content-sha HEX --config-sha HEX  "
       "(trace-from-arp)\n"
       "  --provider libretro|tessera_native   emulation provider of the "
@@ -75,7 +78,8 @@ int main(int argc, char **argv) {
   }
 
   std::string provider = "libretro";
-  std::string arp, out, content_sha, config_sha, core, rom, golden, candidate;
+  std::string arp, out, content_sha, config_sha, core, rom, golden, candidate,
+      frames;
   std::vector<std::string> except;
   for (int i = 2; i < argc; ++i) {
     const std::string_view arg = argv[i];
@@ -109,6 +113,7 @@ int main(int argc, char **argv) {
                           : arg == "--rom"         ? &rom
                           : arg == "--golden"      ? &golden
                           : arg == "--candidate"   ? &candidate
+                          : arg == "--frames"      ? &frames
                                                    : nullptr;
     if (target != nullptr) {
       if (i + 1 >= argc) {
@@ -143,22 +148,47 @@ int main(int argc, char **argv) {
   }
 
   if (subcommand == "dump") {
-    if (core.empty() || rom.empty() || arp.empty() || out.empty()) {
-      std::fprintf(stderr, "dump needs --core, --rom, --arp, --out\n");
+    const bool native = provider == "tessera_native";
+    if ((!native && core.empty()) || rom.empty() ||
+        (arp.empty() == frames.empty()) || out.empty()) {
+      std::fprintf(stderr, native
+                               ? "dump needs --rom, --arp or --frames, --out\n"
+                               : "dump needs --core, --rom, --arp or "
+                                 "--frames, --out\n");
       return kExitUsage;
     }
-    if (provider != "libretro") {
-      std::fprintf(
-          stderr,
-          "dump: provider tessera_native is not available yet (TP-301)\n");
-      return kExitNotImplemented;
+    std::vector<std::uint16_t> pads;
+    if (!arp.empty()) {
+      const auto take = ayther::AytherRecording::load(arp);
+      if (!take || take->inputs.empty()) {
+        std::fprintf(stderr, "dump: cannot read take: %s\n", arp.c_str());
+        return 1;
+      }
+      pads = take->inputs;
+    } else {
+      char *end = nullptr;
+      const unsigned long count = std::strtoul(frames.c_str(), &end, 10);
+      if (end == frames.c_str() || *end != '\0' || count == 0 ||
+          count > 1000000) {
+        std::fprintf(stderr,
+                     "dump: --frames needs a count from 1 to 1000000\n");
+        return kExitUsage;
+      }
+      pads.assign(count, 0); // neutral pad on every frame
     }
-    const auto take = ayther::AytherRecording::load(arp);
-    if (!take || take->inputs.empty()) {
-      std::fprintf(stderr, "dump: cannot read take: %s\n", arp.c_str());
-      return 1;
+    std::optional<std::string> text;
+    if (native) {
+      std::ifstream in(rom, std::ios::binary);
+      if (!in) {
+        std::fprintf(stderr, "dump: cannot read rom: %s\n", rom.c_str());
+        return 1;
+      }
+      const std::vector<std::uint8_t> image{std::istreambuf_iterator<char>(in),
+                                            std::istreambuf_iterator<char>()};
+      text = ayther::parity::dump_native_session(image, pads);
+    } else {
+      text = ayther::parity::dump_session(core, rom, pads);
     }
-    const auto text = ayther::parity::dump_session(core, rom, take->inputs);
     if (!text) {
       std::fprintf(stderr, "dump: the session could not be created\n");
       return 1;

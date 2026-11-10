@@ -37,8 +37,17 @@ bool parse_line(const std::string &text, Line &out) {
     const auto end = text.find('}', k);
     if (end == std::string::npos)
       return false;
-    // value = everything between the key and the closing brace (hash + count)
-    out.hash[name] = text.substr(k + key.size(), end - k - key.size());
+    // value = hash and count, both compared, kept as "<hash>/<count>"
+    const auto v = k + key.size();
+    const auto quote = text.find('"', v);
+    const std::string count_key = "\"count\":";
+    const auto c = text.find(count_key, v);
+    if (quote == std::string::npos || quote > end || c == std::string::npos ||
+        c > end)
+      return false;
+    out.hash[name] =
+        text.substr(v, quote - v) + "/" +
+        text.substr(c + count_key.size(), end - c - count_key.size());
   }
   return true;
 }

@@ -12,13 +12,20 @@ namespace ayther::parity {
 
 /// Fixed order of the subplanes in every dump line.
 inline constexpr const char *kSubplaneNames[] = {
-    "fb",     "scene",       "sprites", "tiles",      "plane_cells",
-    "raster", "chip_writes", "palette", "attribution"};
+    "fb",     "scene",       "sprites", "tiles",       "plane_cells",
+    "raster", "chip_writes", "palette", "attribution", "pcm"};
 
 /// Runs the core with the given port-0 inputs (one frame per entry) and
 /// returns the dump, or nullopt when the session cannot be created.
 std::optional<std::string> dump_session(const std::string &core_path,
                                         const std::string &rom_path,
                                         const std::vector<std::uint16_t> &pads);
+
+/// The same dump from the native megadrive machine (provider tessera_native)
+/// with `rom` as its content and 64 KiB of zeroed persistent memory; nullopt
+/// when Tessera is unavailable or the session cannot be created.
+std::optional<std::string>
+dump_native_session(const std::vector<std::uint8_t> &rom,
+                    const std::vector<std::uint16_t> &pads);
 
 } // namespace ayther::parity

@@ -1,4 +1,5 @@
 #include "frame_dump.h"
+#include "native_config.h"
 
 #include <ayther/ayther_session.h>
 
@@ -111,6 +112,27 @@ void emit(std::string &out, const char *name, const Acc &a, bool last) {
   out += buf;
 }
 
+std::uint16_t pixel_565(const FrameView &v, const std::uint8_t *row,
+                        std::uint32_t x) {
+  if (v.pixel_encoding == FramePixelEncoding::rgba8) {
+    const std::uint8_t *q = row + std::size_t(x) * 4;
+    return static_cast<std::uint16_t>(((q[0] >> 3) << 11) | ((q[1] >> 2) << 5) |
+                                      (q[2] >> 3));
+  }
+  if (v.fb_format == 1) { // XRGB8888 (B, G, R, X bytes)
+    const std::uint8_t *q = row + std::size_t(x) * 4;
+    return static_cast<std::uint16_t>(((q[2] >> 3) << 11) | ((q[1] >> 2) << 5) |
+                                      (q[0] >> 3));
+  }
+  const std::uint16_t w = static_cast<std::uint16_t>(
+      row[std::size_t(x) * 2] | (row[std::size_t(x) * 2 + 1] << 8));
+  if (v.fb_format == 2) // RGB565
+    return w;
+  // 0RGB1555
+  return static_cast<std::uint16_t>((((w >> 10) & 0x1F) << 11) |
+                                    (((w >> 5) & 0x1F) << 6) | (w & 0x1F));
+}
+
 std::string line(std::uint32_t frame, const FrameView &v,
                  std::uint64_t &fb_hash, std::uint32_t &fb_count) {
   Acc fb;
@@ -118,8 +140,14 @@ std::string line(std::uint32_t frame, const FrameView &v,
     const auto *p = static_cast<const std::uint8_t *>(v.fb_pixels);
     fb.value(v.fb_width);
     fb.value(v.fb_height);
-    for (std::uint32_t y = 0; y < v.fb_height; ++y)
-      fb.bytes(p + std::size_t(y) * v.fb_pitch, v.fb_pitch);
+    // Canonical RGB565 per visible pixel, whatever the provider emits
+    // (libretro RGB565 or XRGB8888, native RGBA8 expanded from RGB565), so
+    // the two providers' images hash alike (spec 008, TP-209.1).
+    for (std::uint32_t y = 0; y < v.fb_height; ++y) {
+      const std::uint8_t *row = p + std::size_t(y) * v.fb_pitch;
+      for (std::uint32_t x = 0; x < v.fb_width; ++x)
+        fb.value(pixel_565(v, row, x));
+    }
     fb.n = v.fb_height;
     fb_hash = fb.h;
     fb_count = fb.n;
@@ -127,7 +155,7 @@ std::string line(std::uint32_t frame, const FrameView &v,
     fb.h = fb_hash;
     fb.n = fb_count;
   }
-  Acc scene, sprites, tiles, cells, raster, chip, palette, attr;
+  Acc scene, sprites, tiles, cells, raster, chip, palette, attr, pcm;
   for (std::uint32_t i = 0; v.scene != nullptr && i < v.scene_count; ++i)
     scene_element(scene, v.scene[i]);
   scene.n = v.scene_count;
@@ -148,12 +176,9 @@ std::string line(std::uint32_t frame, const FrameView &v,
   palette.array(v.scene_cram, v.scene_cram_size);
   attr.array(v.sprite_occ_core_drawn, v.sprite_occ_count);
   records(attr, v.entity_instances, v.entity_instance_count, entity_instance);
-  attr.array(v.audio_occs, v.audio_occ_count);
+  pcm.array(v.audio_occs, v.audio_occ_count);
 
   std::string out = "{\"frame\":" + std::to_string(frame) + ",";
-  const Acc *all[] = {&fb,     &scene, &sprites, &cells,
-                      &raster, &chip,  &palette, &attr};
-  (void)all;
   emit(out, "fb", fb, false);
   emit(out, "scene", scene, false);
   emit(out, "sprites", sprites, false);
@@ -162,11 +187,26 @@ std::string line(std::uint32_t frame, const FrameView &v,
   emit(out, "raster", raster, false);
   emit(out, "chip_writes", chip, false);
   emit(out, "palette", palette, false);
-  emit(out, "attribution", attr, true);
+  emit(out, "attribution", attr, false);
+  emit(out, "pcm", pcm, true);
   out += "}\n";
   return out;
 }
 
+} // namespace
+
+namespace {
+std::string run(AytherSession &s, const std::vector<std::uint16_t> &pads) {
+  std::string out;
+  std::uint64_t fb_hash = 0;
+  std::uint32_t fb_count = 0;
+  std::uint32_t frame = 1;
+  for (const auto pad : pads) {
+    s.set_input(0, pad);
+    out += line(frame++, s.step(), fb_hash, fb_count);
+  }
+  return out;
+}
 } // namespace
 
 std::optional<std::string>
@@ -181,15 +221,26 @@ dump_session(const std::string &core_path, const std::string &rom_path,
   if (!created)
     return std::nullopt;
   std::unique_ptr<AytherSession> s = std::move(*created);
-  std::string out;
-  std::uint64_t fb_hash = 0;
-  std::uint32_t fb_count = 0;
-  std::uint32_t frame = 1;
-  for (const auto pad : pads) {
-    s->set_input(0, pad);
-    out += line(frame++, s->step(), fb_hash, fb_count);
-  }
-  return out;
+  return run(*s, pads);
+}
+
+std::optional<std::string>
+dump_native_session(const std::vector<std::uint8_t> &rom,
+                    const std::vector<std::uint16_t> &pads) {
+  auto native = megadrive_native_config(rom, std::vector<std::uint8_t>(65536));
+  if (!native)
+    return std::nullopt;
+  AytherSession::Config config;
+  config.provider = EmulationProvider::tessera_native;
+  config.native_config = std::move(*native);
+  config.enable_audio = false;
+  config.derive_core_pack = false;
+  engine::NativeResult result;
+  auto created = AytherSession::create(config, result);
+  if (!created || !*created)
+    return std::nullopt;
+  std::unique_ptr<AytherSession> s = std::move(*created);
+  return run(*s, pads);
 }
 
 } // namespace ayther::parity

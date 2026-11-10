@@ -33,9 +33,11 @@ struct AytherSession::Impl {
   /// The (port, control) pairs the native configuration declares, in its
   /// order: every step assigns each of them.
   std::vector<std::pair<std::uint16_t, std::uint16_t>> native_controls;
-  /// The native original converted to XRGB8888 (libretro's format 1), so the
-  /// hashers and the rest of produce_frame see what a libretro core gives.
+  /// The native original in a libretro format, so the hashers and the rest of
+  /// produce_frame see what a libretro core gives: RGB565 (format 2, as gpgx)
+  /// for the megadrive machine, XRGB8888 (format 1) for the others.
   std::vector<std::uint8_t> native_xrgb;
+  bool native_rgb565 = false;
   double native_fps = 0.0;
 
   /// The work RAM, in libretro SYSTEM_RAM layout (word-swapped: the 68000
@@ -109,9 +111,10 @@ struct AytherSession::Impl {
   [[nodiscard]] double emu_fps() const noexcept {
     return native ? native_fps : emu_fps();
   }
-  /// libretro pixel format (1 = XRGB8888 for the native provider).
+  /// libretro pixel format (native: 2 = RGB565 for megadrive, else 1 =
+  /// XRGB8888).
   [[nodiscard]] unsigned emu_pixel_format() const noexcept {
-    return native ? 1u : runner.pixel_format();
+    return native ? (native_rgb565 ? 2u : 1u) : runner.pixel_format();
   }
 
   /// One frame of the video callback: hash tiles and keep the snapshot.

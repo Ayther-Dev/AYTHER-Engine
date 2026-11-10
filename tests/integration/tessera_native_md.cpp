@@ -103,13 +103,13 @@ TEST_CASE("FX-02 runs on the native machine through set_input and step") {
     REQUIRE_MESSAGE(view.native_result.code == 0, "frame " << frame);
     CHECK(view.frame_index == frame);
 
-    // Video: the native original, as libretro XRGB8888.
+    // Video: the native original, as libretro RGB565 (gpgx's format, D-3).
     REQUIRE(view.fb_pixels != nullptr);
-    CHECK(view.fb_format == 1);
+    CHECK(view.fb_format == 2);
     CHECK(view.pixel_encoding == ayther::FramePixelEncoding::libretro);
     CHECK(view.fb_width > 0);
     CHECK(view.fb_height > 0);
-    CHECK(view.fb_pitch == view.fb_width * 4);
+    CHECK(view.fb_pitch == view.fb_width * 2);
     // NTSC Mega Drive: 896 040 master cycles per frame.
     CHECK(view.emu_fps > 59.0);
     CHECK(view.emu_fps < 61.0);
