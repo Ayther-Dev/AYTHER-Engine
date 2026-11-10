@@ -67,6 +67,7 @@
 #include "session/render_observation_builder.h"
 #include "session/sprite_line_limits.h"
 #include "session/visual_state_codec.h"
+#include "tessera_backend.hpp"
 #include "voice_router.h" // ChannelRouter (): componer en vez de mutear
 
 #include <algorithm>
@@ -193,6 +194,68 @@ AytherSession::~AytherSession() = default;
 AytherSession::AytherSession(AytherSession &&) noexcept = default;
 AytherSession &AytherSession::operator=(AytherSession &&) noexcept = default;
 
+namespace {
+// RetroPad bit of each Mega Drive control in Tessera's order (up, down, left,
+// right, A, B, C, start), with gpgx's mapping A=JOYPAD_Y, B=JOYPAD_B,
+// C=JOYPAD_A — the one parity_bench's trace_arp and Tessera's bench use.
+constexpr std::array<unsigned, 8> kNativePadBit{4, 5, 6, 7, 1, 0, 8, 3};
+
+// The control map of a Tessera session configuration (field 6: an array of
+// entries whose fields 1 and 2 are the port and the control). Tessera's
+// limits query gives maxima (2 ports, 32 controls), not this session's map,
+// and a step must assign exactly the declared controls. Empty when the
+// configuration does not parse.
+std::vector<std::pair<std::uint16_t, std::uint16_t>>
+native_control_map(std::span<const std::uint8_t> config) {
+  const auto le = [](std::span<const std::uint8_t> b, std::size_t at,
+                     unsigned n) -> std::optional<std::uint64_t> {
+    if (at > b.size() || b.size() - at < n)
+      return std::nullopt;
+    std::uint64_t v = 0;
+    for (unsigned i = 0; i < n; ++i)
+      v |= std::uint64_t{b[at + i]} << (8 * i);
+    return v;
+  };
+  // Each field: tag u32, encoding u32, size u64, data.
+  const auto find = [&](std::span<const std::uint8_t> record,
+                        std::uint32_t wanted)
+      -> std::optional<std::span<const std::uint8_t>> {
+    std::size_t at = 0;
+    while (at < record.size()) {
+      const auto tag = le(record, at, 4), size = le(record, at + 8, 8);
+      if (!tag || !size || *size > record.size() - at - 16)
+        return std::nullopt;
+      if (*tag == wanted)
+        return record.subspan(at + 16, static_cast<std::size_t>(*size));
+      at += 16 + static_cast<std::size_t>(*size);
+    }
+    return std::nullopt;
+  };
+  std::vector<std::pair<std::uint16_t, std::uint16_t>> out;
+  const auto controls = find(config, 6);
+  const auto count = controls ? le(*controls, 0, 8) : std::nullopt;
+  if (!count)
+    return out;
+  std::size_t at = 8;
+  for (std::uint64_t index = 0; index < *count; ++index) {
+    const auto size = le(*controls, at, 8);
+    if (!size || *size > controls->size() - at - 8)
+      return {};
+    const auto entry =
+        controls->subspan(at + 8, static_cast<std::size_t>(*size));
+    const auto port = find(entry, 1), control = find(entry, 2);
+    const auto p = port ? le(*port, 0, 4) : std::nullopt;
+    const auto c = control ? le(*control, 0, 4) : std::nullopt;
+    if (!p || !c || *p > 0xFFFF || *c > 0xFFFF)
+      return {};
+    out.emplace_back(static_cast<std::uint16_t>(*p),
+                     static_cast<std::uint16_t>(*c));
+    at += 8 + static_cast<std::size_t>(*size);
+  }
+  return out;
+}
+} // namespace
+
 Result<std::unique_ptr<AytherSession>>
 AytherSession::create(const Config &cfg) {
   engine::NativeResult native_result;
@@ -208,8 +271,6 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
         static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
     return Error{ErrorCode::Unsupported, "Tessera: invalid provider selector"};
   }
-  std::unique_ptr<AytherSession> session(new AytherSession());
-  Impl &im = *session->impl_;
   if (cfg.provider == EmulationProvider::tessera_native) {
     // Device presentation and real pack composition have separate contracts.
     if (cfg.enable_audio || !cfg.patch_path.empty() ||
@@ -222,34 +283,9 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
                    "Tessera: use native PCM/originals; device and legacy "
                    "options are unavailable"};
     }
-    native_result =
-        engine::NativeEmulation::create(cfg.native_config, im.native);
-    if (native_result.code != 0) {
-      return Error{native_result.code == -26 ? ErrorCode::Internal
-                                             : ErrorCode::Unsupported,
-                   "Tessera: native preparation failed (code " +
-                       std::to_string(native_result.code) + ")"};
-    }
-    im.native_result = native_result;
-    {
-      engine::NativeSessionInfo native_info;
-      if (im.native && im.native->info(native_info).code == 0)
-        im.generation = tessera_generation(native_info.backend_build_id);
-      else
-        im.generation = tessera_generation({});
-    }
-    im.native_rom_crc32 = content_crc32(cfg.native_config.content);
-    im.pack_trust_registry = cfg.trust_registry;
-    if (!cfg.pack_path.empty()) {
-      auto loaded = session->set_pack(cfg.pack_path);
-      if (!loaded) {
-        native_result.code =
-            static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
-        return loaded.error;
-      }
-    }
-    return session;
   }
+  std::unique_ptr<AytherSession> session(new AytherSession());
+  Impl &im = *session->impl_;
   im.qa_observer = cfg.audio_observer;
   im.render_observer = cfg.render_observer;
   if (im.qa_observer.on_fact) {
@@ -276,6 +312,43 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
         im.qa_live_detector,
         {im.frame_index, audio_qa::DetectorAction::created});
   im.script.reset(ayther_script_new());
+
+  if (cfg.provider == EmulationProvider::tessera_native) {
+    native_result =
+        engine::NativeEmulation::create(cfg.native_config, im.native);
+    if (native_result.code != 0) {
+      return Error{native_result.code == -26 ? ErrorCode::Internal
+                                             : ErrorCode::Unsupported,
+                   "Tessera: native preparation failed (code " +
+                       std::to_string(native_result.code) + ")"};
+    }
+    im.native_result = native_result;
+    {
+      engine::NativeSessionInfo native_info;
+      if (im.native && im.native->info(native_info).code == 0)
+        im.generation = tessera_generation(native_info.backend_build_id);
+      else
+        im.generation = tessera_generation({});
+    }
+    im.native_rom_crc32 = content_crc32(cfg.native_config.content);
+    // TP-301.3: the frame pipeline (step/produce_frame) over the native
+    // session: its input layout and its observation surface.
+    if (im.native) {
+      im.native_controls = native_control_map(cfg.native_config.config);
+      im.activate_ayther_subscriptions();
+      im.observer.initialize_system(im.source());
+    }
+    im.pack_trust_registry = cfg.trust_registry;
+    if (!cfg.pack_path.empty()) {
+      auto loaded = session->set_pack(cfg.pack_path);
+      if (!loaded) {
+        native_result.code =
+            static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
+        return loaded.error;
+      }
+    }
+    return session;
+  }
 
   // EM-7.1 (): las opciones del core, ANTES del init — el core las lee
   // durante `retro_load_game`, y después de eso ya no hay ventana. Ponerlas
@@ -362,17 +435,7 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
   Impl *ip = &im;
   im.runner.set_video_callback(
       [ip](const void *data, unsigned w, unsigned h, size_t pitch) {
-        if (ip->cap_active)
-          return; // captura de audio: sin hashing de video
-        if (!data || w == 0 || h == 0)
-          return;
-        // Compose (2º render B): capturar el snap para copiarlo, pero SIN
-        // hashear (las occurrences/tiles ya se calcularon del frame A) ni
-        // publicar nada más.
-        ayther_tile_hasher_process_frame(ip->tile_hasher.get(),
-                                         static_cast<const uint8_t *>(data), w,
-                                         h, pitch, ip->runner.pixel_format());
-        ip->snap = {data, w, h, pitch}; // valid until end of this tick
+        ip->on_video_frame(data, w, h, pitch);
       });
   im.runner.set_audio_callback([ip](const int16_t *data,
                                     size_t frames) -> size_t {
@@ -575,15 +638,14 @@ bool AytherSession::has_pack() const noexcept { return impl_->pack.loaded(); }
 // ---------------------------------------------------------------------------
 void AytherSession::set_input(int port, uint16_t buttons) noexcept {
   if (impl_->native) {
-    // Native callers submit complete per-frame controls through the typed
-    // driver.
-    impl_->native_result = {};
-    impl_->native_result.code =
-        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
-    impl_->view.native_result = impl_->native_result;
-    return;
+    // TP-301.3: the pads of the next step(), mapped to the native controls
+    // when the frame runs. The typed driver (native_step_frame) still takes
+    // complete control frames of its own.
+    if (port >= 0 && port < static_cast<int>(impl_->native_pads.size()))
+      impl_->native_pads[static_cast<std::size_t>(port)] = buttons;
+  } else {
+    impl_->runner.set_input(port, buttons);
   }
-  impl_->runner.set_input(port, buttons);
   if (port == 0)
     impl_->recording.set_input(buttons);
 }
@@ -646,6 +708,74 @@ engine::NativeResult AytherSession::native_submit_presentation_policy(
   return im.native_result = result;
 }
 
+engine::NativeResult AytherSession::Impl::run_emulator_frame() {
+  if (!native) {
+    runner.run_frame();
+    return {};
+  }
+  engine::NativeSessionInfo current;
+  if (const auto queried = native->info(current); queried.code != 0)
+    return native_result = queried;
+  // X, Y, Z and mode (controls 8-11 of `megadrive`) stay released: the
+  // RetroPad has no agreed mapping for them yet and the default machine is a
+  // three-button pad. Ports past the two pads of set_input, too.
+  std::array<engine::NativeInputAssignment, 64> assignments{};
+  std::size_t count = 0;
+  for (const auto &[port, control] : native_controls) {
+    if (count == assignments.size())
+      break;
+    const std::int32_t value =
+        port < native_pads.size() && control < kNativePadBit.size()
+            ? static_cast<std::int32_t>(
+                  (native_pads[port] >> kNativePadBit[control]) & 1u)
+            : 0;
+    assignments[count++] = {port, control, value};
+  }
+  const auto advanced = note_native_advance(
+      native->step({current.frame_id.epoch, current.frame_id.frame + 1,
+                    std::span<const engine::NativeInputAssignment>(
+                        assignments.data(), count)}));
+  native_result = advanced;
+  if (advanced.code != 0)
+    return advanced;
+
+  engine::NativeFrame original;
+  if (const auto got = native->original(original); got.code != 0)
+    return native_result = got;
+  if (original.tick_end > original.tick_begin && current.tick_hz_den != 0)
+    native_fps = static_cast<double>(current.tick_hz_num) /
+                 static_cast<double>(current.tick_hz_den) /
+                 static_cast<double>(original.tick_end - original.tick_begin);
+  // RGBA8 (bytes R, G, B, A) to libretro XRGB8888 (a little-endian 0x00RRGGBB
+  // word: bytes B, G, R, 0).
+  const std::uint32_t w = original.width, h = original.height;
+  if (original.video_format == engine::native_video_rgba8 && w && h &&
+      original.row_bytes >= w * 4u &&
+      original.pixels.size() >= std::size_t{original.row_bytes} * h) {
+    native_xrgb.resize(std::size_t{w} * h * 4u);
+    for (std::uint32_t y = 0; y < h; ++y) {
+      const std::uint8_t *src =
+          original.pixels.data() + std::size_t{original.row_bytes} * y;
+      std::uint8_t *dst = native_xrgb.data() + std::size_t{w} * 4u * y;
+      for (std::uint32_t x = 0; x < w; ++x, src += 4, dst += 4) {
+        dst[0] = src[2];
+        dst[1] = src[1];
+        dst[2] = src[0];
+        dst[3] = 0;
+      }
+    }
+    on_video_frame(native_xrgb.data(), w, h, std::size_t{w} * 4u);
+  }
+  // The legacy audio hash takes interleaved stereo s16, as libretro gives it.
+  if (original.channels == 2 &&
+      original.pcm.size() == original.pcm_frames * 4u && original.pcm_frames)
+    ayther_audio_hasher_process_batch(
+        audio_hasher.get(),
+        reinterpret_cast<const int16_t *>(original.pcm.data()),
+        static_cast<size_t>(original.pcm_frames));
+  return advanced;
+}
+
 engine::NativeResult AytherSession::native_step_frame(
     const engine::NativeInputFrame &input) noexcept {
   Impl &im = *impl_;
@@ -655,19 +785,7 @@ engine::NativeResult AytherSession::native_step_frame(
         static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
     return im.native_result;
   }
-  const auto advanced = im.native->step(input);
-  if (advanced.code == 0 && im.native_policy.pending_transaction != 0 &&
-      (advanced.flags & engine::native_controls_applied) != 0 &&
-      advanced.transaction == im.native_policy.pending_transaction &&
-      advanced.frame_id.session == im.native_policy.pending_frame.session &&
-      advanced.frame_id.epoch == im.native_policy.pending_frame.epoch &&
-      advanced.frame_id.frame == im.native_policy.pending_frame.frame) {
-    im.native_policy.active_regions = im.native_policy.requested_regions;
-    im.native_policy.active_events = im.native_policy.requested_events;
-    im.native_policy.pending_transaction = 0;
-    im.native_policy.confirmed = true;
-  }
-  return im.native_result = advanced;
+  return im.native_result = im.note_native_advance(im.native->step(input));
 }
 
 engine::NativeResult AytherSession::native_replay_next() noexcept {
@@ -678,19 +796,7 @@ engine::NativeResult AytherSession::native_replay_next() noexcept {
         static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
     return im.native_result;
   }
-  const auto advanced = im.native->replay_next();
-  if (advanced.code == 0 && im.native_policy.pending_transaction != 0 &&
-      (advanced.flags & engine::native_controls_applied) != 0 &&
-      advanced.transaction == im.native_policy.pending_transaction &&
-      advanced.frame_id.session == im.native_policy.pending_frame.session &&
-      advanced.frame_id.epoch == im.native_policy.pending_frame.epoch &&
-      advanced.frame_id.frame == im.native_policy.pending_frame.frame) {
-    im.native_policy.active_regions = im.native_policy.requested_regions;
-    im.native_policy.active_events = im.native_policy.requested_events;
-    im.native_policy.pending_transaction = 0;
-    im.native_policy.confirmed = true;
-  }
-  return im.native_result = advanced;
+  return im.native_result = im.note_native_advance(im.native->replay_next());
 }
 engine::NativeResult AytherSession::native_restore_checkpoint(
     std::span<const std::uint8_t> checkpoint,
@@ -861,19 +967,14 @@ const FrameView &AytherSession::native_frame() noexcept {
 
 const FrameView &AytherSession::step() {
   Impl &im = *impl_;
-  if (im.native) {
-    const auto &view = native_frame();
-    im.view.native_result = {};
-    im.view.native_result.code =
-        static_cast<std::int32_t>(engine::NativeStatus::unsupported_capability);
-    return view;
-  }
   if (im.audio.production_limit().frozen)
     return im.view;
   im.replay_pos = -1; // el step en vivo mueve la máquina fuera del replay (R7d)
   // Rewind capture (R6): snapshot the PRE-frame state before advancing, so a
   // later pop() can restore exactly this frame. No-op (zero cost) when off.
-  if (im.rewind.enabled() && im.runner.serialize(im.rewind_scratch))
+  // The native provider has no rewind yet (its checkpoints are TP-304).
+  if (!im.native && im.rewind.enabled() &&
+      im.runner.serialize(im.rewind_scratch))
     im.rewind.push(im.rewind_scratch);
   // Recording capture (R7): log the input that produces this frame.
   im.recording.capture_input();
@@ -892,8 +993,8 @@ const FrameView &AytherSession::step() {
   // core de prueba reescribe 0x100 en cada frame, y por eso el caso de la
   // suite de conformidad es el que decide esto y no un razonamiento.
   if (!im.cheats.empty()) {
-    uint8_t *ram = im.runner.work_ram_mut();
-    const size_t n = im.runner.work_ram_size();
+    uint8_t *ram = im.work_ram_mut();
+    const size_t n = im.work_ram_size();
     for (const Impl::CheatEntry &c : im.cheats) {
       // Los cheats vienen en direcciones del BUS 68k; work RAM empieza en
       // 0xFF0000. Un cheat al cartucho (ROM) no se puede aplicar aca: la
@@ -929,7 +1030,7 @@ const FrameView &AytherSession::step() {
     // múltiplos de kReplayKeyInterval → seeks ≤ N frames sin re-simular desde
     // 0.
     const uint32_t rframe = static_cast<uint32_t>(im.recording.frame_count());
-    if (im.recording.keyframe_due(kReplayKeyInterval)) {
+    if (!im.native && im.recording.keyframe_due(kReplayKeyInterval)) {
       std::vector<uint8_t> st;
       if (im.runner.serialize(st) && !st.empty())
         im.recording.add_keyframe(rframe, std::move(st));
@@ -1050,9 +1151,9 @@ const FrameView &AytherSession::produce_frame() {
   im.wide_w_eff = im.wide_w;
   if (im.wide_gate) {
     uint32_t w = 0;
-    if (ayther_widescreen_gate_eval(im.wide_gate.get(), im.runner.work_ram(),
-                                    im.runner.work_ram_size(), true,
-                                    im.frame_index, &w))
+    if (ayther_widescreen_gate_eval(im.wide_gate.get(), im.work_ram(),
+                                    im.work_ram_size(), true, im.frame_index,
+                                    &w))
       im.wide_w_eff = w;
   }
 
@@ -1070,7 +1171,7 @@ const FrameView &AytherSession::produce_frame() {
   // de verdad de los hashers, no el lienzo. El dim (0x108) sigue: es un
   // efecto del produce sobre el fb, y esos frames caen al blit (bit1).
   if (im.layer_dim_want)
-    im.runner.set_layer_dim_v1(1); // dim sólo en el frame visible
+    im.source().set_layer_dim_v1(1); // dim sólo en el frame visible
   // E-5 (): los tres resets manuales de contadores (sprites parseados,
   // raster dirty, escrituras de chip) se RETIRARON. El core los cierra y
   // renueva en el frame boundary de `capture_snapshot`, y escribir a mano un
@@ -1315,7 +1416,7 @@ const FrameView &AytherSession::produce_frame() {
           if (sq_muted)
             ++im.hd_muted;
           else if (im.audio_enabled && im.transport_playing) {
-            const double fps = im.runner.fps() > 1.0 ? im.runner.fps() : 60.0;
+            const double fps = im.emu_fps() > 1.0 ? im.emu_fps() : 60.0;
             const double off = f - best_start <= kSeqTriggerLateMax
                                    ? 0.0
                                    : (f - best_start) / fps;
@@ -1460,19 +1561,29 @@ const FrameView &AytherSession::produce_frame() {
   if (im.voice_router_on)
     audio_mute = im.router_mix() ? (audio_mute | kRouterChannels) : 0;
   im.audio_mute_applied = audio_mute;
-  im.runner.set_audio_mute_v1(audio_mute);
+  im.source().set_audio_mute_v1(audio_mute);
 
   // : ACÁ empieza el PCM de este frame dentro del bloque staged — los
   // disparos HD detectados tras run_frame se colocan en este offset, no al
   // principio del bloque (que en catch-up acumula varios frames).
   im.audio.mark_frame_boundary(im.frame_index);
-  im.runner.run_frame();            // fires the video + audio callbacks
+  // Fires the video + audio callbacks (libretro) or steps the native session
+  // and hands its original to the same video path (TP-301.3).
+  const engine::NativeResult advanced = im.run_emulator_frame();
+  if (im.native && advanced.code != 0) {
+    // The machine did not advance: no frame to observe.
+    im.source().set_audio_mute_v1(0);
+    if (im.layer_dim_want)
+      im.source().set_layer_dim_v1(0);
+    im.view.native_result = advanced;
+    return im.view;
+  }
   im.verify_ayther_subscriptions(); // E-2 (): una sola vez
-  im.runner.set_audio_mute_v1(0);   // la re-sim bare corre sin mute
+  im.source().set_audio_mute_v1(0); // la re-sim bare corre sin mute
   // R-5: sin applies de supresión no hay restores — el core corre siempre
   // con el frame completo (los canales 0x102-0x106 quedaron inertes).
   if (im.layer_dim_want)
-    im.runner.set_layer_dim_v1(0); // la re-sim bare corre sin dim
+    im.source().set_layer_dim_v1(0); // la re-sim bare corre sin dim
   // Capture only after restoring output-only controls. Both setters advance
   // the ABI generation; capturing before them made later frame-scoped journal
   // and LINE_STATE reads stale even though they described this same frame.
@@ -1480,8 +1591,8 @@ const FrameView &AytherSession::produce_frame() {
   // Spec 002 (A): display enable (register 1, bit 6) at the end of the frame.
   {
     const uint8_t *de_regs = im.regs_ptr();
-    im.display_on = de_regs == nullptr || im.runner.vdp_regs_size() < 2 ||
-                    (de_regs[1] & 0x40) != 0;
+    im.display_on =
+        de_regs == nullptr || im.regs_size() < 2 || (de_regs[1] & 0x40) != 0;
   }
 
   // -- Gather occurrences --------------------------------------------------
@@ -1563,7 +1674,7 @@ const FrameView &AytherSession::produce_frame() {
       im.audio_evt_scratch.resize(kMaxAudioEvents);
       if (qa_source_interval)
         qa_source_interval->poll_capacity = kMaxAudioEvents;
-      const uint32_t nev = im.runner.poll_audio_events_observed_v1(
+      const uint32_t nev = im.source().poll_audio_events_observed_v1(
           im.audio_evt_scratch.data(), kMaxAudioEvents,
           qa_source_interval ? &qa_source_interval->poll : nullptr);
       for (uint32_t i = 0; i < nev; ++i) {
@@ -2562,7 +2673,7 @@ const FrameView &AytherSession::produce_frame() {
   uint32_t n_sprite_occs = 0;
   if (im.sprite_hasher) {
     const uint8_t *vram = im.vram_ptr(); // E-3: espejo ABI o legacy
-    const size_t vsz = im.runner.video_ram_size();
+    const size_t vsz = im.vram_size();
     if (vram && vsz > 0) {
       // Detección por SPRITES PARSEADOS: el fork captura en `parse_satb` los
       // sprites que el VDP realmente dibujó este frame (ids 0x10B/0x10C),
@@ -2577,7 +2688,7 @@ const FrameView &AytherSession::produce_frame() {
       // fallback a los 10 bytes little-endian que el hasher consume.
       static_assert(sizeof(ayther_sprite_v1) == 10,
                     "el hasher lee entradas de 10 bytes");
-      const auto observed_sprites = im.observer.parsed_sprites(im.runner);
+      const auto observed_sprites = im.observer.parsed_sprites(im.source());
       const uint8_t *psp = observed_sprites.data;
       const uint32_t pn = observed_sprites.count;
       // : CUANDO LA ABI CONTESTA, MANDA — aunque conteste "ninguno".
@@ -2637,9 +2748,9 @@ const FrameView &AytherSession::produce_frame() {
   uint32_t scr_cells[3] = {0, 0, 0};
   {
     const uint8_t *vram = im.vram_ptr(); // E-3: espejo ABI o legacy
-    const size_t vsz = im.runner.video_ram_size();
+    const size_t vsz = im.vram_size();
     const uint8_t *regs = im.regs_ptr(); // E-3
-    const size_t rsz = im.runner.vdp_regs_size();
+    const size_t rsz = im.regs_size();
     if (vram && vsz > 0 && regs && rsz >= 0x20) {
       auto cells = [](int b) { return b == 1 ? 64 : (b == 3 ? 128 : 32); };
       const int wc = cells(regs[0x10] & 3); // 32/64/128 (ya acotado)
@@ -2708,14 +2819,14 @@ const FrameView &AytherSession::produce_frame() {
       // word_swapped=true: el 68k llega con el addr^1 de libretro, y así
       // una dirección del TOML es la misma que se ve en RA/Data Crystal.
       ayther_tile_sub_begin_frame(
-          im.plane_sub.get(), im.frame_index, im.runner.work_ram(),
-          static_cast<uint32_t>(im.runner.work_ram_size()), true);
+          im.plane_sub.get(), im.frame_index, im.work_ram(),
+          static_cast<uint32_t>(im.work_ram_size()), true);
       ayther_tile_sub_clear_overrides(im.plane_sub.get());
       for (const auto &kv : im.lab_plane_overrides)
         ayther_tile_sub_add_override(im.plane_sub.get(), kv.first,
                                      kv.second.c_str());
       const uint8_t *vsram = im.vsram_ptr(); // E-3
-      const size_t vsramsz = im.runner.vsram_size();
+      const size_t vsramsz = im.vsram_size();
       if (vsram && vsramsz >= 4) {
         // (plano<<13 | patrón<<2 | paleta) → hash (de las occs ya deduplicadas:
         // la identidad de hash es idéntica a la del árbol Capas, sin
@@ -3686,7 +3797,7 @@ const FrameView &AytherSession::produce_frame() {
                 AYTHER_LEGACY_READ_BEGIN
                 const uint8_t *rg = im.regs_ptr();
                 const uint8_t *vm = im.vram_ptr();
-                const size_t vs = im.runner.video_ram_size();
+                const size_t vs = im.vram_size();
                 AYTHER_LEGACY_READ_END
                 const uint8_t r0b = rg ? rg[0x0B] : 0;
                 const uint8_t r0d = rg ? rg[0x0D] : 0;
@@ -4265,8 +4376,8 @@ const FrameView &AytherSession::produce_frame() {
   //    llama SIEMPRE que hay perfil (resolve limpia sus resultados a la
   //    entrada, así un frame sin cámara/sprites no publica instancias viejas).
   if (im.mode3.has_profile()) {
-    const uint8_t *m3_ram = m3_have_cam ? im.runner.work_ram() : nullptr;
-    im.mode3.resolve(m3_ram, m3_ram ? im.runner.work_ram_size() : 0, m3_cam_x,
+    const uint8_t *m3_ram = m3_have_cam ? im.work_ram() : nullptr;
+    im.mode3.resolve(m3_ram, m3_ram ? im.work_ram_size() : 0, m3_cam_x,
                      m3_cam_y, m3_wpx, m3_hpx, im.sprite_occs, n_sprite_occs);
   }
 
@@ -4283,7 +4394,7 @@ const FrameView &AytherSession::produce_frame() {
     ayther_script_update_tiles(sc, im.tile_occs, n_tile_occs);
     ayther_script_update_sprites(sc, im.sprite_occs, n_sprite_occs);
     ayther_script_update_audio(sc, im.audio_occs, n_audio_occs);
-    ayther_script_on_frame(sc, im.runner.work_ram(), im.runner.work_ram_size());
+    ayther_script_on_frame(sc, im.work_ram(), im.work_ram_size());
   }
 
   // -- Apply Lua overrides (clear unconditionally so stale ones never linger)
@@ -4292,8 +4403,8 @@ const FrameView &AytherSession::produce_frame() {
   if (im.audio_gate) {
     uint64_t blocked[64];
     const uint32_t nb = ayther_audio_gate_eval(
-        im.audio_gate.get(), im.runner.work_ram(), im.runner.work_ram_size(),
-        true, im.frame_index, blocked, 64);
+        im.audio_gate.get(), im.work_ram(), im.work_ram_size(), true,
+        im.frame_index, blocked, 64);
     im.audio_gate_blocked.clear();
     for (uint32_t i = 0; i < nb && i < 64; ++i)
       im.audio_gate_blocked.insert(blocked[i]);
@@ -4302,8 +4413,8 @@ const FrameView &AytherSession::produce_frame() {
     // EM-2 (): mismo contrato que el lane de planos — condiciones del
     // catálogo evaluadas una vez por frame antes de resolver.
     ayther_tile_sub_begin_frame(
-        im.tile_sub.get(), im.frame_index, im.runner.work_ram(),
-        static_cast<uint32_t>(im.runner.work_ram_size()), true);
+        im.tile_sub.get(), im.frame_index, im.work_ram(),
+        static_cast<uint32_t>(im.work_ram_size()), true);
     ayther_tile_sub_clear_overrides(im.tile_sub.get());
     if (sc) {
       AytherTileOverride ov[kMaxOverrides];
@@ -4433,7 +4544,7 @@ const FrameView &AytherSession::produce_frame() {
   bool cram_ok = false;
   {
     const uint8_t *cram = im.cram_ptr(); // E-3
-    const size_t csz = im.runner.color_ram_size();
+    const size_t csz = im.cram_size();
     for (int p = 0; p < 4; ++p) {
       const size_t base = static_cast<size_t>(p) * 16u * 2u;
       if (base + 16 * 2 > csz)
@@ -4605,7 +4716,7 @@ const FrameView &AytherSession::produce_frame() {
       // alineación (color_ram() expone bytes).
       {
         const uint8_t *cram = im.cram_ptr(); // E-3
-        const size_t csz = im.runner.color_ram_size();
+        const size_t csz = im.cram_size();
         if (cram && csz >= 128) {
           uint16_t words[64];
           std::memcpy(words, cram, sizeof(words));
@@ -4705,7 +4816,7 @@ const FrameView &AytherSession::produce_frame() {
     // a slot taken from the area of the pose.
     {
       const auto parsed_view =
-          im.observer.cached_or_legacy_parsed_sprites(im.runner);
+          im.observer.cached_or_legacy_parsed_sprites(im.source());
       const std::span<const uint8_t> parsed_bytes =
           parsed_view.data
               ? std::span<const uint8_t>(
@@ -4844,7 +4955,7 @@ const FrameView &AytherSession::produce_frame() {
     // sombra espuria. La aproximación por-sprite queda documentada; si un
     // caso real difiere (fondo de otra prioridad detrás), issue nuevo.
     const uint8_t *sh_regs = im.regs_ptr(); // E-3
-    const size_t sh_rsz = im.runner.vdp_regs_size();
+    const size_t sh_rsz = im.regs_size();
     const bool sh_mode =
         sh_regs && sh_rsz > 0x0C && (sh_regs[0x0C] & 0x08) != 0;
     for (uint32_t s = 0; s < n_sprite_subs; ++s) {
@@ -5127,7 +5238,7 @@ const FrameView &AytherSession::produce_frame() {
   v.fb_width = im.snap.w;
   v.fb_height = im.snap.h;
   v.fb_pitch = static_cast<uint32_t>(im.snap.pitch);
-  v.fb_format = static_cast<int>(im.runner.pixel_format());
+  v.fb_format = static_cast<int>(im.emu_pixel_format());
 
   v.tile_subs = im.tile_subs;
   v.tile_sub_count = n_tile_subs;
@@ -5357,7 +5468,7 @@ const FrameView &AytherSession::produce_frame() {
   if (sc)
     ayther_script_get_shader_params(sc, &v.shader_params);
 
-  v.emu_fps = im.runner.fps();
+  v.emu_fps = im.emu_fps();
   v.tile_ms = tile_ms;
   v.sprite_ms = sprite_ms;
   v.audio_ms = audio_ms;
@@ -5404,8 +5515,8 @@ const FrameView &AytherSession::produce_frame() {
     AYTHER_LEGACY_READ_BEGIN
     const uint32_t raster =
         im.observer.snapshot_available()
-            ? im.runner.read_raster_fallback_v1(im.observer.snapshot())
-            : im.runner.raster_dirty();
+            ? im.source().read_raster_fallback_v1(im.observer.snapshot())
+            : im.source().raster_dirty();
     AYTHER_LEGACY_READ_END
     // A positive mask remains fallback, but two bits
     // dicen algo más que «el frame se partió» y conviene verlos en el log
@@ -5454,7 +5565,7 @@ const FrameView &AytherSession::produce_frame() {
       if (regs3)
         fc.vdp_regs = {regs3, rsz3};
       if (vsr)
-        fc.vsram = {vsr, impl_->runner.vsram_size()};
+        fc.vsram = {vsr, impl_->vsram_size()};
       fc.fb_width = v.fb_width;
       fc.fb_height = v.fb_height;
       session::FrameComposability composability = session::classify_frame(fc);
@@ -5485,7 +5596,7 @@ const FrameView &AytherSession::produce_frame() {
           v.scene_vram && regs3 && v.scene_cram && vsr) {
         const auto &frame_snapshot = im.observer.snapshot();
         ayther_journal_v1 journal{};
-        const auto read = im.runner.read_region_v1(
+        const auto read = im.source().read_region_v1(
             AYTHER_REGION_RASTER_JOURNAL, &journal, sizeof(journal),
             frame_snapshot.snapshot_generation);
         if (session::raster_journal_is_coherent(
@@ -5539,7 +5650,7 @@ const FrameView &AytherSession::produce_frame() {
           const session::RasterFinalState final_state{
               {regs3, rsz3},
               {v.scene_cram, v.scene_cram_size},
-              {vsr, impl_->runner.vsram_size()},
+              {vsr, impl_->vsram_size()},
               {v.scene_vram, v.scene_vram_size},
               im.observer.system_available()
                   ? session::raster_identity_vdp_mode(im.observer.system())
@@ -5629,7 +5740,7 @@ const FrameView &AytherSession::produce_frame() {
         const session::PlaneBandInput hin{
             {v.scene_vram, v.scene_vram_size},
             {regs3, rsz3},
-            vsr ? std::span<const uint8_t>{vsr, impl_->runner.vsram_size()}
+            vsr ? std::span<const uint8_t>{vsr, impl_->vsram_size()}
                 : std::span<const uint8_t>{},
             (int)v.fb_width,
             (int)v.fb_height};
@@ -5670,7 +5781,7 @@ void AytherSession::publish_render_observation(
   // the filtered scene by slot loses identity (and even made the diagnostic
   // differ between pack/no-pack runs).
   const auto parsed_view =
-      im.observer.cached_or_legacy_parsed_sprites(im.runner);
+      im.observer.cached_or_legacy_parsed_sprites(im.source());
   const std::span<const uint8_t> parsed_bytes =
       parsed_view.data
           ? std::span<const uint8_t>(parsed_view.data,
@@ -6013,7 +6124,7 @@ void AytherSession::reset() {
   // E-2 (): las suscripciones NO se serializan y el core las limpia con
   // retro_reset — sin volver a pedirlas, todo lo que se observa por la ABI
   // quedaría mudo desde acá en adelante, y en silencio.
-  im.observer.reapply_subscriptions(im.runner);
+  im.observer.reapply_subscriptions(im.source());
   im.rewind.clear();     // timeline branched
   im.poke_dirty = false; // estado limpio (M5)
   im.replay_pos = -1;    // cursor de replay inválido (R7d)
@@ -7034,7 +7145,7 @@ void AytherSession::define_panorama(uint64_t id, uint8_t plane,
   // apagada (proyecto recién abierto, sin frame), queda el fallback.
   {
     const uint8_t *cram = impl_->cram_ptr(); // E-5
-    const size_t csz = impl_->runner.color_ram_size();
+    const size_t csz = impl_->cram_size();
     if (cram && csz >= 4 * 16 * 2) {
       double luma = 0.0;
       for (int p = 0; p < 4; ++p) {
@@ -9671,19 +9782,19 @@ bool AytherSession::crop_recording(const AytherRecording &rec, uint32_t begin,
 // ---------------------------------------------------------------------------
 const uint8_t *AytherSession::work_ram(size_t *size) const {
   if (size)
-    *size = impl_->runner.work_ram_size();
-  return impl_->runner.work_ram();
+    *size = impl_->work_ram_size();
+  return impl_->work_ram();
 }
 
 const uint8_t *AytherSession::video_ram(size_t *size) const {
   if (size)
-    *size = impl_->runner.video_ram_size();
+    *size = impl_->vram_size();
   return impl_->vram_ptr(); // E-5
 }
 
 const uint8_t *AytherSession::color_ram(size_t *size) const {
   if (size)
-    *size = impl_->runner.color_ram_size();
+    *size = impl_->cram_size();
   return impl_->cram_ptr(); // E-5
 }
 
@@ -9692,7 +9803,7 @@ uint64_t AytherSession::palette_signature(uint8_t line, uint16_t slots) const {
   // la MISMA fn del runtime (ayther_palette_signature) para que autoría y
   // resolución no diverjan. La captura del Lab (clonar Actor por firma) la usa.
   const uint8_t *cram = impl_->cram_ptr(); // E-5
-  const size_t csz = impl_->runner.color_ram_size();
+  const size_t csz = impl_->cram_size();
   if (!cram || csz < 128)
     return 0;
   uint16_t words[64];
@@ -9702,13 +9813,13 @@ uint64_t AytherSession::palette_signature(uint8_t line, uint16_t slots) const {
 
 const uint8_t *AytherSession::vdp_regs(size_t *size) const {
   if (size)
-    *size = impl_->runner.vdp_regs_size();
+    *size = impl_->regs_size();
   return impl_->regs_ptr(); // E-5
 }
 
 const uint8_t *AytherSession::vsram(size_t *size) const {
   if (size)
-    *size = impl_->runner.vsram_size();
+    *size = impl_->vsram_size();
   return impl_->vsram_ptr();
 }
 
@@ -9716,7 +9827,7 @@ const uint8_t *AytherSession::parsed_sprites_raw(uint8_t *count) const {
   // E-5: con ABI, el espejo que produce_frame ya leyó por read_region; sin
   // ABI, el puntero del core.
   const auto selected =
-      impl_->observer.cached_or_legacy_parsed_sprites(impl_->runner);
+      impl_->observer.cached_or_legacy_parsed_sprites(impl_->source());
   if (count)
     *count = static_cast<uint8_t>((std::min)(selected.count, 255U));
   return selected.data;
@@ -9873,7 +9984,7 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
   // permite un join por orden incluso si un slot y una posición se reutilizan
   // a mitad del frame con otro patrón.
   const auto parsed_view =
-      im.observer.cached_or_legacy_parsed_sprites(im.runner);
+      im.observer.cached_or_legacy_parsed_sprites(im.source());
   const std::span<const uint8_t> raw_bytes =
       parsed_view.data
           ? std::span<const uint8_t>(parsed_view.data,
@@ -10007,8 +10118,8 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
   {
     const uint8_t *jvram = im.vram_ptr();
     const uint8_t *jcram = im.cram_ptr();
-    const size_t jvsz = im.runner.video_ram_size();
-    const size_t jcsz = im.runner.color_ram_size();
+    const size_t jvsz = im.vram_size();
+    const size_t jcsz = im.cram_size();
     const uint8_t *fb = static_cast<const uint8_t *>(v.fb_pixels);
     int jueces = 0, jopacas = 0, jaciertos = 0;
     if (fb && v.fb_width && v.fb_height && v.fb_pitch && jvram && jcram &&
@@ -10049,7 +10160,7 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
       // vacía y con ella el pattern del elemento queda en 0), y el juez
       // se quedaba sin nada que comparar.
       const uint8_t *jregs = im.regs_ptr();
-      const size_t jrsz = im.runner.vdp_regs_size();
+      const size_t jrsz = im.regs_size();
       const bool jregs_ok = jregs && jrsz >= 6;
       const uint32_t sat_base =
           jregs_ok ? ((uint32_t)(jregs[5] & 0x7F) << 9) : 0u;
@@ -10213,9 +10324,9 @@ size_t AytherSession::scene_inventory(std::vector<SceneElement> &out) const {
     const uint8_t *bvram = im.vram_ptr();
     const uint8_t *bregs = im.regs_ptr();
     const uint8_t *bvsram = im.vsram_ptr();
-    const size_t bvsz = im.runner.video_ram_size();
-    const size_t brsz = im.runner.vdp_regs_size();
-    const size_t bvssz = im.runner.vsram_size();
+    const size_t bvsz = im.vram_size();
+    const size_t brsz = im.regs_size();
+    const size_t bvssz = im.vsram_size();
     if (bvram && bregs && bvsram && bvsz >= 0x10000 && brsz >= 0x20) {
       const session::PlaneBandInput bin{{bvram, bvsz},
                                         {bregs, brsz},
@@ -10549,9 +10660,9 @@ void AytherSession::decode_plane_tile(uint16_t pattern, uint8_t pal, bool hflip,
     return;
   const Impl &im = *impl_;
   const uint8_t *vram = im.vram_ptr(); // E-5
-  const size_t vsz = im.runner.video_ram_size();
+  const size_t vsz = im.vram_size();
   const uint8_t *cram = im.cram_ptr(); // E-5
-  const size_t csz = im.runner.color_ram_size();
+  const size_t csz = im.cram_size();
   if (!vram || vsz == 0)
     return;
   auto rd = [&](uint32_t off) -> uint8_t { // vista de bus (word-swapped)
@@ -10602,9 +10713,9 @@ void AytherSession::decode_plane_tile_rgba(uint16_t pattern, uint8_t pal,
     return;
   const Impl &im = *impl_;
   const uint8_t *vram = im.vram_ptr(); // E-5
-  const size_t vsz = im.runner.video_ram_size();
+  const size_t vsz = im.vram_size();
   const uint8_t *cram = im.cram_ptr(); // E-5
-  const size_t csz = im.runner.color_ram_size();
+  const size_t csz = im.cram_size();
   if (!vram || vsz == 0)
     return;
   auto rd = [&](uint32_t off) -> uint8_t { // vista de bus (word-swapped)
@@ -10811,8 +10922,8 @@ void AytherSession::cheat_reset() { impl_->runner.cheat_reset(); }
 // para que TODO el Lab (explorer, mapa, arbol, poke, MCP) hable el mismo
 // espacio de direcciones que las bases documentadas.
 uint8_t AytherSession::ram_u8(uint32_t off) const noexcept {
-  const size_t n = impl_->runner.work_ram_size();
-  const uint8_t *r = impl_->runner.work_ram();
+  const size_t n = impl_->work_ram_size();
+  const uint8_t *r = impl_->work_ram();
   const uint32_t i = off ^ 1u;
   return (r && i < n) ? r[i] : 0;
 }
@@ -10829,8 +10940,8 @@ uint32_t AytherSession::ram_u32(uint32_t off) const noexcept {
 // vive en ningún input stream, así que un replay no la reproduce: REC queda
 // bloqueado hasta unserialize (marcador) o reset, que limpian el flag.
 bool AytherSession::poke(uint32_t off, const uint8_t *data, size_t len) {
-  uint8_t *r = impl_->runner.work_ram_mut();
-  const size_t n = impl_->runner.work_ram_size();
+  uint8_t *r = impl_->work_ram_mut();
+  const size_t n = impl_->work_ram_size();
   if (!r || !data || !len || off + len > n)
     return false;
   for (size_t i = 0; i < len; ++i)
@@ -11459,10 +11570,10 @@ std::vector<std::string> AytherSession::catalog_texture_assets() const {
   return out;
 }
 const uint8_t *AytherSession::work_ram() const noexcept {
-  return impl_->runner.work_ram();
+  return impl_->work_ram();
 }
 size_t AytherSession::work_ram_size() const noexcept {
-  return impl_->runner.work_ram_size();
+  return impl_->work_ram_size();
 }
 
 void AytherSession::dump_tile_catalog(const char *path) const {

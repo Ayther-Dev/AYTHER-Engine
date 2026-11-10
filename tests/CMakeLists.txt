@@ -986,4 +986,15 @@ if(AYTHER_ENABLE_TESSERA)
     tessera_copy_runtime_dependencies(ayther_tessera_observation_source)
     set_tests_properties(ayther.contract.tessera_observation_source PROPERTIES
         LABELS "engine;native;contract")
+    # TP-301.3: FX-02 through AytherSession's frame pipeline on megadrive.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_native_md.cpp" integration)
+    target_include_directories(ayther_tessera_native_md SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
+    target_compile_options(ayther_tessera_native_md PRIVATE /EHsc)
+    target_compile_definitions(ayther_tessera_native_md PRIVATE
+        AYTHER_FX02_PROGRAM="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx02/program.md")
+    tessera_copy_runtime_dependencies(ayther_tessera_native_md)
+    set_tests_properties(ayther.integration.tessera_native_md PROPERTIES
+        LABELS "engine;native;integration;FX-02")
 endif()

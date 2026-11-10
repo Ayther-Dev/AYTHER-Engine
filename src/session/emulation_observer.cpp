@@ -204,6 +204,22 @@ const uint8_t *EmulationObserver::regs(const ObservationSource &runner) const {
 const uint8_t *EmulationObserver::vsram(const ObservationSource &runner) const {
   return !vsram_.empty() ? vsram_.data() : runner.vsram();
 }
+
+size_t EmulationObserver::vram_size(const ObservationSource &runner) const {
+  return !vram_.empty() ? vram_.size() : runner.video_ram_size();
+}
+
+size_t EmulationObserver::cram_size(const ObservationSource &runner) const {
+  return !cram_.empty() ? cram_.size() : runner.color_ram_size();
+}
+
+size_t EmulationObserver::regs_size(const ObservationSource &runner) const {
+  return !regs_.empty() ? regs_.size() : runner.vdp_regs_size();
+}
+
+size_t EmulationObserver::vsram_size(const ObservationSource &runner) const {
+  return !vsram_.empty() ? vsram_.size() : runner.vsram_size();
+}
 AYTHER_OBSERVER_LEGACY_END
 
 EmulationObserver::AudioWritesView

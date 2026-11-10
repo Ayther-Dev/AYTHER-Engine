@@ -10,10 +10,91 @@ struct AytherSession::Impl {
   std::unordered_map<std::uint64_t, std::string> native_tile_overrides;
   std::uint64_t next_native_policy_transaction = 1;
   RetroRunner runner; // emulator host
-  /// The observation surface FrameView is built from (TP-301.1). Today the
-  /// libretro runner; the native provider plugs in here (TP-301.2/301.3).
-  ObservationSource &source() noexcept { return runner; }
-  const ObservationSource &source() const noexcept { return runner; }
+  /// The observation surface FrameView is built from (TP-301.1): the libretro
+  /// runner, or the native session's TesseraBackend (TP-301.3).
+  ObservationSource &source() noexcept {
+    if (native)
+      return engine::detail::observation_source(*native);
+    return runner;
+  }
+  const ObservationSource &source() const noexcept {
+    if (native)
+      return engine::detail::observation_source(*native);
+    return runner;
+  }
+
+  // ---- Frame driver (TP-301.3) -------------------------------------------
+  // What produce_frame needs from the emulator besides observation: advance
+  // one frame (delivering the framebuffer through on_video_frame), its rate,
+  // its pixel format and the work RAM. libretro runner or native session.
+
+  /// Pads set with set_input for the native provider, as RetroPad masks.
+  std::array<std::uint16_t, 2> native_pads{};
+  /// The (port, control) pairs the native configuration declares, in its
+  /// order: every step assigns each of them.
+  std::vector<std::pair<std::uint16_t, std::uint16_t>> native_controls;
+  /// The native original converted to XRGB8888 (libretro's format 1), so the
+  /// hashers and the rest of produce_frame see what a libretro core gives.
+  std::vector<std::uint8_t> native_xrgb;
+  double native_fps = 0.0;
+
+  /// The work RAM. The native backend does not publish it yet (no region in
+  /// Tessera API 1.1): until it does, the gates, cheats, Mode 3 camera and
+  /// scripts that read it see none, as with a core without SYSTEM_RAM.
+  [[nodiscard]] const uint8_t *work_ram() const noexcept {
+    return native ? nullptr : runner.work_ram();
+  }
+  [[nodiscard]] size_t work_ram_size() const noexcept {
+    return native ? 0 : runner.work_ram_size();
+  }
+  [[nodiscard]] uint8_t *work_ram_mut() noexcept {
+    return native ? nullptr : runner.work_ram_mut();
+  }
+  [[nodiscard]] double emu_fps() const noexcept {
+    return native ? native_fps : emu_fps();
+  }
+  /// libretro pixel format (1 = XRGB8888 for the native provider).
+  [[nodiscard]] unsigned emu_pixel_format() const noexcept {
+    return native ? 1u : runner.pixel_format();
+  }
+
+  /// One frame of the video callback: hash tiles and keep the snapshot.
+  void on_video_frame(const void *data, unsigned w, unsigned h, size_t pitch) {
+    if (cap_active)
+      return; // captura de audio: sin hashing de video
+    if (!data || w == 0 || h == 0)
+      return;
+    // Compose (2º render B): capturar el snap para copiarlo, pero SIN
+    // hashear (las occurrences/tiles ya se calcularon del frame A) ni
+    // publicar nada más.
+    ayther_tile_hasher_process_frame(tile_hasher.get(),
+                                     static_cast<const uint8_t *>(data), w, h,
+                                     pitch, emu_pixel_format());
+    snap = {data, w, h, pitch}; // valid until end of this tick
+  }
+
+  /// Advance one frame. libretro fires its callbacks; the native session
+  /// steps with the pads of set_input and hands its original to
+  /// on_video_frame. Returns the native result (code 0 for libretro).
+  engine::NativeResult run_emulator_frame();
+
+  /// A native frame advanced: the pending presentation policy becomes active
+  /// when this frame applied its transaction.
+  engine::NativeResult
+  note_native_advance(const engine::NativeResult &advanced) {
+    if (advanced.code == 0 && native_policy.pending_transaction != 0 &&
+        (advanced.flags & engine::native_controls_applied) != 0 &&
+        advanced.transaction == native_policy.pending_transaction &&
+        advanced.frame_id.session == native_policy.pending_frame.session &&
+        advanced.frame_id.epoch == native_policy.pending_frame.epoch &&
+        advanced.frame_id.frame == native_policy.pending_frame.frame) {
+      native_policy.active_regions = native_policy.requested_regions;
+      native_policy.active_events = native_policy.requested_events;
+      native_policy.pending_transaction = 0;
+      native_policy.confirmed = true;
+    }
+    return advanced;
+  }
   session::EmulationObserver observer;    // ABI observation + legacy fallback
   session::RecordingController recording; // deterministic live capture
   engine::audio_observation::Observer qa_observer;
@@ -1351,26 +1432,32 @@ struct AytherSession::Impl {
   mutable std::vector<uint8_t> sprite_core_drawn;
 
   void activate_ayther_subscriptions() {
-    observer.activate_subscriptions(runner);
+    observer.activate_subscriptions(source());
   }
 
-  void refresh_abi_mirror() { observer.refresh(runner); }
+  void refresh_abi_mirror() { observer.refresh(source()); }
 
   // Los helpers del dual-path. Si una región del espejo quedó vacía (no
   // suscripta, o el core la rechazó) se cae al puntero legacy en vez de
   // devolver nullptr: degradar a lo que funcionaba es mejor que apagar la
   // detección de sprites porque una lectura falló.
   AYTHER_LEGACY_READ_BEGIN
-  const uint8_t *vram_ptr() const { return observer.vram(runner); }
-  const uint8_t *cram_ptr() const { return observer.cram(runner); }
-  const uint8_t *regs_ptr() const { return observer.regs(runner); }
-  const uint8_t *vsram_ptr() const { return observer.vsram(runner); }
+  const uint8_t *vram_ptr() const { return observer.vram(source()); }
+  const uint8_t *cram_ptr() const { return observer.cram(source()); }
+  const uint8_t *regs_ptr() const { return observer.regs(source()); }
+  const uint8_t *vsram_ptr() const { return observer.vsram(source()); }
+  size_t vram_size() const { return observer.vram_size(source()); }
+  size_t cram_size() const { return observer.cram_size(source()); }
+  size_t regs_size() const { return observer.regs_size(source()); }
+  size_t vsram_size() const { return observer.vsram_size(source()); }
   AYTHER_LEGACY_READ_END
 
   /// Confirma —UNA vez, tras el primer frame— que el core las activó. Es
   /// diagnóstico y no bloquea: las suscripciones entran en el frame boundary,
   /// así que preguntarlo antes de correr un frame siempre daría 0.
-  void verify_ayther_subscriptions() { observer.verify_subscriptions(runner); }
+  void verify_ayther_subscriptions() {
+    observer.verify_subscriptions(source());
+  }
   // ---- E-7 (): capas del VDP ----------------------------------------
   // Los cinco buffers viven acá y se reusan: a 320x224 son 5 x 143 KB, y
   // realocarlos por frame seria pagar un malloc por capa a 60 Hz. Orden:
@@ -1992,7 +2079,7 @@ struct AytherSession::Impl {
     if (!audio_enabled || !transport_playing || audio_live_bypass ||
         audio_live_inst.empty())
       return;
-    const double fps = runner.fps();
+    const double fps = emu_fps();
     for (auto it = audio_live_inst.begin(); it != audio_live_inst.end();) {
       const uint64_t key = it->first;
       const LiveInstance &li = it->second;
@@ -2394,7 +2481,7 @@ struct AytherSession::Impl {
     // se separan nunca.
     //
     // El fallback sólo cubre el frame raro sin PCM del emulador.
-    const double fps = runner.fps() > 1.0 ? runner.fps() : 60.0;
+    const double fps = emu_fps() > 1.0 ? emu_fps() : 60.0;
     size_t n = synth_frames_hint;
     if (n == 0) {
       ++syn_nopcm;
@@ -2635,7 +2722,7 @@ struct AytherSession::Impl {
     // sintetizador. Atados al mismo número, los dos streams derivan igual y
     // no se separan nunca; con un número fijo, el del router se muere de
     // hambre porque no tiene el DRC que salva al del emulador.
-    const double fps = runner.fps() > 1.0 ? runner.fps() : 60.0;
+    const double fps = emu_fps() > 1.0 ? emu_fps() : 60.0;
     size_t n = synth_frames_hint;
     if (n == 0)
       n = (size_t)(44100.0 / fps + 0.5);
@@ -3052,7 +3139,7 @@ struct AytherSession::Impl {
     SessionPolicy pol;
     pol.im = this;
     router.set_policy(&pol);
-    const double sfps = runner.fps();
+    const double sfps = emu_fps();
     router.mirror().set_pal(sfps > 1.0 && sfps < 55.0);
     for (uint32_t i = 0; i < start; ++i) {
       const uint32_t a = voice_prime_offsets[i], b = voice_prime_offsets[i + 1];
@@ -3235,7 +3322,7 @@ struct AytherSession::Impl {
     const uint32_t last = (std::min)(start + win, cached);
 
     ChipMirror mirror;
-    const double sfps = runner.fps();
+    const double sfps = emu_fps();
     mirror.set_pal(sfps > 1.0 && sfps < 55.0);
     for (uint32_t i = 0; i < start; ++i) {
       const uint32_t a = voice_prime_offsets[i], b = voice_prime_offsets[i + 1];

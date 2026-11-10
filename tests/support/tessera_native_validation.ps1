@@ -125,7 +125,7 @@ try {
     $selfPath=Join-Path $runRoot 'facade-self-tests.json'
     $self=Invoke-Child 'facade-self-tests' $EngineWorker @('--self-test','--report',$selfPath) $selfPath
     Assert-Valid ($self.Value.self_tests.passed -eq $true -and $self.Value.self_tests.checks -ge 40 -and $self.Value.self_tests.real_facade -eq $true) 'REAL_FACADE_SELF_TESTS_NOT_EXECUTED'
-    foreach ($proof in @('retained_after_owner_destruction','legacy_calls_rejected_without_advance','device_and_pack_rejected',
+    foreach ($proof in @('retained_after_owner_destruction','session_step_drives_native_machine','device_and_pack_rejected',
         'complete_input_negatives','driver_reset_close_views_cleared','snapshot_budget_and_recovery',
         'queue_4096_independent_cursors_and_losses','saturated_reset_close_cancellation')) {
         Assert-Valid ($self.Value.self_tests.$proof -eq $true) "FACADE_CONTRACT_PROOF_MISSING: $proof"

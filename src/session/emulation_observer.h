@@ -54,6 +54,12 @@ public:
   [[nodiscard]] const uint8_t *cram(const ObservationSource &runner) const;
   [[nodiscard]] const uint8_t *regs(const ObservationSource &runner) const;
   [[nodiscard]] const uint8_t *vsram(const ObservationSource &runner) const;
+  /// Sizes that go with the pointers above: the mirror's when it holds the
+  /// region (a native source has no legacy memory), else the legacy size.
+  [[nodiscard]] size_t vram_size(const ObservationSource &runner) const;
+  [[nodiscard]] size_t cram_size(const ObservationSource &runner) const;
+  [[nodiscard]] size_t regs_size(const ObservationSource &runner) const;
+  [[nodiscard]] size_t vsram_size(const ObservationSource &runner) const;
 
   AudioWritesView audio_writes(ObservationSource &runner);
   AudioWritesView audio_writes(ObservationSource &runner,

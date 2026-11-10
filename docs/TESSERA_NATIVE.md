@@ -25,8 +25,9 @@ API. Además, `dependencies/tessera.lock.json` fija el Tessera exacto:
 - `sourceCommit`, `api` y `package.version` siempre;
 - `release.tag` y `artifact.sha256` cuando Tessera publica un tag con esa API.
   Mientras no exista, el lock es `unreleased` y fija un commit de `main`.
-  Hoy fija `v0.2.0-rc.2` (API 1.1, n�cleo `megadrive`); `v0.2.0-rc.1`
-  fall� en CI antes de empaquetar y no tiene release.
+  Hoy fija `v0.2.0-rc.3` (API 1.1, núcleo `megadrive`, con
+  `tessera_observation_snapshot_capture_v1`); `v0.2.0-rc.1` falló en CI
+  antes de empaquetar y no tiene release.
 
 `native-release.yml` lee el commit del lock para compilar Tessera; `ci.yml` lo
 fija como literal (`TESSERA_COMMIT`, para que el `ref` del checkout no derive de
@@ -63,12 +64,23 @@ selección y expone sistema, capacidades e identidades mediante `info()`.
 Una selección inválida, contenido/configuración incompatibles o preparación
 fallida devuelven error; no cambian al proveedor libretro.
 
-El modo nativo se conduce exclusivamente mediante `native_emulation()`, con
-estados completos de controles y contexto de época/frame. `step()` y
-`set_input()` de la fachada legacy rechazan esa ruta: el resultado es
-`unsupported_capability` en `FrameView::native_result`, sin avance. Los clientes
-nativos deben conservar cada `NativeResult`: las consultas siguientes tienen
-su propio resultado. El overload de creación permite conservar también el
+El modo nativo se conduce de dos formas. `native_emulation()` es el driver
+tipado, con estados completos de controles y contexto de época/frame. Desde
+TP-301.3 (spec 008), `set_input()` y `step()` de la sesión también avanzan la
+máquina nativa por la tubería de frames (`produce_frame`), igual que con
+libretro. `set_input()` guarda el mando RetroPad de cada puerto. En cada
+`step()`, la sesión asigna todos los controles que declara el mapa de la
+configuración (campo 6), con el mapeo de gpgx: A=Y, B=B, C=A, más las
+direcciones y start. X, Y, Z y mode quedan sueltos. El original RGBA8 pasa a
+XRGB8888, de modo que `FrameView` tiene el formato de un core libretro, y la
+observación (VRAM, CRAM, registros, VSRAM, sprites, escrituras de audio) sale
+de `TesseraBackend` como `ObservationSource`. La work RAM todavía no existe en
+la vía nativa: Tessera API 1.1 no la publica, así que los gates, cheats,
+cámara de Modo 3 y scripts que la leen no ven nada, como con un core sin
+`SYSTEM_RAM`. El rewind y los keyframes de grabación tampoco existen en esta
+vía. Si el avance falla, `step()` devuelve el código en
+`FrameView::native_result`. Los clientes nativos deben conservar cada
+`NativeResult`: las consultas siguientes tienen su propio resultado. El overload de creación permite conservar también el
 contexto de un error sin sesión. `reset()` de la fachada delega al driver.
 
 ## Originales, capturas y límites de este incremento

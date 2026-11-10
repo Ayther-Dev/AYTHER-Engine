@@ -120,9 +120,13 @@ identity generation.
 The native provider is driven through `native_emulation()`, which requires a
 complete input state for the next frame or a validated bound trace. Its results
 preserve EOF, pending transactions, confirmation and cancellation independently
-of the event queue. Legacy `set_input()` and `step()` reject the native route
-without advancing; clients inspect `FrameView::native_result` and use the typed
-driver. `native_frame()` then exposes borrowed original RGBA8 and PCM, with
+of the event queue. Since spec 008 TP-301.3, `set_input()` and `step()` also
+drive the native machine through the frame pipeline. Each step assigns every
+control the configuration's control map declares, mapping the RetroPad as gpgx
+does (A=Y, B=B, C=A). The FrameView carries the original as XRGB8888 and the
+observation of `TesseraBackend`. The native route has no work RAM yet: Tessera
+API 1.1 does not publish it. A failed advance is reported in
+`FrameView::native_result`. `native_frame()` exposes borrowed original RGBA8 and PCM, with
 `pack_not_integrated` as the explicit original presentation reason. It clears
 expired views after a direct-driver reset or close. Real pack composition and
 Runtime presentation are separate MVP acceptance tasks.
