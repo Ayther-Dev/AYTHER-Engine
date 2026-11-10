@@ -155,7 +155,7 @@ std::string line(std::uint32_t frame, const FrameView &v,
     fb.h = fb_hash;
     fb.n = fb_count;
   }
-  Acc scene, sprites, tiles, cells, raster, chip, palette, attr, pcm;
+  Acc scene, sprites, tiles, cells, raster, chip, chip_seq, palette, attr, pcm;
   for (std::uint32_t i = 0; v.scene != nullptr && i < v.scene_count; ++i)
     scene_element(scene, v.scene[i]);
   scene.n = v.scene_count;
@@ -173,6 +173,15 @@ std::string line(std::uint32_t frame, const FrameView &v,
   raster.bytes(v.plane_vscroll_col, sizeof v.plane_vscroll_col);
   raster.n = v.raster_band_count;
   chip.array(v.chip_writes, v.chip_write_count);
+  // The same writes without their cycle: the functional sequence. The cycle
+  // of Tessera differs from gpgx (DRAM refresh, EXC-001..004) and no identity
+  // uses it, so TP-209.3 excepts chip_writes and keeps comparing this one.
+  records(chip_seq, v.chip_writes, v.chip_write_count,
+          [](Acc &a, const AytherAudioWrite &w) {
+            a.value(w.addr);
+            a.value(w.data);
+            a.value(w.chip);
+          });
   palette.array(v.scene_cram, v.scene_cram_size);
   attr.array(v.sprite_occ_core_drawn, v.sprite_occ_count);
   records(attr, v.entity_instances, v.entity_instance_count, entity_instance);
@@ -186,6 +195,7 @@ std::string line(std::uint32_t frame, const FrameView &v,
   emit(out, "plane_cells", cells, false);
   emit(out, "raster", raster, false);
   emit(out, "chip_writes", chip, false);
+  emit(out, "chip_seq", chip_seq, false);
   emit(out, "palette", palette, false);
   emit(out, "attribution", attr, false);
   emit(out, "pcm", pcm, true);

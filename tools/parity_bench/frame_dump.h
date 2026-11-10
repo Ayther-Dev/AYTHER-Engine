@@ -12,8 +12,9 @@ namespace ayther::parity {
 
 /// Fixed order of the subplanes in every dump line.
 inline constexpr const char *kSubplaneNames[] = {
-    "fb",     "scene",       "sprites", "tiles",       "plane_cells",
-    "raster", "chip_writes", "palette", "attribution", "pcm"};
+    "fb",          "scene",       "sprites",     "tiles",
+    "plane_cells", "raster",      "chip_writes", "chip_seq",
+    "palette",     "attribution", "pcm"};
 
 /// Runs the core with the given port-0 inputs (one frame per entry) and
 /// returns the dump, or nullopt when the session cannot be created.
