@@ -39,7 +39,7 @@ env:
   # dependencies/tessera.lock.json; the 'Verify the Tessera pin' step enforces
   # it. It is a literal (not read from the file) so the checkout ref is not
   # data derived from the repository (CodeQL cache-poisoning rule).
-  TESSERA_COMMIT: cac962aa62405f9e9af97e20182e10c07cefbe49
+  TESSERA_COMMIT: 7e60579a9b4eed037755b9ea324f8dc74fe75162
 
 jobs:
   repository-policy:
