@@ -109,7 +109,7 @@ struct AytherSession::Impl {
     return true;
   }
   [[nodiscard]] double emu_fps() const noexcept {
-    return native ? native_fps : emu_fps();
+    return native ? native_fps : runner.fps();
   }
   /// libretro pixel format (native: 2 = RGB565 for megadrive, else 1 =
   /// XRGB8888).
