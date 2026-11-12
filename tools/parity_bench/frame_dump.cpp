@@ -134,21 +134,33 @@ std::uint16_t pixel_565(const FrameView &v, const std::uint8_t *row,
                                     (((w >> 5) & 0x1F) << 6) | (w & 0x1F));
 }
 
+} // namespace
+
+bool fb_hash565(const FrameView &v, std::uint64_t &hash) {
+  if (v.fb_pixels == nullptr)
+    return false;
+  Acc fb;
+  const auto *p = static_cast<const std::uint8_t *>(v.fb_pixels);
+  fb.value(v.fb_width);
+  fb.value(v.fb_height);
+  // Canonical RGB565 per visible pixel, whatever the provider emits
+  // (libretro RGB565 or XRGB8888, native RGBA8 expanded from RGB565), so
+  // the two providers' images hash alike (spec 008, TP-209.1).
+  for (std::uint32_t y = 0; y < v.fb_height; ++y) {
+    const std::uint8_t *row = p + std::size_t(y) * v.fb_pitch;
+    for (std::uint32_t x = 0; x < v.fb_width; ++x)
+      fb.value(pixel_565(v, row, x));
+  }
+  hash = fb.h;
+  return true;
+}
+
+namespace {
+
 std::string line(std::uint32_t frame, const FrameView &v,
                  std::uint64_t &fb_hash, std::uint32_t &fb_count) {
   Acc fb;
-  if (v.fb_pixels != nullptr) {
-    const auto *p = static_cast<const std::uint8_t *>(v.fb_pixels);
-    fb.value(v.fb_width);
-    fb.value(v.fb_height);
-    // Canonical RGB565 per visible pixel, whatever the provider emits
-    // (libretro RGB565 or XRGB8888, native RGBA8 expanded from RGB565), so
-    // the two providers' images hash alike (spec 008, TP-209.1).
-    for (std::uint32_t y = 0; y < v.fb_height; ++y) {
-      const std::uint8_t *row = p + std::size_t(y) * v.fb_pitch;
-      for (std::uint32_t x = 0; x < v.fb_width; ++x)
-        fb.value(pixel_565(v, row, x));
-    }
+  if (fb_hash565(v, fb.h)) {
     fb.n = v.fb_height;
     fb_hash = fb.h;
     fb_count = fb.n;

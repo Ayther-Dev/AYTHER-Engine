@@ -465,6 +465,34 @@ if(AYTHER_BUILD_PARITY_BENCH)
     target_sources(ayther_parity_identities_test PRIVATE
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
 
+    # TP-210.1: the cross-pack play line and its comparison (RF-10.3).
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/unit/parity_cross_pack_test.cpp"
+        unit)
+    target_sources(ayther_parity_cross_pack_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/cross_pack.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
+
+    # TP-210.1: the cross-pack matrix of plan §3.13 on FX-03, gpgx (the fork
+    # core of core.lock; skip 77 without it) against Tessera.
+    if(AYTHER_ENABLE_TESSERA)
+        ayther_add_native_test(
+            "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_cross_pack.cpp"
+            integration)
+        target_sources(ayther_parity_bench_cross_pack PRIVATE
+            "${PROJECT_SOURCE_DIR}/tools/parity_bench/cross_pack.cpp"
+            "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+            "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
+        target_compile_definitions(ayther_parity_bench_cross_pack PRIVATE
+            AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+            PARITY_BENCH_PATH="$<TARGET_FILE:parity_bench>")
+        add_dependencies(ayther_parity_bench_cross_pack parity_bench)
+        set_tests_properties(ayther.integration.parity_bench_cross_pack
+            PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600
+            LABELS "engine;native;integration;parity;FX-03")
+    endif()
+
     # TP-005.17: the native job runs parity_bench on both scenes.
     ayther_add_native_test(
         "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_selftest.cpp"

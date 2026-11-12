@@ -918,8 +918,10 @@ public:
   [[nodiscard]] bool native_set_tile_override(std::uint64_t hash,
                                               std::string asset_path);
   void native_clear_tile_overrides() noexcept;
-  /// Refresh borrowed originals after driving native_emulation(). Native packs
-  /// are not integrated in this increment; the reason is explicit in FrameView.
+  /// Refresh borrowed originals after driving native_emulation(). This direct
+  /// driver composes only the pack's tile rules over the original; the reason
+  /// is explicit in FrameView. step() resolves every substitution of the pack
+  /// with the same catalogs as the libretro provider (TP-210.1).
   [[nodiscard]] const FrameView &native_frame() noexcept;
 
   ~AytherSession(); ///< RAII frees every handle

@@ -5,10 +5,12 @@
 //   parity_bench trace-from-arp ...
 //   parity_bench check --exceptions FILE --catalog FILE --dumps DIR
 //   parity_bench compare-identities --golden FILE --candidate FILE
+//   parity_bench cross-pack bake|play|compare ...   (TP-210.1)
 //
 // Skeleton: the subcommands validate their arguments and report that they are
 // not implemented yet. dump arrives in TP-005.15 and compare in TP-005.16;
 // trace-from-arp (TP-005.14) is implemented in trace_arp.cpp.
+#include "cross_pack.h"
 #include "exception_accounting.h"
 #include "frame_compare.h"
 #include "frame_dump.h"
@@ -51,6 +53,8 @@ void print_help(std::FILE *out) {
       "trace\n"
       "  check            strict exception accounting over a catalog of dumps\n"
       "  compare-identities  compare two identity files (dump --identities)\n"
+      "  cross-pack bake|play|compare  packs baked with one provider and\n"
+      "                   played with either (RF-10.3, plan 3.13)\n"
       "\n"
       "options:\n"
       "  --golden FILE --candidate FILE [--except SUBPLANE]...   (compare)\n"
@@ -63,6 +67,15 @@ void print_help(std::FILE *out) {
       "  --golden FILE --candidate FILE [--out FILE]\n"
       "      (compare-identities: exit 0 equal sets, 5 different; --out\n"
       "       writes the comparison as JSON)\n"
+      "  [--core DLL] --rom FILE (--arp FILE | --frames N) --pack FILE\n"
+      "      --registry FILE   (cross-pack bake: one rule and one asset per\n"
+      "       tile, sprite and plane-tile identity the provider observes,\n"
+      "       signed, and the trust registry that vouches for it)\n"
+      "  ... --pack FILE --registry FILE --out FILE [--detail FILE]\n"
+      "      (cross-pack play: per frame the multiset of substitutions and\n"
+      "       the hash of the presented frame; --detail lists the multiset)\n"
+      "  --golden FILE --candidate FILE   (cross-pack compare: exit 0\n"
+      "       equal, 5 different)\n"
       "  --arp FILE --out FILE --content-sha HEX --config-sha HEX  "
       "(trace-from-arp)\n"
       "  --exceptions FILE --catalog FILE --dumps DIR [--registry FILE]\n"
@@ -174,6 +187,114 @@ bool valid_provider(std::string_view name) {
   return name == "libretro" || name == "tessera_native";
 }
 
+/// The port-0 inputs of a run: those of the take `arp`, or `frames` frames
+/// of neutral pad. 0 when loaded, otherwise the exit code (the message is
+/// already printed, prefixed by `who`).
+int load_pads(const std::string &arp, const std::string &frames,
+              const char *who, std::vector<std::uint16_t> &pads) {
+  if (!arp.empty()) {
+    const auto take = ayther::AytherRecording::load(arp);
+    if (!take || take->inputs.empty()) {
+      std::fprintf(stderr, "%s: cannot read take: %s\n", who, arp.c_str());
+      return 1;
+    }
+    pads = take->inputs;
+    return 0;
+  }
+  char *end = nullptr;
+  const unsigned long count = std::strtoul(frames.c_str(), &end, 10);
+  if (end == frames.c_str() || *end != '\0' || count == 0 || count > 1000000) {
+    std::fprintf(stderr, "%s: --frames needs a count from 1 to 1000000\n", who);
+    return kExitUsage;
+  }
+  pads.assign(count, 0); // neutral pad on every frame
+  return 0;
+}
+
+bool write_text(const std::string &path, const std::string &text) {
+  std::ofstream file(path, std::ios::binary | std::ios::trunc);
+  file.write(text.data(), static_cast<std::streamsize>(text.size()));
+  file.close();
+  return file.good();
+}
+
+// parity_bench cross-pack (TP-210.1): exit 0 on success (compare: equal), 5
+// when compare finds a difference, 1 on a run that fails, 4 on a write error.
+int cross_pack_command(std::string_view action, const std::string &provider,
+                       const std::string &core, const std::string &rom,
+                       const std::string &arp, const std::string &frames,
+                       const std::string &pack, const std::string &registry,
+                       const std::string &out, const std::string &golden,
+                       const std::string &candidate,
+                       const std::string &detail) {
+  namespace ap = ayther::parity;
+  if (action == "compare") {
+    if (golden.empty() || candidate.empty()) {
+      std::fprintf(stderr,
+                   "cross-pack compare needs --golden and --candidate\n");
+      return kExitUsage;
+    }
+    const auto a = read_file(golden);
+    const auto b = read_file(candidate);
+    if (!a || !b) {
+      std::fprintf(stderr, "cross-pack compare: cannot read %s\n",
+                   !a ? golden.c_str() : candidate.c_str());
+      return 1;
+    }
+    const auto r = ap::compare_plays(*a, *b);
+    if (!r.ok) {
+      std::fprintf(stderr, "cross-pack compare: %s\n", r.error.c_str());
+      return 1;
+    }
+    for (const auto &d : r.divergences)
+      std::printf("divergence %s first frame %u frames %zu\n", d.field.c_str(),
+                  d.frame, d.frames);
+    std::printf("cross-pack compare: frames=%zu substituted=%zu %s\n", r.frames,
+                r.substituted_frames, r.equal() ? "equal" : "different");
+    return r.equal() ? kExitOk : 5;
+  }
+  const bool native = provider == "tessera_native";
+  const bool bake = action == "bake";
+  if ((!native && core.empty()) || rom.empty() ||
+      arp.empty() == frames.empty() || pack.empty() || registry.empty() ||
+      (!bake && out.empty())) {
+    std::fprintf(stderr,
+                 bake ? "cross-pack bake needs %s--rom, --arp or "
+                        "--frames, --pack, --registry\n"
+                      : "cross-pack play needs %s--rom, --arp or "
+                        "--frames, --pack, --registry, --out\n",
+                 native ? "" : "--core, ");
+    return kExitUsage;
+  }
+  std::vector<std::uint16_t> pads;
+  if (const int rc = load_pads(arp, frames, "cross-pack", pads); rc != 0)
+    return rc;
+  const ap::CrossSession session{native, core, rom, pack, registry};
+  if (bake) {
+    const auto r = ap::bake_pack(session, pads, pack, registry);
+    if (!r.ok) {
+      std::fprintf(stderr, "cross-pack bake: %s\n", r.error.c_str());
+      return 1;
+    }
+    std::printf("cross-pack bake: provider=%s tiles=%zu sprites=%zu "
+                "planes=%zu\n",
+                provider.c_str(), r.tiles, r.sprites, r.planes);
+    return kExitOk;
+  }
+  std::string error;
+  std::string entries;
+  const auto text =
+      ap::play_pack(session, pads, &error, detail.empty() ? nullptr : &entries);
+  if (!text) {
+    std::fprintf(stderr, "cross-pack play: %s\n", error.c_str());
+    return 1;
+  }
+  if (!write_text(out, *text) ||
+      (!detail.empty() && !write_text(detail, entries)))
+    return 4;
+  return kExitOk;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -188,17 +309,29 @@ int main(int argc, char **argv) {
   }
   if (subcommand != "dump" && subcommand != "compare" &&
       subcommand != "trace-from-arp" && subcommand != "check" &&
-      subcommand != "compare-identities") {
+      subcommand != "compare-identities" && subcommand != "cross-pack") {
     std::fprintf(stderr, "unknown subcommand: %s\n", argv[1]);
     print_help(stderr);
     return kExitUsage;
   }
+  std::string_view action;
+  int first_option = 2;
+  if (subcommand == "cross-pack") {
+    if (argc >= 3)
+      action = argv[2];
+    if (action != "bake" && action != "play" && action != "compare") {
+      std::fprintf(stderr, "cross-pack needs bake, play or compare\n");
+      return kExitUsage;
+    }
+    first_option = 3;
+  }
 
   std::string provider = "libretro";
   std::string arp, out, content_sha, config_sha, core, rom, golden, candidate,
-      frames, exceptions, catalog, dumps, registry, identities, segments;
+      frames, exceptions, catalog, dumps, registry, identities, segments, pack,
+      detail;
   std::vector<std::string> except;
-  for (int i = 2; i < argc; ++i) {
+  for (int i = first_option; i < argc; ++i) {
     const std::string_view arg = argv[i];
     if (arg == "--help" || arg == "-h") {
       print_help(stdout);
@@ -237,6 +370,8 @@ int main(int argc, char **argv) {
                           : arg == "--registry"    ? &registry
                           : arg == "--identities"  ? &identities
                           : arg == "--segments"    ? &segments
+                          : arg == "--pack"        ? &pack
+                          : arg == "--detail"      ? &detail
                                                    : nullptr;
     if (target != nullptr) {
       if (i + 1 >= argc) {
@@ -249,6 +384,10 @@ int main(int argc, char **argv) {
     std::fprintf(stderr, "unknown option: %s\n", argv[i]);
     return kExitUsage;
   }
+
+  if (subcommand == "cross-pack")
+    return cross_pack_command(action, provider, core, rom, arp, frames, pack,
+                              registry, out, golden, candidate, detail);
 
   if (subcommand == "check") {
     if (exceptions.empty() || catalog.empty() || dumps.empty()) {
@@ -345,24 +484,8 @@ int main(int argc, char **argv) {
       collector = std::make_unique<ayther::parity::IdentityCollector>(*ranges);
     }
     std::vector<std::uint16_t> pads;
-    if (!arp.empty()) {
-      const auto take = ayther::AytherRecording::load(arp);
-      if (!take || take->inputs.empty()) {
-        std::fprintf(stderr, "dump: cannot read take: %s\n", arp.c_str());
-        return 1;
-      }
-      pads = take->inputs;
-    } else {
-      char *end = nullptr;
-      const unsigned long count = std::strtoul(frames.c_str(), &end, 10);
-      if (end == frames.c_str() || *end != '\0' || count == 0 ||
-          count > 1000000) {
-        std::fprintf(stderr,
-                     "dump: --frames needs a count from 1 to 1000000\n");
-        return kExitUsage;
-      }
-      pads.assign(count, 0); // neutral pad on every frame
-    }
+    if (const int rc = load_pads(arp, frames, "dump", pads); rc != 0)
+      return rc;
     std::optional<std::string> text;
     if (native) {
       std::ifstream in(rom, std::ios::binary);

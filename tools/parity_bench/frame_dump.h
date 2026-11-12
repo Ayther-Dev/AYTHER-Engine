@@ -8,9 +8,18 @@
 #include <string>
 #include <vector>
 
+namespace ayther {
+struct FrameView;
+} // namespace ayther
+
 namespace ayther::parity {
 
 class IdentityCollector;
+
+/// FNV-1a 64 of the framebuffer as canonical RGB565 per visible pixel, after
+/// its width and height: the `fb` subplane of the dump. False, and `hash`
+/// untouched, when the core repeated the previous frame (no pixels).
+bool fb_hash565(const FrameView &view, std::uint64_t &hash);
 
 /// Fixed order of the subplanes in every dump line.
 inline constexpr const char *kSubplaneNames[] = {

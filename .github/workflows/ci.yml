@@ -711,6 +711,30 @@ jobs:
             "${base_revision}" \
             build/${{ matrix.preset }}
 
+      - name: Download the locked gpgx core for the cross-pack test
+        if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # TP-210.1: ayther.integration.parity_bench_cross_pack plays packs
+          # baked with gpgx on Tessera and back. The fork core is a public
+          # release named by core.lock; it is checked against the lock and
+          # kept outside third_party/cores, so only that test uses it.
+          $lock = @{}
+          foreach ($line in Get-Content third_party/cores/core.lock) {
+            $content = ($line -split '#', 2)[0]
+            if ($content -match '^\s*([a-z0-9_]+)\s*=\s*(.+?)\s*$') { $lock[$Matches[1]] = $Matches[2] }
+          }
+          $dir = Join-Path $env:RUNNER_TEMP 'gpgx-core'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $core = Join-Path $dir $lock['vram_file']
+          $url = "https://github.com/$($lock['repo'])/releases/download/$($lock['tag'])/$($lock['vram_file'])"
+          Invoke-WebRequest -Uri $url -OutFile $core
+          $actual = (Get-FileHash -Algorithm SHA256 $core).Hash
+          if ($actual -ne $lock['vram_sha256']) {
+            throw "gpgx core SHA-256 $actual differs from core.lock ($($lock['vram_sha256']))."
+          }
+          "AYTHER_PARITY_GPGX_CORE=$core" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Test native targets
         if: env.WARM_ONLY != 'true'
         shell: pwsh

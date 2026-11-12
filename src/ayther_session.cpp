@@ -521,6 +521,7 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
   if (impl_->native) {
     Impl &im = *impl_;
     if (pack_path.empty()) {
+      im.reset_pack_consumers();
       im.pack.close();
       im.native_tile_overrides.clear();
       return Result<void>::ok();
@@ -562,41 +563,20 @@ Result<void> AytherSession::set_pack(const std::string &pack_path) {
     if (!ayther_pack_verify_all(candidate.get()))
       return Result<void>::fail(ErrorCode::BadFormat,
                                 "Tessera: pack integrity check failed");
+    // The frame pipeline (step/produce_frame) resolves the pack's
+    // substitutions with the same catalogs as the libretro provider, so a
+    // pack baked with one provider plays with the other (RF-10.3, TP-210.1).
+    im.reset_pack_consumers();
     im.pack.swap(candidate);
     im.native_tile_overrides.clear();
+    im.load_pack_into(im.pack.get());
+    apply_default_profile();
     return Result<void>::ok();
   }
   Impl &im = *impl_;
   namespace fs = std::filesystem;
 
-  // Clean slate: detach the old pack from the script BEFORE closing it (no
-  // dangling pointer), then recreate the substitutors to drop their catalogs.
-  ayther_script_set_pack(im.script.get(), nullptr);
-  im.tile_sub.reset(ayther_tile_sub_new());
-  im.plane_sub.reset(ayther_tile_sub_new()); // Fase 2c
-  im.sprite_sub.reset(ayther_sprite_sub_new());
-  im.pose_sub.reset(ayther_pose_sub_new()); // CU-AN multi-sprite
-  im.tween.reset(ayther_tween_new());       // CU-AN in-betweens
-  im.audio_sub.reset(ayther_audio_sub_new());
-  // : los clips de video se quedan con una FUENTE que apunta al pack, no
-  // con una copia de los bytes. Cerrar el pack sin tirar la cache dejaría
-  // fuentes colgadas leyendo un AyArchive liberado — y el hotreload cierra y
-  // reabre el pack en cada guardado del artista. Va ANTES del reset, como el
-  // detach del script.
-  im.videos.clear();
-  // : pack nuevo = transacciones nuevas — los fallos de arranque del
-  // pack viejo no aplican al contenido nuevo (hot-reload de Entregar).
-  im.hd_failed_keys.clear();
-  // : y la ESCALADA también. Un pack nuevo no hereda los fallos del
-  // anterior; si no, hornear una corrección dejaría el subsistema apagado y
-  // el autor pensaría que su arreglo no sirvió.
-  im.escalation.clear();
-  im.subsystems_on |= im.auto_disabled_on;
-  im.auto_disabled_on = 0;
-  // Spec 002 (R9, RF-1.3): nothing the old pack defined survives it. The
-  // renderer's texture caches belong to the host, which calls
-  // AytherRenderer::evict_pack_textures() on a pack change.
-  im.clear_pack_elements();
+  im.reset_pack_consumers();
   im.pack.close(); // close old pack (RAII)
 
   // A registry means production trust; without one this is the authoring
