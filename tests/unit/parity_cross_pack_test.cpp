@@ -90,9 +90,9 @@ int main() {
         "a substitution at another position changes the multiset");
   tiles[1].tile_x = 3;
 
-  std::uint64_t fb = 0x1234;
+  std::uint64_t fb = 0x9999; // the framebuffer of the last drawn frame
   std::uint32_t count = 224;
-  const std::string other_fb = play_line(7, v, fb = 0x9999, count);
+  const std::string other_fb = play_line(7, v, fb, count);
   check(field(other_fb, "subs") == field(base, "subs") &&
             field(other_fb, "presented") != field(base, "presented"),
         "another framebuffer is a presented change");

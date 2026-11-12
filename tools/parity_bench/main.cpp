@@ -82,7 +82,7 @@ void print_help(std::FILE *out) {
       "      (check: DIR holds <rom>.libretro.jsonl and\n"
       "       <rom>.tessera_native.jsonl for every catalogued ROM; fails on a\n"
       "       divergence no tuple declares and on a declared tuple that no\n"
-      "       longer diverges; --registry = docs/parity-exceptions.md)\n"
+      "       longer diverges; --registry = Tessera's parity-exceptions.md)\n"
       "  --provider libretro|tessera_native   emulation provider of the "
       "session\n"
       "  --help                               show this help\n",

@@ -202,7 +202,9 @@ add_test(NAME audio_qa_detector_output COMMAND audio_qa_detector_output)
 set_tests_properties(audio_qa_detector_output PROPERTIES TIMEOUT 10 LABELS "audio_qa;unit")
 target_compile_features(audio_qa_source_interval PRIVATE cxx_std_20)
 # The poll and subscription reads live in ObservationSource (TP-301.1).
-target_link_libraries(audio_qa_source_interval PRIVATE Ayther::engine)
+# Its sources, not Ayther::engine: the headless presets have no SDL.
+target_sources(audio_qa_source_interval PRIVATE ../../../src/observation_source.cpp
+    ../../../src/log.cpp)
 target_include_directories(audio_qa_source_interval PRIVATE ../../../include ../../../include/ayther ../../../src)
 if (COMMAND ayther_instrument_target)
 ayther_instrument_target(audio_qa_source_interval)
@@ -211,7 +213,9 @@ add_test( NAME audio_qa_source_interval COMMAND audio_qa_source_interval)
 set_tests_properties(audio_qa_source_interval PROPERTIES TIMEOUT 10 LABELS "audio_qa;unit")
 target_compile_features(audio_qa_source_read PRIVATE cxx_std_20)
 # The poll and subscription reads live in ObservationSource (TP-301.1).
-target_link_libraries(audio_qa_source_read PRIVATE Ayther::engine)
+# Its sources, not Ayther::engine: the headless presets have no SDL.
+target_sources(audio_qa_source_read PRIVATE ../../../src/observation_source.cpp
+    ../../../src/log.cpp)
 target_include_directories(audio_qa_source_read PRIVATE ../../../include ../../../include/ayther ../../../src)
 if (COMMAND ayther_instrument_target)
 ayther_instrument_target(audio_qa_source_read)

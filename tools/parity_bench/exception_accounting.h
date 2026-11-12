@@ -37,7 +37,8 @@ struct ExceptionFile {
 /// kSubplaneNames; the id is `EXC-` followed by three digits.
 ExceptionFile parse_exception_file(const std::string &text);
 
-/// Ids of the rows of docs/parity-exceptions.md (lines starting `| EXC-`).
+/// Ids of the rows of Tessera's parity-exceptions.md register (lines starting
+/// `| EXC-`).
 std::set<std::string> registry_ids(const std::string &markdown);
 
 /// The divergences between the two dumps of one catalogued ROM.

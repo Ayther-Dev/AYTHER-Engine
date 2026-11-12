@@ -62,7 +62,9 @@ if(Ayther_engine_FOUND)
     if(Ayther_HAS_TESSERA)
         # CMake <= 3.29 allows dependencies to replace PACKAGE_PREFIX_DIR.
         set(_ayther_saved_package_prefix "${PACKAGE_PREFIX_DIR}")
-        find_dependency(Tessera 0.1 CONFIG)
+        # Like the build: the API and the locked package matter, not the
+        # moving release version (v0.1.x, v0.2.x).
+        find_dependency(Tessera CONFIG)
         set(PACKAGE_PREFIX_DIR "${_ayther_saved_package_prefix}")
         unset(_ayther_saved_package_prefix)
     endif()
