@@ -400,13 +400,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
-            "llvm-${CLANG_TIDY_VERSION}" \
+            "clang-${CLANG_TIDY_VERSION}" "llvm-${CLANG_TIDY_VERSION}" \
             libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxft-dev \
             libxi-dev libxrandr-dev libxss-dev libxtst-dev \
             mesa-vulkan-drivers vulkan-tools vulkan-validationlayers xauth xvfb
 
+      # The compiler and llvm-profdata/llvm-cov must be one LLVM: the image's
+      # default clang moves (ubuntu-26.04 ships 21, raw profile format 10) and
+      # the pinned tools refuse its profiles.
       - name: Configure coverage build
-        run: cmake --preset linux-native-coverage
+        run: >-
+          cmake --preset linux-native-coverage
+          "-DCMAKE_C_COMPILER=clang-${CLANG_TIDY_VERSION}"
+          "-DCMAKE_CXX_COMPILER=clang++-${CLANG_TIDY_VERSION}"
 
       - name: Build coverage targets
         if: env.WARM_ONLY != 'true'
