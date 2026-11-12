@@ -70,7 +70,9 @@ void print_help(std::FILE *out) {
       "  [--core DLL] --rom FILE (--arp FILE | --frames N) --pack FILE\n"
       "      --registry FILE   (cross-pack bake: one rule and one asset per\n"
       "       tile, sprite and plane-tile identity the provider observes,\n"
-      "       signed, and the trust registry that vouches for it)\n"
+      "       signed, and the trust registry that vouches for it;\n"
+      "       --shard K/N bakes only the identities whose hash mod N is K-1,\n"
+      "       for games with more than a pack's 8192 entries)\n"
       "  ... --pack FILE --registry FILE --out FILE [--detail FILE]\n"
       "      (cross-pack play: per frame the multiset of substitutions and\n"
       "       the hash of the presented frame; --detail lists the multiset)\n"
@@ -225,8 +227,8 @@ int cross_pack_command(std::string_view action, const std::string &provider,
                        const std::string &arp, const std::string &frames,
                        const std::string &pack, const std::string &registry,
                        const std::string &out, const std::string &golden,
-                       const std::string &candidate,
-                       const std::string &detail) {
+                       const std::string &candidate, const std::string &detail,
+                       const std::string &shard) {
   namespace ap = ayther::parity;
   if (action == "compare") {
     if (golden.empty() || candidate.empty()) {
@@ -271,14 +273,20 @@ int cross_pack_command(std::string_view action, const std::string &provider,
     return rc;
   const ap::CrossSession session{native, core, rom, pack, registry};
   if (bake) {
-    const auto r = ap::bake_pack(session, pads, pack, registry);
+    const auto part = ap::parse_shard(shard.empty() ? "1/1" : shard);
+    if (!part) {
+      std::fprintf(stderr, "cross-pack bake: --shard needs K/N, 1 <= K <= N\n");
+      return kExitUsage;
+    }
+    const auto r = ap::bake_pack(session, pads, pack, registry, *part);
     if (!r.ok) {
       std::fprintf(stderr, "cross-pack bake: %s\n", r.error.c_str());
       return 1;
     }
-    std::printf("cross-pack bake: provider=%s tiles=%zu sprites=%zu "
-                "planes=%zu\n",
-                provider.c_str(), r.tiles, r.sprites, r.planes);
+    std::printf("cross-pack bake: provider=%s shard=%u/%u tiles=%zu "
+                "sprites=%zu planes=%zu observed=%zu\n",
+                provider.c_str(), part->index + 1, part->count, r.tiles,
+                r.sprites, r.planes, r.observed);
     return kExitOk;
   }
   std::string error;
@@ -329,7 +337,7 @@ int main(int argc, char **argv) {
   std::string provider = "libretro";
   std::string arp, out, content_sha, config_sha, core, rom, golden, candidate,
       frames, exceptions, catalog, dumps, registry, identities, segments, pack,
-      detail;
+      detail, shard;
   std::vector<std::string> except;
   for (int i = first_option; i < argc; ++i) {
     const std::string_view arg = argv[i];
@@ -372,6 +380,7 @@ int main(int argc, char **argv) {
                           : arg == "--segments"    ? &segments
                           : arg == "--pack"        ? &pack
                           : arg == "--detail"      ? &detail
+                          : arg == "--shard"       ? &shard
                                                    : nullptr;
     if (target != nullptr) {
       if (i + 1 >= argc) {
@@ -387,7 +396,7 @@ int main(int argc, char **argv) {
 
   if (subcommand == "cross-pack")
     return cross_pack_command(action, provider, core, rom, arp, frames, pack,
-                              registry, out, golden, candidate, detail);
+                              registry, out, golden, candidate, detail, shard);
 
   if (subcommand == "check") {
     if (exceptions.empty() || catalog.empty() || dumps.empty()) {

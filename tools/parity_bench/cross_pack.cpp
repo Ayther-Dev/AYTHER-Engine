@@ -305,11 +305,37 @@ std::string play_line(std::uint32_t frame, const FrameView &v,
          "\",\"count\":" + count(fb_count) + "}}\n";
 }
 
+std::optional<Shard> parse_shard(const std::string &text) {
+  const auto slash = text.find('/');
+  if (slash == std::string::npos || slash == 0 || slash + 1 == text.size())
+    return std::nullopt;
+  const auto number = [](std::string_view digits) -> std::optional<unsigned> {
+    if (digits.empty() || digits.size() > 6)
+      return std::nullopt;
+    unsigned value = 0;
+    for (const char c : digits) {
+      if (c < '0' || c > '9')
+        return std::nullopt;
+      value = value * 10 + static_cast<unsigned>(c - '0');
+    }
+    return value;
+  };
+  const auto k = number(std::string_view(text).substr(0, slash));
+  const auto n = number(std::string_view(text).substr(slash + 1));
+  if (!k || !n || *k == 0 || *k > *n)
+    return std::nullopt;
+  return Shard{*k - 1, *n};
+}
+
 BakeResult bake_pack(const CrossSession &session,
                      const std::vector<std::uint16_t> &pads,
                      const std::string &pack_path,
-                     const std::string &registry_path) {
+                     const std::string &registry_path, Shard shard) {
   BakeResult r;
+  if (shard.count == 0 || shard.index >= shard.count) {
+    r.error = "invalid shard";
+    return r;
+  }
   auto s = open_session(session, false, &r.error);
   if (!s)
     return r;
@@ -328,6 +354,11 @@ BakeResult bake_pack(const CrossSession &session,
       planes.insert(v.plane_tile_occs[i].hash);
   }
   s.reset();
+  r.observed = tiles.size() + sprites.size() + planes.size();
+  for (auto *ids : {&tiles, &sprites, &planes})
+    std::erase_if(*ids, [&](std::uint64_t id) {
+      return id % shard.count != shard.index;
+    });
 
   const auto rom = read_bytes(session.rom_path);
   if (!rom) {
@@ -407,7 +438,10 @@ BakeResult bake_pack(const CrossSession &session,
   ayther_pack_builder_free(builder);
   if (!baked) {
     r.error = std::string("could not bake the pack: ") +
-              (error[0] != '\0' ? error : "staging failed");
+              (error[0] != '\0' ? error : "staging failed") + " (tiles " +
+              std::to_string(tiles.size()) + ", sprites " +
+              std::to_string(sprites.size()) + ", planes " +
+              std::to_string(planes.size()) + ")";
     return r;
   }
   r.tiles = tiles.size();

@@ -109,5 +109,13 @@ int main() {
         "a presented difference is reported with how many frames differ");
   check(!compare_plays(a, a + a).ok, "plays of different length are an error");
   check(!compare_plays("not a play\n", a).ok, "a malformed play is an error");
+
+  const auto shard = parse_shard("3/10");
+  check(shard && shard->index == 2 && shard->count == 10,
+        "--shard K/N is 1-based on the command line, 0-based inside");
+  check(parse_shard("1/1").has_value(), "1/1 is the whole set");
+  check(!parse_shard("0/4") && !parse_shard("5/4") && !parse_shard("4") &&
+            !parse_shard("/4") && !parse_shard("1/") && !parse_shard("a/4"),
+        "a shard outside 1..N or not K/N is rejected");
   return failures == 0 ? 0 : 1;
 }

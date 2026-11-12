@@ -43,17 +43,31 @@ struct CrossSession {
 struct BakeResult {
   bool ok = false;
   std::string error;
-  std::size_t tiles = 0;   ///< rules of tile_substitutions.toml
-  std::size_t sprites = 0; ///< rules of sprite_substitutions.toml
-  std::size_t planes = 0;  ///< rules of plane_tile_substitutions.toml
+  std::size_t tiles = 0;    ///< rules of tile_substitutions.toml
+  std::size_t sprites = 0;  ///< rules of sprite_substitutions.toml
+  std::size_t planes = 0;   ///< rules of plane_tile_substitutions.toml
+  std::size_t observed = 0; ///< distinct identities seen, every shard
 };
 
+/// One part of the observed identities: those whose hash modulo `count` is
+/// `index`. A pack holds at most 8192 entries and a game can show far more
+/// identities (Golden Axe: 70 000 tiles), so a game bakes N shards, each a
+/// valid pack, and their union covers every identity with its own rule.
+struct Shard {
+  std::uint32_t index = 0; ///< 0-based
+  std::uint32_t count = 1;
+};
+
+/// Parses `K/N` (1 <= K <= N): shard K of N, as written on the command line.
+std::optional<Shard> parse_shard(const std::string &text);
+
 /// Runs `session` (its pack is ignored) with the port-0 inputs and bakes the
-/// pack at `pack_path` and its registry at `registry_path`.
+/// identities of `shard` into the pack at `pack_path` and its registry at
+/// `registry_path`.
 BakeResult bake_pack(const CrossSession &session,
                      const std::vector<std::uint16_t> &pads,
                      const std::string &pack_path,
-                     const std::string &registry_path);
+                     const std::string &registry_path, Shard shard = {});
 
 /// Runs `session` with its pack and returns the play file, or nullopt when
 /// the session or the pack cannot be opened (`error` says which). With
