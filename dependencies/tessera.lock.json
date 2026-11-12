@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "dependency": "AYTHER Tessera",
   "repository": "https://github.com/Ayther-Dev/AYTHER-Tessera",
-  "sourceCommit": "7e60579a9b4eed037755b9ea324f8dc74fe75162",
+  "sourceCommit": "4ae22b71c07da16aecd6c2cf0e6f3d48df612838",
   "api": {
     "major": 1,
     "minor": 1
@@ -11,12 +11,12 @@
     "version": "0.2.0"
   },
   "release": {
-    "tag": "v0.2.0-rc.7",
+    "tag": "v0.2.0-rc.8",
     "status": "released",
-    "note": "API 1.1 and work RAM region 0x1000 as in rc.4, TP-209.1 fixes as in rc.5, plus TP-209.2 timing fixes: Z80 bus steal on 68k-bus access, 68000 DRAM refresh model with its audio and video rules, fill/copy DMA and FIFO entries paced by the line they run in, even-rate fill/copy DMA, YM2612 access stamps by instruction, 68k/Z80 BUSREQ arbitration, multi-line DMA reaching the frame end at the next blanking rate (no ABI change). v0.2.0-rc.1 failed in CI before packaging and has no release."
+    "note": "API 1.1 and work RAM region 0x1000 as in rc.4, TP-209.1 fixes as in rc.5, plus TP-209.2 timing fixes: Z80 bus steal on 68k-bus access, 68000 DRAM refresh model with its audio and video rules, fill/copy DMA and FIFO entries paced by the line they run in, even-rate fill/copy DMA, YM2612 access stamps by instruction, 68k/Z80 BUSREQ arbitration, multi-line DMA reaching the frame end at the next blanking rate, progressive VRAM fill, DRAM refresh during MOVEM.L, E-clock interrupt acknowledge, VINT/HINT entry timing, 68000 sub-cycle remainder across DMA, status HBlank bit, V counter phase and VDP read stamps (no ABI change). v0.2.0-rc.1 failed in CI before packaging and has no release."
   },
   "artifact": {
-    "fileName": "tessera-v0.2.0-rc.7-windows-x86_64.zip",
-    "sha256": "d63f875546e8628c8427b90f83f3c4393091648a9eaac3cdccefd2cc4eaa621d"
+    "fileName": "tessera-v0.2.0-rc.8-windows-x86_64.zip",
+    "sha256": "9742e33b3d77578f437055e2d6451d72acde294e63a799828b9c46c12b1ce761"
   }
 }
