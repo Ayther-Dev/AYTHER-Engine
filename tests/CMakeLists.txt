@@ -1044,4 +1044,17 @@ if(AYTHER_ENABLE_TESSERA)
     tessera_copy_runtime_dependencies(ayther_tessera_native_md)
     set_tests_properties(ayther.integration.tessera_native_md PROPERTIES
         LABELS "engine;native;integration;FX-02")
+    # TP-301.5: bg stitcher, Panoramas, Lua and the live audio detector on a
+    # synthetic MD ROM, per provider: Tessera always, and the same series as
+    # gpgx when the fork core of core.lock (or AYTHER_PARITY_GPGX_CORE) is there.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_native_subsystems.cpp" integration)
+    target_include_directories(ayther_tessera_native_subsystems PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/common")
+    target_compile_definitions(ayther_tessera_native_subsystems PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    tessera_copy_runtime_dependencies(ayther_tessera_native_subsystems)
+    set_tests_properties(ayther.integration.tessera_native_subsystems PROPERTIES
+        TIMEOUT 300
+        LABELS "engine;native;integration;panorama;lua;audio")
 endif()
