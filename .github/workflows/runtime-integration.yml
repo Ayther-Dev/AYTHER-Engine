@@ -15,7 +15,7 @@ on:
       runtime_ref:
         description: Full AYTHER-Runtime commit SHA
         required: false
-        default: 7580a88ed34e32f9ca7603152fb35c0e939dbc4e
+        default: 500cf88e4a1715a83671ff48dfcaf1bdaf733037
         type: string
 
 permissions:
@@ -29,7 +29,7 @@ concurrency:
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 2
   AYTHER_RUNTIME_REPOSITORY: Ayther-Dev/AYTHER-Runtime
-  AYTHER_RUNTIME_REF: ${{ inputs.runtime_ref || '7580a88ed34e32f9ca7603152fb35c0e939dbc4e' }}
+  AYTHER_RUNTIME_REF: ${{ inputs.runtime_ref || '500cf88e4a1715a83671ff48dfcaf1bdaf733037' }}
   RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
 
 jobs:
