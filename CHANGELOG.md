@@ -251,6 +251,50 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   unsigned pack is refused, the development key is refused in an optimized
   build, and `Config` had no way to name a production trust registry.
 
+## [0.1.0-rc.23] - 2026-11-13
+
+The Tessera native provider behind the same session surface as libretro
+(spec 008, WP-7), and the parity bench filled in.
+
+### Added
+
+- `ObservationSource` (internal, not an installed header): the interface a
+  provider implements to publish VRAM, CRAM, VSRAM, VDP registers, work RAM and
+  the AYTHER observation stream. `RetroRunner` now implements it, and the
+  Tessera backend implements it over the Tessera API 1.1 observation surface,
+  so `FrameView` is built the same way from either provider. The contract test
+  `observation_source_parity` pins the `FrameView` from before the extraction.
+- Native Mega Drive sessions through `AytherSession`: `step()` runs the
+  Tessera session through the same frame pipeline as the libretro provider,
+  resolves every pack substitution with the same catalogs, reads work RAM from
+  Tessera observation region `0x1000`, and writes pokes and cheats through
+  `write_control`. Rewind, `.arp` takes (provenance `tessera`, with keyframes),
+  replay seeks and device audio (48 kHz native PCM resampled to 44.1 kHz with
+  continuous phase) work on the native provider. `docs/TESSERA_NATIVE.md`
+  documents the Tessera API 1.1 surface and the Mega Drive machine.
+- `tools/parity_bench` is no longer a skeleton: `dump` writes native frames
+  (RGB565) and the `chip_seq` subplane; `check --exceptions FILE --catalog FILE
+  --dumps DIR [--registry FILE]` does strict exception accounting (each
+  divergence must be a declared `<rom> <frame> <subplane> <EXC-nnn>` tuple and
+  each declared tuple must still diverge; exit 0 clean, 5 on undeclared or
+  unproduced tuples, 1 on bad input); `dump --identities` and
+  `compare-identities` compare identity files per segment and class; and the
+  cross-pack line bakes, plays and compares a pack across providers, sharding
+  bakes to fit the pack entry limit.
+
+### Changed
+
+- `dependencies/tessera.lock.json` pins Tessera `v0.2.0-rc.9` by tag and
+  package SHA-256 (API 1.1, no ABI change since rc.2); CI builds the same
+  commit.
+- `RewindBuffer::pop` sizes the restored state from the zstd frame, so
+  variable-size native checkpoints restore whole.
+- `rustix` updated to 1.1.6 in `Cargo.lock` and `fuzz/Cargo.lock`.
+
+### Fixed
+
+- Infinite recursion in the session's `emu_fps`.
+
 ## [0.1.0-rc.22] - 2026-11-06
 
 Emulator provenance in takes and sessions, the core probe contract v2, and the
@@ -288,13 +332,6 @@ pinned Tessera.
   the `dump`, `compare` and `trace-from-arp` subcommands and
   `--provider libretro|tessera_native`. The subcommands validate their
   arguments and report that they are not implemented yet.
-- `parity_bench check --exceptions FILE --catalog FILE --dumps DIR
-  [--registry FILE]`: strict exception accounting of plane 3 (TP-209.1). Each
-  divergence between `<rom>.libretro.jsonl` and `<rom>.tessera_native.jsonl`
-  must be declared as a `<rom> <frame> <subplane> <EXC-nnn>` tuple (`*` and
-  `N-M` allowed), and each declared tuple must still diverge; a tuple declared
-  twice, a ROM outside the catalog or an id missing from the registry is an
-  error. Exit 0 clean, 5 on undeclared or unproduced tuples, 1 on bad input.
 - Core probe contract v2 (`docs/CORE_PROBE_CONTRACT.md`): `probe_core_v2`
   reports a verdict, the PE/ELF architecture, the AYTHER ABI and the capability
   mask against the required `0xEFFFF`; the installed `bin/ayther_core_probe`
