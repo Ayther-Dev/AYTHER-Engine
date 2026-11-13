@@ -290,21 +290,34 @@ Json self_tests() {
   const std::array<native::NativeControlItem, 2> controls{
       {{1, 1, 31}, {2, 1, 31}}};
   ok(emulation.submit_controls({before.frame_id.epoch, 2, 77, controls}));
-  owner->set_input(0, std::uint16_t{32});
-  check(frame_view.native_result.code == -6,
-        "LEGACY_INPUT_REJECTION_NOT_OBSERVABLE");
-  check(owner->step().native_result.code == -6, "LEGACY_STEP_NOT_REJECTED");
-  check(state(emulation) == bytes &&
-            info(emulation).frame_id.frame == before.frame_id.frame,
-        "LEGACY_CALL_ADVANCED_NATIVE_MACHINE");
-  check(info(emulation).pending_transaction == 77,
-        "LEGACY_CALL_APPLIED_PENDING_CONTROLS");
-  const auto reset_legacy = emulation.reset();
-  check(reset_legacy.code == 0 && reset_legacy.transaction == 77 &&
-            reset_legacy.cancel_reason == 1 && reset_legacy.flags == 2 &&
-            reset_legacy.frame_id.epoch == before.frame_id.epoch &&
-            reset_legacy.frame_id.frame == 2,
-        "RESET_DROPPED_LEGACY_PRESERVED_PENDING_RESULT");
+  // TP-301.3: set_input + step drive the native machine through the frame
+  // pipeline. RetroPad B (bit 0) is the pad's B, control 5: mask 32, which the
+  // FX-01 oracle draws as pixel (0,0) red = 0 + 32 (15 without input).
+  owner->set_input(0, std::uint16_t{1});
+  const auto &stepped = owner->step();
+  check(stepped.native_result.code == 0,
+        "SESSION_STEP_FAILED:" + std::to_string(stepped.native_result.code));
+  check(info(emulation).frame_id.frame == before.frame_id.frame + 1 &&
+            state(emulation) != bytes,
+        "SESSION_STEP_DID_NOT_ADVANCE_NATIVE_MACHINE");
+  check(info(emulation).pending_transaction == 0,
+        "SESSION_STEP_LEFT_PENDING_CONTROLS");
+  native::NativeFrame stepped_original;
+  ok(emulation.original(stepped_original));
+  check(stepped_original.pixels.size() >= 4 && stepped_original.pixels[0] == 32,
+        "SESSION_INPUT_NOT_MAPPED_TO_NATIVE_CONTROLS");
+  const auto *xrgb = static_cast<const std::uint8_t *>(stepped.fb_pixels);
+  check(xrgb != nullptr && stepped.fb_format == 1 &&
+            stepped.fb_width == stepped_original.width &&
+            stepped.fb_height == stepped_original.height &&
+            stepped.fb_pitch == stepped_original.width * 4 &&
+            xrgb[0] == stepped_original.pixels[2] &&
+            xrgb[1] == stepped_original.pixels[1] &&
+            xrgb[2] == stepped_original.pixels[0],
+        "SESSION_FRAME_NOT_XRGB8888");
+  check(stepped.emu_fps > 0.0, "SESSION_NATIVE_FPS_MISSING");
+  const auto reset_session = emulation.reset();
+  check(reset_session.code == 0, "RESET_AFTER_SESSION_STEP_FAILED");
   check(state(emulation) == initial && info(emulation).frame_id.frame == 0,
         "FACADE_RESET_INITIAL_STATE_FAILED");
   const auto &after_reset_view = owner->native_frame();
@@ -318,12 +331,19 @@ Json self_tests() {
         const native::render_observation::RenderFrameView &) noexcept override {
     }
   } rejected_render;
-  for (unsigned negative = 0; negative < 10; ++negative) {
+  // Device audio is native since spec 008 TP-302.3 (the PCM resampled to the
+  // player's 44.1 kHz): accepted, and non-fatal without a device.
+  {
+    auto audible = session_config(configuration);
+    audible.enable_audio = true;
+    native::NativeResult result;
+    check(static_cast<bool>(ayther::AytherSession::create(audible, result)) &&
+              result.code == 0,
+          "NATIVE_DEVICE_AUDIO_REJECTED");
+  }
+  for (unsigned negative = 1; negative < 10; ++negative) {
     auto rejected = session_config(configuration);
     switch (negative) {
-    case 0:
-      rejected.enable_audio = true;
-      break;
     case 1:
       rejected.pack_path = "unavailable-native-pack.ay";
       break;
@@ -571,7 +591,7 @@ Json self_tests() {
           {"checks", checks},
           {"real_facade", true},
           {"retained_after_owner_destruction", true},
-          {"legacy_calls_rejected_without_advance", true},
+          {"session_step_drives_native_machine", true},
           {"device_and_pack_rejected", true},
           {"complete_input_negatives", true},
           {"driver_reset_close_views_cleared", true},

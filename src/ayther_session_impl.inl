@@ -9,7 +9,301 @@ struct AytherSession::Impl {
   std::vector<std::uint8_t> native_presented_pixels;
   std::unordered_map<std::uint64_t, std::string> native_tile_overrides;
   std::uint64_t next_native_policy_transaction = 1;
-  RetroRunner runner;                     // emulator host
+  RetroRunner runner; // emulator host
+  /// The observation surface FrameView is built from (TP-301.1): the libretro
+  /// runner, or the native session's TesseraBackend (TP-301.3).
+  ObservationSource &source() noexcept {
+    if (native)
+      return engine::detail::observation_source(*native);
+    return runner;
+  }
+  const ObservationSource &source() const noexcept {
+    if (native)
+      return engine::detail::observation_source(*native);
+    return runner;
+  }
+
+  // ---- Frame driver (TP-301.3) -------------------------------------------
+  // What produce_frame needs from the emulator besides observation: advance
+  // one frame (delivering the framebuffer through on_video_frame), its rate,
+  // its pixel format and the work RAM. libretro runner or native session.
+
+  /// Pads set with set_input for the native provider, as RetroPad masks.
+  std::array<std::uint16_t, 2> native_pads{};
+  /// The (port, control) pairs the native configuration declares, in its
+  /// order: every step assigns each of them.
+  std::vector<std::pair<std::uint16_t, std::uint16_t>> native_controls;
+  /// The native original in a libretro format, so the hashers and the rest of
+  /// produce_frame see what a libretro core gives: RGB565 (format 2, as gpgx)
+  /// for the megadrive machine, XRGB8888 (format 1) for the others.
+  std::vector<std::uint8_t> native_xrgb;
+  bool native_rgb565 = false;
+  double native_fps = 0.0;
+
+  /// The work RAM, in libretro SYSTEM_RAM layout (word-swapped: the 68000
+  /// byte at $FF0000 + n is element n ^ 1). The native session publishes it
+  /// as Tessera's region 0x1000 (v0.2.0-rc.4) in that same layout; the Engine
+  /// keeps a mirror, re-read lazily after anything that changes the machine
+  /// (invalidate_native_work_ram). A native backend without the region (a
+  /// fixed-region test backend) has none, as a core without SYSTEM_RAM.
+  static constexpr std::uint32_t kNativeWorkRamRegion = 0x1000;
+  mutable std::array<std::uint8_t, 0x10000> native_ram{};
+  mutable bool native_ram_stale = true;
+  mutable bool native_ram_ok = false;
+  void invalidate_native_work_ram() noexcept { native_ram_stale = true; }
+  [[nodiscard]] bool native_work_ram_fresh() const noexcept {
+    if (native_ram_stale) {
+      native_ram_stale = false;
+      std::uint64_t generation = 0;
+      native_ram_ok =
+          source().read_region(kNativeWorkRamRegion, 0, native_ram.data(),
+                               static_cast<std::uint32_t>(native_ram.size()),
+                               AYTHER_GENERATION_ANY,
+                               &generation) == AYTHER_STATUS_OK;
+    }
+    return native_ram_ok;
+  }
+  [[nodiscard]] const uint8_t *work_ram() const noexcept {
+    if (native)
+      return native_work_ram_fresh() ? native_ram.data() : nullptr;
+    return runner.work_ram();
+  }
+  [[nodiscard]] size_t work_ram_size() const noexcept {
+    if (native)
+      return native_work_ram_fresh() ? native_ram.size() : 0;
+    return runner.work_ram_size();
+  }
+  /// Writes `len` bytes at 68000 offset `off` from $FF0000 (big-endian bus
+  /// order). libretro: straight into the core's array. Native: one
+  /// write_control over the covered words of region 0x1000, so the poke is
+  /// machine state (checkpoints carry it) and advances the generation.
+  bool write_work_ram(std::uint32_t off, const std::uint8_t *data,
+                      std::size_t len) noexcept {
+    if (!data || len == 0)
+      return false;
+    if (!native) {
+      uint8_t *r = runner.work_ram_mut();
+      const size_t n = runner.work_ram_size();
+      if (!r || off + len > n)
+        return false;
+      for (size_t i = 0; i < len; ++i)
+        r[(off + i) ^ 1u] = data[i];
+      return true;
+    }
+    if (!native_work_ram_fresh() || off + len > native_ram.size())
+      return false;
+    // Patch the mirror, then send the covered words in region order; a
+    // rejected write leaves the mirror to be re-read from the machine.
+    const std::size_t lo = off & ~std::size_t{1};
+    const std::size_t hi = (off + len + 1) & ~std::size_t{1};
+    for (std::size_t i = 0; i < len; ++i)
+      native_ram[(off + i) ^ 1u] = data[i];
+    std::uint64_t generation = 0;
+    if (source().write_control(
+            kNativeWorkRamRegion, static_cast<std::uint32_t>(lo),
+            native_ram.data() + lo, static_cast<std::uint32_t>(hi - lo),
+            AYTHER_GENERATION_ANY, &generation) != AYTHER_STATUS_OK) {
+      invalidate_native_work_ram();
+      return false;
+    }
+    return true;
+  }
+  [[nodiscard]] double emu_fps() const noexcept {
+    return native ? native_fps : runner.fps();
+  }
+  /// libretro pixel format (native: 2 = RGB565 for megadrive, else 1 =
+  /// XRGB8888).
+  [[nodiscard]] unsigned emu_pixel_format() const noexcept {
+    return native ? (native_rgb565 ? 2u : 1u) : runner.pixel_format();
+  }
+
+  /// One frame of the video callback: hash tiles and keep the snapshot.
+  void on_video_frame(const void *data, unsigned w, unsigned h, size_t pitch) {
+    if (cap_active)
+      return; // captura de audio: sin hashing de video
+    if (!data || w == 0 || h == 0)
+      return;
+    // Compose (2º render B): capturar el snap para copiarlo, pero SIN
+    // hashear (las occurrences/tiles ya se calcularon del frame A) ni
+    // publicar nada más.
+    ayther_tile_hasher_process_frame(tile_hasher.get(),
+                                     static_cast<const uint8_t *>(data), w, h,
+                                     pitch, emu_pixel_format());
+    snap = {data, w, h, pitch}; // valid until end of this tick
+  }
+
+  /// Advance one frame. libretro fires its callbacks; the native session
+  /// steps with the pads of set_input and hands its original to
+  /// on_video_frame. Returns the native result (code 0 for libretro).
+  engine::NativeResult run_emulator_frame();
+
+  /// A native frame advanced: the pending presentation policy becomes active
+  /// when this frame applied its transaction.
+  engine::NativeResult
+  note_native_advance(const engine::NativeResult &advanced) {
+    invalidate_native_work_ram();
+    if (advanced.code == 0 && native_policy.pending_transaction != 0 &&
+        (advanced.flags & engine::native_controls_applied) != 0 &&
+        advanced.transaction == native_policy.pending_transaction &&
+        advanced.frame_id.session == native_policy.pending_frame.session &&
+        advanced.frame_id.epoch == native_policy.pending_frame.epoch &&
+        advanced.frame_id.frame == native_policy.pending_frame.frame) {
+      native_policy.active_regions = native_policy.requested_regions;
+      native_policy.active_events = native_policy.requested_events;
+      native_policy.pending_transaction = 0;
+      native_policy.confirmed = true;
+    }
+    return advanced;
+  }
+
+  // ---- Machine state and bare frames (TP-302) -----------------------------
+  // Rewind, takes, keyframes, seeks and PCM captures save, restore and
+  // re-run the machine. libretro: retro_serialize/unserialize and run_frame.
+  // Native: the session's checkpoint, restored with no input trace (the
+  // session drives the machine with step, never with a bound trace), and a
+  // step with the pads of set_input.
+
+  /// Restoring a checkpoint keeps Tessera's effective observation masks; a
+  /// pending policy request was cancelled and must not leak into the new
+  /// epoch.
+  void after_native_restore(const engine::NativeResult &restored) noexcept {
+    invalidate_native_work_ram();
+    if (restored.code != 0)
+      return;
+    const auto regions = native_policy.active_regions;
+    const auto events = native_policy.active_events;
+    const bool confirmed = native_policy.confirmed;
+    native_policy = {};
+    native_policy.active_regions = regions;
+    native_policy.active_events = events;
+    native_policy.requested_regions = regions;
+    native_policy.requested_events = events;
+    native_policy.configured = confirmed;
+    native_policy.confirmed = confirmed;
+    native_resample_reset();
+  }
+  [[nodiscard]] bool save_state(std::vector<uint8_t> &out) {
+    if (!native)
+      return runner.serialize(out) && !out.empty();
+    native_result = native->checkpoint(out);
+    return native_result.code == 0 && !out.empty();
+  }
+  [[nodiscard]] bool load_state(std::span<const uint8_t> state) {
+    if (!native)
+      return runner.unserialize(
+          std::vector<uint8_t>(state.begin(), state.end()));
+    const auto restored = native->restore_checkpoint(state, {});
+    native_result = restored;
+    after_native_restore(restored);
+    return restored.code == 0;
+  }
+  [[nodiscard]] bool load_state(const std::vector<uint8_t> &state) {
+    if (!native)
+      return runner.unserialize(state);
+    return load_state(std::span<const uint8_t>(state));
+  }
+  /// Size of one saved state: libretro asks the core; native measures a
+  /// checkpoint (0 when the backend has none).
+  [[nodiscard]] size_t state_size() {
+    if (!native)
+      return runner.serialize_size();
+    std::vector<uint8_t> probe;
+    return save_state(probe) ? probe.size() : 0;
+  }
+  /// The pad of port 0 for the next frame (takes and seeks are one pad).
+  void set_pad(int port, uint16_t buttons) noexcept {
+    if (!native) {
+      runner.set_input(port, buttons);
+      return;
+    }
+    if (port >= 0 && port < static_cast<int>(native_pads.size()))
+      native_pads[static_cast<size_t>(port)] = buttons;
+  }
+  /// One frame outside produce_frame ("bare"): the callbacks still fire, as
+  /// with libretro, so the hasher and a PCM capture see it.
+  void run_bare_frame() { (void)run_emulator_frame(); }
+
+  // ---- Emulator PCM (TP-302.3) -------------------------------------------
+  /// One batch of emulator PCM (stereo S16 at 44.1 kHz): the libretro audio
+  /// callback, and the native PCM once resampled. Hashes it, then feeds a
+  /// capture (cap_active) or the player.
+  void on_audio_batch(const int16_t *data, size_t frames) {
+    const uint64_t hash =
+        ayther_audio_hasher_process_batch(audio_hasher.get(), data, frames);
+    if (cap_active) { // vista previa: acumular la MEZCLA de la ventana
+      // No se filtra por hash: el audio del replay no es byte-reproducible
+      // (la fase del FM diverge tras el load), así que aislar por hash no
+      // sirve. Capturamos la mezcla real del momento → "en contexto".
+      if (cap_collect && data && frames)
+        cap_pcm.insert(cap_pcm.end(), data, data + frames * 2);
+      return; // sin passthrough al device durante la captura
+    }
+    if (audio_enabled)
+      audio.buffer_emulator(hash, data, frames);
+  }
+
+  /// Native PCM is 48 kHz (Tessera's mixer); the player, its hashes and the
+  /// HD placement run at 44.1 kHz, the rate of gpgx. Linear interpolation
+  /// with the phase and the last input frame carried across frames, so the
+  /// stream has no seam at a frame boundary and its length tracks
+  /// 44100/48000 of the input exactly (the fraction is kept in integers).
+  static constexpr uint32_t kNativeResampleIn = 48000;
+  static constexpr uint32_t kNativeResampleOut = 44100;
+  /// Position of the next output frame, in 1/kNativeResampleOut of an input
+  /// frame, relative to `native_resample_prev` (index -1).
+  uint64_t native_resample_pos = 0;
+  std::array<int16_t, 2> native_resample_prev{};
+  bool native_resample_primed = false;
+  std::vector<int16_t> native_resampled;
+  void native_resample_reset() noexcept {
+    native_resample_pos = 0;
+    native_resample_prev = {};
+    native_resample_primed = false;
+  }
+  /// Resamples one native batch and hands it to on_audio_batch. Input at
+  /// another rate than 48 kHz passes through unchanged.
+  void on_native_pcm(const int16_t *data, size_t frames, uint32_t rate) {
+    if (!data || frames == 0)
+      return;
+    if (rate != kNativeResampleIn) {
+      on_audio_batch(data, frames);
+      return;
+    }
+    // The input line is prev (index 0) followed by this batch (1..frames).
+    // An output frame at position p (in units of 1/Out) interpolates input
+    // p / Out and the next one; the step is In units.
+    if (!native_resample_primed) {
+      native_resample_prev = {data[0], data[1]};
+      native_resample_pos = kNativeResampleOut; // first output = data[0]
+      native_resample_primed = true;
+    }
+    const uint64_t end = uint64_t{frames} * kNativeResampleOut;
+    native_resampled.clear();
+    native_resampled.reserve(
+        (frames * kNativeResampleOut) / kNativeResampleIn * 2 + 4);
+    const auto sample = [&](uint64_t index, int channel) -> int32_t {
+      return index == 0
+                 ? native_resample_prev[static_cast<size_t>(channel)]
+                 : data[(index - 1) * 2 + static_cast<uint64_t>(channel)];
+    };
+    while (native_resample_pos < end) {
+      const uint64_t index = native_resample_pos / kNativeResampleOut;
+      const auto frac =
+          static_cast<int64_t>(native_resample_pos % kNativeResampleOut);
+      for (int channel = 0; channel < 2; ++channel) {
+        const int64_t a = sample(index, channel);
+        const int64_t b = sample(index + 1, channel);
+        native_resampled.push_back(static_cast<int16_t>(
+            a + ((b - a) * frac) / static_cast<int64_t>(kNativeResampleOut)));
+      }
+      native_resample_pos += kNativeResampleIn;
+    }
+    native_resample_pos -= end;
+    native_resample_prev = {data[(frames - 1) * 2], data[(frames - 1) * 2 + 1]};
+    if (!native_resampled.empty())
+      on_audio_batch(native_resampled.data(), native_resampled.size() / 2);
+  }
+
   session::EmulationObserver observer;    // ABI observation + legacy fallback
   session::RecordingController recording; // deterministic live capture
   engine::audio_observation::Observer qa_observer;
@@ -1347,26 +1641,32 @@ struct AytherSession::Impl {
   mutable std::vector<uint8_t> sprite_core_drawn;
 
   void activate_ayther_subscriptions() {
-    observer.activate_subscriptions(runner);
+    observer.activate_subscriptions(source());
   }
 
-  void refresh_abi_mirror() { observer.refresh(runner); }
+  void refresh_abi_mirror() { observer.refresh(source()); }
 
   // Los helpers del dual-path. Si una región del espejo quedó vacía (no
   // suscripta, o el core la rechazó) se cae al puntero legacy en vez de
   // devolver nullptr: degradar a lo que funcionaba es mejor que apagar la
   // detección de sprites porque una lectura falló.
   AYTHER_LEGACY_READ_BEGIN
-  const uint8_t *vram_ptr() const { return observer.vram(runner); }
-  const uint8_t *cram_ptr() const { return observer.cram(runner); }
-  const uint8_t *regs_ptr() const { return observer.regs(runner); }
-  const uint8_t *vsram_ptr() const { return observer.vsram(runner); }
+  const uint8_t *vram_ptr() const { return observer.vram(source()); }
+  const uint8_t *cram_ptr() const { return observer.cram(source()); }
+  const uint8_t *regs_ptr() const { return observer.regs(source()); }
+  const uint8_t *vsram_ptr() const { return observer.vsram(source()); }
+  size_t vram_size() const { return observer.vram_size(source()); }
+  size_t cram_size() const { return observer.cram_size(source()); }
+  size_t regs_size() const { return observer.regs_size(source()); }
+  size_t vsram_size() const { return observer.vsram_size(source()); }
   AYTHER_LEGACY_READ_END
 
   /// Confirma —UNA vez, tras el primer frame— que el core las activó. Es
   /// diagnóstico y no bloquea: las suscripciones entran en el frame boundary,
   /// así que preguntarlo antes de correr un frame siempre daría 0.
-  void verify_ayther_subscriptions() { observer.verify_subscriptions(runner); }
+  void verify_ayther_subscriptions() {
+    observer.verify_subscriptions(source());
+  }
   // ---- E-7 (): capas del VDP ----------------------------------------
   // Los cinco buffers viven acá y se reusan: a 320x224 son 5 x 143 KB, y
   // realocarlos por frame seria pagar un malloc por capa a 60 Hz. Orden:
@@ -1380,8 +1680,6 @@ struct AytherSession::Impl {
   /// the frame. Off, the VDP shows the backdrop only: no HD is recognized or
   /// drawn over it.
   bool display_on = true;
-  void *multilayer_fn = nullptr; ///< el export, resuelto una vez
-  bool multilayer_fn_resolved = false;
   int32_t layers_error_status = AYTHER_STATUS_OK;
   /// El ultimo motivo YA LOGUEADO, para no repetirlo frame a frame. Distinto
   /// de `layers_error_status`, que es el de la ultima llamada: si el juego
@@ -1990,7 +2288,7 @@ struct AytherSession::Impl {
     if (!audio_enabled || !transport_playing || audio_live_bypass ||
         audio_live_inst.empty())
       return;
-    const double fps = runner.fps();
+    const double fps = emu_fps();
     for (auto it = audio_live_inst.begin(); it != audio_live_inst.end();) {
       const uint64_t key = it->first;
       const LiveInstance &li = it->second;
@@ -2392,7 +2690,7 @@ struct AytherSession::Impl {
     // se separan nunca.
     //
     // El fallback sólo cubre el frame raro sin PCM del emulador.
-    const double fps = runner.fps() > 1.0 ? runner.fps() : 60.0;
+    const double fps = emu_fps() > 1.0 ? emu_fps() : 60.0;
     size_t n = synth_frames_hint;
     if (n == 0) {
       ++syn_nopcm;
@@ -2633,7 +2931,7 @@ struct AytherSession::Impl {
     // sintetizador. Atados al mismo número, los dos streams derivan igual y
     // no se separan nunca; con un número fijo, el del router se muere de
     // hambre porque no tiene el DRC que salva al del emulador.
-    const double fps = runner.fps() > 1.0 ? runner.fps() : 60.0;
+    const double fps = emu_fps() > 1.0 ? emu_fps() : 60.0;
     size_t n = synth_frames_hint;
     if (n == 0)
       n = (size_t)(44100.0 / fps + 0.5);
@@ -2867,28 +3165,28 @@ struct AytherSession::Impl {
     if (built >= upto)
       return;
     if (!start_state || start_state->empty() || start > built ||
-        !runner.unserialize(*start_state)) {
+        !load_state(*start_state)) {
       voice_prime_offsets
           .clear(); // sin arranque válido: cache inválido → fallback a reset
       return;
     }
     for (uint32_t f = start; f < upto; ++f) {
-      runner.set_input(0, rec.inputs[f]);
-      runner.run_frame();
+      set_pad(0, rec.inputs[f]);
+      run_bare_frame();
       if (f < built)
         continue; // ya cacheado: solo avanzar la máquina
       const AytherAudioWrite *w = nullptr;
       uint32_t wc = 0;
       ayther_frame_snapshot_v1 bs{};
-      if (runner.capture_frame_snapshot(bs).ok()) {
+      if (source().capture_frame_snapshot(bs).ok()) {
         const auto writes =
-            observer.audio_writes(runner, bs, /*legacy_fallback=*/false);
+            observer.audio_writes(source(), bs, /*legacy_fallback=*/false);
         w = reinterpret_cast<const AytherAudioWrite *>(writes.data);
         wc = writes.count;
       } else {
         AYTHER_LEGACY_READ_BEGIN
-        w = reinterpret_cast<const AytherAudioWrite *>(runner.audio_writes());
-        wc = runner.audio_write_count();
+        w = reinterpret_cast<const AytherAudioWrite *>(source().audio_writes());
+        wc = source().audio_write_count();
         AYTHER_LEGACY_READ_END
       }
       if (!voice_prime_push(f, w, wc))
@@ -2896,7 +3194,7 @@ struct AytherSession::Impl {
     }
     if (upto < n) {
       std::vector<uint8_t> st;
-      if (runner.serialize(st) && !st.empty()) {
+      if (save_state(st) && !st.empty()) {
         voice_prime_state = std::move(st);
         voice_prime_state_frame = upto;
       }
@@ -3050,7 +3348,7 @@ struct AytherSession::Impl {
     SessionPolicy pol;
     pol.im = this;
     router.set_policy(&pol);
-    const double sfps = runner.fps();
+    const double sfps = emu_fps();
     router.mirror().set_pal(sfps > 1.0 && sfps < 55.0);
     for (uint32_t i = 0; i < start; ++i) {
       const uint32_t a = voice_prime_offsets[i], b = voice_prime_offsets[i + 1];
@@ -3233,7 +3531,7 @@ struct AytherSession::Impl {
     const uint32_t last = (std::min)(start + win, cached);
 
     ChipMirror mirror;
-    const double sfps = runner.fps();
+    const double sfps = emu_fps();
     mirror.set_pal(sfps > 1.0 && sfps < 55.0);
     for (uint32_t i = 0; i < start; ++i) {
       const uint32_t a = voice_prime_offsets[i], b = voice_prime_offsets[i + 1];
@@ -3857,6 +4155,38 @@ struct AytherSession::Impl {
       s.clear();
     rebuild_enhance_sets();
     std::fill(std::begin(pal_luma_peak), std::end(pal_luma_peak), 0.0);
+  }
+
+  // Clean slate before a pack change: detach the old pack from the script
+  // BEFORE closing it (no dangling pointer), then recreate the substitutors to
+  // drop their catalogs. Both providers go through it (spec 008, TP-210.1).
+  void reset_pack_consumers() {
+    ayther_script_set_pack(script.get(), nullptr);
+    tile_sub.reset(ayther_tile_sub_new());
+    plane_sub.reset(ayther_tile_sub_new()); // Fase 2c
+    sprite_sub.reset(ayther_sprite_sub_new());
+    pose_sub.reset(ayther_pose_sub_new()); // CU-AN multi-sprite
+    tween.reset(ayther_tween_new());       // CU-AN in-betweens
+    audio_sub.reset(ayther_audio_sub_new());
+    // : los clips de video se quedan con una FUENTE que apunta al pack, no
+    // con una copia de los bytes. Cerrar el pack sin tirar la cache dejaría
+    // fuentes colgadas leyendo un AyArchive liberado — y el hotreload cierra
+    // y reabre el pack en cada guardado del artista. Va ANTES del reset, como
+    // el detach del script.
+    videos.clear();
+    // : pack nuevo = transacciones nuevas — los fallos de arranque del
+    // pack viejo no aplican al contenido nuevo (hot-reload de Entregar).
+    hd_failed_keys.clear();
+    // : y la ESCALADA también. Un pack nuevo no hereda los fallos del
+    // anterior; si no, hornear una corrección dejaría el subsistema apagado
+    // y el autor pensaría que su arreglo no sirvió.
+    escalation.clear();
+    subsystems_on |= auto_disabled_on;
+    auto_disabled_on = 0;
+    // Spec 002 (R9, RF-1.3): nothing the old pack defined survives it. The
+    // renderer's texture caches belong to the host, which calls
+    // AytherRenderer::evict_pack_textures() on a pack change.
+    clear_pack_elements();
   }
 
   void load_pack_into(AyArchive *p) {

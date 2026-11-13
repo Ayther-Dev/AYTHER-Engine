@@ -1,5 +1,4 @@
 #include "libretro_host/retro_runner.h"
-#include "audio_source_read.h"
 #include "ayther_core_ffi.h" //  EM-7.4: el patcher IPS/BPS
 #include "ayther_env.h"
 #include "log.h"
@@ -181,6 +180,9 @@ void RetroRunner::shutdown() {
   // E-1 (): el descriptor es propiedad del core y muere con él — dejarlo
   // colgando sería un puntero a un módulo que ya no está.
   ayther_api_ = nullptr;
+  bind_interface(nullptr);
+  loose_multilayer_ = nullptr;
+  loose_multilayer_resolved_ = false;
   fn_ayther_get_interface_ = nullptr;
 }
 
@@ -262,249 +264,53 @@ bool RetroRunner::load_symbols() {
                        "sin_ayther_get_interface",
                        "sin ayther_get_interface — core stock/legacy");
   }
+  bind_interface(ayther_api_);
+  loose_multilayer_ = nullptr;
+  loose_multilayer_resolved_ = false;
 
   return ok;
 }
 
 // ---------------------------------------------------------------------------
-// E-3 (): lecturas por la ABI v1.
-//
-// Todas comparten la misma forma: sin ABI devuelven UNSUPPORTED (el caller cae
-// al camino legacy), y con ABI la lectura pasa por `read_region`, que valida la
-// generación contra el snapshot. Esa validación es la diferencia real con el
-// puntero crudo: si el frame avanzó entre el snapshot y la lectura, el core lo
-// DICE en vez de devolver memoria de otro instante.
+// ObservationSource overrides (TP-301.1). The reads, polls and controls live
+// in src/observation_source.cpp; here is only what is specific to a libretro
+// core: the loose multi-layer export of ABI 1.0/1.1 cores.
 // ---------------------------------------------------------------------------
-RetroRunner::AytherReadResult
-RetroRunner::capture_frame_snapshot(ayther_frame_snapshot_v1 &out) const {
-  AytherReadResult r;
-  if (!ayther_api_)
-    return r;
-  out = ayther_frame_snapshot_v1{};
-  out.struct_size = sizeof(out);
-  r.status = ayther_api_->capture_snapshot(&out, sizeof(out));
-  if (r.status == AYTHER_STATUS_OK)
-    r.generation = out.snapshot_generation;
-  return r;
-}
-
-RetroRunner::AytherReadResult
-RetroRunner::read_region_v1(uint32_t region, void *out, uint32_t bytes,
-                            uint64_t generation) const {
-  AytherReadResult r;
-  if (!ayther_api_ || !out || !bytes)
-    return r;
-  r.status = ayther_api_->read_region(region, 0, out, bytes, generation,
-                                      &r.generation);
-  if (r.status == AYTHER_STATUS_OK)
-    r.count = bytes;
-  return r;
-}
-
-// Las cuatro regiones del VDP comparten cuerpo: el tamaño lo declara el core
-// (query_region), así que el Engine no hardcodea 64 KB de VRAM ni 128 B de CRAM
-// — si el core cambiara esos tamaños, la lectura sigue siendo correcta.
-RetroRunner::AytherReadResult
-RetroRunner::read_vdp_region_(uint32_t region, void *out,
-                              const ayther_frame_snapshot_v1 &s) const {
-  AytherReadResult r;
-  if (!ayther_api_ || !out)
-    return r;
-  ayther_region_info_v1 info{};
-  info.struct_size = sizeof(info);
-  if (ayther_api_->query_region(region, &info, sizeof(info)) !=
-      AYTHER_STATUS_OK)
-    return r;
-  if (!info.byte_size) {
-    r.status = AYTHER_STATUS_OK;
-    return r;
+RetroRunner::LooseMultilayerFn RetroRunner::loose_multilayer() const {
+  if (!loose_multilayer_resolved_) {
+    loose_multilayer_resolved_ = true;
+    loose_multilayer_ =
+        loader_.sym<LooseMultilayerFn>("ayther_recompose_multilayer");
   }
-  r = read_region_v1(region, out, info.byte_size, s.snapshot_generation);
-  return r;
+  return loose_multilayer_;
 }
 
-size_t RetroRunner::abi_region_bytes(uint32_t region) const {
-  if (!ayther_api_ || !ayther_api_->query_region)
-    return 0;
-  ayther_region_info_v1 info{};
-  info.struct_size = sizeof(info);
-  if (ayther_api_->query_region(region, &info, sizeof(info)) !=
-      AYTHER_STATUS_OK)
-    return 0;
-  return static_cast<size_t>(info.byte_size);
+bool RetroRunner::provides(ayther::ObservationFn fn) const {
+  if (InterfaceObservationSource::provides(fn))
+    return true;
+  // From ABI 1.2 the multi-layer lives in the DESCRIPTOR and the loose symbol
+  // is no longer exported in the standard profile; older cores still export
+  // it. The descriptor is tried first, the export second.
+  return fn == ayther::ObservationFn::recompose_multilayer && has_ayther_v1() &&
+         loose_multilayer() != nullptr;
 }
 
-RetroRunner::AytherReadResult
-RetroRunner::read_vram_v1(void *out, const ayther_frame_snapshot_v1 &s) const {
-  return read_vdp_region_(AYTHER_REGION_VRAM, out, s);
-}
-RetroRunner::AytherReadResult
-RetroRunner::read_cram_v1(void *out, const ayther_frame_snapshot_v1 &s) const {
-  return read_vdp_region_(AYTHER_REGION_CRAM, out, s);
-}
-RetroRunner::AytherReadResult
-RetroRunner::read_vdp_regs_v1(void *out,
-                              const ayther_frame_snapshot_v1 &s) const {
-  return read_vdp_region_(AYTHER_REGION_VDP_REGS, out, s);
-}
-RetroRunner::AytherReadResult
-RetroRunner::read_vsram_v1(void *out, const ayther_frame_snapshot_v1 &s) const {
-  return read_vdp_region_(AYTHER_REGION_VSRAM, out, s);
-}
-
-RetroRunner::AytherReadResult
-RetroRunner::read_parsed_sprites_v1(ayther_sprite_v1 *out, uint32_t max,
-                                    const ayther_frame_snapshot_v1 &s) const {
-  AytherReadResult r;
-  if (!ayther_api_ ||
-      !(ayther_api_->capabilities & AYTHER_CAP_PARSED_SPRITES_V1))
-    return r;
-  // (std::min) entre parentesis: windows.h define min como MACRO y la
-  // llamada sin parentesis no compila.
-  const uint32_t n = (std::min)(max, s.parsed_sprite_count);
-  if (s.parsed_sprite_count == 0) {
-    r.status = AYTHER_STATUS_OK;
-    r.generation = s.snapshot_generation;
-    return r;
-  }
-  if (!out)
-    return r;
-  if (n == 0) {
-    r.status = AYTHER_STATUS_OK;
-    r.generation = s.snapshot_generation;
-    return r;
-  }
-
-  ayther_region_info_v1 info{};
-  info.struct_size = sizeof(info);
-  if (ayther_api_->query_region(AYTHER_REGION_PARSED_SPRITES, &info,
-                                sizeof(info)) != AYTHER_STATUS_OK)
-    return r;
-
-  if (info.element_size > sizeof(ayther_sprite_v1)) {
-    // FORWARD-COMPAT: el core tiene campos que este Engine todavía no
-    // conoce. Se lee con SU stride y se copian sólo los bytes del struct
-    // conocido — leer con el stride propio desalinearía todo el array, que
-    // es el modo de falla que el puntero legacy tenía latente.
-    std::vector<uint8_t> tmp(static_cast<size_t>(n) * info.element_size);
-    r.status =
-        ayther_api_->read_region(AYTHER_REGION_PARSED_SPRITES, 0, tmp.data(),
-                                 static_cast<uint32_t>(tmp.size()),
-                                 s.snapshot_generation, &r.generation);
-    if (r.status == AYTHER_STATUS_OK) {
-      for (uint32_t i = 0; i < n; ++i)
-        std::memcpy(&out[i], tmp.data() + size_t(i) * info.element_size,
-                    sizeof(ayther_sprite_v1));
-      r.count = n;
-    }
-    return r;
-  }
-  r.status = ayther_api_->read_region(
-      AYTHER_REGION_PARSED_SPRITES, 0, out,
-      n * static_cast<uint32_t>(sizeof(ayther_sprite_v1)),
-      s.snapshot_generation, &r.generation);
-  if (r.status == AYTHER_STATUS_OK)
-    r.count = n;
-  return r;
-}
-
-RetroRunner::AytherReadResult
-RetroRunner::read_audio_writes_v1(ayther_audio_write_v1 *out, uint32_t max,
-                                  const ayther_frame_snapshot_v1 &s) const {
-  AytherReadResult r;
-  if (!ayther_api_ || !out)
-    return r;
-  const uint32_t n = (std::min)(max, s.audio_write_count);
-  if (n == 0) {
-    r.status = AYTHER_STATUS_OK;
-    return r;
-  }
-  r.status = ayther_api_->read_region(
-      AYTHER_REGION_AUDIO_WRITES, 0, out,
-      n * static_cast<uint32_t>(sizeof(ayther_audio_write_v1)),
-      s.snapshot_generation, &r.generation);
-  if (r.status == AYTHER_STATUS_OK)
-    r.count = n;
-  return r;
-}
-
-uint32_t
-RetroRunner::read_raster_fallback_v1(const ayther_frame_snapshot_v1 &s) const {
-  return ayther_api_ ? s.fallback_reasons : 0u;
-}
-
-RetroRunner::AytherReadResult
-RetroRunner::read_system_v1(ayther_system_v1 &out) const {
-  AytherReadResult r;
-  if (!ayther_api_ || !ayther_api_->read_region)
-    return r;
-  if (!(ayther_api_->capabilities & AYTHER_CAP_SYSTEM_V1))
-    return r;
-  out = ayther_system_v1{};
-  out.struct_size = sizeof(out);
-  out.layout_version = AYTHER_LAYOUT_SYSTEM_V1;
-  // Sin suscripción y sin generación: SYSTEM se llena al leer y describe el
-  // contenido cargado, no un frame.
-  r.status =
-      ayther_api_->read_region(AYTHER_REGION_SYSTEM, 0, &out, sizeof(out),
-                               AYTHER_GENERATION_ANY, &r.generation);
-  if (r.status == AYTHER_STATUS_OK &&
-      (out.struct_size < sizeof(out) ||
-       out.layout_version != AYTHER_LAYOUT_SYSTEM_V1)) {
-    // Un layout que este Engine no entiende se descarta en vez de leerse
-    // corrido — mismo criterio que poll_frame_delta_.
-    r.status = AYTHER_STATUS_UNSUPPORTED;
-  }
-  if (r.status == AYTHER_STATUS_OK)
-    r.count = 1;
-  return r;
-}
-
-uint32_t RetroRunner::poll_audio_events_v1(ayther_audio_event_v1 *out,
-                                           uint32_t max) const {
-  return poll_audio_events_observed_v1(out, max, nullptr);
-}
-
-uint32_t RetroRunner::poll_audio_events_observed_v1(
-    ayther_audio_event_v1 *out, uint32_t max,
-    AudioPollObservation *observation) const {
-  const auto result = ayther::audio_qa::read_audio_poll(ayther_api_, out, max);
-  if (observation != nullptr)
-    *observation = result;
-  if (result.outcome == AudioPollObservation::Outcome::layout_mismatch) {
-    static bool warned = false;
-    if (!warned) {
-      warned = true;
-      ayther::log::write(
-          ayther::log::Severity::Warning, "emulator", "core_dice_event_size",
-          "el core dice event_size=%u y este Engine "
-          "conoce %zu — no se leen eventos de audio",
-          result.stats.event_size, sizeof(ayther_audio_event_v1));
-    }
-  }
-  return result.count;
-}
-
-uint32_t RetroRunner::audio_events_dropped() const {
-  if (!ayther_api_ || !ayther_api_->get_audio_transport_stats)
-    return 0;
-  ayther_audio_transport_stats_v1 st{};
-  st.struct_size = sizeof(st);
-  if (ayther_api_->get_audio_transport_stats(&st, sizeof(st)) !=
-      AYTHER_STATUS_OK)
-    return 0;
-  return st.dropped_events;
-}
-
-RetroRunner::AytherWriteResult
-RetroRunner::write_control_v1(uint32_t region, const void *data, uint32_t bytes,
-                              uint64_t expected_generation) const {
-  AytherWriteResult r;
-  if (!ayther_api_ || !data || !bytes)
-    return r;
-  r.status = ayther_api_->write_control(region, 0, data, bytes,
-                                        expected_generation, &r.new_generation);
-  return r;
+int32_t RetroRunner::recompose_multilayer(
+    uint16_t *out_bg_a, uint16_t *out_bg_b, uint16_t *out_window,
+    uint16_t *out_sprites, uint16_t *out_composite, uint32_t pixel_capacity,
+    uint32_t flags, uint32_t *out_width, uint32_t *out_height) const {
+  if (InterfaceObservationSource::provides(
+          ayther::ObservationFn::recompose_multilayer))
+    return InterfaceObservationSource::recompose_multilayer(
+        out_bg_a, out_bg_b, out_window, out_sprites, out_composite,
+        pixel_capacity, flags, out_width, out_height);
+  if (!has_ayther_v1())
+    return AYTHER_STATUS_UNSUPPORTED;
+  const LooseMultilayerFn fn = loose_multilayer();
+  if (!fn)
+    return AYTHER_STATUS_UNSUPPORTED;
+  return fn(out_bg_a, out_bg_b, out_window, out_sprites, out_composite,
+            pixel_capacity, flags, out_width, out_height);
 }
 
 // ---------------------------------------------------------------------------

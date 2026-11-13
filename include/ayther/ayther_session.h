@@ -918,8 +918,10 @@ public:
   [[nodiscard]] bool native_set_tile_override(std::uint64_t hash,
                                               std::string asset_path);
   void native_clear_tile_overrides() noexcept;
-  /// Refresh borrowed originals after driving native_emulation(). Native packs
-  /// are not integrated in this increment; the reason is explicit in FrameView.
+  /// Refresh borrowed originals after driving native_emulation(). This direct
+  /// driver composes only the pack's tile rules over the original; the reason
+  /// is explicit in FrameView. step() resolves every substitution of the pack
+  /// with the same catalogs as the libretro provider (TP-210.1).
   [[nodiscard]] const FrameView &native_frame() noexcept;
 
   ~AytherSession(); ///< RAII frees every handle
@@ -941,6 +943,8 @@ public:
   bool has_pack() const noexcept;
 
   // -- Input: per port, libretro JOYPAD button bitmask -----------------------
+  // With the native provider the mask is mapped to the controls the session
+  // configuration declares (gpgx's A=Y, B=B, C=A) when step() runs the frame.
   void set_input(int port, uint16_t buttons) noexcept;
   void set_input(int port, engine::InputState input) noexcept {
     set_input(port, input.bits());
@@ -950,7 +954,10 @@ public:
   // Advance exactly one emulation frame and run the full deterministic
   // pipeline: run_frame -> hash tiles/sprites/audio -> Lua on_frame -> apply
   // overrides -> resolve substitutions -> HD audio out. Returns this frame's
-  // data boundary (see FrameView lifetime note).
+  // data boundary (see FrameView lifetime note). With the native provider it
+  // steps the Tessera session and builds the FrameView from its original and
+  // its observation surface (spec 008, TP-301.3); a failed advance is in
+  // FrameView::native_result.
   const FrameView &step();
 
   /// Publishes the render observation of the current frame to

@@ -230,8 +230,19 @@ NativeEmulation::create(const NativeConfig &configuration,
     status = tessera_session_create_v1(&creation, &candidate->backend_->handle,
                                        &context);
     const auto created = remember(*candidate->backend_, status, context);
-    if (status == TESSERA_OK)
+    if (status == TESSERA_OK) {
+      // TP-301.2: describe the session's observation surface once, with the
+      // backend's build id so its provenance travels with what it observes.
+      auto info_context = initialized<tessera_context_v1>();
+      auto session_info = initialized<tessera_session_info_v1>();
+      std::array<std::uint8_t, 32> build_id{};
+      if (tessera_session_query_v1(candidate->backend_->handle, &session_info,
+                                   &info_context) == TESSERA_OK)
+        std::copy(std::begin(session_info.backend_build_id),
+                  std::end(session_info.backend_build_id), build_id.begin());
+      candidate->backend_->bind_observation(configuration.backend_id, build_id);
       out = std::move(candidate);
+    }
     return created;
   } catch (const std::bad_alloc &) {
     return error(NativeStatus::out_of_memory, 3);

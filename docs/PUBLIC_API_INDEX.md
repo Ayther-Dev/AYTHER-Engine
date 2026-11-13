@@ -1048,7 +1048,7 @@ _The installed header (`include/ayther/engine/music_voice_budget.hpp`) carries t
 
 ## engine/native_emulation.hpp
 
-**Declares:** `detail`, `NativeBackendInfo`, `NativeCandidate`, `NativeConfig`, `NativeControlItem`, `NativeControlTransaction`, `NativeDetection`, `NativeEmulation`, `NativeFrame`, `NativeFrameId`, `NativeInputAssignment`, `NativeInputFrame`, `NativeRegion`, `NativeResult`, `NativeSessionInfo`, `NativeSnapshot`, `NativeSnapshotInfo`, `TesseraBackend`
+**Declares:** `detail`, `NativeBackendInfo`, `NativeCandidate`, `NativeConfig`, `NativeControlItem`, `NativeControlTransaction`, `NativeDetection`, `NativeEmulation`, `NativeEmulationAccess`, `NativeFrame`, `NativeFrameId`, `NativeInputAssignment`, `NativeInputFrame`, `NativeRegion`, `NativeResult`, `NativeSessionInfo`, `NativeSnapshot`, `NativeSnapshotInfo`, `TesseraBackend`
 
 _The installed header (`include/ayther/engine/native_emulation.hpp`) carries the full documentation of every symbol._
 

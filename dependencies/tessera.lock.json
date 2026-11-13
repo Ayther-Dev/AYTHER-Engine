@@ -2,21 +2,21 @@
   "schemaVersion": 1,
   "dependency": "AYTHER Tessera",
   "repository": "https://github.com/Ayther-Dev/AYTHER-Tessera",
-  "sourceCommit": "c67892978d8c263ad32baf6ff8b45587d062eb4b",
+  "sourceCommit": "d29385a4863aebe1102158db7357cc5463023f48",
   "api": {
     "major": 1,
     "minor": 1
   },
   "package": {
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "release": {
-    "tag": null,
-    "status": "unreleased",
-    "note": "Tessera main with the API 1.1 observation surface. No tag carries API 1.1 yet; the tag and the package SHA-256 are filled in when Tessera publishes v0.2.0-rc.1 (TP-112.3)."
+    "tag": "v0.2.0-rc.9",
+    "status": "released",
+    "note": "API 1.1 and work RAM region 0x1000 as in rc.4, TP-209.1 fixes as in rc.5, plus TP-209.2 timing fixes: Z80 bus steal on 68k-bus access, 68000 DRAM refresh model with its audio and video rules, fill/copy DMA and FIFO entries paced by the line they run in, even-rate fill/copy DMA, YM2612 access stamps by instruction, 68k/Z80 BUSREQ arbitration, multi-line DMA reaching the frame end at the next blanking rate, progressive VRAM fill, DRAM refresh during MOVEM.L, E-clock interrupt acknowledge, VINT/HINT entry timing, 68000 sub-cycle remainder across DMA, status HBlank bit, V counter phase and VDP read stamps (no ABI change); rc.9 serves AUDIO_MUTE (region 15) through write_control, measured on gpgx (no ABI change). v0.2.0-rc.1 failed in CI before packaging and has no release."
   },
   "artifact": {
-    "fileName": null,
-    "sha256": null
+    "fileName": "tessera-v0.2.0-rc.9-windows-x86_64.zip",
+    "sha256": "8008a1fceb26424f7cc93303d4c503703eb7ca9fed0598d19c8224e660854a08"
   }
 }

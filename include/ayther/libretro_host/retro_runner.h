@@ -1,4 +1,5 @@
 #pragma once
+#include "../observation/observation_source.h" // ObservationSource (TP-301.1)
 #include "ayther_api.h" // Versioned AYTHER core-extension contract.
 #include "core_loader.h"
 #include "libretro.h"
@@ -28,7 +29,7 @@
 /// invalid when the core unloads or changes the corresponding allocation. The
 /// runner is not thread-safe. Its C callback bridge uses process-visible
 /// dispatch state, so multiple runners must not execute concurrently.
-class RetroRunner {
+class RetroRunner : public ayther::InterfaceObservationSource {
 public:
   RetroRunner();
   ~RetroRunner();
@@ -69,13 +70,13 @@ public:
   // nullptr. For Genesis Plus GX this is typically 64 KB. NOTE: the pointer is
   // owned by the core and remains valid until shutdown().
   [[deprecated("Use read_vram_v1() with the versioned AYTHER extension")]]
-  const uint8_t *video_ram() const {
+  const uint8_t *video_ram() const override {
     if (!fn_retro_get_memory_data)
       return nullptr;
     return static_cast<const uint8_t *>(
         fn_retro_get_memory_data(3 /*RETRO_MEMORY_VIDEO_RAM*/));
   }
-  size_t video_ram_size() const {
+  size_t video_ram_size() const override {
     if (!fn_retro_get_memory_size)
       return 0;
     return fn_retro_get_memory_size(3 /*RETRO_MEMORY_VIDEO_RAM*/);
@@ -87,13 +88,13 @@ public:
   // internal GPX layout (0000BBB0GGG0RRR0). Stock cores return null.
   static constexpr unsigned kAytherMemoryCram = 0x100;
   [[deprecated("E-5: use read_cram_v1() with ABI v1")]]
-  const uint8_t *color_ram() const {
+  const uint8_t *color_ram() const override {
     if (!fn_retro_get_memory_data)
       return nullptr;
     return static_cast<const uint8_t *>(
         fn_retro_get_memory_data(kAytherMemoryCram));
   }
-  size_t color_ram_size() const {
+  size_t color_ram_size() const override {
     if (!fn_retro_get_memory_size)
       return 0;
     return fn_retro_get_memory_size(kAytherMemoryCram);
@@ -104,13 +105,13 @@ public:
   // the plane name-table bases and the plane size from them.
   static constexpr unsigned kAytherMemoryVdpRegs = 0x101;
   [[deprecated("E-5: use read_vdp_regs_v1() with ABI v1")]]
-  const uint8_t *vdp_regs() const {
+  const uint8_t *vdp_regs() const override {
     if (!fn_retro_get_memory_data)
       return nullptr;
     return static_cast<const uint8_t *>(
         fn_retro_get_memory_data(kAytherMemoryVdpRegs));
   }
-  size_t vdp_regs_size() const {
+  size_t vdp_regs_size() const override {
     if (!fn_retro_get_memory_size)
       return 0;
     return fn_retro_get_memory_size(kAytherMemoryVdpRegs);
@@ -122,13 +123,13 @@ public:
   // of a plane tile (Phase 2c). Stock cores return null.
   static constexpr unsigned kAytherMemoryVsram = 0x107;
   [[deprecated("E-5: use read_vsram_v1() with ABI v1")]]
-  const uint8_t *vsram() const {
+  const uint8_t *vsram() const override {
     if (!fn_retro_get_memory_data)
       return nullptr;
     return static_cast<const uint8_t *>(
         fn_retro_get_memory_data(kAytherMemoryVsram));
   }
-  size_t vsram_size() const {
+  size_t vsram_size() const override {
     if (!fn_retro_get_memory_size)
       return 0;
     return fn_retro_get_memory_size(kAytherMemoryVsram);
@@ -201,147 +202,27 @@ public:
   // load: a stock core does not export the symbol and that is perfectly valid
   // — the legacy path is followed. `has_ayther_v1()` is the gate callers use
   // to pick one path or the other (E-3/E-4).
+  //
+  // The reads, polls and controls over that contract are inherited from
+  // ayther::ObservationSource (TP-301.1): the same code serves the native
+  // Tessera provider. `ayther_api()` (the borrowed descriptor, owned by the
+  // core, valid until `shutdown()`) comes from InterfaceObservationSource.
 
-  /// True if the core exports ABI v1 and the negotiation succeeded.
-  bool has_ayther_v1() const { return ayther_api_ != nullptr; }
+  /// Since ABI 1.2 the multi-layer recomposition lives in the descriptor;
+  /// cores 1.0/1.1 export it as the loose symbol
+  /// `ayther_recompose_multilayer`. Either counts as provided.
+  [[nodiscard]] bool provides(ayther::ObservationFn fn) const override;
+  int32_t recompose_multilayer(uint16_t *out_bg_a, uint16_t *out_bg_b,
+                               uint16_t *out_window, uint16_t *out_sprites,
+                               uint16_t *out_composite, uint32_t pixel_capacity,
+                               uint32_t flags, uint32_t *out_width,
+                               uint32_t *out_height) const override;
 
   /// The loaded medium is a DISC image (.iso/.cue/.chd) — i.e. Sega CD, the
   /// only hardware with chips the voice router does not mirror: the RF5C164
   /// PCM and the CDDA. It is resolved from the extension at init, before the
   /// first frame, and not from whatever the game happens to touch.
   bool cd_media() const { return cd_media_; }
-
-  /// The negotiated descriptor; nullptr if `!has_ayther_v1()`. Owned by the
-  /// core: valid until `shutdown()` and only touched from the emulation
-  /// thread.
-  const ayther_interface_v1 *ayther_api() const { return ayther_api_; }
-
-  /// The ABI version the core declares (0 without the ABI). Major/minor via
-  /// `AYTHER_ABI_VERSION_MAJOR/MINOR`. The rule is major == 1 and minor >=
-  /// whatever is needed, never `==`: the ABI is additive (see
-  /// docs/EMULATOR_EXTENSION_ABI.md#version-negotiation).
-  uint32_t ayther_abi_version() const {
-    return ayther_api_ ? ayther_api_->abi_version : 0u;
-  }
-
-  /// The subscriptions this Engine consumes — and only those (see
-  /// docs/EMULATOR_EXTENSION_ABI.md#subscriptions). Up to ABI 1.3 this was
-  /// `AYTHER_SUB_ALL` and it made no difference, because the seven bits were
-  /// the seven that were read. Since 1.9 `AYTHER_SUB_ALL` is 0xFFF and
-  /// includes ATTRIBUTION (one byte per pixel), LINE_STATE / LINE_CRAM /
-  /// LINE_CELLS and FRAME_HASH (~100 KB walked per frame): every active bit
-  /// moves the core renderer to the observed clone and pays for what it
-  /// captures, and nobody in the Engine reads those regions yet. When the
-  /// consumer appears (per-tile anchoring, the Lab's FRAME_HASH) ITS bit gets
-  /// added here, alongside whoever reads it.
-  static constexpr uint32_t kEngineSubscriptions =
-      AYTHER_SUB_VDP_MEMORY | AYTHER_SUB_SPRITE_CAPTURE |
-      AYTHER_SUB_RENDER_CONTROLS | AYTHER_SUB_RASTER_TRACKING |
-      AYTHER_SUB_AUDIO_WRITES | AYTHER_SUB_RECOMPOSITION |
-      AYTHER_SUB_AUDIO_EVENTS | AYTHER_SUB_LINE_STATE;
-
-  /// Bits of `fallback_reasons` (snapshot) / 0x10E (legacy). `> 0` still
-  /// means "fallback" to every consumer; these two
-  /// deserve distinguishing: OVERFLOW = the journal passed 256 events and
-  /// `recompose_multilayer` returns RC_JOURNAL_OVERFLOW instead of a
-  /// plausible prefix; UNSUPPORTED_CONTROLS = a control we asked for does not
-  /// apply in this mode.
-  static constexpr uint32_t kRasterReasonJournalOverflow = UINT32_C(1) << 7;
-  static constexpr uint32_t kRasterReasonUnsupportedControls = UINT32_C(1) << 8;
-
-  /// Asks for what the Engine consumes (`kEngineSubscriptions`), bounded by
-  /// what the core supports. Returns the enabled mask (0 with a core without
-  /// the ABI, which is the legacy path and needs no request).
-  ///
-  /// The fork instruments NOTHING until somebody declares it: without this
-  /// the chip write log comes back empty, the audio probe emits nothing and
-  /// the mute mask is ignored SILENTLY. A consumer that does not know this
-  /// does not see an error: it sees zeros, which is exactly what an oracle
-  /// confuses with "this is silent as expected" (2026-08-13: four tools were
-  /// measuring a mute core and reporting it as a result).
-  ///
-  /// It is idempotent and overrides nothing. The ABI tests (`abi_*`) ask by
-  /// hand on purpose — there the subscription IS what is being tested.
-  uint32_t subscribe_all_supported() {
-    if (!ayther_api_ ||
-        !(ayther_api_->capabilities & AYTHER_CAP_SUBSCRIPTIONS_V1))
-      return 0;
-    ayther_subscription_state_v1 st{};
-    st.struct_size = sizeof(st);
-    if (ayther_api_->get_subscriptions(&st, sizeof(st)) != AYTHER_STATUS_OK)
-      return 0;
-    const uint32_t want = kEngineSubscriptions & st.supported_mask;
-    return ayther_api_->set_subscriptions(want) == AYTHER_STATUS_OK ? want : 0;
-  }
-
-  // --- Reads through ABI v1 (E-3) -----------------------------------------
-  // Parallel to the legacy accessors, which remain untouched: the caller
-  // picks with `has_ayther_v1()`. The fundamental difference from the old
-  // path is that here the read VALIDATES — there is a snapshot generation
-  // that says whether what was read belongs to the frame one believes, and a
-  // subscription state that distinguishes "there is no data" from "nobody
-  // asked for it". With the raw pointers both situations look the same:
-  // memory with something in it.
-  struct AytherReadResult {
-    int32_t status = AYTHER_STATUS_UNSUPPORTED;
-    uint32_t count = 0;      ///< elements read
-    uint64_t generation = 0; ///< generation the core returned
-    bool ok() const { return status == AYTHER_STATUS_OK; }
-  };
-
-  /// Snapshot of the CURRENT frame. Call it after `run_frame()`: the ABI
-  /// resets its counters at the frame boundary, so this snapshot is what
-  /// replaces the manual `reset_*()` calls of the legacy path.
-  AytherReadResult capture_frame_snapshot(ayther_frame_snapshot_v1 &out) const;
-
-  /// `SYSTEM` (ABI 1.5): VDP mode (4/5), h40, interlace, S/H, PAL and the
-  /// viewport of the emitted frame with its offset (Game Gear = 160×144 at
-  /// (48,24)). No subscription; it is filled on read. It is the source of
-  /// truth for the mode instead of decoding registers: that decoding was
-  /// already fixed once in the core and the Engine's copy never found out.
-  /// Returns UNSUPPORTED without the capability. See
-  /// docs/EMULATOR_EXTENSION_ABI.md#observation-regions.
-  AytherReadResult read_system_v1(ayther_system_v1 &out) const;
-
-  /// A whole region into the caller's buffer, validating the generation.
-  AytherReadResult read_region_v1(uint32_t region, void *out, uint32_t bytes,
-                                  uint64_t generation) const;
-
-  // VDP (AYTHER_SUB_VDP_MEMORY). `out` must hold the byte_size of the region.
-  /// How many bytes the ABI says a region measures (0 if there is no ABI or
-  /// it does not know it). The VDP `read_*_v1` calls write THAT size, not the
-  /// one `retro_get_memory_size` reports: whoever sizes the buffer with the
-  /// legacy number is betting that the two sources agree. Today they do; this
-  /// exists so the caller does not have to bet.
-  size_t abi_region_bytes(uint32_t region) const;
-
-  AytherReadResult read_vram_v1(void *out,
-                                const ayther_frame_snapshot_v1 &s) const;
-  AytherReadResult read_cram_v1(void *out,
-                                const ayther_frame_snapshot_v1 &s) const;
-  AytherReadResult read_vdp_regs_v1(void *out,
-                                    const ayther_frame_snapshot_v1 &s) const;
-  AytherReadResult read_vsram_v1(void *out,
-                                 const ayther_frame_snapshot_v1 &s) const;
-
-  /// Parsed sprites (AYTHER_SUB_SPRITE_CAPTURE), with FORWARD COMPATIBILITY:
-  /// if the core declares an `element_size` larger than the struct this
-  /// Engine knows, it reads into a temporary and copies only the known
-  /// fields. Without that, a newer core would misalign the whole read — which
-  /// is exactly what was happening by coincidence with the legacy pointer
-  /// (8 bytes read from a layout that today has 10).
-  AytherReadResult
-  read_parsed_sprites_v1(ayther_sprite_v1 *out, uint32_t max,
-                         const ayther_frame_snapshot_v1 &s) const;
-
-  /// The frame's chip writes (AYTHER_SUB_AUDIO_WRITES).
-  AytherReadResult
-  read_audio_writes_v1(ayther_audio_write_v1 *out, uint32_t max,
-                       const ayther_frame_snapshot_v1 &s) const;
-
-  /// Raster fallback reasons (AYTHER_SUB_RASTER_TRACKING). The snapshot
-  /// already carries them; 0 if there is no ABI or no subscription.
-  uint32_t read_raster_fallback_v1(const ayther_frame_snapshot_v1 &s) const;
 
   // --- Frame Delta Stream (E-6) -------------------------------------------
   // What got dirtied in the frame, told by the core instead of deduced: one
@@ -367,123 +248,6 @@ public:
   /// `run_frame()`.
   const ayther_frame_delta_v1 &frame_delta() const { return last_delta_; }
 
-  // --- Typed audio events -------------------------------------------------
-  // The SECOND audio path, and it exists for a concrete reason: the Sega CD
-  // PCM chip has no exposed bus, so `read_audio_writes_v1` —which carries raw
-  // FM and PSG writes— does not carry it and cannot. This path brings
-  // ALREADY-TYPED events (key-on/off, volume, pitch).
-  //
-  // Which one governs which chip, in writing: the raw writes are the source
-  // for FM and PSG; the events, for the PCM. The IDENTITY of a sound is
-  // decided by neither — it is computed by the detector
-  // (`core/src/audio_event.rs`) for all three chips alike.
-  //
-  // It is CONSUME-ON-POLL over an SPSC queue: what is read disappears, so
-  // there is a single consumer and it calls once per frame. `event_size`
-  // comes from the core and not from a local `sizeof` — the struct became a
-  // union and changed size once already.
-  //
-  // Returns the number of events written into `out` (0 without the ABI,
-  // without a subscription, or with nothing pending).
-  uint32_t poll_audio_events_v1(ayther_audio_event_v1 *out, uint32_t max) const;
-  struct AudioPollObservation {
-    enum class Outcome {
-      no_api,
-      invalid_output,
-      unsupported,
-      layout_mismatch,
-      poll_error,
-      polled
-    };
-    Outcome outcome = Outcome::no_api;
-    bool stats_attempted = false;
-    bool poll_attempted = false;
-    int32_t stats_status = AYTHER_STATUS_UNSUPPORTED;
-    int32_t poll_status = AYTHER_STATUS_UNSUPPORTED;
-    ayther_audio_transport_stats_v1 stats{};
-    uint32_t count = 0;
-  };
-  /// Same consuming operation and return value; optionally retains the actual
-  /// read result and the transport snapshot already queried by that operation.
-  uint32_t
-  poll_audio_events_observed_v1(ayther_audio_event_v1 *out, uint32_t max,
-                                AudioPollObservation *observation) const;
-  /// Events the transport dropped for lack of polling, accumulated.
-  uint32_t audio_events_dropped() const;
-
-  // --- Control writes through ABI v1 (E-4) --------------------------------
-  // The legacy writes are `*p = value` over core memory: they do not validate
-  // bounds, do not signal the generation change (the snapshot system goes out
-  // of sync) and nothing stops them happening in the middle of `retro_run`.
-  // `write_control` validates all three and returns the new generation.
-  struct AytherWriteResult {
-    int32_t status = AYTHER_STATUS_UNSUPPORTED;
-    uint64_t new_generation = 0;
-    bool ok() const { return status == AYTHER_STATUS_OK; }
-  };
-
-  /// A write into a CONTROL region, between frames.
-  /// `AYTHER_GENERATION_ANY` skips generation validation, which is the right
-  /// thing for a control set outside an active snapshot.
-  AytherWriteResult
-  write_control_v1(uint32_t region, const void *data, uint32_t bytes,
-                   uint64_t expected_generation = AYTHER_GENERATION_ANY) const;
-
-  // ---- Render and audio controls (AYTHER_SUB_RENDER_CONTROLS) ------------
-  // The sizes are part of the CONTRACT of each control, not a caller detail:
-  // they live here so nobody repeats them by hand.
-  static constexpr uint32_t kSpriteSuppressBytes = 16;          // 128 SAT slots
-  static constexpr uint32_t kTileSuppressBytes = 512;           // 64×64 cells
-  static constexpr uint32_t kPlaneTileSuppressBytes = 3 * 1024; // 3 planes
-
-  /// Visible layer mask: 1 byte with the A/B/Window/Sprites bits. The
-  /// renderer reads it PER LINE, so it hides or shows layers live.
-  AytherWriteResult set_layer_mask_v1(uint8_t mask) const {
-    return write_control_v1(AYTHER_REGION_LAYER_MASK, &mask, 1);
-  }
-  /// 0 = normal render (bit-exact). !=0 = the pixels that are NOT sprite are
-  /// emitted at 25%, so sprites stand out (Lab Animation).
-  AytherWriteResult set_layer_dim_v1(uint8_t on) const {
-    return write_control_v1(AYTHER_REGION_LAYER_DIM, &on, 1);
-  }
-  /// A 128-bit bitmask: SAT slots `parse_satb` will skip.
-  AytherWriteResult set_sprite_suppress_v1(const uint8_t *bits16) const {
-    return write_control_v1(AYTHER_REGION_SPRITE_SUPPRESS, bits16,
-                            kSpriteSuppressBytes);
-  }
-  /// 8px output cells (64×64, stride 64) painted with the backdrop, revealing
-  /// the VDP background. Applied by `render_line`.
-  AytherWriteResult set_tile_suppress_v1(const uint8_t *bits,
-                                         uint32_t n) const {
-    return write_control_v1(AYTHER_REGION_TILE_SUPPRESS, bits, n);
-  }
-  /// 3 planes × a bitmap of (pattern<<2 | palette): `render_bg_m5/_vs` skip
-  /// those cells and reveal the plane behind. The fork used to have a
-  /// separate `active` flag (0x106) without which this was a SILENT no-op;
-  /// through the ABI the core manages it itself — measured in
-  /// `abi_write_control`.
-  AytherWriteResult set_plane_tile_suppress_v1(const uint8_t *bits,
-                                               uint32_t n) const {
-    return write_control_v1(AYTHER_REGION_PLANE_TILE_SUPPRESS, bits, n);
-  }
-  /// Channels to silence. The channel is set to 0 in the OUTPUT mixer
-  /// without touching the chip state: replay-safe, the chip evolves
-  /// identically and only the emitted PCM changes — the hasher has to keep
-  /// seeing it. It is the primitive of per-event substitution: muting the
-  /// channels of an event while its HD asset plays. 0 = everything plays.
-  static constexpr uint32_t audio_mute_fm(int ch) {
-    return uint32_t(1u << ch);
-  } // ch 0-5
-  static constexpr uint32_t audio_mute_psg(int ch) {
-    return uint32_t(1u << (6 + ch));
-  } // ch 0-3
-  static constexpr uint32_t audio_mute_pcm(int ch) {
-    return uint32_t(1u << (10 + ch));
-  } // ch 0-7
-  AytherWriteResult set_audio_mute_v1(uint32_t mask) const {
-    return write_control_v1(AYTHER_REGION_AUDIO_MUTE, &mask, sizeof(mask));
-  }
-
   // --- Per-frame fidelity signal (R-5, id 0x10E) --------------------------
   // A WRITABLE u32: writes with a visual effect mid-screen (CRAM/VSRAM/the
   // hscroll table/regs). The frontend resets it before the visible frame and
@@ -492,7 +256,7 @@ public:
   // stock core.
   static constexpr unsigned kAytherMemoryRasterDirty = 0x10E;
   [[deprecated("E-5: use read_raster_fallback_v1() with ABI v1")]]
-  uint32_t raster_dirty() const {
+  uint32_t raster_dirty() const override {
     if (!fn_retro_get_memory_data)
       return 0;
     const auto *p = static_cast<const uint32_t *>(
@@ -503,14 +267,14 @@ public:
   static constexpr unsigned kAytherMemoryParsedSprites = 0x10B;
   static constexpr unsigned kAytherMemoryParsedCount = 0x10C;
   [[deprecated("E-5: use read_parsed_sprites_v1() with ABI v1")]]
-  const uint8_t *parsed_sprites() const {
+  const uint8_t *parsed_sprites() const override {
     if (!fn_retro_get_memory_data)
       return nullptr;
     return static_cast<const uint8_t *>(
         fn_retro_get_memory_data(kAytherMemoryParsedSprites));
   }
   [[deprecated("E-5: use capture_frame_snapshot() with ABI v1")]]
-  uint8_t parsed_sprite_count() const {
+  uint8_t parsed_sprite_count() const override {
     if (!fn_retro_get_memory_data)
       return 0;
     const auto *p = static_cast<const uint8_t *>(
@@ -528,25 +292,17 @@ public:
   // phase diverges). The same frontend-reset pattern as parsed_sprites: reset
   // (count=0) before run_frame, read after. No-op with a stock core (a clean
   // degradation → the FFI falls back to the PCM).
-  struct AudioWrite {
-    uint32_t cycle;
-    uint16_t addr;
-    uint8_t data;
-    uint8_t chip;
-  };
   static constexpr unsigned kAytherMemoryAudioWrites = 0x109;
   static constexpr unsigned kAytherMemoryAudioCount = 0x10A;
-  static constexpr uint8_t kAudioChipFM = 0;  // YM2612
-  static constexpr uint8_t kAudioChipPSG = 1; // SN76489
   [[deprecated("E-5: use read_audio_writes_v1() with ABI v1")]]
-  const AudioWrite *audio_writes() const {
+  const AudioWrite *audio_writes() const override {
     if (!fn_retro_get_memory_data)
       return nullptr;
     return static_cast<const AudioWrite *>(
         fn_retro_get_memory_data(kAytherMemoryAudioWrites));
   }
   [[deprecated("E-5: use capture_frame_snapshot() with ABI v1")]]
-  uint32_t audio_write_count() const {
+  uint32_t audio_write_count() const override {
     if (!fn_retro_get_memory_data)
       return 0;
     const auto *p = static_cast<const uint32_t *>(
@@ -741,6 +497,16 @@ private:
 
   ayther_get_interface_fn fn_ayther_get_interface_ = nullptr;
   const ayther_interface_v1 *ayther_api_ = nullptr;
+  /// The loose `ayther_recompose_multilayer` export of a 1.0/1.1 core,
+  /// resolved once on first use (it is a lookup in the DLL's export table).
+  using LooseMultilayerFn = int32_t(AYTHER_CALL *)(uint16_t *, uint16_t *,
+                                                   uint16_t *, uint16_t *,
+                                                   uint16_t *, uint32_t,
+                                                   uint32_t, uint32_t *,
+                                                   uint32_t *);
+  mutable LooseMultilayerFn loose_multilayer_ = nullptr;
+  mutable bool loose_multilayer_resolved_ = false;
+  LooseMultilayerFn loose_multilayer() const;
 
   // E-6: the delta of the last `run_frame()`, and whether it is usable.
   ayther_frame_delta_v1 last_delta_{};

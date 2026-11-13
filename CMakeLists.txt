@@ -200,6 +200,7 @@ add_library(ayther_engine STATIC EXCLUDE_FROM_ALL
     src/log.cpp
     src/pack.cpp
     src/psg_synth.cpp
+    src/observation_source.cpp
     src/retro_runner.cpp
     src/rewind_buffer.cpp
     src/runtime_options.cpp
@@ -366,7 +367,8 @@ if(AYTHER_ENABLE_TESSERA)
     target_link_libraries(ayther_engine PRIVATE Tessera::core)
 endif()
 add_library(Ayther::engine ALIAS ayther_engine)
-target_sources(ayther_engine PRIVATE src/tessera_backend.cpp)
+target_sources(ayther_engine PRIVATE src/tessera_backend.cpp
+    src/tessera_observation_source.cpp)
 target_compile_definitions(ayther_engine PRIVATE AYTHER_HAS_TESSERA=$<BOOL:${AYTHER_ENABLE_TESSERA}>)
 ayther_instrument_target(ayther_engine)
 

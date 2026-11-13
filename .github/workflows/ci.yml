@@ -39,7 +39,7 @@ env:
   # dependencies/tessera.lock.json; the 'Verify the Tessera pin' step enforces
   # it. It is a literal (not read from the file) so the checkout ref is not
   # data derived from the repository (CodeQL cache-poisoning rule).
-  TESSERA_COMMIT: c67892978d8c263ad32baf6ff8b45587d062eb4b
+  TESSERA_COMMIT: d29385a4863aebe1102158db7357cc5463023f48
 
 jobs:
   repository-policy:
@@ -400,13 +400,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
-            "llvm-${CLANG_TIDY_VERSION}" \
+            "clang-${CLANG_TIDY_VERSION}" "llvm-${CLANG_TIDY_VERSION}" \
             libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxft-dev \
             libxi-dev libxrandr-dev libxss-dev libxtst-dev \
             mesa-vulkan-drivers vulkan-tools vulkan-validationlayers xauth xvfb
 
+      # The compiler and llvm-profdata/llvm-cov must be one LLVM: the image's
+      # default clang moves (ubuntu-26.04 ships 21, raw profile format 10) and
+      # the pinned tools refuse its profiles.
       - name: Configure coverage build
-        run: cmake --preset linux-native-coverage
+        run: >-
+          cmake --preset linux-native-coverage
+          "-DCMAKE_C_COMPILER=clang-${CLANG_TIDY_VERSION}"
+          "-DCMAKE_CXX_COMPILER=clang++-${CLANG_TIDY_VERSION}"
 
       - name: Build coverage targets
         if: env.WARM_ONLY != 'true'
@@ -710,6 +716,30 @@ jobs:
           bash tools/run_clang_tidy_changed.sh \
             "${base_revision}" \
             build/${{ matrix.preset }}
+
+      - name: Download the locked gpgx core for the cross-pack test
+        if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # TP-210.1: ayther.integration.parity_bench_cross_pack plays packs
+          # baked with gpgx on Tessera and back. The fork core is a public
+          # release named by core.lock; it is checked against the lock and
+          # kept outside third_party/cores, so only that test uses it.
+          $lock = @{}
+          foreach ($line in Get-Content third_party/cores/core.lock) {
+            $content = ($line -split '#', 2)[0]
+            if ($content -match '^\s*([a-z0-9_]+)\s*=\s*(.+?)\s*$') { $lock[$Matches[1]] = $Matches[2] }
+          }
+          $dir = Join-Path $env:RUNNER_TEMP 'gpgx-core'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $core = Join-Path $dir $lock['vram_file']
+          $url = "https://github.com/$($lock['repo'])/releases/download/$($lock['tag'])/$($lock['vram_file'])"
+          Invoke-WebRequest -Uri $url -OutFile $core
+          $actual = (Get-FileHash -Algorithm SHA256 $core).Hash
+          if ($actual -ne $lock['vram_sha256']) {
+            throw "gpgx core SHA-256 $actual differs from core.lock ($($lock['vram_sha256']))."
+          }
+          "AYTHER_PARITY_GPGX_CORE=$core" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Test native targets
         if: env.WARM_ONLY != 'true'

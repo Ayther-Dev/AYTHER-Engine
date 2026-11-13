@@ -431,7 +431,8 @@ if(AYTHER_BUILD_PARITY_BENCH)
         "${PROJECT_SOURCE_DIR}/tests/integration/parity_dump_test.cpp"
         integration)
     target_sources(ayther_parity_dump_test PRIVATE
-        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp")
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
     target_compile_definitions(ayther_parity_dump_test PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
     add_dependencies(ayther_parity_dump_test ayther_test_core)
@@ -442,10 +443,55 @@ if(AYTHER_BUILD_PARITY_BENCH)
         integration)
     target_sources(ayther_parity_bench_synthetic PRIVATE
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp"
         "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp")
     target_compile_definitions(ayther_parity_bench_synthetic PRIVATE
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>")
     add_dependencies(ayther_parity_bench_synthetic ayther_test_core)
+
+    # TP-209.1: strict exception accounting of parity_bench check.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/unit/parity_exception_accounting_test.cpp"
+        unit)
+    target_sources(ayther_parity_exception_accounting_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/exception_accounting.cpp")
+
+    # TP-209.2: identity files of parity_bench dump --identities and their
+    # comparison (RF-10.2).
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/unit/parity_identities_test.cpp"
+        unit)
+    target_sources(ayther_parity_identities_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
+
+    # TP-210.1: the cross-pack play line and its comparison (RF-10.3).
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/unit/parity_cross_pack_test.cpp"
+        unit)
+    target_sources(ayther_parity_cross_pack_test PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/cross_pack.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
+
+    # TP-210.1: the cross-pack matrix of plan §3.13 on FX-03, gpgx (the fork
+    # core of core.lock; skip 77 without it) against Tessera.
+    if(AYTHER_ENABLE_TESSERA)
+        ayther_add_native_test(
+            "${PROJECT_SOURCE_DIR}/tests/integration/parity_bench_cross_pack.cpp"
+            integration)
+        target_sources(ayther_parity_bench_cross_pack PRIVATE
+            "${PROJECT_SOURCE_DIR}/tools/parity_bench/cross_pack.cpp"
+            "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+            "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp")
+        target_compile_definitions(ayther_parity_bench_cross_pack PRIVATE
+            AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+            PARITY_BENCH_PATH="$<TARGET_FILE:parity_bench>")
+        add_dependencies(ayther_parity_bench_cross_pack parity_bench)
+        set_tests_properties(ayther.integration.parity_bench_cross_pack
+            PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600
+            LABELS "engine;native;integration;parity;FX-03")
+    endif()
 
     # TP-005.17: the native job runs parity_bench on both scenes.
     ayther_add_native_test(
@@ -455,6 +501,22 @@ if(AYTHER_BUILD_PARITY_BENCH)
         AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
         PARITY_BENCH_PATH="$<TARGET_FILE:parity_bench>")
     add_dependencies(ayther_parity_bench_selftest ayther_test_core parity_bench)
+
+    # TP-301.1: the FrameView built through ObservationSource equals the
+    # goldens recorded before the source was extracted from RetroRunner.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/contracts/observation_source_parity.cpp"
+        contract)
+    target_sources(ayther_observation_source_parity PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_dump.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/identities.cpp"
+        "${PROJECT_SOURCE_DIR}/tools/parity_bench/frame_compare.cpp")
+    target_compile_definitions(ayther_observation_source_parity PRIVATE
+        AYTHER_TEST_CORE_PATH="$<TARGET_FILE:ayther_test_core>"
+        AYTHER_TEST_CORE_STOCK_PATH="$<TARGET_FILE:ayther_test_core_stock>"
+        AYTHER_OBSERVATION_SOURCE_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/observation_source")
+    add_dependencies(ayther_observation_source_parity
+        ayther_test_core ayther_test_core_stock)
 endif()
 
 # A zero-element PARSED_SPRITES snapshot is valid and authoritative even when
@@ -958,4 +1020,54 @@ if(AYTHER_ENABLE_TESSERA)
     tessera_copy_runtime_dependencies(ayther_tessera_controls_test)
     set_tests_properties(ayther.integration.tessera_controls_test PROPERTIES
         LABELS "engine;native;integration;phase4;controls")
+endif()
+
+# TP-301.2: TesseraBackend as an ObservationSource, against the ABI's null
+# scene (synthetic.complete) and on the native megadrive machine.
+if(AYTHER_ENABLE_TESSERA)
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/contracts/tessera_observation_source.cpp" contract)
+    target_include_directories(ayther_tessera_observation_source SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
+    target_compile_options(ayther_tessera_observation_source PRIVATE /EHsc)
+    tessera_copy_runtime_dependencies(ayther_tessera_observation_source)
+    set_tests_properties(ayther.contract.tessera_observation_source PROPERTIES
+        LABELS "engine;native;contract")
+    # TP-301.3: FX-02 through AytherSession's frame pipeline on megadrive.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_native_md.cpp" integration)
+    target_include_directories(ayther_tessera_native_md SYSTEM PRIVATE
+        "${AYTHER_TESSERA_TEST_SOURCE_DIR}/third_party/cache/doctest-2.5.3/include")
+    target_compile_options(ayther_tessera_native_md PRIVATE /EHsc)
+    target_compile_definitions(ayther_tessera_native_md PRIVATE
+        AYTHER_FX02_PROGRAM="${AYTHER_TESSERA_TEST_FIXTURE_DIR}/fx02/program.md")
+    tessera_copy_runtime_dependencies(ayther_tessera_native_md)
+    set_tests_properties(ayther.integration.tessera_native_md PROPERTIES
+        LABELS "engine;native;integration;FX-02")
+    # TP-301.5: bg stitcher, Panoramas, Lua and the live audio detector on a
+    # synthetic MD ROM, per provider: Tessera always, and the same series as
+    # gpgx when the fork core of core.lock (or AYTHER_PARITY_GPGX_CORE) is there.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_native_subsystems.cpp" integration)
+    target_include_directories(ayther_tessera_native_subsystems PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/common")
+    target_compile_definitions(ayther_tessera_native_subsystems PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    tessera_copy_runtime_dependencies(ayther_tessera_native_subsystems)
+    set_tests_properties(ayther.integration.tessera_native_subsystems PROPERTIES
+        TIMEOUT 300
+        LABELS "engine;native;integration;panorama;lua;audio")
+    # TP-302.1-302.3: rewind, takes with keyframes and the emulator PCM on the
+    # same scene, Tessera always and gpgx (with the rewind memory ratio) when
+    # its core is there.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_native_state.cpp" integration)
+    target_include_directories(ayther_tessera_native_state PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/common")
+    target_compile_definitions(ayther_tessera_native_state PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    tessera_copy_runtime_dependencies(ayther_tessera_native_state)
+    set_tests_properties(ayther.integration.tessera_native_state PROPERTIES
+        TIMEOUT 600
+        LABELS "engine;native;integration;rewind;replay;audio")
 endif()
