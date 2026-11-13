@@ -31,9 +31,10 @@ API. Además, `dependencies/tessera.lock.json` fija el Tessera exacto:
 - `sourceCommit`, `api` y `package.version` siempre;
 - `release.tag` y `artifact.sha256` cuando Tessera publica un tag con esa API.
   Mientras no exista, el lock es `unreleased` y fija un commit de `main`.
-  Hoy fija `v0.2.0-rc.8` (API 1.1, núcleo `megadrive`, región de work RAM
-  `0x1000` y la temporización de TP-209.2), el candidato con el que se aprobó
-  G2. `v0.2.0-rc.1` falló en CI antes de empaquetar y no tiene release.
+  Hoy fija `v0.2.0-rc.9` (API 1.1, núcleo `megadrive`, región de work RAM
+  `0x1000`, la temporización de TP-209.2 y `AUDIO_MUTE`). G2 se aprobó con
+  `v0.2.0-rc.8`. `v0.2.0-rc.1` falló en CI antes de empaquetar y no tiene
+  release.
 
 `native-release.yml` lee el commit del lock para compilar Tessera; `ci.yml` lo
 fija como literal (`TESSERA_COMMIT`, para que el `ref` del checkout no derive de
@@ -132,7 +133,9 @@ Tessera siempre y, si está el core del fork de `third_party/cores/core.lock` (o
   checkpoint y `unserialize()` lo restaura.
 - **Audio:** `enable_audio` abre el reproductor. El PCM nativo (48 kHz) se
   remuestrea a los 44,1 kHz del reproductor con la fase arrastrada entre
-  frames, así que no hay costuras en el límite de un frame.
+  frames, así que no hay costuras en el límite de un frame. `AUDIO_MUTE`
+  (desde rc.9) aísla cada canal: `capture_channel_pcm()` con la máscara de FM 1
+  da solo esa voz, como con gpgx.
 
 `ayther.integration.tessera_native_state` (TP-302.1 a TP-302.3) cubre las tres
 con la misma escena; con gpgx presente compara la memoria del rewind.
@@ -143,9 +146,6 @@ Estas opciones se rechazan al crear la sesión con `unsupported_capability`, sin
 cambiar de proveedor: `patch_path`, `core_options`, `rom_path` y los
 observadores `audio_observer` y `render_observer`.
 
-- **Silenciado por canal:** Tessera rc.8 responde `UNSUPPORTED` al control
-  `AUDIO_MUTE`, así que `capture_channel_pcm()` con una máscara devuelve la
-  mezcla completa.
 - **Enrutado de voces:** `set_voice_router()` no se activa en sesiones
   nativas.
 

@@ -13,9 +13,9 @@
 //     states of the live run.
 //   - PCM (TP-302.3): the take's first note, captured with the FM channel 1
 //     mask, has the player's length (44.1 kHz per frame) and no seam at a
-//     frame boundary: no sample step stands out from the waveform's own. The
-//     native machine does not take AUDIO_MUTE yet (rc.8), so its capture is
-//     the full mix; the length and seam rules hold either way.
+//     frame boundary: no sample step stands out from the waveform's own. Each
+//     mask isolates its channel (AUDIO_MUTE, Tessera rc.9): FM 1 alone is the
+//     252 Hz FM note, PSG tone 0 alone the 440 Hz square.
 //
 // Tessera always; gpgx too when the fork core of core.lock (or
 // AYTHER_PARITY_GPGX_CORE) is present, on its own checks plus the memory
@@ -202,7 +202,7 @@ TakeResult take_run(const std::string &p, const std::vector<std::uint8_t> &rom,
             std::to_string(matched) + "/" + std::to_string(order.size()) +
             (missed.empty() ? "" : "; missed" + missed) + ")");
 
-  // PCM: FM channel 1 alone in its first note (take frames are the live
+  // PCM: FM channel 1 in its first note (take frames are the live
   // frames + 10, so 25..55 of the scene are 15..45 of the take).
   std::vector<std::int16_t> pcm;
   constexpr std::uint32_t kStart = 15, kWindow = 30;
@@ -236,6 +236,33 @@ TakeResult take_run(const std::string &p, const std::vector<std::uint8_t> &rom,
             " at sample " + std::to_string(at + 1 + settle / 2) + " of " +
             std::to_string(pcm.size() / 2) + ") is the waveform's own (p99.9 " +
             std::to_string(p999) + ")");
+
+  // Isolation: each mask leaves its own channel. FM 1 plays 252 Hz (F-num
+  // 0x269, block 4) and PSG tone 0 440 Hz (period 254); the pitch is taken
+  // from the crossings of the left side's mean.
+  const auto pitch = [&](std::uint32_t mask) {
+    std::vector<std::int16_t> isolated;
+    replay->capture_channel_pcm(*loaded, kStart, kWindow, mask, isolated);
+    if (isolated.size() <= settle + 4)
+      return 0.0;
+    double mean = 0.0;
+    std::size_t n = 0;
+    for (std::size_t i = settle; i < isolated.size(); i += 2, ++n)
+      mean += isolated[i];
+    mean /= static_cast<double>(n);
+    int crossings = 0;
+    for (std::size_t i = settle + 2; i < isolated.size(); i += 2)
+      if ((isolated[i - 2] < mean) != (isolated[i] < mean))
+        ++crossings;
+    return crossings / 2.0 / (static_cast<double>(n) / 44100.0);
+  };
+  const double fm = pitch(1u), tone = pitch(1u << 6);
+  check(std::fabs(fm - 252.0) <= 20.0,
+        p + ": the FM 1 mask leaves the FM note (" + std::to_string(fm) +
+            " Hz, expected 252)");
+  check(std::fabs(tone - 440.0) <= 20.0,
+        p + ": the PSG tone 0 mask leaves the PSG note (" +
+            std::to_string(tone) + " Hz, expected 440)");
   out.ok = true;
   return out;
 }
