@@ -1057,4 +1057,17 @@ if(AYTHER_ENABLE_TESSERA)
     set_tests_properties(ayther.integration.tessera_native_subsystems PROPERTIES
         TIMEOUT 300
         LABELS "engine;native;integration;panorama;lua;audio")
+    # TP-302.1-302.3: rewind, takes with keyframes and the emulator PCM on the
+    # same scene, Tessera always and gpgx (with the rewind memory ratio) when
+    # its core is there.
+    ayther_add_native_test(
+        "${PROJECT_SOURCE_DIR}/tests/integration/tessera_native_state.cpp" integration)
+    target_include_directories(ayther_tessera_native_state PRIVATE
+        "${PROJECT_SOURCE_DIR}/tools/common")
+    target_compile_definitions(ayther_tessera_native_state PRIVATE
+        AYTHER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    tessera_copy_runtime_dependencies(ayther_tessera_native_state)
+    set_tests_properties(ayther.integration.tessera_native_state PROPERTIES
+        TIMEOUT 600
+        LABELS "engine;native;integration;rewind;replay;audio")
 endif()

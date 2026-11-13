@@ -117,22 +117,37 @@ estado de la máquina (los checkpoints la llevan). Los códigos de cheat del cor
 - **Detector de audio en vivo:** `audio_live_active()` da las mismas voces y
   firmas FM/PSG que con gpgx, frame a frame.
 
-Las cuatro últimas las cubre `ayther.integration.tessera_native_subsystems`
+Fondos, Panorámicas, Lua y el detector los cubre `ayther.integration.tessera_native_subsystems`
 (TP-301.5) con una ROM sintética escrita en la prueba (`tools/common/synth_rom.h`):
 Tessera siempre y, si está el core del fork de `third_party/cores/core.lock` (o
 `AYTHER_PARITY_GPGX_CORE`), la misma serie con gpgx.
 
+- **Rewind:** `enable_rewind()` guarda una ventana de 10 s × fps de
+  checkpoints del driver (comprimidos con zstd; su tamaño varía de un frame a
+  otro) y `rewind_step()` los restaura con una traza vacía. Con la escena
+  sintética, 599 frames ocupan 1,18 veces la memoria de gpgx (límite 1,25).
+- **Tomas:** `record_start()` graba `.arp` con procedencia `tessera` y
+  keyframes cada 300 frames; `replay_seek()`, la captura por canal y el análisis
+  de tomas funcionan sobre ellas. `serialize_size()` da el tamaño de un
+  checkpoint y `unserialize()` lo restaura.
+- **Audio:** `enable_audio` abre el reproductor. El PCM nativo (48 kHz) se
+  remuestrea a los 44,1 kHz del reproductor con la fase arrastrada entre
+  frames, así que no hay costuras en el límite de un frame.
+
+`ayther.integration.tessera_native_state` (TP-302.1 a TP-302.3) cubre las tres
+con la misma escena; con gpgx presente compara la memoria del rewind.
+
 ### Qué no funciona todavía
 
 Estas opciones se rechazan al crear la sesión con `unsupported_capability`, sin
-cambiar de proveedor: `enable_audio` (no hay salida al dispositivo; el PCM
-nativo está en `native_original`), `patch_path`, `core_options`, `rom_path` y
-los observadores `audio_observer` y `render_observer`. Tampoco hay rewind ni
-keyframes de grabación, así que `replay_seek` y el análisis de tomas siguen
-siendo de libretro: son la spec 008, TP-302. `serialize()` delega en el
-`checkpoint()` del driver y `serialize_size()` devuelve 0; `unserialize()` se
-rechaza, porque restaurar exige `restore_checkpoint()` con la traza de entradas
-que lo acompaña.
+cambiar de proveedor: `patch_path`, `core_options`, `rom_path` y los
+observadores `audio_observer` y `render_observer`.
+
+- **Silenciado por canal:** Tessera rc.8 responde `UNSUPPORTED` al control
+  `AUDIO_MUTE`, así que `capture_channel_pcm()` con una máscara devuelve la
+  mezcla completa.
+- **Enrutado de voces:** `set_voice_router()` no se activa en sesiones
+  nativas.
 
 Los clientes nativos deben conservar cada `NativeResult`: las consultas
 siguientes tienen su propio resultado. El overload de creación permite

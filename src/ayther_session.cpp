@@ -272,16 +272,16 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
     return Error{ErrorCode::Unsupported, "Tessera: invalid provider selector"};
   }
   if (cfg.provider == EmulationProvider::tessera_native) {
-    // Device presentation and real pack composition have separate contracts.
-    if (cfg.enable_audio || !cfg.patch_path.empty() ||
-        !cfg.core_options.empty() || !cfg.rom_path.empty() ||
-        cfg.audio_observer.on_fact || cfg.audio_observer.on_pcm ||
-        cfg.render_observer) {
+    // Legacy options with no native counterpart. Device audio is native
+    // since TP-302.3 (the PCM resampled to the player's 44.1 kHz).
+    if (!cfg.patch_path.empty() || !cfg.core_options.empty() ||
+        !cfg.rom_path.empty() || cfg.audio_observer.on_fact ||
+        cfg.audio_observer.on_pcm || cfg.render_observer) {
       native_result.code = static_cast<std::int32_t>(
           engine::NativeStatus::unsupported_capability);
       return Error{ErrorCode::Unsupported,
-                   "Tessera: use native PCM/originals; device and legacy "
-                   "options are unavailable"};
+                   "Tessera: patch, core options, ROM path and legacy "
+                   "observers are unavailable"};
     }
   }
   std::unique_ptr<AytherSession> session(new AytherSession());
@@ -350,6 +350,15 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
             static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
         return loaded.error;
       }
+    }
+    // TP-302.3: the player, fed by run_emulator_frame through on_native_pcm.
+    // Non-fatal, as with libretro: no device means muted playback.
+    if (cfg.enable_audio) {
+      im.audio_enabled = im.audio.init(RuntimeOptions::process());
+      if (!im.audio_enabled)
+        ayther::log::write(ayther::log::Severity::Error, "session",
+                           "audio_init_failed_continuing",
+                           "audio init failed — continuing muted");
     }
     return session;
   }
@@ -441,25 +450,11 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
       [ip](const void *data, unsigned w, unsigned h, size_t pitch) {
         ip->on_video_frame(data, w, h, pitch);
       });
-  im.runner.set_audio_callback([ip](const int16_t *data,
-                                    size_t frames) -> size_t {
-    // Compose (2º render B): descartar el audio (el frame A ya lo emitió;
-    // sin esto sonaría dos veces). No se hashea: B no recolecta nada.
-    const uint64_t hash =
-        ayther_audio_hasher_process_batch(ip->audio_hasher.get(), data, frames);
-    if (ip->cap_active) { // vista previa: acumular la MEZCLA de la ventana
-      // No se filtra por hash: el audio del replay no es byte-reproducible
-      // (la fase del FM diverge tras el load), así que aislar por hash no
-      // sirve. Capturamos la mezcla real del momento → "en contexto".
-      (void)hash;
-      if (ip->cap_collect && data && frames)
-        ip->cap_pcm.insert(ip->cap_pcm.end(), data, data + frames * 2);
-      return frames; // sin passthrough al device durante la captura
-    }
-    if (ip->audio_enabled)
-      ip->audio.buffer_emulator(hash, data, frames);
-    return frames;
-  });
+  im.runner.set_audio_callback(
+      [ip](const int16_t *data, size_t frames) -> size_t {
+        ip->on_audio_batch(data, frames);
+        return frames;
+      });
 
   // Pack: explicit path, else derive "<core stem>.ay" (player convention,
   // disabled by the Lab so project sessions don't pick up stray dev packs).
@@ -768,13 +763,13 @@ engine::NativeResult AytherSession::Impl::run_emulator_frame() {
     }
     on_video_frame(native_xrgb.data(), w, h, std::size_t{w} * 4u);
   }
-  // The legacy audio hash takes interleaved stereo s16, as libretro gives it.
+  // The PCM takes the libretro audio path (hash, capture, player) at the
+  // player's 44.1 kHz (TP-302.3).
   if (original.channels == 2 &&
       original.pcm.size() == original.pcm_frames * 4u && original.pcm_frames)
-    ayther_audio_hasher_process_batch(
-        audio_hasher.get(),
-        reinterpret_cast<const int16_t *>(original.pcm.data()),
-        static_cast<size_t>(original.pcm_frames));
+    on_native_pcm(reinterpret_cast<const int16_t *>(original.pcm.data()),
+                  static_cast<size_t>(original.pcm_frames),
+                  original.sample_rate);
   return advanced;
 }
 
@@ -976,9 +971,8 @@ const FrameView &AytherSession::step() {
   im.replay_pos = -1; // el step en vivo mueve la máquina fuera del replay (R7d)
   // Rewind capture (R6): snapshot the PRE-frame state before advancing, so a
   // later pop() can restore exactly this frame. No-op (zero cost) when off.
-  // The native provider has no rewind yet (its checkpoints are TP-304).
-  if (!im.native && im.rewind.enabled() &&
-      im.runner.serialize(im.rewind_scratch))
+  // Native: the session's checkpoint (TP-302.1).
+  if (im.rewind.enabled() && im.save_state(im.rewind_scratch))
     im.rewind.push(im.rewind_scratch);
   // Recording capture (R7): log the input that produces this frame.
   im.recording.capture_input();
@@ -1032,9 +1026,9 @@ const FrameView &AytherSession::step() {
     // múltiplos de kReplayKeyInterval → seeks ≤ N frames sin re-simular desde
     // 0.
     const uint32_t rframe = static_cast<uint32_t>(im.recording.frame_count());
-    if (!im.native && im.recording.keyframe_due(kReplayKeyInterval)) {
+    if (im.recording.keyframe_due(kReplayKeyInterval)) {
       std::vector<uint8_t> st;
-      if (im.runner.serialize(st) && !st.empty())
+      if (im.save_state(st) && !st.empty())
         im.recording.add_keyframe(rframe, std::move(st));
     }
   }
@@ -5843,7 +5837,7 @@ const uint8_t *section_bytes(std::span<const std::byte> body) {
 
 std::string AytherSession::game_state_identity() const {
   std::vector<uint8_t> core;
-  if (!impl_->runner.serialize(core) || core.empty())
+  if (!impl_->save_state(core) || core.empty())
     return {};
   std::array<char, 65> hex{};
   if (!ayther_sha256_hex(core.data(), core.size(), hex.data()))
@@ -6065,9 +6059,8 @@ AytherSession::restore_visual_state(
 // Determinism: savestate round-trip
 // ---------------------------------------------------------------------------
 size_t AytherSession::serialize_size() const {
-  if (impl_->native)
-    return 0;
-  return impl_->runner.serialize_size();
+  // Native: the size of a checkpoint now (TP-302).
+  return impl_->state_size();
 }
 
 Result<void> AytherSession::serialize(std::vector<uint8_t> &out) const {
@@ -6079,25 +6072,29 @@ Result<void> AytherSession::serialize(std::vector<uint8_t> &out) const {
                                     "Tessera: checkpoint unavailable; use the "
                                     "native result for details");
   }
-  return impl_->runner.serialize(out)
+  return impl_->save_state(out)
              ? Result<void>::ok()
              : Result<void>::fail(ErrorCode::Internal, "core serialize failed");
 }
 
 Result<void> AytherSession::unserialize(const std::vector<uint8_t> &in) {
-  if (impl_->native)
-    return Result<void>::fail(
-        ErrorCode::Unsupported,
-        "Tessera: use native restore_checkpoint with its matching input trace");
-  const bool ok = impl_->runner.unserialize(in);
+  // Native (TP-302): a checkpoint of this session's content and
+  // configuration, taken while the session was driven with step (no bound
+  // trace). One taken during a trace replay needs native_restore_checkpoint
+  // with that trace.
+  const bool ok = impl_->load_state(in);
   if (ok) {
     impl_->rewind.clear();     // timeline branched — drop stale rewind states
     impl_->poke_dirty = false; // estado limpio restaurado (M5)
     impl_->replay_pos = -1;    // cursor de replay inválido (R7d)
   }
-  return ok ? Result<void>::ok()
-            : Result<void>::fail(ErrorCode::BadFormat,
-                                 "core unserialize failed");
+  if (ok)
+    return Result<void>::ok();
+  return Result<void>::fail(
+      ErrorCode::BadFormat,
+      impl_->native ? "Tessera: checkpoint restore failed (code " +
+                          std::to_string(impl_->native_result.code) + ")"
+                    : std::string("core unserialize failed"));
 }
 
 void AytherSession::reset() {
@@ -6961,7 +6958,7 @@ void AytherSession::Impl::video_tick(const std::string &path) {
   // salía al DOBLE de velocidad y duraba la mitad (2026-08-07). El clip sin
   // time base declarado cae a 1:1, que es el comportamiento viejo.
   const double vfps = clip->fps();
-  const double gfps = runner.fps();
+  const double gfps = emu_fps();
   const double rate = (vfps > 0.1 && gfps > 1.0) ? vfps / gfps : 1.0;
   const int64_t gframes = (int64_t)off + (d < 0 ? 0 : d);
   const int64_t vframes = (int64_t)(double(gframes) * rate + 0.5);
@@ -7330,8 +7327,8 @@ AytherSession::animation_clips() const {
 // ---------------------------------------------------------------------------
 void AytherSession::enable_rewind(bool on, int seconds) {
   if (on) {
-    const size_t state_size = impl_->runner.serialize_size();
-    const double fps = impl_->runner.fps() > 1.0 ? impl_->runner.fps() : 60.0;
+    const size_t state_size = impl_->state_size();
+    const double fps = impl_->emu_fps() > 1.0 ? impl_->emu_fps() : 60.0;
     const uint32_t cap =
         static_cast<uint32_t>(fps * (seconds > 0 ? seconds : 10));
     impl_->rewind.configure(state_size, cap);
@@ -7351,7 +7348,7 @@ const FrameView *AytherSession::rewind_step() {
   // pop() drops the current state and yields the previous one into scratch.
   if (!im.rewind.pop(im.rewind_scratch))
     return nullptr;
-  if (!im.runner.unserialize(im.rewind_scratch))
+  if (!im.load_state(im.rewind_scratch))
     return nullptr;
   if (im.frame_index > 0)
     --im.frame_index;
@@ -7489,7 +7486,7 @@ size_t AytherSession::capture_pcm_span(const AytherRecording &rec, uint32_t f,
   // Guardar el estado actual (= el playhead) y el cursor de replay para
   // restaurarlos: la captura NO debe mover el playhead.
   std::vector<uint8_t> cur;
-  if (!im.runner.serialize(cur) || cur.empty())
+  if (!im.save_state(cur) || cur.empty())
     return 0;
   const int saved_pos = im.replay_pos;
 
@@ -7500,10 +7497,10 @@ size_t AytherSession::capture_pcm_span(const AytherRecording &rec, uint32_t f,
   // Posicionar la máquina en PRE-frame f (mejor keyframe ≤ f + bare).
   const std::vector<uint8_t> *state = nullptr;
   const uint32_t start = replay_start(rec, f, state);
-  if (state && im.runner.unserialize(*state)) {
+  if (state && im.load_state(*state)) {
     for (uint32_t i = start; i < f; ++i) {
-      im.runner.set_input(0, rec.inputs[i]);
-      im.runner.run_frame(); // bare, sin audio al device (cap_active)
+      im.set_pad(0, rec.inputs[i]);
+      im.run_bare_frame(); // bare, sin audio al device (cap_active)
     }
     // Acumular la MEZCLA de cada frame (no se filtra por hash: el audio del
     // replay no es byte-reproducible). `mute_mask` silencia canales SOLO
@@ -7518,7 +7515,7 @@ size_t AytherSession::capture_pcm_span(const AytherRecording &rec, uint32_t f,
     const bool dyn =
         member_sigs && !member_sigs->empty() && !im.audio_events.empty();
     if (!dyn && mute_mask)
-      im.runner.set_audio_mute_v1(mute_mask);
+      im.source().set_audio_mute_v1(mute_mask);
     const size_t kMaxSamples =
         max_samples ? max_samples : 44100u * 2u * 10u; // default ~10 s
     const uint32_t n = rec.frame_count();
@@ -7527,7 +7524,7 @@ size_t AytherSession::capture_pcm_span(const AytherRecording &rec, uint32_t f,
       // arma por frame (subs por evento/Secuencia + ocurrencias + manual)
       // → el «original muteado» sobre el que se mezclan los HD.
       if (dynamic_mute && !dyn)
-        im.runner.set_audio_mute_v1(im.dynamic_audio_mute_at(i));
+        im.source().set_audio_mute_v1(im.dynamic_audio_mute_at(i));
       if (dyn) {
         uint32_t allowed = 0, foreign_dac = 0;
         for (const auto &e : im.audio_events) {
@@ -7551,15 +7548,15 @@ size_t AytherSession::capture_pcm_span(const AytherRecording &rec, uint32_t f,
             foreign_dac |= bit;
         }
         allowed &= ~foreign_dac;
-        im.runner.set_audio_mute_v1(kAllChannels & ~allowed);
+        im.source().set_audio_mute_v1(kAllChannels & ~allowed);
       }
-      im.runner.set_input(0, rec.inputs[i]);
-      im.runner.run_frame();
+      im.set_pad(0, rec.inputs[i]);
+      im.run_bare_frame();
       if (im.cap_pcm.size() >= kMaxSamples)
         break;
     }
     if (dyn || mute_mask || dynamic_mute)
-      im.runner.set_audio_mute_v1(0);
+      im.source().set_audio_mute_v1(0);
     im.cap_collect = false;
   }
 
@@ -7569,7 +7566,7 @@ size_t AytherSession::capture_pcm_span(const AytherRecording &rec, uint32_t f,
 
   // Restaurar la máquina + el cursor (el playhead quedó intacto) y limpiar PCM
   // staged.
-  im.runner.unserialize(cur);
+  (void)im.load_state(cur);
   im.replay_pos = saved_pos;
   im.audio.discard_emulator();
 
@@ -7940,7 +7937,7 @@ bool AytherSession::export_channel_wav(const AytherRecording &rec,
 void AytherSession::record_start() {
   Impl &im = *impl_;
   std::vector<uint8_t> initial_state;
-  if (im.runner.serialize(initial_state)) {
+  if (im.save_state(initial_state)) {
     // .arp v9: la sombra FM del detector en vivo acompaña al savestate, para
     // que replay y análisis identifiquen los patches que la toma ya no ve.
     im.recording.start(std::move(initial_state), im.live_fm_registers());
@@ -7998,7 +7995,7 @@ void AytherSession::replay_capture_key(uint32_t key) {
   if (im.replay_keys.count(key))
     return;
   std::vector<uint8_t> st;
-  if (im.runner.serialize(st) && !st.empty())
+  if (im.save_state(st) && !st.empty())
     im.replay_keys.emplace(key, std::move(st));
 }
 
@@ -8147,25 +8144,25 @@ const FrameView *AytherSession::replay_seek(const AytherRecording &rec,
       // reporte de arriba— y los canales que el router rinde, o el FM y
       // el PSG originales se oirían debajo de su propio espejo.
       if (!quiet && (!im.voice_router_on || im.router_mix()))
-        im.runner.set_audio_mute_v1(
+        im.source().set_audio_mute_v1(
             im.dynamic_audio_mute_at(i) |
             (im.voice_router_on ? kRouterChannels : 0u));
       // El espejo del router necesita TODAS las escrituras, y las de estos
       // frames bare se perderían: produce_frame resetea el log al empezar.
       // Sin esto se le escapan los key-on y los cambios de patch de hasta
       // 31 frames y el timbre queda viejo.
-      im.runner.set_input(0, rec.inputs[i]);
+      im.set_pad(0, rec.inputs[i]);
       im.audio.mark_frame_boundary(i); // : offset del frame i
-      im.runner.run_frame();           // bare; audio staged (no se pierde)
+      im.run_bare_frame();             // bare; audio staged (no se pierde)
       if (im.voice_router_on) {
         // E-5 (): el reset manual del log se retiró — con ABI el
         // core lo cierra en SU frame boundary, que es justo lo que este
         // bucle necesitaba: que las escrituras de CADA frame bare
         // lleguen enteras, sin arrastrar las del anterior.
         ayther_frame_snapshot_v1 bs{};
-        if (im.runner.capture_frame_snapshot(bs).ok()) {
+        if (im.source().capture_frame_snapshot(bs).ok()) {
           const auto writes = im.observer.audio_writes(
-              im.runner, bs, /*legacy_fallback=*/false);
+              im.source(), bs, /*legacy_fallback=*/false);
           if (writes.data)
             im.voice_capture(
                 reinterpret_cast<const AytherAudioWrite *>(writes.data),
@@ -8176,21 +8173,21 @@ const FrameView *AytherSession::replay_seek(const AytherRecording &rec,
           // todos modos — las escrituras de chip son un id privado.
           AYTHER_LEGACY_READ_BEGIN
           im.voice_capture(reinterpret_cast<const AytherAudioWrite *>(
-                               im.runner.audio_writes()),
-                           im.runner.audio_write_count(), i);
+                               im.source().audio_writes()),
+                           im.source().audio_write_count(), i);
           AYTHER_LEGACY_READ_END
         }
       }
     }
     if (!quiet)
-      im.runner.set_audio_mute_v1(0);
+      im.source().set_audio_mute_v1(0);
     // Scrub del usuario (`quiet`): descartar el PCM staged de los
     // intermedios — conservarlo es solo para el catch-up del playback; en
     // un scrub encola audio a 1× y se desfasa del cabezal. El produce del
     // frame visible conserva SU audio (blip que sigue al cabezal).
     if (quiet && im.audio_enabled)
       im.audio.discard_emulator();
-    im.runner.set_input(0, rec.inputs[target]);
+    im.set_pad(0, rec.inputs[target]);
     im.frame_index = target;
     const FrameView &v = produce_frame();
     im.replay_pos = static_cast<int>(target);
@@ -8252,7 +8249,7 @@ const FrameView *AytherSession::replay_seek(const AytherRecording &rec,
   }
   const std::vector<uint8_t> *state = nullptr;
   const uint32_t start = replay_start(rec, target, state);
-  if (!im.runner.unserialize(*state)) {
+  if (!im.load_state(*state)) {
     im.replay_pos = -1;
     return nullptr;
   }
@@ -8262,8 +8259,8 @@ const FrameView *AytherSession::replay_seek(const AytherRecording &rec,
   im.seed_detector(im.audio_live_det, im.qa_live_detector,
                    im.fm_registers_at(rec, start));
   for (uint32_t i = start; i < target; ++i) {
-    im.runner.set_input(0, rec.inputs[i]);
-    im.runner.run_frame(); // bare, rápido y silencioso
+    im.set_pad(0, rec.inputs[i]);
+    im.run_bare_frame(); // bare, rápido y silencioso
   }
 
   // Descarta el PCM acumulado por los bare → el seek no "estalla" audio. Un
@@ -8274,7 +8271,7 @@ const FrameView *AytherSession::replay_seek(const AytherRecording &rec,
     im.audio.stop_all_events();
   }
 
-  im.runner.set_input(0, rec.inputs[target]);
+  im.set_pad(0, rec.inputs[target]);
   im.frame_index = target;
   const FrameView &v = produce_frame(); // frame visible (con su audio)
   im.replay_pos = static_cast<int>(target);
@@ -8891,7 +8888,7 @@ void AytherSession::set_audio_runtime_substitution(bool on) noexcept {
   // identidad no depende del workspace.
   im.live_unmatched.clear();
   if (!on)
-    im.runner.set_audio_mute_v1(0); // restaurar al apagar
+    im.source().set_audio_mute_v1(0); // restaurar al apagar
 }
 
 void AytherSession::set_audio_live_bypass(bool bypass) noexcept {
@@ -9153,7 +9150,7 @@ void AytherSession::set_voice_router(bool on) noexcept {
     // conserva entre bloques (el catch-up entrega bloques de tamaño
     // distinto, y reiniciar la fase metería un chasquido por frame).
     const double dst = 44100.0; // tasa del stream del sintetizador
-    const double fps = im.runner.fps();
+    const double fps = im.emu_fps();
     im.voice_router.mirror().set_pal(fps > 1.0 && fps < 55.0);
     im.voice_rs.set_rates(im.voice_router.mirror().rate(), dst);
     // Cebar hasta donde está el cabezal: si no, el espejo arranca en frío y
@@ -9558,7 +9555,7 @@ AytherSession::replay_seek_chunk(const AytherRecording &rec, uint32_t frame,
       r.done = true;
       return r;
     }
-    if (!im.runner.unserialize(*state)) {
+    if (!im.load_state(*state)) {
       r.done = true;
       return r;
     }
@@ -9571,8 +9568,8 @@ AytherSession::replay_seek_chunk(const AytherRecording &rec, uint32_t frame,
 
   uint32_t did = 0;
   while (im.chunk.cur < target && did < budget) {
-    im.runner.set_input(0, rec.inputs[im.chunk.cur]);
-    im.runner.run_frame(); // bare, silencioso
+    im.set_pad(0, rec.inputs[im.chunk.cur]);
+    im.run_bare_frame(); // bare, silencioso
     ++im.chunk.cur;
     ++did;
   }
@@ -9580,7 +9577,7 @@ AytherSession::replay_seek_chunk(const AytherRecording &rec, uint32_t frame,
     im.audio.discard_emulator(); // descarta el PCM del re-sim
 
   if (im.chunk.cur >= target) {
-    im.runner.set_input(0, rec.inputs[target]);
+    im.set_pad(0, rec.inputs[target]);
     im.frame_index = target;
     r.view = &produce_frame(); // frame visible (con su audio)
     im.replay_pos = static_cast<int>(target);
@@ -9746,7 +9743,7 @@ bool AytherSession::split_recording(const AytherRecording &rec, uint32_t frame,
   if (!replay_seek(rec, frame - 1))
     return false; // estado PRE-frame `frame`
   std::vector<uint8_t> st;
-  if (!im.runner.serialize(st) || st.empty())
+  if (!im.save_state(st) || st.empty())
     return false;
   // .arp v9: cada mitad lleva la sombra FM de su propio arranque (la del tail
   // sale del caché de escrituras que el seek de arriba acaba de extender).
@@ -9772,7 +9769,7 @@ bool AytherSession::crop_recording(const AytherRecording &rec, uint32_t begin,
   if (!replay_seek(rec, begin - 1))
     return false; // estado PRE-frame `begin`
   std::vector<uint8_t> st;
-  if (!im.runner.serialize(st) || st.empty())
+  if (!im.save_state(st) || st.empty())
     return false;
   out = rec.slice(begin, end, std::move(st),
                   im.fm_registers_at(rec, begin)); // .arp v9
@@ -10991,9 +10988,7 @@ void AytherSession::clear_dirty() noexcept { impl_->poke_dirty = false; }
 const char *AytherSession::game_id() const noexcept {
   return impl_->pack ? ayther_pack_game_id(impl_->pack.get()) : "";
 }
-double AytherSession::timing_fps() const noexcept {
-  return impl_->runner.fps();
-}
+double AytherSession::timing_fps() const noexcept { return impl_->emu_fps(); }
 uint64_t AytherSession::audio_starved_frames() const noexcept {
   return impl_->audio.starved_frames();
 }
@@ -11558,7 +11553,7 @@ std::vector<std::string> AytherSession::catalog_texture_assets() const {
   // Acetatos are textures too. Include both their base sheet and every
   // animation step in pack order; otherwise their first visible frame races
   // the asynchronous decode worker even after a successful pack prewarm.
-  const auto add_layer_asset = [&](const char(&asset)[256]) {
+  const auto add_layer_asset = [&](const char (&asset)[256]) {
     add_name(std::string(asset, ::strnlen(asset, sizeof(asset))));
   };
   for (const PackOverlay &overlay : im.overlays) {

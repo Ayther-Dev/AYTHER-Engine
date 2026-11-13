@@ -331,12 +331,19 @@ Json self_tests() {
         const native::render_observation::RenderFrameView &) noexcept override {
     }
   } rejected_render;
-  for (unsigned negative = 0; negative < 10; ++negative) {
+  // Device audio is native since spec 008 TP-302.3 (the PCM resampled to the
+  // player's 44.1 kHz): accepted, and non-fatal without a device.
+  {
+    auto audible = session_config(configuration);
+    audible.enable_audio = true;
+    native::NativeResult result;
+    check(static_cast<bool>(ayther::AytherSession::create(audible, result)) &&
+              result.code == 0,
+          "NATIVE_DEVICE_AUDIO_REJECTED");
+  }
+  for (unsigned negative = 1; negative < 10; ++negative) {
     auto rejected = session_config(configuration);
     switch (negative) {
-    case 0:
-      rejected.enable_audio = true;
-      break;
     case 1:
       rejected.pack_path = "unavailable-native-pack.ay";
       break;

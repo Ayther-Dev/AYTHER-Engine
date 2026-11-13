@@ -155,6 +155,155 @@ struct AytherSession::Impl {
     }
     return advanced;
   }
+
+  // ---- Machine state and bare frames (TP-302) -----------------------------
+  // Rewind, takes, keyframes, seeks and PCM captures save, restore and
+  // re-run the machine. libretro: retro_serialize/unserialize and run_frame.
+  // Native: the session's checkpoint, restored with no input trace (the
+  // session drives the machine with step, never with a bound trace), and a
+  // step with the pads of set_input.
+
+  /// Restoring a checkpoint keeps Tessera's effective observation masks; a
+  /// pending policy request was cancelled and must not leak into the new
+  /// epoch.
+  void after_native_restore(const engine::NativeResult &restored) noexcept {
+    invalidate_native_work_ram();
+    if (restored.code != 0)
+      return;
+    const auto regions = native_policy.active_regions;
+    const auto events = native_policy.active_events;
+    const bool confirmed = native_policy.confirmed;
+    native_policy = {};
+    native_policy.active_regions = regions;
+    native_policy.active_events = events;
+    native_policy.requested_regions = regions;
+    native_policy.requested_events = events;
+    native_policy.configured = confirmed;
+    native_policy.confirmed = confirmed;
+    native_resample_reset();
+  }
+  [[nodiscard]] bool save_state(std::vector<uint8_t> &out) {
+    if (!native)
+      return runner.serialize(out) && !out.empty();
+    native_result = native->checkpoint(out);
+    return native_result.code == 0 && !out.empty();
+  }
+  [[nodiscard]] bool load_state(std::span<const uint8_t> state) {
+    if (!native)
+      return runner.unserialize(
+          std::vector<uint8_t>(state.begin(), state.end()));
+    const auto restored = native->restore_checkpoint(state, {});
+    native_result = restored;
+    after_native_restore(restored);
+    return restored.code == 0;
+  }
+  [[nodiscard]] bool load_state(const std::vector<uint8_t> &state) {
+    if (!native)
+      return runner.unserialize(state);
+    return load_state(std::span<const uint8_t>(state));
+  }
+  /// Size of one saved state: libretro asks the core; native measures a
+  /// checkpoint (0 when the backend has none).
+  [[nodiscard]] size_t state_size() {
+    if (!native)
+      return runner.serialize_size();
+    std::vector<uint8_t> probe;
+    return save_state(probe) ? probe.size() : 0;
+  }
+  /// The pad of port 0 for the next frame (takes and seeks are one pad).
+  void set_pad(int port, uint16_t buttons) noexcept {
+    if (!native) {
+      runner.set_input(port, buttons);
+      return;
+    }
+    if (port >= 0 && port < static_cast<int>(native_pads.size()))
+      native_pads[static_cast<size_t>(port)] = buttons;
+  }
+  /// One frame outside produce_frame ("bare"): the callbacks still fire, as
+  /// with libretro, so the hasher and a PCM capture see it.
+  void run_bare_frame() { (void)run_emulator_frame(); }
+
+  // ---- Emulator PCM (TP-302.3) -------------------------------------------
+  /// One batch of emulator PCM (stereo S16 at 44.1 kHz): the libretro audio
+  /// callback, and the native PCM once resampled. Hashes it, then feeds a
+  /// capture (cap_active) or the player.
+  void on_audio_batch(const int16_t *data, size_t frames) {
+    const uint64_t hash =
+        ayther_audio_hasher_process_batch(audio_hasher.get(), data, frames);
+    if (cap_active) { // vista previa: acumular la MEZCLA de la ventana
+      // No se filtra por hash: el audio del replay no es byte-reproducible
+      // (la fase del FM diverge tras el load), así que aislar por hash no
+      // sirve. Capturamos la mezcla real del momento → "en contexto".
+      if (cap_collect && data && frames)
+        cap_pcm.insert(cap_pcm.end(), data, data + frames * 2);
+      return; // sin passthrough al device durante la captura
+    }
+    if (audio_enabled)
+      audio.buffer_emulator(hash, data, frames);
+  }
+
+  /// Native PCM is 48 kHz (Tessera's mixer); the player, its hashes and the
+  /// HD placement run at 44.1 kHz, the rate of gpgx. Linear interpolation
+  /// with the phase and the last input frame carried across frames, so the
+  /// stream has no seam at a frame boundary and its length tracks
+  /// 44100/48000 of the input exactly (the fraction is kept in integers).
+  static constexpr uint32_t kNativeResampleIn = 48000;
+  static constexpr uint32_t kNativeResampleOut = 44100;
+  /// Position of the next output frame, in 1/kNativeResampleOut of an input
+  /// frame, relative to `native_resample_prev` (index -1).
+  uint64_t native_resample_pos = 0;
+  std::array<int16_t, 2> native_resample_prev{};
+  bool native_resample_primed = false;
+  std::vector<int16_t> native_resampled;
+  void native_resample_reset() noexcept {
+    native_resample_pos = 0;
+    native_resample_prev = {};
+    native_resample_primed = false;
+  }
+  /// Resamples one native batch and hands it to on_audio_batch. Input at
+  /// another rate than 48 kHz passes through unchanged.
+  void on_native_pcm(const int16_t *data, size_t frames, uint32_t rate) {
+    if (!data || frames == 0)
+      return;
+    if (rate != kNativeResampleIn) {
+      on_audio_batch(data, frames);
+      return;
+    }
+    // The input line is prev (index 0) followed by this batch (1..frames).
+    // An output frame at position p (in units of 1/Out) interpolates input
+    // p / Out and the next one; the step is In units.
+    if (!native_resample_primed) {
+      native_resample_prev = {data[0], data[1]};
+      native_resample_pos = kNativeResampleOut; // first output = data[0]
+      native_resample_primed = true;
+    }
+    const uint64_t end = uint64_t{frames} * kNativeResampleOut;
+    native_resampled.clear();
+    native_resampled.reserve(
+        (frames * kNativeResampleOut) / kNativeResampleIn * 2 + 4);
+    const auto sample = [&](uint64_t index, int channel) -> int32_t {
+      return index == 0
+                 ? native_resample_prev[static_cast<size_t>(channel)]
+                 : data[(index - 1) * 2 + static_cast<uint64_t>(channel)];
+    };
+    while (native_resample_pos < end) {
+      const uint64_t index = native_resample_pos / kNativeResampleOut;
+      const auto frac =
+          static_cast<int64_t>(native_resample_pos % kNativeResampleOut);
+      for (int channel = 0; channel < 2; ++channel) {
+        const int64_t a = sample(index, channel);
+        const int64_t b = sample(index + 1, channel);
+        native_resampled.push_back(static_cast<int16_t>(
+            a + ((b - a) * frac) / static_cast<int64_t>(kNativeResampleOut)));
+      }
+      native_resample_pos += kNativeResampleIn;
+    }
+    native_resample_pos -= end;
+    native_resample_prev = {data[(frames - 1) * 2], data[(frames - 1) * 2 + 1]};
+    if (!native_resampled.empty())
+      on_audio_batch(native_resampled.data(), native_resampled.size() / 2);
+  }
+
   session::EmulationObserver observer;    // ABI observation + legacy fallback
   session::RecordingController recording; // deterministic live capture
   engine::audio_observation::Observer qa_observer;
@@ -3016,28 +3165,28 @@ struct AytherSession::Impl {
     if (built >= upto)
       return;
     if (!start_state || start_state->empty() || start > built ||
-        !runner.unserialize(*start_state)) {
+        !load_state(*start_state)) {
       voice_prime_offsets
           .clear(); // sin arranque válido: cache inválido → fallback a reset
       return;
     }
     for (uint32_t f = start; f < upto; ++f) {
-      runner.set_input(0, rec.inputs[f]);
-      runner.run_frame();
+      set_pad(0, rec.inputs[f]);
+      run_bare_frame();
       if (f < built)
         continue; // ya cacheado: solo avanzar la máquina
       const AytherAudioWrite *w = nullptr;
       uint32_t wc = 0;
       ayther_frame_snapshot_v1 bs{};
-      if (runner.capture_frame_snapshot(bs).ok()) {
+      if (source().capture_frame_snapshot(bs).ok()) {
         const auto writes =
-            observer.audio_writes(runner, bs, /*legacy_fallback=*/false);
+            observer.audio_writes(source(), bs, /*legacy_fallback=*/false);
         w = reinterpret_cast<const AytherAudioWrite *>(writes.data);
         wc = writes.count;
       } else {
         AYTHER_LEGACY_READ_BEGIN
-        w = reinterpret_cast<const AytherAudioWrite *>(runner.audio_writes());
-        wc = runner.audio_write_count();
+        w = reinterpret_cast<const AytherAudioWrite *>(source().audio_writes());
+        wc = source().audio_write_count();
         AYTHER_LEGACY_READ_END
       }
       if (!voice_prime_push(f, w, wc))
@@ -3045,7 +3194,7 @@ struct AytherSession::Impl {
     }
     if (upto < n) {
       std::vector<uint8_t> st;
-      if (runner.serialize(st) && !st.empty()) {
+      if (save_state(st) && !st.empty()) {
         voice_prime_state = std::move(st);
         voice_prime_state_frame = upto;
       }

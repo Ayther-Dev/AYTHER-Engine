@@ -18,165 +18,23 @@
 // sees both notes), and Tessera must give the same series as gpgx. gpgx is
 // the fork core of third_party/cores/core.lock or AYTHER_PARITY_GPGX_CORE;
 // without it only Tessera runs and the comparison is reported as skipped.
-#include <ayther/ayther_session.h>
-
-#include "../../tools/common/core_path.h"
-#include "../../tools/common/synth_rom.h"
-#include "../../tools/parity_bench/native_config.h"
-
-#include <ayther_env.h>
+#include "../support/synth_md_scene.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <memory>
-#include <optional>
 #include <string>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 namespace {
 
-int failures = 0;
-void check(bool condition, const std::string &message) {
-  if (!condition)
-    ++failures;
-  std::printf("[%s] %s\n", condition ? "PASS" : "FAIL", message.c_str());
-}
+using namespace ayther::test::md_scene;
 
-using Session = ayther::AytherSession;
-using ayther::synth::Rom;
-
-constexpr int kPanFrames = 160; // the camera ends at x = 160
 constexpr int kRunFrames = 240; // rested for the last ~75 frames
 constexpr int kCaptureFrom = 5; // past the setup
-constexpr std::uint8_t kNoteOn1 = 20, kNoteOff1 = 60;
-constexpr std::uint8_t kNoteOn2 = 90, kNoteOff2 = 120;
-
-/// Pattern of level tile `t` (1..64): row 0 spells t in colours 1/2, the other
-/// rows are a fixed ramp, so every tile hashes differently.
-void write_tiles(Rom &r) {
-  r.vdp_vram_at(32u); // tile 1
-  for (std::uint32_t t = 1; t <= 64; ++t) {
-    for (std::uint32_t row = 0; row < 8; ++row) {
-      std::uint32_t pixels = 0;
-      for (std::uint32_t p = 0; p < 8; ++p) {
-        const std::uint32_t colour =
-            row == 0 ? (((t >> p) & 1u) ? 1u : 2u) : 1u + ((row + p) % 3u);
-        pixels = (pixels << 4) | colour;
-      }
-      r.vdp_data(static_cast<std::uint16_t>(pixels >> 16));
-      r.vdp_data(static_cast<std::uint16_t>(pixels));
-    }
-  }
-}
-
-/// The level: plane A at 0xC000, 64×28 cells. Column x shows tile x + 1; row
-/// y picks the palette line and the flips, so no two cells are alike.
-void write_level(Rom &r) {
-  for (std::uint32_t y = 0; y < 28; ++y) {
-    r.vdp_vram_at(0xC000u + y * 64u * 2u);
-    const std::uint16_t attributes = static_cast<std::uint16_t>(
-        ((y % 4u) << 13) | (((y / 4u) & 1u) << 11) | (((y / 8u) & 1u) << 12));
-    for (std::uint32_t x = 0; x < 64; ++x)
-      r.vdp_data(static_cast<std::uint16_t>(attributes | (x + 1u)));
-  }
-}
-
-void fm_patch(Rom &r) {
-  r.fm(0x22, 0x00);
-  r.fm(0x27, 0x00);
-  r.fm(0x28, 0x00);
-  r.fm(0x2B, 0x00);
-  for (int op = 0; op < 4; ++op) {
-    const auto o = static_cast<std::uint8_t>(op * 4);
-    r.fm(static_cast<std::uint8_t>(0x30 + o), 0x01);
-    r.fm(static_cast<std::uint8_t>(0x40 + o), 0x00);
-    r.fm(static_cast<std::uint8_t>(0x50 + o), 0x1F);
-    r.fm(static_cast<std::uint8_t>(0x60 + o), 0x00);
-    r.fm(static_cast<std::uint8_t>(0x70 + o), 0x00);
-    r.fm(static_cast<std::uint8_t>(0x80 + o), 0x0F);
-    r.fm(static_cast<std::uint8_t>(0x90 + o), 0x00);
-  }
-  r.fm(0xB0, 0x07);
-  r.fm(0xB4, 0xC0);
-}
-
-void note_on(Rom &r, std::uint8_t fnum_high, std::uint8_t fnum_low,
-             std::uint8_t psg_low) {
-  r.fm(0xA4, fnum_high);
-  r.fm(0xA0, fnum_low);
-  r.fm(0x28, 0xF0);
-  r.psg(static_cast<std::uint8_t>(0x80 | psg_low));
-  r.psg(0x0F);
-  r.psg(0x90); // tone 0 at full volume
-}
-
-void note_off(Rom &r) {
-  r.fm(0x28, 0x00);
-  r.psg(0x9F); // tone 0 muted
-}
-
-std::vector<std::uint8_t> build_rom() {
-  Rom r("AYTHER TP-301.5 SUBSYSTEMS", 0x10000);
-  r.vdp_reg(0x00, 0x04);
-  r.vdp_reg(0x01, 0x04); // display off while the level is written
-  r.vdp_reg(0x02, 0x30); // plane A @ 0xC000
-  r.vdp_reg(0x03, 0x00);
-  r.vdp_reg(0x04, 0x07); // plane B @ 0xE000 (empty)
-  r.vdp_reg(0x05, 0x6C); // SAT @ 0xD800 (empty)
-  r.vdp_reg(0x07, 0x00);
-  r.vdp_reg(0x0A, 0xFF);
-  r.vdp_reg(0x0B, 0x00); // whole-screen scroll
-  r.vdp_reg(0x0C, 0x81); // H40
-  r.vdp_reg(0x0D, 0x3C); // hscroll @ 0xF000
-  r.vdp_reg(0x0F, 0x02);
-  r.vdp_reg(0x10, 0x01); // 64×32 planes
-  r.vdp_reg(0x11, 0x00);
-  r.vdp_reg(0x12, 0x00);
-  r.vdp_cram_at(0x0000);
-  for (std::uint16_t line = 0; line < 4; ++line) {
-    r.vdp_data(0x0400);
-    r.vdp_data(static_cast<std::uint16_t>(0x000E >> line << line));
-    r.vdp_data(static_cast<std::uint16_t>(0x00E0 - 0x0020 * line));
-    r.vdp_data(static_cast<std::uint16_t>(0x0E00 - 0x0200 * line));
-    for (int unused = 4; unused < 16; ++unused)
-      r.vdp_data(0x0000);
-  }
-  write_tiles(r);
-  write_level(r);
-  r.take_z80_bus();
-  fm_patch(r);
-  r.psg(0x9F);
-  r.vdp_reg(0x01, 0x44); // display on
-
-  for (int frame = 0; frame <= kPanFrames; ++frame) {
-    r.wait_vblank();
-    r.vdp_vram_at(0xF000u);
-    r.vdp_data(static_cast<std::uint16_t>(-frame & 0x3FF));
-    r.write_word_to(0xFF0010u, static_cast<std::uint16_t>(frame));
-    if (frame == kNoteOn1)
-      note_on(r, 0x22, 0x69, 0x0E);
-    if (frame == kNoteOff1 || frame == kNoteOff2)
-      note_off(r);
-    if (frame == kNoteOn2)
-      note_on(r, 0x2A, 0x2C, 0x08);
-  }
-  r.spin();
-
-  const auto path =
-      std::filesystem::temp_directory_path() / "ayther_tp301_5_subsystems.md";
-  if (!r.save(path))
-    return {};
-  std::ifstream in(path, std::ios::binary);
-  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-}
 
 // Lua: the counter the ROM leaves in work RAM, as the session lays it out
 // (libretro SYSTEM_RAM, word-swapped, on both providers), and the tiles on
@@ -207,35 +65,6 @@ struct Run {
   std::int32_t panorama_x = 0, panorama_y = 0;
   std::uint32_t panorama_votes = 0;
 };
-
-std::unique_ptr<Session> open(const std::string &provider,
-                              const std::vector<std::uint8_t> &rom,
-                              const std::filesystem::path &core) {
-  Session::Config config;
-  config.enable_audio = false;
-  config.derive_core_pack = false;
-  if (provider == "tessera") {
-    auto native = ayther::parity::megadrive_native_config(
-        rom, std::vector<std::uint8_t>(65536));
-    if (!native) {
-      check(false, "tessera: the package has a megadrive backend");
-      return nullptr;
-    }
-    config.provider = ayther::EmulationProvider::tessera_native;
-    config.native_config = std::move(*native);
-  } else {
-    const auto rom_path =
-        std::filesystem::temp_directory_path() / "ayther_tp301_5_subsystems.md";
-    config.core_path = core.string();
-    config.rom_path = rom_path.string();
-  }
-  auto created = Session::create(config);
-  if (!created) {
-    check(false, provider + ": session opens (" + created.error.message + ")");
-    return nullptr;
-  }
-  return std::move(*created);
-}
 
 Run run(const std::string &provider, const std::vector<std::uint8_t> &rom,
         const std::filesystem::path &core) {
@@ -353,11 +182,7 @@ int main() try {
     std::printf("[FAIL] the synthetic ROM could not be written\n");
     return 1;
   }
-  const char *override_path = ayther::env_get("AYTHER_PARITY_GPGX_CORE");
-  const auto core = ayther::test::resolve_core_path(
-      AYTHER_SOURCE_DIR, override_path != nullptr && *override_path != '\0'
-                             ? std::optional<std::string_view>(override_path)
-                             : std::nullopt);
+  const auto core = gpgx_core();
   if (!core.available() && core.failure_exit_code != 77) {
     std::printf("[FAIL] %s\n", core.diagnostic.c_str());
     return 1;
