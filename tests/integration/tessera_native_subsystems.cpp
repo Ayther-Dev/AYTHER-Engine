@@ -148,11 +148,11 @@ void check_alone(const std::string &p, const Run &r) {
   check(tiles, p + ": Lua sees the tiles on screen");
   // Live detector: FM 1 and PSG 0 sound in each note and not between them.
   const auto sounding = [&](std::size_t f, std::uint8_t chip) {
-    return f < r.voices.size() && std::any_of(
-                                      r.voices[f].begin(), r.voices[f].end(),
-                                      [&](const Voice &v) {
-                                        return v.chip == chip && v.channel == 0;
-                                      });
+    return f < r.voices.size() &&
+           std::any_of(r.voices[f].begin(), r.voices[f].end(),
+                       [&](const Voice &v) {
+                         return v.chip == chip && v.channel == 0;
+                       });
   };
   for (const std::uint8_t chip : {std::uint8_t{0}, std::uint8_t{1}}) {
     const std::string name = chip == 0 ? "FM 1" : "PSG 0";
