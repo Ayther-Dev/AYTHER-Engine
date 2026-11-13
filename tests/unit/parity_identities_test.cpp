@@ -112,6 +112,60 @@ void round_trip_and_compare() {
         "another file version is rejected");
   check(!parse_identities(text + "id 0000000000000001\n", &error),
         "an id beyond its class count is rejected");
+
+  const std::string head = "parity_bench identities 1\r\n";
+  const struct {
+    std::string text;
+    const char *what;
+  } bad[] = {
+      {head + "frames x\n", "bad frames"},
+      {head + "frames 5\nsegment 1 x\n", "bad segment"},
+      {head + "frames 5\nclass sprite occurrences 1 distinct 1\n",
+       "class before segment"},
+      {head + "frames 5\nsegment 1 5\nclass nope occurrences 1 distinct 1\n",
+       "unknown class"},
+      {head + "frames 5\nsegment 1 5\nclass sprite occurrences 1 distinct 1\n"
+              "class tile occurrences 0 distinct 0\n",
+       "class short of ids before the next class"},
+      {head + "frames 5\nsegment 1 5\nclass sprite occurrences 1 distinct 1\n"
+              "segment 6 9\n",
+       "class short of ids before the next segment"},
+      {head + "frames 5\nsegment 1 5\nclass sprite occurrences 1 distinct 1\n",
+       "class short of ids at the end"},
+      {head + "frames 5\nsegment 1 5\nclass sprite occurrences 1 distinct 2\n"
+              "id 00000000000000zz\n",
+       "bad id"},
+      {head + "frames 5\nbogus 1\n", "unknown record"},
+      {head, "truncated file"},
+  };
+  for (const auto &b : bad)
+    check(!parse_identities(b.text, nullptr), b.what);
+
+  Identities fewer = *back;
+  fewer.segments.pop_back();
+  const auto apart = compare_identities(ids, fewer);
+  check(!apart.ok && !apart.equal() && !apart.error.empty(),
+        "files with a different segment count do not compare");
+}
+
+void collector_views() {
+  IdentityCollector c({{1, 2}});
+  AytherTileOccurrence tile{};
+  tile.hash = 0x44;
+  ayther::PlaneCellHit cell;
+  cell.hash = 0x55;
+  ayther::FrameView v;
+  v.tile_occs = &tile;
+  v.tile_occ_count = 1;
+  v.plane_cells = &cell;
+  v.plane_cell_count = 1;
+  c.frame(1, v, nullptr, 0); // no CRAM: palette lines do not run
+  const auto ids = c.finish();
+  check(cls(ids, 0, "tile").ids.count(0x44) == 1 &&
+            cls(ids, 0, "plane_tile").ids.count(0x55) == 1,
+        "tiles and plane cells are filed");
+  check(cls(ids, 0, "palette_variant").occurrences == 0,
+        "without CRAM no palette line latches");
 }
 } // namespace
 
@@ -119,6 +173,7 @@ int main() {
   segments();
   collector();
   round_trip_and_compare();
+  collector_views();
   std::printf("%s (%d failures)\n", failures ? "FAILED" : "OK", failures);
   return failures ? 1 : 0;
 }

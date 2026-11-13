@@ -53,6 +53,14 @@ int main() {
   check(d.ok && d.divergences.size() == 4 && d.frames.size() == 3,
         "diff_dumps reports all four divergent tuples");
   check(!diff_dumps(a, line(1, {})).ok, "diff_dumps rejects unequal lengths");
+  const auto renumbered = line(1, {}) + line(2, {}) + line(4, {});
+  check(!diff_dumps(a, renumbered).ok,
+        "diff_dumps rejects other frame numbering");
+  check(!compare_dumps(a, renumbered, {}).ok,
+        "compare_dumps rejects other frame numbering");
+  check(!diff_dumps(a, "not a dump\n").ok, "diff_dumps rejects a bad dump");
+  check(!compare_dumps(a, "{\"frame\":1}\n", {}).ok,
+        "compare_dumps rejects a line without subplanes");
 
   const std::vector<RomDiff> roms = {
       rom("alpha", {{1, "pcm"}, {2, "pcm"}, {3, "pcm"}, {2, "fb"}}),

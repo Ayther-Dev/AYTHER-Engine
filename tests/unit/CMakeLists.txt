@@ -74,6 +74,7 @@ foreach(_source IN ITEMS
         pose_depth_test.cpp
         recording_controller_test.cpp
         reference_compositor_test.cpp
+        rewind_buffer_test.cpp
         render_image_view_test.cpp
         render_observation_builder_test.cpp
         render_probe_json_test.cpp
