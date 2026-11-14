@@ -6113,9 +6113,9 @@ void AytherSession::reset() {
     im.native_policy.pending_transaction = 0;
     im.native_policy.confirmed = false;
     if (im.native_policy.configured) {
-      const auto rearmed = native_submit_presentation_policy(
-          im.native_policy.requested_regions,
-          im.native_policy.requested_events);
+      const auto rearmed =
+          native_submit_presentation_policy(im.native_policy.requested_regions,
+                                            im.native_policy.requested_events);
       if (rearmed.code != 0)
         im.native_result = rearmed;
     }
