@@ -52,6 +52,15 @@ try {
     Set-Content -LiteralPath $corePath -Value 'fixture'
     Write-TestLog -Overrides $optionalSkips
     Assert-Checker $false 'An available core cannot produce skipped tests'
+    $tesseraTests = @('ayther.integration.tessera_checkpoint',
+        'ayther.integration.tessera_pack_test',
+        'ayther.integration.tessera_presentation_test')
+    $tesseraSkips = @{}
+    foreach ($testName in $tesseraTests) { $tesseraSkips[$testName] = '***Skipped' }
+    Write-TestLog -Overrides $tesseraSkips -AdditionalTests $tesseraTests
+    Assert-Checker $true 'Real-ROM Tessera tests may skip without the clownmdemu backend'
+    Write-TestLog -Overrides $tesseraSkips -AdditionalTests $tesseraTests
+    Assert-Checker $true 'The Tessera skips do not count as a skipped core with the core present'
     Write-TestLog 'Passed'
     Assert-Checker $true 'All ten passing results are accepted'
     Assert-Checker $true 'A valid explicit override is accepted' $corePath

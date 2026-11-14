@@ -29,7 +29,7 @@
 // no pueda cerrar la sesión: nunca se llega a abrirlo.
 // ---------------------------------------------------------------------------
 
-use crate::archive_vfs::{MANIFEST_SCHEMA, PACK_FORMAT};
+use crate::archive_vfs::{IDENTITY_CONTRACT, MANIFEST_SCHEMA, PACK_FORMAT};
 use crate::pack_security::{
     EntryMetadata, MAX_ENTRY_COUNT, validate_archive_metadata, validate_archive_size,
     validate_canonical_logical_path,
@@ -214,6 +214,10 @@ struct LaxManifest {
     compat: Option<LaxCompat>,
     #[serde(default)]
     systems: Option<LaxSystems>,
+    /// `[identity]`: leída sin tipos fijos para que un valor raro nunca impida
+    /// leer el resto del manifest.
+    #[serde(default)]
+    identity: Option<toml::Value>,
 }
 
 /// "1.2.3" → (1,2,3). Lo que no parsea vale 0, así que una versión rara nunca
@@ -258,13 +262,15 @@ fn semver(s: &str) -> (u32, u32, u32) {
 /// Keeping the classification in one place ensures all consumers assign the
 /// same compatibility grado.
 pub fn affects_compatibility(code: &str) -> bool {
-    matches!(
-        code.split('.').next().unwrap_or(""),
-        // La sesión concreta: la ROM, la plataforma, el core, el motor.
-        "rom" | "platform" | "core" | "engine" | "format" | "schema" | "systems"
+    // El contrato de identidad cambia qué significan los hashes del pack.
+    code == "pack.identity_contract_too_new"
+        || matches!(
+            code.split('.').next().unwrap_or(""),
+            // La sesión concreta: la ROM, la plataforma, el core, el motor.
+            "rom" | "platform" | "core" | "engine" | "format" | "schema" | "systems"
         // El pack como ARCHIVO: si esto falla, no hay nada que correr.
         | "manifest" | "integrity" | "catalog" | "zip" | "io" | "signature"
-    )
+        )
 }
 
 /// Compatibility grado between a pack and a concrete runtime session.
@@ -544,6 +550,25 @@ pub fn validate_path(path: &str, ctx: &SessionCtx) -> Report {
                 "el pack declara esquema {} y este AYTHER entiende hasta {} \
                      — hay que actualizar",
                 schema, MANIFEST_SCHEMA
+            ),
+        );
+    }
+
+    // -- contrato de identidad (RF-10.7) -------------------------------------
+    // `[emulator]` es informativa y no se lee aquí: nunca rechaza. Solo el
+    // contrato de identidad puede rechazar, y solo si es mayor que el nuestro.
+    if let Some(contract) = m
+        .identity
+        .as_ref()
+        .and_then(|i| i.get("contract"))
+        .and_then(toml::Value::as_integer)
+        && contract > i64::from(IDENTITY_CONTRACT)
+    {
+        r.error(
+            "pack.identity_contract_too_new",
+            format!(
+                "el pack se horneó con el contrato de identidad {} y este AYTHER entiende                  hasta {} — hay que actualizar",
+                contract, IDENTITY_CONTRACT
             ),
         );
     }
@@ -1217,6 +1242,103 @@ ayther_min = "99.0.0"
             "hallazgos: {:?}",
             r.findings
         );
+    }
+
+    /// Spec 008 (TP-008.5, RF-6.2, RF-10.7): `[emulator]` es informativo y
+    /// nunca rechaza un pack, ni siquiera mal formado; `[identity] contract`
+    /// mayor que el que entiende este build sí rechaza.
+    fn provenance_manifest(extra: &str) -> String {
+        format!(
+            r#"
+[pack]
+name       = "Procedencia"
+version    = "1.0.0"
+game_id    = "crc32:7b905383"
+ayther_min = "0.1.0"
+schema     = 2
+
+[compat]
+rom_crc32 = "7b905383"
+platform  = "megadrive"
+
+{extra}"#
+        )
+    }
+
+    #[test]
+    fn emulator_table_never_rejects() {
+        for (name, extra) in [
+            (
+                "emu_ok",
+                r#"[emulator]
+id = "tessera"
+version = "0.1.0"
+determinism_contract = 7
+"#,
+            ),
+            (
+                "emu_future",
+                r#"[emulator]
+id = "otro"
+futuro = true
+"#,
+            ),
+            (
+                "emu_garbage",
+                r#"[emulator]
+id = 5
+version = [1, 2]
+determinism_contract = "x"
+"#,
+            ),
+            ("emu_empty", "[emulator]\n"),
+        ] {
+            let p = bake(name, &provenance_manifest(extra));
+            let r = validate_path(&p, &SessionCtx::default());
+            assert!(
+                r.errors().next().is_none(),
+                "{name}: [emulator] no puede rechazar: {:?}",
+                r.findings
+            );
+        }
+    }
+
+    #[test]
+    fn identity_contract_too_new_rejects() {
+        let newer = IDENTITY_CONTRACT + 1;
+        let p = bake(
+            "identity_new",
+            &provenance_manifest(&format!("[identity]\ncontract = {newer}\n")),
+        );
+        let r = validate_path(&p, &SessionCtx::default());
+        assert!(
+            r.errors()
+                .any(|f| f.code == "pack.identity_contract_too_new"),
+            "hallazgos: {:?}",
+            r.findings
+        );
+        assert!(affects_compatibility("pack.identity_contract_too_new"));
+        assert!(!affects_compatibility("pack.nombre"));
+    }
+
+    #[test]
+    fn identity_contract_equal_or_absent_is_fine() {
+        for (name, extra) in [
+            (
+                "identity_eq",
+                format!("[identity]\ncontract = {IDENTITY_CONTRACT}\n"),
+            ),
+            ("identity_old", "[identity]\ncontract = 0\n".to_string()),
+            ("identity_none", String::new()),
+        ] {
+            let p = bake(name, &provenance_manifest(&extra));
+            let r = validate_path(&p, &SessionCtx::default());
+            assert!(
+                r.errors().next().is_none(),
+                "{name}: sin error esperado: {:?}",
+                r.findings
+            );
+        }
     }
 
     /// Un esquema más nuevo se REPORTA en vez de reventar. Es la diferencia

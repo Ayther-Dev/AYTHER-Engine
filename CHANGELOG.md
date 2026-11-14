@@ -251,6 +251,118 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
   unsigned pack is refused, the development key is refused in an optimized
   build, and `Config` had no way to name a production trust registry.
 
+## [0.1.0-rc.23] - 2026-11-13
+
+The Tessera native provider behind the same session surface as libretro
+(spec 008, WP-7), and the parity bench filled in.
+
+### Added
+
+- `ObservationSource` (internal, not an installed header): the interface a
+  provider implements to publish VRAM, CRAM, VSRAM, VDP registers, work RAM and
+  the AYTHER observation stream. `RetroRunner` now implements it, and the
+  Tessera backend implements it over the Tessera API 1.1 observation surface,
+  so `FrameView` is built the same way from either provider. The contract test
+  `observation_source_parity` pins the `FrameView` from before the extraction.
+- Native Mega Drive sessions through `AytherSession`: `step()` runs the
+  Tessera session through the same frame pipeline as the libretro provider,
+  resolves every pack substitution with the same catalogs, reads work RAM from
+  Tessera observation region `0x1000`, and writes pokes and cheats through
+  `write_control`. Rewind, `.arp` takes (provenance `tessera`, with keyframes),
+  replay seeks and device audio (48 kHz native PCM resampled to 44.1 kHz with
+  continuous phase) work on the native provider. `docs/TESSERA_NATIVE.md`
+  documents the Tessera API 1.1 surface and the Mega Drive machine.
+- `tools/parity_bench` is no longer a skeleton: `dump` writes native frames
+  (RGB565) and the `chip_seq` subplane; `check --exceptions FILE --catalog FILE
+  --dumps DIR [--registry FILE]` does strict exception accounting (each
+  divergence must be a declared `<rom> <frame> <subplane> <EXC-nnn>` tuple and
+  each declared tuple must still diverge; exit 0 clean, 5 on undeclared or
+  unproduced tuples, 1 on bad input); `dump --identities` and
+  `compare-identities` compare identity files per segment and class; and the
+  cross-pack line bakes, plays and compares a pack across providers, sharding
+  bakes to fit the pack entry limit.
+
+### Changed
+
+- `dependencies/tessera.lock.json` pins Tessera `v0.2.0-rc.9` by tag and
+  package SHA-256 (API 1.1, no ABI change since rc.2); CI builds the same
+  commit.
+- `RewindBuffer::pop` sizes the restored state from the zstd frame, so
+  variable-size native checkpoints restore whole.
+- `rustix` updated to 1.1.6 in `Cargo.lock` and `fuzz/Cargo.lock`.
+
+### Fixed
+
+- Infinite recursion in the session's `emu_fps`.
+
+## [0.1.0-rc.22] - 2026-11-06
+
+Emulator provenance in takes and sessions, the core probe contract v2, and the
+pinned Tessera.
+
+### Added
+
+- Take recordings (`.arp`) are now version 11 and carry the emulator provenance
+  (`emulator_id`, `emulator_version`, `determinism_contract`) after the take
+  id. `AytherRecording::peek_provenance()` and `patch_provenance()` read and
+  write it without recompressing the take, and `AYTHER_RECORDING_PROVENANCE`
+  lets frontends guard on it. Files up to version 10 load as `gpgx`, empty
+  version, contract 1. Because the
+  C++ struct grew, `AytherRecording::abi_size()` changes: rebuild against the
+  Engine headers you link. Older readers cannot open version 11 files.
+- Manifest schema 2 readers already ignore unknown tables, so the planned
+  `[emulator]` and `[identity]` tables will be added without raising the schema:
+  it stays at 2. A test (`schema_2_ignores_emulator_and_identity_tables`) pins
+  that a schema 2 pack carrying both tables still opens with its metadata
+  intact.
+- `pack_builder::stamp_manifest_provenance()` writes `[emulator]` and
+  `[identity]` into a manifest, and `pack_validate` now rejects a pack whose
+  `identity.contract` is newer than this build's (`IDENTITY_CONTRACT = 1`) with
+  `pack.identity_contract_too_new`. `[emulator]` is informational and never
+  rejects a pack.
+- `AytherSession::emulation_generation()` publishes the emulator id, version and
+  determinism contract of a session: `gpgx` (or the slug of another libretro
+  core's name) with the core's own version for the libretro provider, and
+  `tessera` with the hex backend build id for the native provider. The new
+  installed header `ayther/emulation_generation.h` holds the pure mapping.
+- `AytherSession::take_recording()` stamps the session generation into the take,
+  so a take recorded with a libretro core carries that core's id and version.
+- `tools/parity_bench` (option `AYTHER_BUILD_PARITY_BENCH`, ON in the
+  `windows-native` preset): skeleton of plane 3 of the Tessera parity bench with
+  the `dump`, `compare` and `trace-from-arp` subcommands and
+  `--provider libretro|tessera_native`. The subcommands validate their
+  arguments and report that they are not implemented yet.
+- Core probe contract v2 (`docs/CORE_PROBE_CONTRACT.md`): `probe_core_v2`
+  reports a verdict, the PE/ELF architecture, the AYTHER ABI and the capability
+  mask against the required `0xEFFFF`; the installed `bin/ayther_core_probe`
+  command prints the `AYTHER_STATUS` line and exits 0, 2, 3 or 4; the package
+  publishes the shared probe vectors in `share/ayther/probe-vectors/` with the
+  fixture cores `ayther_test_core_partial` and `ayther_test_core_hang`. The
+  parent process sets the verdicts `timeout` (10 s limit, exit 5) and `crashed`
+  (exit 6); the integration guide is in the contract.
+- `dependencies/tessera.lock.json` pins the Tessera the Engine builds against
+  (source commit, API version and, once Tessera publishes a tag with that API,
+  the tag and the package SHA-256). CI and the native release candidate read the
+  commit from it, `AYTHER_ENABLE_TESSERA` now requires a package that declares
+  the Tessera API 1.1 or a later 1.x (`TESSERA_API_TOO_OLD` otherwise) and
+  compares the installed package with the lock (`TESSERA_LOCK_MISMATCH`;
+  `AYTHER_TESSERA_ALLOW_UNLOCKED=ON` for local development). The
+  `ayther.package.tessera_lock.*` tests cover the lock and the rejections.
+
+### Changed
+
+- `AytherRecording::abi_size()` changes with the take format (see Added). A
+  frontend that links the Engine must rebuild against the headers of this
+  release; AYTHER Lab with the previous header refuses to start instead of
+  misreading takes.
+
+### Fixed
+
+- Probing a file that is not a valid image no longer hangs on Windows when the
+  process has no desktop: `LoadLibraryW` raised a system "Bad Image" box and
+  waited for it to be closed. The loader now runs with `SEM_FAILCRITICALERRORS`
+  and the probe returns its normal `not_a_core` verdict.
+
 ## [0.1.0-rc.21] - 2026-11-02
 
 The authoring identity Object is now the Drawing, and a session can drive the

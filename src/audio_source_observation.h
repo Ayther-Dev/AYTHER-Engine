@@ -14,10 +14,10 @@ struct SourceInterval {
   ayther_frame_snapshot_v1 snapshot{};
   bool raw_abi = false;
   bool raw_data_available = true;
-  std::optional<RetroRunner::AytherReadResult> raw_read;
+  std::optional<ObservationSource::AytherReadResult> raw_read;
   std::uint32_t raw_received = 0;
   std::uint32_t raw_prepared = 0;
-  RetroRunner::AudioPollObservation poll;
+  ObservationSource::AudioPollObservation poll;
   std::uint32_t poll_capacity = 0;
   std::uint32_t pcm_prepared = 0;
   std::uint32_t filtered_non_pcm = 0;
@@ -50,15 +50,15 @@ inline bool snapshot_valid(const SourceInterval &value) noexcept {
          value.snapshot.snapshot_version == 1;
 }
 inline bool
-stats_valid(const RetroRunner::AudioPollObservation &value) noexcept {
+stats_valid(const ObservationSource::AudioPollObservation &value) noexcept {
   return value.stats_attempted && value.stats_status == AYTHER_STATUS_OK &&
          value.stats.struct_size >= sizeof(value.stats) &&
          value.stats.transport_version == 1 &&
          value.stats.event_size == sizeof(ayther_audio_event_v1);
 }
 inline std::string_view
-poll_outcome(RetroRunner::AudioPollObservation::Outcome value) noexcept {
-  using Outcome = RetroRunner::AudioPollObservation::Outcome;
+poll_outcome(ObservationSource::AudioPollObservation::Outcome value) noexcept {
+  using Outcome = ObservationSource::AudioPollObservation::Outcome;
   switch (value) {
   case Outcome::no_api:
     return "no_api";
@@ -201,8 +201,9 @@ public:
     const bool stats = stats_valid(input.poll);
     const auto loss = loss_since_previous(input);
     const auto typed = typed_status(input, loss);
-    const bool polled = input.poll.outcome ==
-                        RetroRunner::AudioPollObservation::Outcome::polled;
+    const bool polled =
+        input.poll.outcome ==
+        ObservationSource::AudioPollObservation::Outcome::polled;
     const std::array typed_fields{
         known("source", std::string_view{"typed_audio_events"}),
         known("state", typed.state),
@@ -313,7 +314,7 @@ private:
 
   static source_detail::Status typed_status(const SourceInterval &input,
                                             const Loss &loss) noexcept {
-    using Outcome = RetroRunner::AudioPollObservation::Outcome;
+    using Outcome = ObservationSource::AudioPollObservation::Outcome;
     if (input.poll.outcome == Outcome::no_api ||
         input.poll.outcome == Outcome::unsupported)
       return {"unavailable", "typed_source_unavailable"};

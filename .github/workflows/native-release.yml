@@ -25,7 +25,6 @@ jobs:
     env:
       CARGO_INCREMENTAL: 0
       CMAKE_BUILD_PARALLEL_LEVEL: 1
-      TESSERA_COMMIT: c69b9a313e5b18a0001124487a2bac0f0306377c
       ASSET_NAME: ayther-engine-vpx-${{ github.ref_name }}-windows-x86_64.zip
     steps:
       - name: Check out the exact Engine tag
@@ -33,6 +32,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Read the Tessera lock
+        run: |
+          # The candidate is built against the Tessera named in
+          # dependencies/tessera.lock.json (TP-016.1), not a commit repeated here.
+          $lock = Get-Content dependencies/tessera.lock.json -Raw | ConvertFrom-Json
+          if ($lock.sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'The Tessera lock has no source commit.' }
+          "TESSERA_COMMIT=$($lock.sourceCommit)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Refuse a rerun or an existing release
         env:
@@ -66,6 +73,12 @@ jobs:
             ./tools/check.ps1 -Preset windows-release -Stage Build -Jobs 1
             cmake --install build/windows-release --prefix "$env:RUNNER_TEMP/tessera-install"
             if ($LASTEXITCODE -ne 0) { throw 'Tessera installation failed.' }
+            # The fixture generators and the replay test exist only in the
+            # reference configuration (ClownMDEmu, never installed, never in the
+            # package): build them from the same pinned source.
+            ./tools/check.ps1 -Preset windows-clown-reference -Stage Configure -Jobs 1
+            cmake --build build/windows-clown-reference --target tessera_generate_fixture_roms tessera_audio_fixture_generator tessera_megadrive_replay_test --parallel 1
+            if ($LASTEXITCODE -ne 0) { throw 'Tessera reference build failed.' }
           } finally { Pop-Location }
           $meta = Get-Content "$env:RUNNER_TEMP/tessera-install/share/tessera/package-metadata.json" -Raw | ConvertFrom-Json
           if ($meta.source.revision -cne $env:TESSERA_COMMIT -or $meta.source.clean_at_configure -ne $true) {
@@ -95,13 +108,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Fixture tool build failed.' }
           $source = Join-Path $PWD 'build/tessera-source'
           & (Join-Path $source 'tools/generate-native-fixtures.ps1') `
-            -TesseraBuild (Join-Path $source 'build/windows-release') `
+            -TesseraBuild (Join-Path $source 'build/windows-clown-reference') `
             -EnginePackTool (Join-Path $PWD 'build/windows-release-engine-vpx/bin/make_test_pack.exe')
           if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed.' }
-          ctest --test-dir (Join-Path $source 'build/windows-release') `
+          ctest --test-dir (Join-Path $source 'build/windows-clown-reference') `
             -R '^integration.megadrive_replay$' --output-on-failure -j 1
           if ($LASTEXITCODE -ne 0) { throw 'Tessera replay failed.' }
-          $evidence = Get-ChildItem (Join-Path $source 'build/evidence/phase3-Release-OFF') -Directory |
+          $evidence = Get-ChildItem (Join-Path $source 'build/evidence') -Directory -Filter 'phase3-*' |
+            ForEach-Object { Get-ChildItem $_.FullName -Directory } |
             Where-Object { Test-Path (Join-Path $_.FullName 'summary.json') } |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $evidence) { throw 'Tessera replay evidence is missing.' }
@@ -114,7 +128,7 @@ jobs:
             -DAYTHER_ENABLE_TESSERA=ON `
             "-DTessera_DIR=$env:RUNNER_TEMP/tessera-install/lib/cmake/Tessera" `
             "-DAYTHER_TESSERA_TEST_SOURCE_DIR=$source" `
-            "-DAYTHER_TESSERA_TEST_FIXTURE_DIR=$source/build/windows-release/native-fixtures" `
+            "-DAYTHER_TESSERA_TEST_FIXTURE_DIR=$source/build/windows-clown-reference/native-fixtures" `
             "-DAYTHER_TESSERA_PHASE3_EVIDENCE_DIR=$env:TESSERA_EVIDENCE"
           if ($LASTEXITCODE -ne 0) { throw 'Native Engine configuration failed.' }
           cmake --build build/windows-release-engine-vpx --parallel 1

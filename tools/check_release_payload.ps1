@@ -105,6 +105,8 @@ if ($Kind -eq 'core') {
     Test-Absent 'lib/cmake/Ayther/AytherEngineTargets.cmake' 'the engine target export'
     Test-Absent 'share/Ayther/shaders'                  'compiled shaders'
     Test-Absent 'include/ayther/third_party'            'vendored engine headers'
+    Test-Absent 'bin/ayther_core_probe*'                'the core probe command'
+    Test-Absent 'share/ayther/probe-vectors'            'the core probe vectors'
     foreach ($header in $engineHeaders) {
         Test-Absent "include/ayther/$header" "engine header $header"
     }
@@ -124,6 +126,15 @@ if ($Kind -eq 'core') {
     # --- Shaders ----------------------------------------------------------
     foreach ($shader in $engineShaders) {
         Test-Payload "share/Ayther/shaders/$shader" "compiled shader $shader"
+    }
+
+    # --- Core probe (contract v2): the command and its vectors ------------
+    Test-Payload 'bin/ayther_core_probe*'                          'core probe command'
+    Test-Payload 'share/ayther/probe-vectors/probe-vectors.json'  'probe vectors manifest'
+    Test-Payload 'share/ayther/probe-vectors/not-a-core.txt'       'probe vector: text file'
+    foreach ($fixture in 'ayther_test_core', 'ayther_test_core_stock',
+                         'ayther_test_core_partial', 'ayther_test_core_hang') {
+        Test-Payload "share/ayther/probe-vectors/$fixture.*" "probe vector core $fixture"
     }
 
     # --- Dependency notices ----------------------------------------------

@@ -52,9 +52,10 @@
 #include "ayther_core_ffi.h" // AytherTileSub, AytherSpriteSub, *Occurrence (POD)
 #include "ayther_layers.h"   // AytherLayerContent (the pack's Acetates)
 #include "ayther_mode3.h" // Mode3Resolver / EntityInstance (Mode 3, RAM anchoring)
-#include "ayther_result.h"  // ayther::Result / Error
-#include "engine/input.hpp" // typed public joypad input contract
-#include "engine/pack.hpp"  // typed, non-owning pack boundary for frontends
+#include "ayther_result.h"        // ayther::Result / Error
+#include "emulation_generation.h" // EmulationGeneration (D-4)
+#include "engine/input.hpp"       // typed public joypad input contract
+#include "engine/pack.hpp" // typed, non-owning pack boundary for frontends
 #include <ayther/engine/audio_hd_state.hpp>
 #include <ayther/engine/audio_initial_snapshot.hpp>
 #include <ayther/engine/audio_observer.hpp>
@@ -887,6 +888,12 @@ public:
   [[nodiscard]] engine::NativeEmulation *native_emulation() noexcept;
   [[nodiscard]] const engine::NativeEmulation *
   native_emulation() const noexcept;
+  /// Emulator id, version and determinism contract of this session (spec 008,
+  /// D-4): `gpgx` for Genesis Plus GX (or the slug of another libretro core's
+  /// name) with the core's version, and `tessera` with the hex backend build id
+  /// for the native provider. Recordings and packs stamp it as their origin.
+  [[nodiscard]] const EmulationGeneration &
+  emulation_generation() const noexcept;
   /// Submit both observation masks atomically for the next executable frame.
   [[nodiscard]] engine::NativeResult
   native_submit_presentation_policy(std::uint64_t regions,
@@ -911,8 +918,10 @@ public:
   [[nodiscard]] bool native_set_tile_override(std::uint64_t hash,
                                               std::string asset_path);
   void native_clear_tile_overrides() noexcept;
-  /// Refresh borrowed originals after driving native_emulation(). Native packs
-  /// are not integrated in this increment; the reason is explicit in FrameView.
+  /// Refresh borrowed originals after driving native_emulation(). This direct
+  /// driver composes only the pack's tile rules over the original; the reason
+  /// is explicit in FrameView. step() resolves every substitution of the pack
+  /// with the same catalogs as the libretro provider (TP-210.1).
   [[nodiscard]] const FrameView &native_frame() noexcept;
 
   ~AytherSession(); ///< RAII frees every handle
@@ -934,6 +943,8 @@ public:
   bool has_pack() const noexcept;
 
   // -- Input: per port, libretro JOYPAD button bitmask -----------------------
+  // With the native provider the mask is mapped to the controls the session
+  // configuration declares (gpgx's A=Y, B=B, C=A) when step() runs the frame.
   void set_input(int port, uint16_t buttons) noexcept;
   void set_input(int port, engine::InputState input) noexcept {
     set_input(port, input.bits());
@@ -943,7 +954,10 @@ public:
   // Advance exactly one emulation frame and run the full deterministic
   // pipeline: run_frame -> hash tiles/sprites/audio -> Lua on_frame -> apply
   // overrides -> resolve substitutions -> HD audio out. Returns this frame's
-  // data boundary (see FrameView lifetime note).
+  // data boundary (see FrameView lifetime note). With the native provider it
+  // steps the Tessera session and builds the FrameView from its original and
+  // its observation surface (spec 008, TP-301.3); a failed advance is in
+  // FrameView::native_result.
   const FrameView &step();
 
   /// Publishes the render observation of the current frame to

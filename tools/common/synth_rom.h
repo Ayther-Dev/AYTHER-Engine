@@ -36,7 +36,8 @@ namespace ayther::synth {
 /// Header de Mega Drive + un programa 68k armado a mano.
 class Rom {
 public:
-  explicit Rom(const char *title = "AYTHER SYNTHETIC ROM") : data_(kSize, 0) {
+  explicit Rom(const char *title = "AYTHER SYNTHETIC ROM", size_t size = kSize)
+      : data_(size, 0) {
     header(title);
   }
 
@@ -89,6 +90,26 @@ public:
     pc_ += 2; // bne.w
     w16(pc_, uint16_t(int16_t(int32_t(at) - int32_t(pc_))));
     pc_ += 2;
+  }
+
+  /// Espera el COMIENZO del próximo VBlank: primero a que el bit 3 (VB) del
+  /// estado del VDP baje y después a que suba — `btst #3,(0xC00005).L` con
+  /// `bne`/`beq` al propio btst. Es lo que deja a un programa sin
+  /// interrupciones hacer exactamente un paso por frame.
+  void wait_vblank() {
+    for (const uint16_t branch : {uint16_t(0x6600), uint16_t(0x6700)}) {
+      const uint32_t at = pc_;
+      w16(pc_, 0x0839);
+      pc_ += 2; // btst #imm,(xxx).L
+      w16(pc_, 0x0003);
+      pc_ += 2; // bit 3: VBlank
+      w32(pc_, 0xC00005);
+      pc_ += 4;
+      w16(pc_, branch);
+      pc_ += 2; // bne.w (fuera del VBlank) · beq.w (dentro)
+      w16(pc_, uint16_t(int16_t(int32_t(at) - int32_t(pc_))));
+      pc_ += 2;
+    }
   }
 
   /// `bra *` — se queda acá para siempre, con el estado ya programado.
@@ -229,13 +250,13 @@ private:
     str(0x120, title, 48);
     str(0x150, title, 48);
     str(0x180, "GM 00000000-00", 14);
-    w16(0x18E, 0x0000);                 // checksum (el core no lo exige)
-    str(0x190, "J               ", 16); // dispositivos de entrada
-    w32(0x1A0, 0x00000000);             // ROM start
-    w32(0x1A4, uint32_t(kSize - 1));    // ROM end
-    w32(0x1A8, 0x00FF0000);             // RAM start
-    w32(0x1AC, 0x00FFFFFF);             // RAM end
-    str(0x1F0, "JUE             ", 16); // regiones
+    w16(0x18E, 0x0000);                     // checksum (el core no lo exige)
+    str(0x190, "J               ", 16);     // dispositivos de entrada
+    w32(0x1A0, 0x00000000);                 // ROM start
+    w32(0x1A4, uint32_t(data_.size() - 1)); // ROM end
+    w32(0x1A8, 0x00FF0000);                 // RAM start
+    w32(0x1AC, 0x00FFFFFF);                 // RAM end
+    str(0x1F0, "JUE             ", 16);     // regiones
     pc_ = kEntry;
   }
 

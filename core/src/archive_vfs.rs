@@ -138,6 +138,11 @@ pub fn is_stored_entry(path: &str) -> bool {
 /// rejected because it may require semantics this build does not implement.
 pub const MANIFEST_SCHEMA: u32 = 2;
 
+/// Identity contract (spec 008, D-5) this build computes and
+/// understands. A pack baked under a newer one is rejected by the validator
+/// with `pack.identity_contract_too_new`.
+pub const IDENTITY_CONTRACT: u32 = 1;
+
 /// Newest `.ay` container format written and understood by this build.
 ///
 /// This is independent from [`MANIFEST_SCHEMA`]: `schema` versions the metadata
@@ -1463,6 +1468,42 @@ supported = ["NTSC", "JP"]
         );
         assert_eq!(a.systems_mask(), 0);
         assert!(a.compat.rom_crc32.is_none());
+    }
+
+    /// Spec 008 (TP-008.4, RF-6.2): un manifest de schema 2 con las tablas
+    /// `[emulator]` e `[identity]` abre igual, con sus metadatos intactos. El
+    /// lector ignora las tablas que no conoce, así que añadirlas no obliga a
+    /// subir el schema: se queda en 2 y los lectores actuales siguen abriendo
+    /// el pack.
+    #[test]
+    fn schema_2_ignores_emulator_and_identity_tables() {
+        let m = r#"
+[pack]
+name       = "Test Pack"
+version    = "1.0.0"
+game_id    = "crc32:7b905383"
+author     = "CI"
+ayther_min = "0.8.0"
+schema     = 2
+license    = "CC-BY-4.0"
+
+[compat]
+rom_crc32 = "7b905383"
+platform  = "megadrive"
+
+[emulator]
+id                   = "tessera"
+version              = "0.1.0-dev"
+determinism_contract = 1
+
+[identity]
+contract = 1
+"#;
+        let a = open_with_manifest(m)
+            .expect("las tablas [emulator] e [identity] no pueden impedir abrir el pack");
+        assert_eq!(a.schema, 2, "el schema declarado no cambia");
+        assert_eq!(a.meta.license.as_deref(), Some("CC-BY-4.0"));
+        assert_eq!(a.compat.platform.as_deref(), Some("megadrive"));
     }
 
     /// El manifest nuevo entero, ida y vuelta.

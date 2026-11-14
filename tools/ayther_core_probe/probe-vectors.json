@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "contract": "docs/CORE_PROBE_CONTRACT.md",
+  "protocol_version": 2,
+  "required_capabilities": "0xEFFFF",
+  "time_limit_seconds": 10,
+  "note": "A vector with 'library' names a core in this directory; append the platform library suffix (.dll, .so or .dylib). A vector with 'file' names a literal file. A vector with 'external' is provided by the product that runs it. 'message' is free text and is never compared. The verdict 'timeout' is set by the parent process, not by the probe.",
+  "vectors": [
+    {
+      "id": "gpgx_r4_x64",
+      "external": "Genesis Plus GX r4 AYTHER ABI 1.10, x64 build",
+      "expect": {
+        "verdict": "ok",
+        "exit_code": 0,
+        "ayther_abi": "1.10",
+        "capabilities": "0xEFFFF",
+        "missing_capabilities": []
+      }
+    },
+    {
+      "id": "ayther_test_core",
+      "library": "ayther_test_core",
+      "expect": {
+        "verdict": "ok",
+        "exit_code": 0,
+        "ayther_abi": "1.10",
+        "capabilities": "0xEFFFF",
+        "missing_capabilities": []
+      }
+    },
+    {
+      "id": "missing_path",
+      "file": "does-not-exist.dll",
+      "expect": {
+        "verdict": "missing_file",
+        "reason": "core.missing",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "wrong_architecture_x86",
+      "external": "genesis_plus_gx_libretro_ayther_x86.dll, or any x86 library",
+      "expect": {
+        "verdict": "wrong_architecture",
+        "reason": "core.wrong_architecture",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "text_file",
+      "file": "not-a-core.txt",
+      "expect": {
+        "verdict": "not_a_core",
+        "reason": "core.invalid",
+        "exit_code": 3
+      }
+    },
+    {
+      "id": "ayther_test_core_stock",
+      "library": "ayther_test_core_stock",
+      "expect": {
+        "verdict": "abi_missing",
+        "reason": "core.abi_missing",
+        "exit_code": 4
+      }
+    },
+    {
+      "id": "ayther_test_core_partial",
+      "library": "ayther_test_core_partial",
+      "expect": {
+        "verdict": "capabilities_incomplete",
+        "reason": "core.capabilities_incomplete",
+        "exit_code": 4,
+        "ayther_abi": "1.10",
+        "capabilities": "0x6FFFF",
+        "missing_capabilities": ["SPRITE_OUTCOME_V1"]
+      }
+    },
+    {
+      "id": "ayther_test_core_hang",
+      "library": "ayther_test_core_hang",
+      "expect": {
+        "verdict": "timeout",
+        "reason": "core.probe_timeout",
+        "exit_code": 5,
+        "set_by": "parent"
+      }
+    }
+  ]
+}

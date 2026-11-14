@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ayther_core_ffi.h"
-#include "libretro_host/retro_runner.h"
+#include "observation/observation_source.h"
 
 #include <cstdint>
 #include <optional>
@@ -22,10 +22,10 @@ namespace ayther::session {
 class EmulationObserver {
 public:
   struct AudioWritesView {
-    const RetroRunner::AudioWrite *data = nullptr;
+    const ObservationSource::AudioWrite *data = nullptr;
     uint32_t count = 0;
     bool abi = false;
-    std::optional<RetroRunner::AytherReadResult> abi_read{};
+    std::optional<ObservationSource::AytherReadResult> abi_read{};
   };
 
   struct ParsedSpritesView {
@@ -44,22 +44,28 @@ public:
     return snapshot.value_or(legacy);
   }
 
-  void activate_subscriptions(RetroRunner &runner);
-  void reapply_subscriptions(RetroRunner &runner);
-  void initialize_system(RetroRunner &runner);
-  void verify_subscriptions(RetroRunner &runner);
-  void refresh(RetroRunner &runner);
+  void activate_subscriptions(ObservationSource &runner);
+  void reapply_subscriptions(ObservationSource &runner);
+  void initialize_system(ObservationSource &runner);
+  void verify_subscriptions(ObservationSource &runner);
+  void refresh(ObservationSource &runner);
 
-  [[nodiscard]] const uint8_t *vram(const RetroRunner &runner) const;
-  [[nodiscard]] const uint8_t *cram(const RetroRunner &runner) const;
-  [[nodiscard]] const uint8_t *regs(const RetroRunner &runner) const;
-  [[nodiscard]] const uint8_t *vsram(const RetroRunner &runner) const;
+  [[nodiscard]] const uint8_t *vram(const ObservationSource &runner) const;
+  [[nodiscard]] const uint8_t *cram(const ObservationSource &runner) const;
+  [[nodiscard]] const uint8_t *regs(const ObservationSource &runner) const;
+  [[nodiscard]] const uint8_t *vsram(const ObservationSource &runner) const;
+  /// Sizes that go with the pointers above: the mirror's when it holds the
+  /// region (a native source has no legacy memory), else the legacy size.
+  [[nodiscard]] size_t vram_size(const ObservationSource &runner) const;
+  [[nodiscard]] size_t cram_size(const ObservationSource &runner) const;
+  [[nodiscard]] size_t regs_size(const ObservationSource &runner) const;
+  [[nodiscard]] size_t vsram_size(const ObservationSource &runner) const;
 
-  AudioWritesView audio_writes(RetroRunner &runner);
-  AudioWritesView audio_writes(RetroRunner &runner,
+  AudioWritesView audio_writes(ObservationSource &runner);
+  AudioWritesView audio_writes(ObservationSource &runner,
                                const ayther_frame_snapshot_v1 &snapshot,
                                bool legacy_fallback);
-  ParsedSpritesView parsed_sprites(RetroRunner &runner);
+  ParsedSpritesView parsed_sprites(ObservationSource &runner);
 
   [[nodiscard]] bool snapshot_available() const noexcept {
     return snapshot_ok_;
@@ -87,7 +93,7 @@ public:
   /// Exact internal view of the frame capture. ABI counts remain uint32_t;
   /// legacy memory is consulted only when no captured ABI view exists.
   [[nodiscard]] ParsedSpritesView
-  cached_or_legacy_parsed_sprites(const RetroRunner &runner) const;
+  cached_or_legacy_parsed_sprites(const ObservationSource &runner) const;
   /// Completeness includes both the core's overflow flag and success of the
   /// generation-validated region read.
   [[nodiscard]] bool parsed_sprites_complete_for_frame() const noexcept {

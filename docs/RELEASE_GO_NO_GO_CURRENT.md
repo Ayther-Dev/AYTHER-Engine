@@ -1,54 +1,53 @@
 # Current release gate: go / no-go decision
 
-**Pre-release decision: GO for `v0.1.0-rc.21`.**
+**Pre-release decision: GO for `v0.1.0-rc.23`.**
 
 **Stable-release decision: NO-GO for `v0.1.0`.**
 
-**Decision date:** 2026-11-02
+**Decision date:** 2026-11-13
 
-**Evidence cutoff:** 2026-11-02T21:39:00Z
+**Evidence cutoff:** 2026-11-13T12:00:00Z
 
 **Candidate identity:** the commit targeted by the annotated tag
-`v0.1.0-rc.21`. The tag object records the exact candidate SHA and is the
+`v0.1.0-rc.23`. The tag object records the exact candidate SHA and is the
 authoritative binding between this decision and the immutable source revision.
 
 **Evidence baseline before the decision record:**
-`c53794e` (`main` after merging pull request #49, on top of `14e82c5`, pull
-request #48, and of `5db91f1`, the base of the published candidate
-`v0.1.0-rc.20`).
+`3168546` (`main` after merging pull request #55, on top of `1dff21f`, the
+base of the published candidate `v0.1.0-rc.22`).
 
 **Decider:** the sole maintainer, operating under
 [GOV-2026-001](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review)
 
-This record supersedes the operational GO for `v0.1.0-rc.20`, which was
+This record supersedes the operational GO for `v0.1.0-rc.22`, which was
 published successfully as a pre-release. The earlier decisions remain
 immutable historical snapshots in this file's history and in
 [RELEASE_GO_NO_GO.md](RELEASE_GO_NO_GO.md).
 
 ## Why a new candidate
 
-Since `rc.20`, `main` gained two pull requests:
+Since `rc.22`, `main` gained one unified pull request, #55 (spec 008, WP-7,
+the Engine side of the Tessera native provider):
 
-- pull request #48: a native Tessera session. `AytherSession` can drive a
-  native emulation provider (Mega Drive detection and dispatch, observation,
-  deterministic replay, graphics composition and audio control) next to
-  Libretro, through the new public header `ayther/engine/native_emulation.hpp`.
-  The provider is the CMake option `AYTHER_ENABLE_TESSERA`, OFF by default, so
-  the `v*` archives of this release do not link it; the Windows software
-  candidates that do are published separately under `native-v*` tags. The
-  pull request also added the flat C function `ayther_pack_verify_all()`.
-- pull request #49: the authoring identity Object is renamed Drawing.
-  `MatchRank::Drawing` replaces `MatchRank::Prop` (kept as a deprecated alias
-  for one release), `rank_name` returns `"drawing"` and plane sets written
-  without a `type` read as `"drawing"`. The Engine never branches on `type`, so
-  packs that carry `type = "utileria"` load exactly as before.
+- `ObservationSource`, extracted from `RetroRunner` and implemented by the
+  Tessera backend over the Tessera API 1.1 observation surface, so `FrameView`
+  is built the same way from either provider;
+- native Mega Drive sessions through `AytherSession`: the frame pipeline, pack
+  substitutions, work RAM, pokes and cheats, rewind, `.arp` takes with
+  provenance `tessera`, replay seeks and device audio;
+- `tools/parity_bench` filled in: native `dump`, `check` with strict exception
+  accounting, identity files and the cross-pack line;
+- `dependencies/tessera.lock.json` pins Tessera `v0.2.0-rc.9` by tag and
+  package SHA-256.
 
-The authoring applications (AYTHER Lab, Runtime) can lock a single Engine that
-carries both changes.
+The pull request also fixed an infinite recursion in the session's `emu_fps`.
+
+AYTHER Lab and Runtime can lock a single Engine that carries the native
+provider surface (spec 008, TP-302.4).
 
 ## Decision scope
 
-The GO authorizes publishing `v0.1.0-rc.21` as a **pre-release candidate**. It
+The GO authorizes publishing `v0.1.0-rc.23` as a **pre-release candidate**. It
 does not authorize publishing the stable `v0.1.0` release.
 
 Stable remains NO-GO because supported-release blockers and the required
@@ -58,16 +57,16 @@ rollback rehearsal are not yet closed.
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.21` passes for prerelease `rc.21` of `0.1.0`; every surface keeps the core `0.1.0`, as in `rc.11` to `rc.20` |
-| Required CI on the changes | **Pass** | [Pull request #48](https://github.com/Ayther-Dev/AYTHER-Engine/pull/48): 20 checks green and the opt-in GPU job skipped on head `4a6ce4d`. [Pull request #49](https://github.com/Ayther-Dev/AYTHER-Engine/pull/49): 19 checks green and the opt-in GPU job skipped on head `3bad09d`, after its clang-format 18 failure was fixed |
-| Required CI on the merged baseline | **Pass** | The `CI` workflow on `main` succeeded at `c53794e` and at `14e82c5`. `Protect main` requires an up-to-date branch; the release workflow builds and tests the four artifacts again from the tag |
+| Version contract accepts the candidate | **Pass** | `tools/check_release_version.ps1 -Tag v0.1.0-rc.23` passes for prerelease `rc.23` of `0.1.0`; every surface keeps the core `0.1.0`, as in `rc.11` to `rc.22` |
+| Required CI on the change | **Pass** | [Pull request #55](https://github.com/Ayther-Dev/AYTHER-Engine/pull/55): 19 checks green and the opt-in GPU job skipped on head `65727be` (run `43408958113`), after adding tests to lift the C++ changed-line coverage above its 70 % floor |
+| Required CI on the merged baseline | **Pass** | The `CI` workflow on `main` (run `43417571066`) at `3168546`. `Protect main` requires an up-to-date branch; the release workflow builds and tests the four artifacts again from the tag |
 | Open code-scanning findings | **Pass** | GitHub returned no open code-scanning alerts at the evidence cutoff |
-| Dependency advisories | **Pass** | `Cargo.lock`, `fuzz/Cargo.lock` and `vcpkg.json` are identical to `rc.20`; `cargo audit --deny warnings` ran in the CI of both pull requests |
-| The changes have tests | **Pass** | #48: provider, controls, pack, presentation and native-session tests, plus a long Release replay reported in its description (18,000 frames, 4,500 continuations, zero divergences). #49: `tests/integration/elements_toml_test.cpp` now checks that a `[[set]]` with `type = "utileria"` (an old pack) keeps its value, that an empty type reads as `"drawing"`, and that both load identically; `pack_removal_test`, `plane_set_*` and `panorama_cover_test` pass locally on the candidate sources. The full local `ctest` of the candidate was not rerun for this record: the tag workflow does it |
-| Consumer integration | **Not yet exercised against this candidate** | AYTHER Lab [pull request #24](https://github.com/Ayther-Dev/AYTHER-Lab/pull/24) (the Drawing rename, written against `rc.20`) is green and reads old and new ids. Locking Lab and Runtime onto `rc.21` is the consumers' own gate after publication |
-| ABI and package surface | **Pass, changed and documented** | Flat C ABI revision `8` becomes `9` (`ayther_pack_verify_all()` is new; `docs/API_COMPATIBILITY.md` records it). New public header `engine/native_emulation.hpp` is in `cmake/AytherPublicHeaders.txt`, and `ayther_session.h` gains the native-provider API additively. `MatchRank::Prop` is deprecated, not removed. The recording format (`.arp` v10) did not change. The package config finds Tessera only when `AYTHER_ENABLE_TESSERA` is on |
-| `rc.20` release outcome | **Pass** | Published 2026-10-20 as [pre-release `v0.1.0-rc.20`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.20) |
-| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.21` did not exist at the evidence cutoff |
+| Dependency advisories | **Pass** | `vcpkg.json` is identical to `rc.22`; `Cargo.lock` and `fuzz/Cargo.lock` only move `rustix` to 1.1.6 (with its `windows-sys` requirement); `cargo audit --deny warnings` ran in the CI of the pull request |
+| The change has tests | **Pass, with a stated limit** | New tests cover `observation_source_parity`, the native session (`tessera_native_state`: rewind 590/590, memory 1.18 × gpgx, take provenance and keyframes, 47/47 seeks, PCM continuity), the `AUDIO_MUTE` channel masks on both providers, the native subsystems, `RewindBuffer` and the parity bench (`check`, identities, cross-pack). The release artifacts are built without `AYTHER_ENABLE_TESSERA`, so the native provider is not in the published packages; the tests that need the Tessera package or real ROMs ran in the CI of the pull request and in its local build |
+| Consumer integration | **Not yet exercised against this candidate** | Locking Lab and Runtime onto `rc.23` is the consumers' own gate after publication (spec 008, TP-302.4). The `Runtime integration` workflow failed against `rc.22` on Runtime's `vcpkg_manifest` test (`No vcpkg port mapping is defined for Engine dependency 'Tessera'`) because it pinned Runtime `7580a88`, before Runtime learned that Tessera is not a vcpkg port (`a1fc482`). This candidate pins Runtime `500cf88` (its `main`, which contains the fix) |
+| ABI and package surface | **Pass, unchanged** | Flat C ABI revision stays `9`. The take format stays `.arp` v11 and `AytherRecording::abi_size()` is unchanged. The installed header manifest (`cmake/AytherPublicHeaders.txt`) is unchanged: `ObservationSource` and `RetroRunner` are internal. `ayther_session.h` and `engine/native_emulation.hpp` change only comments and a private friend declaration |
+| `rc.22` release outcome | **Pass** | Published 2026-11-06 as [pre-release `v0.1.0-rc.22`](https://github.com/Ayther-Dev/AYTHER-Engine/releases/tag/v0.1.0-rc.22) |
+| Candidate tag is unused | **Pass** | `refs/tags/v0.1.0-rc.23` did not exist at the evidence cutoff |
 | Release controls | **Pass with temporary governance exception** | Rulesets `Immutable release tags` and `Protect main` are active; the `release` environment has a branch policy and required reviewers |
 
 The final candidate commit is the merge result containing this record. Before
@@ -114,20 +113,20 @@ evidence, withdraw affected release assets as documented, notify consumers,
 and publish a fix-forward candidate under a new version.
 
 After publication, AYTHER Lab and Runtime can move their Engine lock to this
-candidate. The Lab writes `type = "drawing"` and still reads the old ids, so it
-works against `rc.20` and `rc.21` alike. A consumer that calls
-`ayther_pack_verify_all()` must require ABI revision `9`.
+candidate. The flat C ABI revision stays at `9` and the take format at `.arp`
+v11, so a consumer built against `rc.22` headers needs no source change; it
+still rebuilds against the locked package as usual.
 
 ## Reproducing the pre-tag checks
 
 ```text
 git rev-parse main
-pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.21
+pwsh ./tools/check_release_version.ps1 -Tag v0.1.0-rc.23
 gh run list --branch main --limit 12
 gh api 'repos/Ayther-Dev/AYTHER-Engine/code-scanning/alerts?state=open'
 gh api repos/Ayther-Dev/AYTHER-Engine/environments/release
 gh api repos/Ayther-Dev/AYTHER-Engine/rulesets
-gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.21
+gh api repos/Ayther-Dev/AYTHER-Engine/git/ref/tags/v0.1.0-rc.23
 ```
 
 Ruleset identifiers are not treated as stable evidence. Enumerate the active

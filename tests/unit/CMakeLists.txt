@@ -19,9 +19,11 @@ foreach(_source IN ITEMS
         decode_limits_test.cpp
         element_record_test.cpp
         element_scene_test.cpp
+        emulation_generation_test.cpp
         failure_escalation_test.cpp
         frame_composability_test.cpp
         frame_view_digest_test.cpp
+        identity_contract_kat_test.cpp
         log_test.cpp
         loop_region_test.cpp
         music_sequence_model_test.cpp
@@ -72,6 +74,7 @@ foreach(_source IN ITEMS
         pose_depth_test.cpp
         recording_controller_test.cpp
         reference_compositor_test.cpp
+        rewind_buffer_test.cpp
         render_image_view_test.cpp
         render_observation_builder_test.cpp
         render_probe_json_test.cpp

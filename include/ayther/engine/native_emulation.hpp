@@ -173,7 +173,8 @@ private:
 
 namespace detail {
 class TesseraBackend;
-}
+struct NativeEmulationAccess;
+} // namespace detail
 
 // Calls are serialized by the owner. Output objects are preserved on failure,
 // except required byte counts and the documented semantic detection outputs.
@@ -224,6 +225,7 @@ public:
   [[nodiscard]] NativeResult last_result() const noexcept;
 
 private:
+  friend struct detail::NativeEmulationAccess;
   NativeEmulation();
   std::unique_ptr<detail::TesseraBackend> backend_;
 };

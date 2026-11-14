@@ -394,6 +394,11 @@ The independently versioned AYTHER Runtime is validated after a successful
 archives but is deliberately not part of the release DAG: a Runtime repository
 or implementation failure cannot block an Engine release.
 
+The integration matrix uses the toolchains that Runtime's configure enforces
+and its own CI presets use: Ubuntu 24.04 with `clang++-18`, and
+`windows-2025-vs2026` with the Visual Studio 18 2026 generator and the `v145`
+toolset (multi-config, built and tested as `Release`).
+
 The integration matrix runs Runtime's CTest suite on both platforms. On Linux
 it excludes only `probe_core`, whose negative fixture is explicitly the
 Windows-only `SDL3.dll`; the package configuration, build, and the remaining

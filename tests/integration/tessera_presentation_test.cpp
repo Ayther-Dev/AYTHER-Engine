@@ -1,9 +1,10 @@
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#define DOCTEST_CONFIG_IMPLEMENT
 #include <ayther/ayther_session.h>
 #include <doctest/doctest.h>
 
 #include "pose_pack_fixture.h"
 #include "session/native_presentation.h"
+#include "tessera_clown_backend.hpp"
 
 #include <algorithm>
 #include <array>
@@ -420,4 +421,10 @@ TEST_CASE(
                              original.native_original.pcm));
     CHECK(presented.fb_pixels != presented.native_original.pixels.data());
   }
+}
+
+int main(int argc, char **argv) {
+  if (ayther::tests::skip_without_tessera_clown_backend())
+    return ayther::tests::kSkipExitCode;
+  return doctest::Context(argc, argv).run();
 }

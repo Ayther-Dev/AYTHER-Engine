@@ -8,8 +8,9 @@
 # is additive and may not break anyone.
 #
 # These are MODULE libraries: they are dlopen'd by the engine at runtime, never
-# linked against. They are also NOT installed -- a test fixture has no business
-# in a release artifact.
+# linked against. The oracles use them from the build tree. The release package
+# installs them only as the probe vectors of the core probe contract, in
+# share/ayther/probe-vectors/ (TP-013.6); nothing else links or loads them.
 # ---------------------------------------------------------------------------
 
 function(ayther_add_test_core _target)
@@ -51,9 +52,23 @@ ayther_add_test_core(ayther_test_core)
 ayther_add_test_core(ayther_test_core_stock)
 target_compile_definitions(ayther_test_core_stock PRIVATE AYTHER_TEST_CORE_NO_ABI)
 
+# Core probe contract fixtures (docs/CORE_PROBE_CONTRACT.md, TP-013.3).
+# `partial` speaks ABI 1.10 but lacks SPRITE_OUTCOME_V1; `hang` never returns
+# from retro_init, so only a probe in a child process with a time limit survives it.
+ayther_add_test_core(ayther_test_core_partial)
+target_compile_definitions(ayther_test_core_partial PRIVATE
+    AYTHER_TEST_CORE_NO_SPRITE_OUTCOME)
+
+ayther_add_test_core(ayther_test_core_hang)
+target_compile_definitions(ayther_test_core_hang PRIVATE AYTHER_TEST_CORE_HANG)
+
 # The oracles locate the cores by path. Publishing them as properties keeps the
 # knowledge in one place instead of repeating the layout in every test.
 set(AYTHER_TEST_CORE_PATH "$<TARGET_FILE:ayther_test_core>"
     CACHE INTERNAL "Test core implementing the AYTHER ABI")
 set(AYTHER_TEST_CORE_STOCK_PATH "$<TARGET_FILE:ayther_test_core_stock>"
     CACHE INTERNAL "Test core without the AYTHER ABI")
+set(AYTHER_TEST_CORE_PARTIAL_PATH "$<TARGET_FILE:ayther_test_core_partial>"
+    CACHE INTERNAL "Test core with ABI 1.10 but without SPRITE_OUTCOME_V1")
+set(AYTHER_TEST_CORE_HANG_PATH "$<TARGET_FILE:ayther_test_core_hang>"
+    CACHE INTERNAL "Test core whose retro_init never returns")

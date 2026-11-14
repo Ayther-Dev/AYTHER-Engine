@@ -202,9 +202,9 @@ int main() try {
   }
   {
     Frame f;
-    f.vram.resize(0x8000);
     f.regs[11] = 3;
     f.hscroll(10, 5);
+    f.vram.resize(0x8000); // after the write: the table is past the end
     const FrameComposability c = f.classify();
     check(c.reason == Composability::composable,
           "without the whole VRAM the scroll tables are not read");
