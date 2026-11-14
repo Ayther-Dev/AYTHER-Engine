@@ -6102,27 +6102,29 @@ void AytherSession::reset() {
   if (im.native) {
     im.native_result = im.native->reset();
     im.invalidate_native_work_ram();
-    if (im.native_result.code == 0) {
-      im.view = {};
-      im.frame_index = 0;
-      im.native_policy.active_regions = 0;
-      im.native_policy.active_events = 0;
-      im.native_policy.pending_transaction = 0;
-      im.native_policy.confirmed = false;
-      if (im.native_policy.configured) {
-        const auto rearmed = native_submit_presentation_policy(
-            im.native_policy.requested_regions,
-            im.native_policy.requested_events);
-        if (rearmed.code != 0)
-          im.native_result = rearmed;
-      }
+    if (im.native_result.code != 0) {
+      im.view.native_result = im.native_result;
+      return;
+    }
+    im.view = {};
+    im.frame_index = 0;
+    im.native_policy.active_regions = 0;
+    im.native_policy.active_events = 0;
+    im.native_policy.pending_transaction = 0;
+    im.native_policy.confirmed = false;
+    if (im.native_policy.configured) {
+      const auto rearmed =
+          native_submit_presentation_policy(im.native_policy.requested_regions,
+                                            im.native_policy.requested_events);
+      if (rearmed.code != 0)
+        im.native_result = rearmed;
     }
     im.view.native_result = im.native_result;
-    return;
+  } else {
+    im.runner.reset();
   }
-  im.runner.reset();
   // E-2 (): las suscripciones NO se serializan y el core las limpia con
-  // retro_reset — sin volver a pedirlas, todo lo que se observa por la ABI
+  // reset — sin volver a pedirlas, todo lo que se observa por la ABI
   // quedaría mudo desde acá en adelante, y en silencio.
   im.observer.reapply_subscriptions(im.source());
   im.rewind.clear();     // timeline branched

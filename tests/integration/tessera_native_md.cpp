@@ -178,4 +178,19 @@ TEST_CASE("FX-02 runs on the native machine through set_input and step") {
   // Out of range: refused, nothing written.
   CHECK_FALSE(session->poke(0xFFFF, poked, 2));
   CHECK_FALSE(session->poke(0x10000, poked, 1));
+
+  // DEF-008-G3-01: reset() must re-apply observation subscriptions on the
+  // native path so VRAM/CRAM/VDP observation remains active afterwards.
+  session->reset();
+  CHECK_FALSE(session->dirty());
+  for (std::uint64_t f = 1; f <= 200; ++f) {
+    session->set_input(0, 0);
+    const ayther::FrameView &fv = session->step();
+    REQUIRE(fv.native_result.code == 0);
+  }
+  size_t vram_after_reset = 0;
+  REQUIRE(session->video_ram(&vram_after_reset) != nullptr);
+  CHECK(vram_after_reset == 65536);
+  CHECK(vram_word(*session, kVramMarker) == kMarkerNeutral);
+  CHECK(cram_colour0(*session) == kColourNeutral);
 }
