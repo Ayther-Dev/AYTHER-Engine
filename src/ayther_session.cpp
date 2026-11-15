@@ -350,6 +350,10 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
             static_cast<std::int32_t>(engine::NativeStatus::invalid_argument);
         return loaded.error;
       }
+    } else {
+      // Initialize substitutors (tile_sub, sprite_sub, pose_sub, tween,
+      // audio_sub) for packless authoring sessions, matching the libretro path.
+      (void)session->set_pack("");
     }
     // TP-302.3: the player, fed by run_emulator_frame through on_native_pcm.
     // Non-fatal, as with libretro: no device means muted playback.

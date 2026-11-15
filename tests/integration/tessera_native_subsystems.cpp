@@ -64,6 +64,7 @@ struct Run {
   bool panorama_valid = false;
   std::int32_t panorama_x = 0, panorama_y = 0;
   std::uint32_t panorama_votes = 0;
+  bool tile_sub_ok = false;
 };
 
 Run run(const std::string &provider, const std::vector<std::uint8_t> &rom,
@@ -101,6 +102,12 @@ Run run(const std::string &provider, const std::vector<std::uint8_t> &rom,
   out.panorama_x = anchored.panorama_cam_x;
   out.panorama_y = anchored.panorama_cam_y;
   out.panorama_votes = anchored.panorama_votes;
+  if (anchored.tile_occ_count > 0 && anchored.tile_occs) {
+    s->set_hd_enabled(true);
+    s->assign_tile(anchored.tile_occs[0].hash, "graphics/tp301_5_tile.png");
+    const auto &subbed = s->step();
+    out.tile_sub_ok = subbed.tile_sub_count > 0;
+  }
   out.ok = true;
   std::printf("  %s: bounds x %d..%d y %d..%d, %zu cells; panorama %s at "
               "(%d,%d), %u votes\n",
@@ -118,6 +125,7 @@ void check_alone(const std::string &p, const Run &r) {
         p + ": the stitcher reads the pan, columns 0..59");
   check(r.bounds_ok && r.bounds[1] == 0 && r.bounds[3] == 27,
         p + ": and rows 0..27");
+  check(r.tile_sub_ok, p + ": packless session initializes tile_sub");
   // Column 0 has already started to leave the screen when the capture opens
   // (kCaptureFrom), and a moving camera keeps whole cells only: 59 columns.
   check(r.cells >= 59u * 28u, p + ": every whole cell of the pan is kept (" +
