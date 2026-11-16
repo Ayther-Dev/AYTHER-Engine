@@ -338,7 +338,11 @@ AytherSession::create(const Config &cfg, engine::NativeResult &native_result) {
       // TP-209.1 (D-3): the megadrive machine's frame goes down the pipeline
       // as RGB565, the format gpgx gives, so the tile hasher, the sprite
       // judge and the raster recomposition see the same pixels.
-      im.native_rgb565 = cfg.native_config.backend_id == "megadrive";
+      im.native_rgb565 =
+          cfg.native_config.backend_id == "megadrive" ||
+          cfg.native_config.backend_id == "mastersystem" ||
+          cfg.native_config.backend_id == "gamegear" ||
+          cfg.native_config.backend_id == "sg1000";
       im.activate_ayther_subscriptions();
       im.observer.initialize_system(im.source());
     }

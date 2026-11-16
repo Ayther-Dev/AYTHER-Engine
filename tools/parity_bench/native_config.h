@@ -48,7 +48,20 @@ megadrive_native_config(std::vector<std::uint8_t> content,
   std::vector<engine::NativeBackendInfo> backends;
   if (engine::NativeEmulation::backends(backends).code != 0)
     return std::nullopt;
-  const auto found = std::ranges::find(backends, std::string_view{"megadrive"},
+  engine::NativeDetection det;
+  std::string_view wanted_id = "megadrive";
+  std::uint32_t wanted_sys = 1;
+  if (engine::NativeEmulation::detect(content, 0, det).code == 0 &&
+      det.system != 0) {
+    wanted_sys = det.system;
+    if (wanted_sys == 2)
+      wanted_id = "mastersystem";
+    else if (wanted_sys == 3)
+      wanted_id = "gamegear";
+    else if (wanted_sys == 4)
+      wanted_id = "sg1000";
+  }
+  const auto found = std::ranges::find(backends, wanted_id,
                                        &engine::NativeBackendInfo::id);
   if (found == backends.end())
     return std::nullopt;
@@ -56,8 +69,8 @@ megadrive_native_config(std::vector<std::uint8_t> content,
   result.backend_id = found->id;
   result.content = std::move(content);
   result.initial_persistent_memory = std::move(memory);
-  result.system_override = 1; // TESSERA_SYSTEM_MEGA_DRIVE
-  scalar(result.config, 1, 1, 1);
+  result.system_override = wanted_sys;
+  scalar(result.config, 1, 1, wanted_sys);
   field(result.config, 2, 6,
         Bytes(result.backend_id.begin(), result.backend_id.end()));
   field(result.config, 3, 5, found->build_id);

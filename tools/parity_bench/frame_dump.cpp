@@ -260,8 +260,12 @@ dump_native_session(const std::vector<std::uint8_t> &rom,
                     const std::vector<std::uint16_t> &pads,
                     IdentityCollector *ids) {
   auto native = megadrive_native_config(rom, std::vector<std::uint8_t>(65536));
-  if (!native)
+  if (!native) {
+    std::fprintf(
+        stderr,
+        "dump_native_session: megadrive_native_config returned nullopt\n");
     return std::nullopt;
+  }
   AytherSession::Config config;
   config.provider = EmulationProvider::tessera_native;
   config.native_config = std::move(*native);
@@ -269,8 +273,11 @@ dump_native_session(const std::vector<std::uint8_t> &rom,
   config.derive_core_pack = false;
   engine::NativeResult result;
   auto created = AytherSession::create(config, result);
-  if (!created || !*created)
+  if (!created || !*created) {
+    std::fprintf(stderr, "dump_native_session: create failed code=%d msg=%s\n",
+                 result.code, created ? "null" : created.error.message.c_str());
     return std::nullopt;
+  }
   std::unique_ptr<AytherSession> s = std::move(*created);
   return run(*s, pads, ids);
 }
