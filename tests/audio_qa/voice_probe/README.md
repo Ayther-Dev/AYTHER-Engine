@@ -1,21 +1,41 @@
-# Observación por ocurrencia del mixer — QA-020d2
+# Per-occurrence mixer probe
 
-Ensayo aislado de RF-6, RF-7 y RF-10 sobre HdMixer de Engine rc.9. No implementa aún la API QA ni demuestra la relación completa con cuadros de Runtime o salida SDL.
+Isolated probe of `HdMixer` from the Engine `v0.1.0-rc.9` reference.
+Configuration requires the SHA-256 of the reference header and generates a
+private copy with an observational identity per voice and a callback after
+each real contribution. The aggregate `started` counter and mixing decisions
+are unchanged. Shared conventions are in the [audio QA overview](../README.md).
 
-La configuración exige el SHA-256 del header de referencia. Genera una copia privada en el build con una identidad observacional por voz y un callback después de cada aporte real. El contador agregado started y las decisiones de mezcla siguen intactos. Se guardan cursor anterior, índice realmente leído, cursor posterior, ganancia efectiva, fade restante y valores de mezcla antes/después. El callback copia a un array de 4096 registros; no reserva memoria ni hace I/O. La instrumentación por muestra es solo para este ensayo acotado, no una política de rendimiento del producto.
+Each record keeps cursor before, index actually read, cursor after, effective
+gain, remaining fade and mix values before and after. Records go to a
+4096-entry array. Per-sample instrumentation exists only in this bounded probe.
 
-Se compilan dos ejecutables con la misma secuencia de entradas. El de referencia incluye el header original; el observado incluye la copia generada. CTest exige 4096 bytes idénticos de PCM S16 estéreo a 44100 Hz y dos resultados diferenciados: traza completa y pérdida diagnosticada. El control negativo omite el aporte de la ocurrencia 1 en la muestra 80 y debe retornar 2, conservando audio y registros.
+Two executables run the same input sequence, one with the original header and
+one with the generated copy. CTest requires 4096 identical bytes of S16 stereo
+PCM at 44100 Hz and two distinct results: complete trace, and diagnosed loss.
+The negative control drops the contribution of occurrence 1 at sample 80 and
+must return 2.
 
-El escenario contiene cuatro ocurrencias: bucle con región [3, 11), voz muda que consume catorce frames, retrigger de la primera clave mientras la anterior entra en fade y fade de ocho frames por fin de ventana. Las fronteras son [13, 768), [0, 14), [210, 220) y [300, 308), respectivamente. A partir de 768 solo queda PCM original tras cut_all. La ubicación en este ensayo pertenece al timeline principal de mezcla, no al dominio de salida convertido de SDL.
+Scenario, four occurrences:
 
-Desde Engine:
+| Occurrence | Range |
+|---|---|
+| loop with region `[3, 11)` | `[13, 768)` |
+| muted voice consuming 14 frames | `[0, 14)` |
+| retrigger of the first key while the earlier one fades | `[210, 220)` |
+| eight-frame fade at window end | `[300, 308)` |
+
+From 768 only original PCM remains after `cut_all`. Positions belong to the
+main mix timeline, not to the SDL output domain.
 
 ```powershell
-cmake -S tests/audio_qa/voice_probe -B build/qa-020-voice `
+cmake -S tests/audio_qa/voice_probe -B build/qa-voice `
   -G 'Visual Studio 18 2026' -A x64 -T v145 `
-  '-DQA_ENGINE_REFERENCE_SOURCE=C:/Users/david/Workspaces/ayther/.qa-reference/audio-qa-initial-20260927/engine-source'
-cmake --build build/qa-020-voice --config Release --parallel 4
-ctest --test-dir build/qa-020-voice -C Release --output-on-failure
+  '-DQA_ENGINE_REFERENCE_SOURCE=<qa-reference>/engine-source'
+cmake --build build/qa-voice --config Release --parallel 4
+ctest --test-dir build/qa-voice -C Release --output-on-failure
 ```
 
-No modifica fuentes de referencia, dependencias, ABI ni código de producción. Límites: 1024 frames de salida, cuatro ocurrencias, 4096 registros y tres segundos por proceso. Los resultados se escriben en un directorio nuevo por prueba. La identidad por ocurrencia existe solo en la copia experimental. Exportación pública, causas de todas las finalizaciones, staging/router, persistencia y campaña real permanecen en las tareas posteriores.
+Limits: 1024 output frames, four occurrences, 4096 records. The per-occurrence
+identity exists only in the experimental copy; the public equivalent is
+`hd_mix_participant` in the [audio observation contract](../../../docs/AUDIO_OBSERVATION.md).

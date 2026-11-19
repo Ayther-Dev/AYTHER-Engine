@@ -1,10 +1,13 @@
 # Stability gate: go / no-go decision
 
-> **Historical snapshot (2026-08-30).** This assessment records the state of
-> commit `c3866fe`; it is not the current release decision. See
-> [the current go/no-go decision](RELEASE_GO_NO_GO_CURRENT.md),
-> [Project status](PROJECT_STATUS.md), and the latest required CI run for the
-> current defect and gate status.
+> **Superseded historical record (2026-08-30).** This is the first stable-gate
+> assessment, of commit `c3866fe`. It is kept unchanged as evidence; file
+> paths, line numbers, and commands in it describe that commit. Several of its
+> failing criteria have since been addressed (release candidates are published
+> and consumed, CI and the release controls exist, private vulnerability
+> reporting is enabled), while the stable release is still NO-GO. The current
+> decision is in [RELEASE_GO_NO_GO_CURRENT.md](RELEASE_GO_NO_GO_CURRENT.md),
+> and open blockers are in [Project status](PROJECT_STATUS.md).
 
 **Decision: NO-GO.**
 

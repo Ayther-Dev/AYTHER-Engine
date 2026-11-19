@@ -1,39 +1,34 @@
 # C++ API and implementation contracts
 
-**Status:** pre-release, installable engine contracts
+**Status:** pre-release, installable engine contracts.
 
-**Last reviewed:** 2026-09-02
-
-This document describes the C++ source currently under `include/ayther/` and
-`src/`. It records contracts that are otherwise easy to miss at call sites:
-ownership, lifetime, thread affinity, failure behavior, and performance-sensitive
-boundaries. It is not a compatibility guarantee; the installed engine remains
-pre-release.
+This document describes the C++ source under `include/ayther/` and `src/`. It
+records contracts that are easy to miss at call sites: ownership, lifetime,
+thread affinity, failure behavior, and performance-sensitive boundaries. It is
+not a compatibility guarantee; see [API and compatibility](API_COMPATIBILITY.md)
+for that, and the [Engine public API contract](ENGINE_PUBLIC_API_CONTRACT.md)
+for the rules of the installed `ayther/engine/` surface.
 
 > [!WARNING]
-> The root build publishes `Ayther::core` and `Ayther::engine`, and Windows
-> compile/link/install/consume checks pass. The C++ layer has not passed a
-> complete sanitizer, renderer, audio, GPU, or emulator-integration matrix.
+> The root build publishes `Ayther::core` and `Ayther::engine`, and CI runs
+> compile, link, install, and out-of-tree consumer checks plus AddressSanitizer
+> and UndefinedBehaviorSanitizer over the CPU test suite. GPU, audio-device,
+> and real-core integration are not covered by a complete cross-platform
+> matrix.
 
 ## Documentation conventions
 
-The C++ sources follow these documentation rules:
+- Comments and public API documentation are written in English.
+- Names and types express behavior where possible; comments explain rationale,
+  invariants, ownership, units, synchronization, and non-obvious costs.
+- `T*` and `T&` are non-owning unless a boundary explicitly says otherwise.
+- Owning resources use RAII types or an explicitly documented create/free pair.
+- A returned view or pointer documents the operation that invalidates it.
+- Fallible operations document whether they return `Result`, `NativeResult`, a
+  status value, `nullptr`, or an empty result.
+- Hot-path claims require measurement and state the workload used.
 
-- comments and public API documentation are written in English;
-- names and types express behavior where possible; comments explain rationale,
-  invariants, ownership, units, synchronization, and non-obvious costs;
-- `T*` and `T&` are non-owning unless a boundary explicitly says otherwise;
-- owning resources use RAII types or an explicitly documented create/free pair;
-- a returned view or pointer must document the operation that invalidates it;
-- fallible operations document whether they return `Result`, a status value,
-  `nullptr`, or an empty result;
-- hot-path claims require measurement and must state the workload used.
-
-These conventions align with the C++ Core Guidelines principles of explicit
-interfaces, resource safety, type safety, immutability by default, and measured
-optimization.
-
-Standards basis: [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines),
+These follow the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines),
 especially the Philosophy, Interfaces, Functions, Resource management,
 Concurrency, Source files, and Performance sections.
 
@@ -41,13 +36,15 @@ Concurrency, Source files, and Performance sections.
 
 | Surface | Status | Contract |
 |---|---|---|
-| `Ayther::core` and `ayther_core_ffi.h` | Buildable, installable, unstable | Flat C ABI backed by Rust. Opaque handles use paired allocation and release functions. |
-| `Ayther::engine` and `ayther_sdk.h` | Buildable, installable, provisional | Higher-level C facade over a native session. |
-| `engine/capabilities.hpp`, `engine/core_probe.hpp`, `engine/input.hpp`, and `engine/pack.hpp` | Installed, provisional | Typed C++ queries for versions, core metadata, input, packs, validation, tiers, and watching. Raw core and Libretro declarations do not cross this surface. |
-| `AytherSession` | Installed, provisional | Primary C++ orchestration facade. Single-owner and single-thread driven. |
-| `engine/audio_observer.hpp` | Contrato QA 1.0, incorporación al SDK declarada | Vistas prestadas de hechos y PCM; binding sin propiedad, sin transporte ni retorno de decisiones. La conexión de productores y publicación del paquete se verifican por separado. |
-| `AytherRenderer` and `engine/vulkan_interop.hpp` | Installed, provisional | Public offscreen Vulkan renderer and borrowed-handle handoff contract. |
-| Audio, renderer implementation, Vulkan presentation, video, recording, and libretro helpers | Source-tree internal | Implementation components are not installed and have no standalone compatibility promise. |
+| `Ayther::core` and `ayther_core_ffi.h` | Installed, unstable | Flat C ABI backed by Rust. Opaque handles use paired allocation and release functions. |
+| `Ayther::engine` and `ayther_sdk.h` | Installed, provisional | Higher-level C facade over a native session. |
+| `engine/capabilities.hpp`, `engine/core_probe.hpp`, `engine/input.hpp`, `engine/pack.hpp` | Installed, provisional | Typed queries for versions, core metadata, input, packs, validation, tiers, and watching. Raw core and libretro declarations do not cross this surface. |
+| `AytherSession` | Installed, provisional | Primary C++ orchestration facade over either emulation provider. Single-owner, single-thread driven. |
+| `engine/native_emulation.hpp` | Installed, provisional | Typed driver for the native Tessera provider; answers `unsupported_capability` in builds without Tessera. |
+| `engine/audio_observer.hpp` and related audio QA headers | Installed, contract 1.0 | Borrowed views of facts and PCM; non-owning binding with no transport and no decision feedback. |
+| `engine/render_observer.hpp`, `engine/visual_state.hpp` | Installed, provisional | [Render observation](RENDER_OBSERVATION.md) and [Visual state](VISUAL_STATE.md). |
+| `AytherRenderer` and `engine/vulkan_interop.hpp` | Installed, provisional | Offscreen Vulkan renderer and borrowed-handle handoff contract. |
+| Audio player, renderer internals, Vulkan backend, video, libretro host, observation source, Tessera backend | Source-tree internal | Not installed; no standalone compatibility promise. |
 
 ## Ownership and lifetime map
 
@@ -56,134 +53,159 @@ Concurrency, Source files, and Performance sections.
 | `std::unique_ptr<AytherSession>` | Exclusive | Returned by `AytherSession::create`; destruction releases session-owned state. |
 | Rust opaque handles | Exclusive through `unique_handle` or paired C functions | Never dereference. Release with the matching API function only. |
 | `FrameView` returned by `step()` | Borrowed | Valid until the next operation that advances, resets, rewinds, reloads, or destroys the session. Copy data that must outlive that boundary. |
-| Memory returned by `RetroRunner` | Borrowed from the loaded core | Invalid after core reset, unload, or any operation documented by the core as reallocating memory. |
-| `engine::PackView` returned by `AytherSession::pack()` | Borrowed | Trivially copyable and non-owning. Invalid after the session reloads, replaces, or destroys its pack; callers cannot unwrap its hidden handle. |
+| `FrameView::native_original` and `native_frame()` | Borrowed from Tessera | Pixel and PCM spans expire at the next successful native step, reset, restore, or close, and when the session is destroyed. |
+| `NativeEmulation *` from `native_emulation()` | Borrowed from the session | Null for the libretro provider. Valid until the session is destroyed. |
+| `engine::NativeSnapshot` | Exclusive, move-only reference | Holds its own reference; remains readable after the native session closes. |
+| Memory returned by `RetroRunner` | Borrowed from the loaded core | Invalid after core reset, unload, or any operation the core documents as reallocating memory. |
+| `engine::PackView` returned by `AytherSession::pack()` | Borrowed | Trivially copyable and non-owning. Invalid after the session reloads, replaces, or destroys its pack. |
 | `engine::PackInfo` and `engine::PackValidationResult` | Owned values | Strings and findings remain valid independently of temporary archive and report handles. |
-| `engine::PackWatcher` | Exclusive, move-only RAII | `create()` starts the platform watcher; destruction stops it and releases the hidden core handle. `poll()` is non-blocking. |
-| `VulkanContextView` handles | Borrowed by Engine from the host application | Device-dependent Engine resources and submitted work must finish before the host destroys its device or allocator. Surface and swapchain handles are not exposed to Engine. |
+| `engine::PackWatcher` | Exclusive, move-only RAII | `create()` starts the platform watcher; destruction stops it. `poll()` is non-blocking. |
+| `VulkanContextView` handles | Borrowed by Engine from the host | Device-dependent Engine resources and submitted work must finish before the host destroys its device or allocator. |
 | Callback `user` pointers in the C facade | Borrowed | Must remain valid until the callback is removed or the session is destroyed. Callbacks must not retain transient frame pointers. |
 
 ## Primary session contract
 
-`AytherSession` coordinates the emulator host, Rust identity/substitution
+`AytherSession` coordinates the emulator, Rust identity and substitution
 handles, scripting, pack state, audio, recording, rewind, and frame extraction.
 
-Provider selection is explicit. `Config::provider` defaults to `libretro`;
-`tessera_native` prepares the installed Tessera module before any Rust identity
-handles or libretro initialization. Native preparation failure is returned with
-its exact `NativeResult` by the creation overload; there is no provider fallback.
-See [native Tessera consumption](TESSERA_NATIVE.md) for configuration, formats,
-lifetimes, capabilities and the current synthetic-only scope.
+Provider selection is explicit through `Config::provider`:
 
-For the legacy provider, creation is transactional from the caller's perspective:
+- `EmulationProvider::libretro` (default) loads `core_path` and `rom_path`.
+- `EmulationProvider::tessera_native` creates a Tessera session from
+  `Config::native_config` before any libretro initialization. The overload
+  `create(cfg, native_result)` returns the exact `NativeResult`. There is no
+  provider fallback.
 
-1. `create()` receives immutable configuration.
+[Tessera native provider](TESSERA_NATIVE.md) documents configuration, formats,
+and which session features work on the native path.
+
+Creation is transactional from the caller's perspective:
+
+1. `create()` receives immutable configuration and rejects options the
+   selected provider does not support (for `tessera_native`: `patch_path`,
+   `core_options`, `rom_path`, `audio_observer`, `render_observer`).
 2. It allocates the Rust-side handles.
-3. It loads the libretro core and user-provided ROM.
-4. It applies optional in-memory patches and core options before game loading.
-5. It initializes optional audio and pack state.
-6. It returns either an owning session or a typed error.
+3. It creates the emulator: loads the libretro core and ROM, applying optional
+   in-memory patches and core options before game loading; or creates the
+   Tessera session.
+4. It initializes optional audio and pack state.
+5. It returns either an owning session or a typed error.
 
-The session is not thread-safe. Drive `set_input()`, `step()`, reset, rewind,
-pack changes, and recording operations from one owning thread. Frontends may
-copy immutable frame data to another thread after respecting the `FrameView`
-lifetime boundary.
+The session is not thread-safe with either provider. Drive `set_input()`,
+`step()`, reset, rewind, pack changes, recording, and the native driver from one
+owning thread. Frontends may copy immutable frame data to another thread after
+respecting the `FrameView` lifetime boundary.
 
-`engine/input.hpp` publishes the stable Libretro joypad bit positions as
-`RetroPadButton`. `input_mask()` is the only conversion needed before passing a
-button to the raw `std::uint16_t` `set_input()` overload; neither the enum nor
-the conversion exposes a Libretro header. `InputState` is the typed multi-button
-value accepted by the session overload.
+`engine/input.hpp` publishes the libretro joypad bit positions as
+`RetroPadButton`. `input_mask()` converts a button for the raw `std::uint16_t`
+`set_input()` overload without exposing a libretro header; `InputState` is the
+typed multi-button value. With the native provider, the RetroPad mask is mapped
+to the controls the native configuration declares (A=Y, B=B, C=A, as in Genesis
+Plus GX).
 
-Failure to activate optional replacement content should preserve native output
-when safe. Core/ROM loading, invalid required configuration, failed patches, and
-trust or schema failures are not optional and must remain observable errors.
+Failure to activate optional replacement content preserves native output when
+safe. Emulator creation, invalid required configuration, failed patches, and
+trust or schema failures are not optional and remain observable errors.
 
 ## Frame pipeline
 
-The following pipeline describes the legacy provider. One successful legacy
-`step()` represents exactly one emulated frame:
+One successful `step()` represents exactly one emulated frame, with either
+provider:
 
 1. apply current input;
-2. execute the libretro frame;
-3. capture the supported memory and event observations;
+2. execute the frame (libretro `retro_run`, or a complete Tessera input frame);
+3. capture the supported memory and event observations through the session's
+   `ObservationSource`;
 4. derive tile, sprite, background, and audio identities;
 5. execute bounded scripting and apply overrides;
 6. resolve replacement content;
 7. stage and route audio on the frame timeline;
 8. publish a borrowed `FrameView`.
 
-Deterministic inputs, pack data, and emulator state must produce deterministic
-identity and scheduling decisions. Presentation and device timing must not alter
-identity generation.
+With the native provider, `step()` converts the Tessera original into the same
+frame-buffer path the libretro provider uses, so `FrameView` keeps the
+`libretro` pixel encoding; a failed advance is reported in
+`FrameView::native_result`. `poke()` and cheats write work RAM through the
+native control path.
 
-The native provider is driven through `native_emulation()`, which requires a
-complete input state for the next frame or a validated bound trace. Its results
-preserve EOF, pending transactions, confirmation and cancellation independently
-of the event queue. Since spec 008 TP-301.3, `set_input()` and `step()` also
-drive the native machine through the frame pipeline. Each step assigns every
-control the configuration's control map declares, mapping the RetroPad as gpgx
-does (A=Y, B=B, C=A). The FrameView carries the original as XRGB8888 and the
-observation of `TesseraBackend`. The work RAM is Tessera region `0x1000`
-(v0.2.0-rc.4), in libretro `SYSTEM_RAM` layout; `poke()` and cheats write it
-through `write_control`. A failed advance is reported in
-`FrameView::native_result`. `native_frame()` exposes borrowed original RGBA8 and PCM, with
-`pack_not_integrated` as the explicit original presentation reason. It clears
-expired views after a direct-driver reset or close. Real pack composition and
-Runtime presentation are separate MVP acceptance tasks.
+The native provider also has a direct driver, `native_emulation()`, that takes a
+complete input state for the next frame or a validated bound trace and
+preserves EOF, pending transactions, confirmation, and cancellation. After
+driving it directly, `native_frame()` refreshes the borrowed originals as
+`rgba8` (`FrameView::pixel_encoding`, `native_original`); that path composes
+only the pack's tile rules and states the reason in
+`FrameView::native_original_reason`. Use `step()` for full pack composition.
+
+Deterministic inputs, pack data, and emulator state produce deterministic
+identity and scheduling decisions. Presentation and device timing do not alter
+identity generation.
 
 ## Subsystem contracts
 
 ### Emulator host
 
-Public consumers use the move-only `ayther::engine::CoreProbe` to inspect a
-core. It owns one dynamic library handle and copies `CoreInfo` before exposing
-metadata; platform handles, symbol lookup, and Libretro structures remain
-private. `RetroRunner` binds the libretro C callback model to an object
-instance, owns ROM bytes and core lifecycle, and exposes borrowed memory views.
-Dynamic libraries and ROMs are untrusted inputs. Symbol resolution, capability
-negotiation, buffer bounds, and versioned AYTHER extensions must be checked
-before use.
+Public consumers inspect a libretro core with the move-only
+`ayther::engine::CoreProbe`, which owns one dynamic library handle and copies
+`CoreInfo` before exposing metadata. Platform handles, symbol lookup, and
+libretro structures remain private.
 
-The callback bridge currently relies on process-visible dispatch state. Until
-that design is replaced or formally constrained, callers must not drive two
-runner instances concurrently.
+Internally, the session reads its emulator through one `ObservationSource`
+(`include/ayther/observation/observation_source.h`, not installed). Its
+primitives mirror `ayther_interface_v1`; `RetroRunner` implements it from a
+libretro core's extension descriptor and `TesseraBackend` from a native
+session. Snapshot validation, sprite reads, audio polling, and controls are
+implemented once on that interface, so both providers build `FrameView`
+through the same code.
+
+`RetroRunner` binds the libretro C callback model to an object instance, owns
+ROM bytes and core lifecycle, and exposes borrowed memory views. Callback
+dispatch is thread-scoped: a `CallbackScope` binds the active runner in a
+`thread_local` for the duration of each synchronous entry point and restores
+the previous one on exit. Whether two runners can coexist also depends on the
+core binary's own global state, which Engine does not control.
+
+Dynamic libraries and ROMs are untrusted inputs. Symbol resolution, capability
+negotiation, buffer bounds, and versioned extensions are checked before use;
+see [Emulator extension ABI](EMULATOR_EXTENSION_ABI.md).
 
 ### Packs and core ABI
 
 Public C++ consumers include `engine/pack.hpp`. `inspect_pack()` opens a pack
-temporarily and copies its manifest-backed metadata into `PackInfo`;
-`validate_pack()` copies every diagnostic into `PackValidationResult`, so no
-paired report-free function is exposed. An optional trust-registry path can be
-supplied when inspection must authenticate signed fixtures.
+temporarily and copies its manifest metadata into `PackInfo`; `validate_pack()`
+copies every diagnostic into `PackValidationResult`. An optional
+trust-registry path can be supplied when inspection must authenticate signed
+fixtures.
 
 `AytherSession::pack()` returns `PackView`, never `AyArchive*`. The view may be
 passed to `AytherRenderer`, used to choose a render tier before assets are
 loaded, or queried for owned metadata. It must not outlive a pack reload or its
 session. `PackWatcher` encapsulates the platform thread and raw watcher handle;
-destroy it before the session and resources affected by reload.
+destroy it before the session.
 
 `PackView::select_render_tier_for_height()` selects HD through 720 pixels,
-Full HD through 1080, 2K through 1440, 4K through 2160, and 8K above that.
-Selection uses the smallest included tier at least as large as the requested
-tier, or the largest available tier when none qualifies. Flat packs are unchanged.
-The same mapping applies to `ayther_pack_set_tier_for_height()` in the C ABI.
+Full HD through 1080, 2K through 1440, 4K through 2160, and 8K above that. It
+uses the smallest included tier at least as large as the requested tier, or the
+largest available tier when none qualifies. Flat packs are unchanged. The same
+mapping applies to `ayther_pack_set_tier_for_height()` in the C ABI.
 
-`engine::core_abi_revision()` reports the linked core ABI revision without
-requiring the C header. Game-specific work-RAM interpretation is deliberately
-outside Engine. The flat `ayther_core_ffi.h` surface remains available only for
-callers intentionally selecting the public C ABI and for Engine internals.
+`engine::core_abi_revision()` reports the linked core ABI revision without the
+C header. Game-specific work-RAM interpretation is outside Engine. The flat
+`ayther_core_ffi.h` surface remains for callers that select the C ABI and for
+Engine internals.
 
 ### Audio
 
 `AudioPlayer` owns the SDL device and streams. `init()` is explicit and
-fallible; `shutdown()` is idempotent and is also called by the destructor.
+fallible; `shutdown()` is idempotent and also called by the destructor.
 Emulator batches and replacement voices share a frame-aligned staging timeline.
 
-Legacy AudioPlayer mix-ready PCM is interleaved signed 16-bit stereo at 44.1 kHz. Native Tessera original PCM carries its own rate and lifetime; FX-01 is 48 kHz and is not submitted to the legacy device. Units
-must be explicit: APIs distinguish sample frames, scalar samples, emulation
-frames, seconds, and absolute stream positions. Borrowed PCM pointers are valid
-only for the duration of the call unless copied into a documented cache.
+Mix-ready PCM is interleaved signed 16-bit stereo at 44.1 kHz. The native
+provider's original PCM carries its own rate (48 kHz for the Mega Drive
+machine); when device audio is enabled, the session resamples it to 44.1 kHz
+with phase carried across frames. Units are explicit: APIs distinguish sample
+frames, scalar samples, emulation frames, seconds, and absolute stream
+positions. Borrowed PCM pointers are valid only for the duration of the call
+unless copied into a documented cache.
 
 `HdMixer` is a deterministic buffer mixer and does not call SDL. Shared PCM uses
 `shared_ptr<const vector<int16_t>>` because several voices may reuse one decoded
@@ -192,28 +214,26 @@ asset and active voices may outlive cache invalidation.
 ### Rendering and Vulkan
 
 `AytherRenderer` consumes `FrameView` data and owns device-dependent render
-resources. It is intentionally separate from the session so headless execution
-does not require Vulkan.
+resources. It is separate from the session so headless execution does not
+require Vulkan.
 
 The renderer and its Vulkan helpers are thread-affine to the caller's render
-thread. The caller passes a borrowed `engine::VulkanContextView` and must keep
-its instance, physical device, logical device, graphics queue, queue family,
-and VMA allocator valid until every dependent object is released. GPU work must
-be synchronized before resources referenced by submitted commands are
-destroyed or replaced. `shutdown(context_view)` provides deterministic release
-before the host context is torn down. If it is omitted, the destructor releases
-initialized renderer resources, so the borrowed context must still be alive.
+thread. The caller passes a borrowed `engine::VulkanContextView` and keeps its
+instance, physical device, logical device, graphics queue, queue family, and
+VMA allocator valid until every dependent object is released. GPU work must be
+synchronized before resources referenced by submitted commands are destroyed
+or replaced. `shutdown(context_view)` releases deterministically before the
+host context is torn down; otherwise the destructor releases initialized
+resources, so the borrowed context must still be alive.
 
 Asynchronous sprite decoding owns CPU buffers until the render thread pumps the
-completed uploads. Worker shutdown must wake the condition variable and join the
+completed uploads. Worker shutdown wakes the condition variable and joins the
 thread before queues, caches, or the owning object are destroyed.
 
 The renderer targets an offscreen image with color-attachment, transfer-source,
-transfer-destination, and sampled usage. The frontend owns presentation. This
-keeps the session headless and lets another frontend sample the clean frame
-without treating the game as the whole window.
+transfer-destination, and sampled usage. The frontend owns presentation.
 
-The normal lifecycle is:
+The lifecycle is:
 
 1. the application creates and owns its Vulkan context and presentation state;
 2. it passes a borrowed `VulkanContextView` to `AytherRenderer::init`, which
@@ -223,18 +243,18 @@ The normal lifecycle is:
 4. the frontend presents, samples, or reads back the offscreen target;
 5. resize waits for conflicting GPU work, then recreates the target and every
    dependent framebuffer or descriptor;
-6. `shutdown(context_view)` releases renderer resources before the host context dies.
+6. `shutdown(context_view)` releases renderer resources before the host context
+   is destroyed.
 
-A shared command-buffer model currently keeps render and presentation in one
-submission. Independent renderer submission and a dedicated render thread are
-not part of the current contract. Layout transitions must cover every use of
-the offscreen image; a missing barrier is a correctness failure, not a portable
-driver optimization.
+Render and presentation share one command buffer and submission. Independent
+renderer submission and a dedicated render thread are not part of the current
+contract. Layout transitions must cover every use of the offscreen image; a
+missing barrier is a correctness failure.
 
 Plane-aware video composition and widescreen behavior have dedicated contracts:
 [Cinematic plane composition](CINEMATIC_PLANE_COMPOSITION.md) and
 [Widescreen composition](WIDESCREEN.md). Sprite and plane replacements follow
-the [Replacement composition rules](REPLACEMENT_COMPOSITION.md), and the
+the [Replacement composition rules](REPLACEMENT_COMPOSITION.md); the
 [Render observation](RENDER_OBSERVATION.md) and [Visual state](VISUAL_STATE.md)
 contracts cover per-frame inspection and checkpoint restore.
 
@@ -242,63 +262,74 @@ contracts cover per-frame inspection and checkpoint restore.
 
 `VideoSource` abstracts random or ranged reads without transferring ownership
 of external archives. `VideoClip` exclusively owns its source and decoder state.
-Opening, probing, indexing, decoding, and seeking are fallible. Callers must
-check dimensions and byte counts before allocating or copying frame data.
+Opening, probing, indexing, decoding, and seeking are fallible. Callers check
+dimensions and byte counts before allocating or copying frame data.
 
 ### Recording and rewind
 
 Recording data is deterministic state, not a general media container. Readers
-must validate lengths before allocation and treat compressed payloads as
-untrusted. Rewind owns a bounded ring of compressed states; enabling it has a
-memory cost proportional to state size, capture cadence, and requested history.
+validate lengths before allocation and treat compressed payloads as untrusted.
+Takes record their emulator provenance (`gpgx` or `tessera`); see
+[API and compatibility](API_COMPATIBILITY.md#take-recording-format).
+
+Rewind owns a bounded ring of compressed states. With the libretro provider
+they are core serialization states; with the native provider they are Tessera
+checkpoints, whose size varies from frame to frame. Memory cost is
+proportional to state size, capture cadence, and requested history.
 
 ### Determinism and headless oracles
 
-`AytherSession` is designed to step without Vulkan or an audio device. A
-headless oracle can therefore load a legally distributable fixture, run an
-ordered input stream, serialize state, restore it, and compare re-simulated
-frames and observations.
+`AytherSession` steps without Vulkan or an audio device. A headless oracle can
+load a legally distributable fixture, run an ordered input stream, serialize
+state, restore it, and compare re-simulated frames and observations.
 
 Deterministic code uses emulation frames or recorded stream positions. Wall
 time, presentation timing, device callbacks, filesystem ordering, and GPU
-results must not feed back into session state. The guarantee remains conditional
-on deterministic behavior from the selected emulator core and all supplied
-inputs.
+results never feed back into session state. The guarantee is conditional on
+deterministic behavior from the selected emulator and all supplied inputs.
+`emulation_generation()` names the emulator, version, and determinism contract
+of a session so recordings and packs can record their origin.
 
 ### Component serialization
 
 The component TOML helpers convert typed native structures to and from pack
-documents. Parse functions append or replace data only as documented and must
+documents. Parse functions append or replace data only as documented and do
 not leave partially trusted state active after a fatal parse error. Schema and
-compatibility policy remain owned by the core; native parsing must not silently
-invent a newer public contract.
+compatibility policy are owned by the core; native parsing does not invent a
+newer public contract.
 
 ## Header groups
 
+This table covers the source tree. The installed subset is listed in the
+[Public API index](PUBLIC_API_INDEX.md).
+
 | Group | Headers | Purpose |
 |---|---|---|
-| Facades and contracts | `ayther_session.h`, `ayther_sdk.h`, `ayther_result.h`, `ayther_sdk_version.h` | Session orchestration, C facade, errors, compatibility |
+| Facades and contracts | `ayther_session.h`, `ayther_sdk.h`, `ayther_result.h`, `ayther_sdk_version.h`, `engine/engine.hpp` | Session orchestration, C facade, errors, compatibility |
 | Identity and composition | `ayther_layers.h`, `ayther_animation.h`, `ayther_audio_events.h`, `ayther_mode3.h`, `widescreen.h`, `parallax_bands.h`, `pano_bands.h`, `panorama_cover.h` | Frame interpretation and replacement composition |
-| Audio | `audio_player.h`, `audio_hd_mixer.h`, `audio_live_resume.h`, `audio_match_rule.h`, `audio_seq_anchor.h`, `audio_bus_balance.h`, `audio_asset_level.h`, `voice_router.h`, `psg_synth.h` | Capture, matching, synthesis, routing, mixing, analysis |
-| Video and rendering | `ayther_video.h`, `ayther_renderer.h` | Decode, GPU upload, composition, readback |
-| Runtime state | `ayther_recording.h`, `rewind_buffer.h`, `failure_escalation.h`, `output_profile.h`, `ayther_config.h` | Persistence, recovery, policy, output geometry, configuration |
-| Emulator integration | `engine/core_probe.hpp`, `libretro_host/retro_runner.h`, `libretro_host/ayther_api.h` | Public metadata probing, internal libretro lifecycle, versioned extensions |
+| Audio | `audio_player.h`, `audio_hd_mixer.h`, `audio_live_resume.h`, `audio_match_rule.h`, `audio_seq_anchor.h`, `audio_bus_balance.h`, `audio_asset_level.h`, `voice_router.h`, `psg_synth.h`, `engine/audio_*.hpp`, `engine/music_*.hpp` | Capture, matching, synthesis, routing, mixing, analysis, QA observation |
+| Video and rendering | `ayther_video.h`, `ayther_renderer.h`, `engine/render_observer.hpp`, `engine/vulkan_interop.hpp` | Decode, GPU upload, composition, readback, handoff |
+| Runtime state | `ayther_recording.h`, `rewind_buffer.h`, `failure_escalation.h`, `output_profile.h`, `ayther_config.h`, `runtime_options.h`, `engine/visual_state.hpp` | Persistence, recovery, policy, output geometry, configuration |
+| Emulator integration | `engine/core_probe.hpp`, `engine/native_emulation.hpp`, `emulation_generation.h`, `observation/observation_source.h`, `libretro_host/retro_runner.h`, `libretro_host/ayther_api.h` | Core probing, native provider, provenance, observation surface, libretro lifecycle, versioned extension |
 | Rust boundary | `ayther_core_ffi.h`, `ayther_unique_handle.h` | Flat ABI and RAII ownership adapters |
 
 `libretro_host/libretro.h` is a third-party protocol header. Preserve its
 upstream documentation and licensing; project-specific contracts belong in the
-wrapper headers instead.
+wrapper headers.
 
 ## Error model
 
 - C++ facade operations use `Result<T>` where a typed failure is part of the
-  contract.
+  contract. Native-provider operations use `engine::NativeResult`, which keeps
+  the Tessera status, phase, OS error, frame identity, and transaction context.
 - Narrow internal helpers may use `bool`, `nullptr`, or empty values only when
-  the missing diagnostic is not needed by their caller.
+  the caller does not need the missing diagnostic.
 - The C API returns `AyStatus` and exposes stable buffers only for the lifetime
   documented by that API.
-- Destructors and cleanup paths must not throw.
-- Logging is diagnostic output, not an error-transport mechanism.
+- Destructors and cleanup paths do not throw.
+- Logging is diagnostic output, not an error-transport mechanism. Engine code
+  logs through `ayther::log` (severity, component, stable event id, typed
+  fields) and a host may install its own sink.
 
 ## Compatibility and legal boundary
 
@@ -306,4 +337,4 @@ This documentation does not authorize distribution of ROMs, BIOS images,
 commercial assets, emulator cores, private keys, or other content without the
 necessary rights. In-memory patching does not transfer rights to the underlying
 game. Dynamic core loading does not establish that a core is safe, compatible,
-or distributable.
+or distributable. See [Legal and distribution boundaries](LEGAL_AND_DISTRIBUTION.md).

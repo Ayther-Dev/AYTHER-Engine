@@ -2,7 +2,7 @@
 
 **Status:** active exception register
 
-**Last reviewed:** 2026-08-31
+**Last reviewed:** 2026-11-19
 
 This register records temporary deviations from repository governance controls.
 An exception permits explicitly scoped operation while a constraint exists; it
@@ -22,14 +22,14 @@ unrelated release and security gates.
 
 ### Constraint and rationale
 
-At the review date, `@Ayther-Dev/maintainers` contains one member,
+At the effective date, `@Ayther-Dev/maintainers` contained one member,
 `@davidlazarte`. GitHub does not permit a pull-request author to approve their
 own pull request. Enabling required Code Owner review while that sole member is
 both author and only eligible Code Owner would block maintenance without adding
 an independent reviewer.
 
 The active `Protect main` ruleset therefore requires changes to enter through a
-pull request but temporarily retains:
+pull request but temporarily keeps:
 
 ```text
 required_approving_review_count: 0
@@ -48,8 +48,8 @@ The following controls reduce risk while the exception is active:
 - `main` changes must use a pull request and pass the strict `Required CI gate`;
 - the `main` ruleset blocks deletion and non-fast-forward updates and has no
   bypass actors;
-- `.github/CODEOWNERS` continues to route release-workflow and release-tool
-  changes to `@Ayther-Dev/maintainers`, so a future eligible member is visible
+- `.github/CODEOWNERS` routes `.github/workflows/` and the listed release
+  tools to `@Ayther-Dev/maintainers`, so a future eligible member is visible
   without changing ownership patterns;
 - CodeQL runs independently of the author, and open high or critical findings
   remain release blockers even when the workflow itself succeeds;
@@ -90,7 +90,8 @@ The exception expires at the earliest of:
 
 Before expiry, either close the exception or record a new time-bounded decision
 with current evidence and an explicit residual-risk owner. Silence does not
-renew it.
+renew it. No renewal has been recorded; without one, the exception lapses on
+2026-11-30.
 
 To close the exception:
 
@@ -107,6 +108,13 @@ To close the exception:
    approves;
 7. mark this entry closed with the ruleset, test pull request, reviewer, and
    closure date.
+
+### Review log
+
+| Date | Occasion | Finding |
+|---|---|---|
+| 2026-08-31 | Exception opened | Constraint as described above |
+| 2026-11-19 | State at `v0.1.0-rc.28` | Constraint unchanged: `@Ayther-Dev/maintainers` has one member, `@davidlazarte`. `Protect main` still has `required_approving_review_count: 0` and `require_code_owner_review: false`, no bypass actors, deletion and non-fast-forward blocked, strict `Required CI gate`. `Immutable release tags` blocks update and deletion of `refs/tags/v*` with no bypass actors; it does not cover `native-v*` tags. The `release` environment has one required reviewer (`davidlazarte`) with `prevent_self_review: false`. No open code-scanning alerts. Every Engine release from `v0.1.0-rc.24` to `v0.1.0-rc.28` was approved by the sole maintainer. `.github/CODEOWNERS` does not list every release tool (for example `tools/install_pinned_llvm.ps1`, `tools/finalize_release_assets.ps1`, `tools/verify_release_artifact.ps1`). Scope has not expanded. Status: active until 2026-11-30 |
 
 ## Review procedure
 

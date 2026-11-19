@@ -23,9 +23,9 @@
 //   timeline produce a FrameView  ----------------->    consume FrameView,
 //   render it
 //
-// Legacy audio output is owned by the session. The explicit Tessera provider
-// exposes original PCM through borrowed native frames; device presentation is
-// unavailable in that provider until its Runtime contract is integrated.
+// Audio output is owned by the session on both providers. The Tessera provider
+// also exposes its original 48 kHz PCM through borrowed native frames; with
+// `enable_audio` the session resamples it to the player's 44.1 kHz.
 //
 // No-throw: construction and fallible operations return ayther::Result
 // (§4.1.1); nothing throws across the FFI users. Opaque handles are held as

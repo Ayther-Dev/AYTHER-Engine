@@ -1,8 +1,8 @@
 # Pack identity specification
 
-**Status:** implemented public contract; pre-release and not frozen
+**Status:** implemented public contract; identity contract `1`; pre-release and not frozen
 
-**Last verified:** 2026-09-30
+**Last verified:** 2026-11-19
 
 AYTHER binds every replacement to an identity derived from observed emulated
 state. This document specifies those identities precisely enough for an
@@ -21,6 +21,27 @@ AYTHER Lab may accelerate authoring, but it must never be the only way to
 produce a pack. This interoperability promise does not grant rights to ROMs,
 game assets, emulator cores, or derivative content. See
 [Legal and distribution boundaries](LEGAL_AND_DISTRIBUTION.md).
+
+## Contract version and providers
+
+`AYTHER_IDENTITY_CONTRACT` (`include/ayther/ayther_identity_contract.h`) is
+`1`. It is mirrored by `IDENTITY_CONTRACT` in `core/src/identity_kat.rs` and by
+the `[identity] contract` key of the generated vectors;
+`tests/unit/identity_contract_kat_test.cpp` pins all three. The number changes only
+when an identity function changes, which invalidates published packs.
+
+Identities are functions of machine state, not of the emulator that produced
+it. Both emulation providers feed the same hashers through the same
+observation surface:
+
+| Provider | Observation source | Identity status |
+|---|---|---|
+| `libretro` with the AYTHER-aware Genesis Plus GX fork | `RetroRunner` | reference |
+| `tessera_native` (Mega Drive) | `TesseraBackend` | identical sprite, plane-tile, plane-cell, attribution, and audio-event identities (spec 008 gate G2, closed 2026-11-12) |
+
+A pack baked on one provider therefore loads and matches on the other.
+`tools/parity_bench` verifies this (`dump --identities` and `--cross-pack`).
+Provider setup is described in [Tessera native provider](TESSERA_NATIVE.md).
 
 ## Global hash conventions
 
@@ -54,7 +75,7 @@ Mega Drive / Genesis conventions used below:
 | Planes | `0 = A`, `1 = B`, `2 = Window`; mask bits 0, 1, and 2 respectively |
 | Sprite coordinates | Top-left screen position is the raw SAT value minus 128 |
 | Visible area | 256/320 × 224/240 for H32/H40 × V28/V30 |
-| VRAM byte order | The fork exposes a word-swapped buffer; each algorithm below states whether it applies `^ 1` |
+| VRAM byte order | The observation surface exposes a word-swapped buffer on both providers; each algorithm below states whether it applies `^ 1` |
 
 ## Sprite hash
 
@@ -84,8 +105,8 @@ The decoded buffer contains 64 palette indices per tile.
 - An occurrence is discarded when
   `x <= -(w*8) || y <= -(h*8) || x >= 336 || y >= 240`.
 
-SAT words are reconstructed from the word-swapped buffer. The decoded fields
-are:
+The parser scans all 80 SAT slots and reconstructs SAT words from the
+word-swapped buffer. The decoded fields are:
 
 ```text
 screen_y = (w0 & 0x03FF) - 128
@@ -100,9 +121,11 @@ tile_idx = w2 & 0x07FF
 screen_x = (w3 & 0x01FF) - 128
 ```
 
-The current parser scans all 80 SAT slots and decodes words explicitly. Older
-saved sprite assignments produced before that correction may require
-re-authoring because the previous parser could hash the wrong graphic.
+> [!NOTE]
+> Sprite assignments saved by tooling that used an earlier parser (which
+> followed the link chain and decoded bytes in logical big-endian order) can
+> reference hashes of the wrong graphic. They require re-observation or
+> re-authoring.
 
 ### Pose identity
 
@@ -130,19 +153,24 @@ distinct keys while a globally shifted copy of the same flips (`1|0|0` and
 `core/src/vram_sprite.rs`.
 
 When several authored poses complete over the same occurrences with the same
-number of real hits, resolution prefers, in order: the pose with the largest
-group of matched members sharing one `observed_flip ^ authored_flip` value
-(relative agreement, which decides which pose), then the arrangement whose
-observed flips equal `authored_flip ^ arrangement_mirror` (absolute agreement,
-which decides the face), then the stable base order: more members first, live
-overrides before the pack catalog, then load order. A pose without flips has
-relative agreement equal to its hit count, so unknown flips never separate
-poses and its absolute agreement is zero. This is a preference, not a filter:
-a pose alone is still recognized when the other relative-flip variant is on
-screen. Poses
-with flips and two or more members try all four mirror arrangements even when
-some coincide in position; single-member poses and poses without flips discard
-positionally repeated arrangements.
+number of real hits, resolution prefers, in order:
+
+1. the pose with the largest group of matched members sharing one
+   `observed_flip ^ authored_flip` value (relative agreement, which decides
+   which pose);
+2. the arrangement whose observed flips equal
+   `authored_flip ^ arrangement_mirror` (absolute agreement, which decides the
+   face);
+3. the stable base order: more members first, live overrides before the pack
+   catalog, then load order.
+
+A pose without flips has relative agreement equal to its hit count, so unknown
+flips never separate poses, and its absolute agreement is zero. This is a
+preference, not a filter: a pose alone is still recognized when the other
+relative-flip variant is on screen. Poses with flips and two or more members
+try all four mirror arrangements even when some coincide in position;
+single-member poses and poses without flips discard positionally repeated
+arrangements.
 
 ### Animation group identity
 
@@ -189,7 +217,7 @@ Variant resolution minimizes total cost; ties select the lower variant index:
 ## Plane-tile hash
 
 Reference: plane observation in `src/ayther_session.cpp` and the independent
-oracle in `tests/plane_hash_variants_test.cpp`.
+oracle in `tests/integration/plane_hash_variants_test.cpp`.
 
 Read a nametable word with the word-swap correction:
 
@@ -243,11 +271,12 @@ multiple of 32, and equals the sprite hash of the same tiles read from VRAM.
 
 ## Audio-event signature
 
-Reference: `core/src/audio_event.rs`.
+Reference: `core/src/audio_event.rs`. The detector output is versioned by
+`AytherSession::kAudioEventAlgo`, currently `3`.
 
-Input is the fork's raw chip-write stream `{cycle, addr, data, chip}`. `cycle`
-does not participate, which keeps the identity stable during replay. Chip IDs
-are `0 = FM/YM2612`, `1 = PSG/SN76489`, and `3 = PCM/RF5C164`. FM `addr` is the
+Input is the raw chip-write stream `{cycle, addr, data, chip}`. `cycle` does
+not participate, which keeps the identity stable during replay. Chip IDs are
+`0 = FM/YM2612`, `1 = PSG/SN76489`, and `3 = PCM/RF5C164`. FM `addr` is the
 latched register in `0x000..0x1FF`, not the bus port.
 
 Event boundaries:
@@ -271,7 +300,7 @@ FM:  h = mix(mix(SEED, 0), channel)
      the 0x40..0x4C total-level register of a CARRIER operator is skipped
      (carriers per algorithm from FM_CARRIERS, register slot order S1,S3,S2,S4
      mapped through FM_SLOT_OPERATOR = [0,2,1,3]); carrier level is volume and
-     is reported as velocity, so a fade keeps the signature (kAudioEventAlgo 3)
+     is reported as velocity, so a fade keeps the signature
 
 DAC: h = mix(mix(mix(SEED, 0), 5), 0xDA)
      mix each ordered 0x2A sample byte from the opening block
@@ -302,9 +331,9 @@ Instrument identity excludes note, channel, pan, and effective volume.
 - PCM uses namespace `0xF2` plus start and loop-start addresses, excluding
   channel and frequency delta.
 
-Velocity and MIDI pitch are derived presentation data, not identity. Current
-derivations live in `audio_event.rs`; changing them may alter playback but must
-not silently alter an identity key.
+Velocity and MIDI pitch are derived presentation data, not identity. Their
+derivations live in `audio_event.rs`; changing them may alter playback but
+must not alter an identity key.
 
 ## Screen-plane signature
 
@@ -360,26 +389,28 @@ Format acceptance does not establish that the pack author owns the content.
 Community tooling can obtain the same identities through the public Engine/core
 boundary:
 
-1. For sprites, read parsed-sprite regions `0x10B`/`0x10C` plus VRAM and call
-   `ayther_sprite_hasher_process_sprites`. Occurrences return hash, animation
-   group, palette, flips, and slot. With a stock core,
+1. For sprites, read the parsed-sprite region (`AYTHER_REGION_PARSED_SPRITES`
+   and `AYTHER_REGION_PARSED_SPRITE_COUNT`; legacy memory IDs `0x10B`/`0x10C`)
+   plus VRAM and call `ayther_sprite_hasher_process_sprites`. Occurrences
+   return hash, animation group, palette, flips, and slot. With a stock core,
    `ayther_sprite_hasher_process_vram(..., AYTHER_SAT_AUTODETECT)` searches SAT
    candidates aligned to `0x200`, requires at least three link hops and three
    on-screen sprites, scores `on_screen * 1000 + min(hops, 999)`, and chooses
    the lowest base on a tie.
 2. For plane tiles, implement the plane-tile definition above over VRAM and VDP
    registers, or validate candidates through `ayther_tile_sub_lookup`.
-3. For audio, feed regions `0x109`/`0x10A` into
+3. For audio, feed the audio-write region (`AYTHER_REGION_AUDIO_WRITES` and
+   `AYTHER_REGION_AUDIO_WRITE_COUNT`; legacy `0x109`/`0x10A`) into
    `ayther_audio_event_process_frame`, then inspect closed and active events.
-4. For palette variants, call `ayther_palette_signature` over CRAM region
-   `0x100` and preserve the 30-frame stability latch.
+4. For palette variants, call `ayther_palette_signature` over CRAM (legacy
+   `0x100`) and preserve the 30-frame stability latch.
 5. For stable asset names, use `ayther_asset_id` or
    `ayther_asset_id_bytes` rather than inventing another normalization.
 
-The AYTHER-aware fork additionally exposes VDP registers at `0x101`, VSRAM at
-`0x107`, and Z80 RAM at `0x10F`. Those observations are unavailable from a stock
-core unless the standard libretro surface provides an equivalent. The
-versioned integration rules are in
+VDP registers, VSRAM, Z80 RAM, and the per-line regions are available only from
+an AYTHER-aware provider (the pinned fork or `tessera_native`); a stock core
+offers only what the standard libretro surface provides. Region IDs,
+capabilities, and versioning are specified in
 [Emulator extension ABI](EMULATOR_EXTENSION_ABI.md).
 
 Pack-building, signing, conformance fixtures, and authoring UI belong to
@@ -389,9 +420,12 @@ make the identity contract proprietary.
 ## Known-answer tests
 
 `core/src/identity_kat.rs` exposes pure implementations and hand-recorded
-expected values. The synthetic VRAM pattern is
+expected values; `tests/unit/identity_contract_kat_test.cpp` recomputes the C
+and FNV vectors independently. The synthetic VRAM pattern is
 `vram[i] = (i * 37 + 11) & 0xFF`; 37 is coprime with 256, so adjacent swapped
-bytes differ and the fixture actually detects a missing or extra `^ 1`.
+bytes differ and the fixture detects a missing or extra `^ 1`. The synthetic
+CRAM word `i` is `(i * 29 + 5) & 0x1FF`, and the synthetic FM register bank is
+`reg[i] = (i * 53 + 7) & 0xFF`.
 
 Published anchors include:
 
@@ -399,9 +433,18 @@ Published anchors include:
 |---|---:|
 | Sprite, tile 0, 1×1 | `0x41573b4753eaaeb4` |
 | Sprite, tile 3, 4×4 | `0xadba9fc9e8c721a7` |
+| Pose of the two sprite anchors above, no flips or uniform flips | `0x43f1af85db6d39d0` |
+| Same pose, flips `0\|1` (equal to `2\|3`) | `0x39375f8df926189e` |
+| Palette variant, line 0, slots 1–15 | `0x327269cf7f752943` |
+| Palette variant, line 2, slots 1 and 4 | `0xe602f24f070befbc` |
 | Plane tile, pattern 1, palette 0 | `0x98d36be2cd04adb9` |
+| Screen-plane term of that tile at column 3, row 5, plane 1 | `0x4baccc35b93adb02` |
 | FM event over the synthetic register bank, channel 0 (algorithm 3, carrier total levels skipped) | `0x6a775e4ae7728677` |
 | FM event over the synthetic register bank, channel 4 | `0xa1448c411d572053` |
+| FM instrument over the synthetic register bank, channel 0 | `0x2dcd729ba7e4081a` |
+| PSG tone signature `mix(SEED, [1, 0, 0x0E, 0x00])` | `0x917b96983089543c` |
+| DAC signature `mix(SEED, [0, 5, 0xDA, 0x10, 0xF0])` | `0x9fafa7e158f9353a` |
+| PCM signature `mix(SEED, [3, 2, 0x10, 0x23, 0x01, 0x00, 0x04])` | `0x5975df5f33250ed2` |
 
 The KAT suite also checks equivalence with the production `SpriteHasher`,
 palette sensitivity differences, zero-fill behavior, the exact FNV prime in
@@ -421,7 +464,8 @@ The following mistakes compile and run but produce incompatible packs:
 6. treating relative-flip agreement as a hard filter instead of a preference,
    or discarding positionally repeated mirror arrangements of a multi-member
    pose with flips;
-7. including FM carrier total level in instrument identity or in the FM event signature;
+7. including FM carrier total level in instrument identity or in the FM event
+   signature;
 8. including audio-write cycle in an event signature;
 9. combining screen signatures across planes.
 

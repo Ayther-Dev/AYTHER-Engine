@@ -1,6 +1,6 @@
 # ADR 0002: Release and protocol version contract
 
-**Status:** accepted
+**Status:** Accepted
 
 **Date:** 2026-08-28
 
@@ -59,3 +59,13 @@ revision 7 or later.
 Consumers can display one AYTHER release version without guessing. Compatibility
 logic still uses the narrower protocol revision relevant to a boundary. A
 release cannot configure or pass the ABI suite when its declared versions drift.
+
+## Update (2026-11-19)
+
+The decision stands. Current values for every axis are maintained in
+[API and compatibility](../API_COMPATIBILITY.md#release-and-protocol-versions);
+the flat C ABI has since reached revision 9 through further additive symbols.
+Two more independent axes follow the same rule: the minimum Tessera C API that
+Engine accepts for its native provider (pinned by
+`dependencies/tessera.lock.json`), and the core probe protocol version reported
+in `AYTHER_STATUS` lines.

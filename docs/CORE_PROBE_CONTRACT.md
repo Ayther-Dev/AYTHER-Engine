@@ -1,10 +1,17 @@
 # Core probe contract (v2)
 
-Contract shared by the Engine, the Runtime, the Lab and Play CE to decide whether
-a libretro core on disk can be used with AYTHER. It extends `probe_core`
+**Status:** implemented; protocol version `2`.
+
+Contract shared by AYTHER Engine, Runtime, Lab, and Play CE to decide whether a
+libretro core on disk can be used with AYTHER. It extends `probe_core`
 (`include/ayther/engine/core_probe.hpp`), which only reads the libretro
-information entry points, with the AYTHER ABI and the capability check
-(`probe_core_v2`).
+information entry points, with the AYTHER extension ABI and the capability
+check (`probe_core_v2`).
+
+The probe applies to the libretro provider. The native Tessera provider is
+linked into Engine at build time and selected through
+`AytherSession::Config::provider`; it is not probed from disk. See
+[Tessera native provider](TESSERA_NATIVE.md).
 
 The probe never loads content, never starts a session and never initialises SDL
 or Vulkan. A core that is valid for AYTHER announces the AYTHER ABI and every
@@ -15,12 +22,12 @@ for playing without a pack.
 
 | `verdict` | `reason` | Process exit | Meaning |
 |---|---|---|---|
-| `ok` | — | 0 | Loads, announces ABI 1.10 and every required capability. |
+| `ok` | — | 0 | Loads, announces ABI 1.10 or a later 1.x minor, and every required capability. |
 | `missing_file` | `core.missing` | 2 | The path does not exist. |
 | `wrong_architecture` | `core.wrong_architecture` | 2 | The binary is for another architecture than the host process (for example an x86 DLL in an x64 process). |
 | `not_a_core` | `core.invalid` | 3 | The file exists but is not a loadable library, or lacks the libretro information entry points. |
 | `abi_missing` | `core.abi_missing` | 4 | A libretro core without the AYTHER extension (a stock core). |
-| `capabilities_incomplete` | `core.capabilities_incomplete` | 4 | AYTHER ABI present, but older than 1.10 or `capabilities` does not cover `required_capabilities`. |
+| `capabilities_incomplete` | `core.capabilities_incomplete` | 4 | AYTHER ABI present, but not major 1 with minor 10 or later, or `capabilities` does not cover `required_capabilities`. |
 | `timeout` | `core.probe_timeout` | 5 | The probe did not answer in time. The parent process sets this verdict; the child never reports it. |
 | `crashed` | `core.probe_crashed` | 6 | The probe ended without a valid answer (a crash, a signal, no status line). The parent process sets this verdict; the child never reports it. |
 
@@ -62,7 +69,8 @@ AYTHER_STATUS {"protocol_version":2,"event":"probe","ok":false,"verdict":"capabi
   "required_capabilities":"0xEFFFF","missing_capabilities":["SPRITE_OUTCOME_V1"]}
 ```
 
-(The examples are wrapped for reading; the real line has no line breaks.)
+(The examples are illustrative and wrapped for reading; the real line has no
+line breaks.)
 
 Fields:
 
@@ -83,23 +91,22 @@ Fields:
 
 ## Required capabilities
 
-`required_capabilities` is the constant of the Engine, `0xEFFFF`: bits 0 to 15
-and 17 to 19 of `ayther_api.h` (`LEGACY_MEMORY` to `SYSTEM_V1`, then
-`LINE_STATE_V1`, `OBSERVABILITY_V1` and `SPRITE_OUTCOME_V1`). Bit 16,
-`MODE4_CONTROLS` (render controls in Mode 4), is **not** required: the gpgx r4
-fork with the AYTHER observation (ABI 1.10, build id `Genesis Plus GX AYTHER ABI
-1.10; core v1.7.4 7109a7c2`) announces `0xEFFFF`, without it, and it is the only
-external core supported. The measurement is in `evidence/g0/gpgx-capabilities.json`
-of the Tessera specification (TP-013.2). A bit enters the mask only with a new
-minor version of the contract; `MODE4_CONTROLS` is a candidate when SMS, Game
-Gear or SG-1000 arrive (phase 6).
+`required_capabilities` is the Engine constant `kRequiredCapabilities`,
+`0xEFFFF`: bits 0 to 15 and 17 to 19 of `ayther_api.h` (`LEGACY_MEMORY` to
+`SYSTEM_V1`, then `LINE_STATE_V1`, `OBSERVABILITY_V1` and
+`SPRITE_OUTCOME_V1`). Bit 16, `MODE4_CONTROLS` (render controls in Mode 4), is
+**not** required: the Genesis Plus GX r4 fork, the only supported external
+core, announces `0xEFFFF` without it. A bit enters the mask only with a new
+minor version of this contract; `MODE4_CONTROLS` is a candidate when Master
+System, Game Gear, or SG-1000 support is added.
 
 An AYTHER interface older than 1.10 is `capabilities_incomplete` even if its
 mask happens to cover the required bits.
 
 ## Test vectors
 
-The eight vectors are shared by the four products. A product passes the contract
+The eight vectors are shared by the four products. Their source is
+`tools/ayther_core_probe/probe-vectors.json`. A product passes the contract
 when it produces, for each vector, the verdict, the reason and the exit code
 below.
 
@@ -153,8 +160,8 @@ a hostile or broken one can hang, crash or corrupt the caller.
    2 s for the hang vector) but a product must not raise it above 10 s.
 2. **On expiry, kill the child and its descendants** (a job object on Windows, a
    process group on POSIX) and set the verdict `timeout`, reason
-   `core.probe_timeout`, exit code 5. Do not wait for the child to finish after
-   killing it indefinitely: reap it with a short second limit.
+   `core.probe_timeout`, exit code 5. After killing the child, do not wait
+   indefinitely; reap it with a short second limit.
 3. **Read standard output, bounded** (64 KiB is far more than a status line),
    with no standard input. Standard error is for logs.
 4. **When the child exits in time,** take the last line that starts with
@@ -171,7 +178,7 @@ a hostile or broken one can hang, crash or corrupt the caller.
    a line that says so is treated as `crashed`.
 6. **Validate again when it matters.** The answer is about one file at one moment:
    key a cache on path, size and modification time, and probe again before
-   starting a session with that core (RF-9.3).
+   starting a session with that core.
 7. **Localize from `verdict` and `reason`,** not from `message`.
 
 ### Pseudocode

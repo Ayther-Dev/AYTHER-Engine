@@ -2,61 +2,68 @@
 
 ## Supported versions
 
-AYTHER Engine has not yet published a stable version. During initial
-development, reports will be evaluated against the `main` branch. This section
-will be replaced with a version matrix after the first stable release.
+AYTHER Engine has no stable release. Every published artifact is a
+`0.1.0-rc.N` pre-release, and fixes land on `main` and ship in the next
+candidate; earlier candidates are not patched. Reports are evaluated against
+`main`. A version matrix will replace this section after the first stable
+release.
 
-No security-support lifetime or operated Hub trust registry is currently
-offered. The implemented production trust policy and remaining operational
-gaps are documented in
-[Pack and security model](docs/PACK_SECURITY_MODEL.md).
+No security-support lifetime and no operated AYTHER Hub trust registry are
+offered. The implemented production trust policy and the remaining operational
+gaps are documented in [Pack and security model](docs/PACK_SECURITY_MODEL.md).
 
 ## Reporting a vulnerability
 
 Do not open a public issue for an unpatched vulnerability.
 
-Use the private **Report a vulnerability** option under GitHub Security
-Advisories for this repository. Include the following whenever possible:
+Use **Report a vulnerability** under the repository's **Security** tab (GitHub
+private vulnerability reporting, enabled for this repository). Include whenever
+possible:
 
 - affected version, tag, or commit;
 - platform and toolchain;
 - description and impact;
 - minimal reproduction steps;
-- proof of concept without sensitive data;
-- known mitigation;
-- availability to validate a fix.
-
-If GitHub Security Advisories is not enabled, contact the maintainers privately
-before disclosing technical details.
+- a proof of concept without sensitive data;
+- known mitigations;
+- whether you can validate a fix.
 
 ## Priority scope
 
-The following areas are considered especially sensitive:
+These areas are especially sensitive:
 
-- signature and integrity validation for `.ay` packs;
-- path traversal or writes outside the expected directory when reading files;
-- memory corruption at the Rust/C++ boundary;
-- incorrect ownership or lifetime handling for FFI handles;
+- signature and integrity validation of `.ay` packs, including acceptance of
+  unknown, expired, revoked, out-of-scope, or development signing keys in a
+  production policy;
+- archive path ambiguity, path traversal, or writes outside the expected
+  directory;
+- decompression bombs and bypasses of container or decoded-resource limits;
+- memory corruption at the Rust/C++ boundary, and incorrect ownership or
+  lifetime of FFI handles;
 - unauthorized execution through scripts or pack content;
-- unsafe loading of cores or dynamic libraries;
+- unsafe loading of emulator cores or other dynamic libraries;
+- denial of service through malformed packs, takes (`.arp`), or media files;
 - exposure of keys, certificates, or private data;
-- denial of service through malformed packs or files.
-- archive path ambiguity, decompression bombs, and resource-limit bypasses;
-- acceptance of unknown, expired, revoked, or development signing keys in a
-  production policy.
+- the release pipeline: checksums, Sigstore bundles, provenance, and SBOMs that
+  do not match the published bytes.
+
+The optional Tessera native provider is a separate repository and package.
+Report a defect in Tessera itself to its maintainers privately; report here
+when the defect is in how the Engine loads, configures, or trusts it.
 
 ## Response process
 
-The maintainers will acknowledge receipt when possible, assess the scope and
-severity, prepare a fix, and coordinate disclosure. Response times depend on
-the issue's complexity and project availability. Information that could enable
-exploitation will not be published before a mitigation is available.
+The maintainers acknowledge receipt when possible, assess scope and severity,
+prepare a fix, and coordinate disclosure. Response times depend on the issue's
+complexity and the maintainers' availability. Information that could enable
+exploitation is not published before a mitigation is available.
 
 ## Disclosure
 
-Once a fix is available, the project will document affected versions,
-mitigations, and the recommended update through a GitHub Security Advisory and
-the `Security` section of `CHANGELOG.md`.
+Once a fix is available, the project documents affected versions, mitigations,
+and the recommended update in a GitHub Security Advisory and in the `Security`
+section of [CHANGELOG.md](CHANGELOG.md). A published artifact found unsafe is
+withdrawn following the [release rollback runbook](docs/RELEASE_ROLLBACK.md).
 
 ## Out of scope
 
