@@ -1,6 +1,6 @@
 # ADR 0003: Runtime-to-Engine public API ownership
 
-**Status:** accepted
+**Status:** Accepted
 
 **Date:** 2026-08-31
 
@@ -57,3 +57,13 @@ through a later additive contract backed by stable artifact metadata and tests.
   source-compatibility window without claiming C++ ABI compatibility.
 - Runtime does not gain access to Engine internals merely because they exist in
   the source tree.
+
+## Update (2026-11-19)
+
+The decision stands. The Engine-owned surface under `include/ayther/engine/`
+now also includes the native emulation provider (`native_emulation.hpp`),
+selected through `AytherSession::Config::provider`, plus the core probe v2,
+audio and render observation, and visual-state modules. They follow the same
+ownership, compatibility, and review rules. Public headers never include
+Tessera or libretro headers. See
+[Engine public API contract](../ENGINE_PUBLIC_API_CONTRACT.md).

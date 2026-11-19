@@ -44,3 +44,12 @@ directly.
   ecosystem requirements.
 - Expose core modules directly as the product API: this couples consumers to
   implementation detail and prevents a coherent session lifecycle.
+
+## Update (2026-11-19)
+
+The decision stands. The C++ engine now hosts two emulation providers behind
+the same session facade: libretro cores and the optional native Tessera core
+(`EmulationProvider::tessera_native`, built with `AYTHER_ENABLE_TESSERA=ON`).
+Both are read through one private `ObservationSource` interface, so Rust core
+policy (identity, substitution, packs) is unchanged by the provider choice.
+See [Tessera native provider](../TESSERA_NATIVE.md).

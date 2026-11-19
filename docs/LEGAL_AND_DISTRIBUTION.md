@@ -2,29 +2,30 @@
 
 **Status:** project policy; not legal advice
 
-**Last reviewed:** 2026-08-27
+**Last reviewed:** 2026-11-19
 
-This document states the distribution boundaries intended by the project. It
-does not replace the license texts or professional advice for a particular
+This document states the distribution boundaries the project intends. It does
+not replace the license texts or professional advice for a particular
 jurisdiction, product, or content catalog.
 
 ## Engine license
 
 AYTHER Engine source identified as covered software is available under the
 Mozilla Public License 2.0 (`MPL-2.0`). The controlling text is
-[LICENSE](../LICENSE). MPL-2.0 obligations apply at file level and include source
-availability requirements when covered executable code is distributed. A
-larger work may use different terms for separate files, subject to the license.
+[LICENSE](../LICENSE). MPL-2.0 obligations apply at file level and include
+source availability when covered executable code is distributed. A larger work
+may use different terms for separate files, subject to the license.
 
-The license provides no trademark rights. Names, logos, service marks, and
-product presentation require separate authorization except where use is needed
-to satisfy license notices or applicable law.
+The license grants no trademark rights. Names, logos, service marks, and
+product presentation require separate authorization, except where use is
+needed to satisfy license notices or applicable law.
 
 ## Product separation
 
 AYTHER Lab is a separate proprietary product and is not licensed by this
-repository. AYTHER Runtime, SDK, Play, and Hub are separate products or services
-with their own artifacts, terms, and release responsibilities. An interface or
+repository. AYTHER Runtime, Play, Web, and Hub are separate products or
+services with their own artifacts, terms, and release responsibilities. AYTHER
+Tessera is a separate repository with its own license. An interface or
 integration point does not transfer license rights between products.
 
 ## Repository license scope
@@ -32,22 +33,21 @@ integration point does not transfer license rights between products.
 This repository contains the open-source AYTHER Engine: Rust core code, native
 engine code, public headers, tests, tools, shaders, and Engine documentation.
 Its root `LICENSE` and file-level notices control covered files. References to
-AYTHER Runtime, SDK, Play, Hub, or Lab describe integration boundaries; they do
-not include those products in this license or repository.
+other AYTHER products describe integration boundaries; they do not bring those
+products into this license or repository.
 
-Documentation must not recreate the former monorepo's directory-by-directory
-license matrix. Repository separation is now the boundary. Automated license
-checks should validate this repository's `LICENSE`, Cargo metadata, shipped
-notices, and this policy without assuming sibling product directories exist.
+Repository separation is the license boundary. Automated license checks
+(`tools/check_license.cmake`) validate this repository's `LICENSE`, its Cargo
+metadata, and this policy without assuming sibling product directories exist.
 
 ## Bring your own ROM and core
 
 AYTHER follows two distribution constraints:
 
-- **BYOR — Bring Your Own ROM:** users supply their own game image and remain
+- **BYOR (Bring Your Own ROM):** users supply their own game image and remain
   responsible for lawful acquisition and use.
-- **BYOC — Bring Your Own Core:** users supply a compatible emulator core unless
-  a distributor has separately established the right to ship one.
+- **BYOC (Bring Your Own Core):** users supply a compatible libretro core
+  unless a distributor has separately established the right to ship one.
 
 Project artifacts must not include ROMs, BIOS images, decryption material,
 commercial game assets, or emulator cores without documented authorization.
@@ -56,11 +56,11 @@ distribution. Availability on the internet is not evidence of permission.
 
 ## Packs and authored content
 
-An `.ay` pack is content separate from the engine. Pack authors and distributors
-must have rights for every image, audio file, font, script, name, likeness,
-translation, and derivative element they include. A valid pack signature
-attests to bytes under a selected key policy; it does not grant copyright,
-trademark, publicity, patent, or other rights.
+An `.ay` pack is content separate from the engine. Pack authors and
+distributors must hold rights for every image, audio file, font, script, name,
+likeness, translation, and derivative element they include. A valid pack
+signature attests to bytes under a selected key policy; it grants no
+copyright, trademark, publicity, patent, or other rights.
 
 Credits and license metadata should be complete and machine-readable, but
 metadata does not cure missing permission. Packs must not embed the source ROM,
@@ -68,24 +68,74 @@ BIOS, private signing keys, or undistributable emulator binaries.
 
 ## Patches
 
-The engine can apply IPS/BPS patches in memory without rewriting the user's
+The engine applies IPS/BPS patches in memory without rewriting the user's
 source file. Technical non-destructiveness does not decide whether a patch or
 its use is lawful. Distributors must assess whether a patch contains protected
 expression, circumvention material, or other restricted content.
 
 ## Third-party software
 
-Dependencies and bundled code retain their own copyright and license terms.
-Before any binary release, generate a complete transitive inventory for the
-exact artifact, preserve required license texts and notices, satisfy source or
-offer obligations, and review patent or codec terms. [NOTICE.md](../NOTICE.md)
-is a development inventory, not a substitute for artifact-specific review.
+Dependencies and bundled code keep their own copyright and license terms.
+[NOTICE.md](../NOTICE.md), generated by `tools/gen_notice.ps1`, lists the Rust
+crates of the linked graph, the vcpkg ports of a native build, and the vendored
+sources (`third_party/ymfm`, BSD-3-Clause; `third_party/libvpx`, BSD-3-Clause
+with a patent grant). Each release archive also installs the license files of
+the vcpkg ports it was built with, and the Windows VPX archive the libvpx
+license and patent grant. NOTICE.md is a development inventory, not a substitute
+for an artifact-specific review.
 
 Static linking deserves particular attention because the final distribution
-combines multiple components. Dependency selection should prefer terms
-compatible with the intended distribution and avoid enabling optional features
-that silently change obligations. The final result must be reviewed from the
-actual lockfiles, vcpkg baseline, build flags, and bundled files.
+combines several components. Dependency selection prefers terms compatible
+with the intended distribution and avoids optional features that silently
+change obligations: ymfm was chosen over the LGPL-2.1 Nuked OPN2, and libvpx
+over the LGPL-licensed FFmpeg core, because the engine is a static library.
+The final result must be reviewed from the actual lockfiles, vcpkg baseline,
+build flags, and bundled files.
+
+## Optional Tessera provider
+
+AYTHER Tessera is AYTHER's own emulator core, linked as an installed package
+when the Engine is built with `AYTHER_ENABLE_TESSERA=ON`
+([Tessera native provider](TESSERA_NATIVE.md)). The regular `v*` release
+archives are built without it. The `native-v*` Windows candidates are built
+with it, from the Tessera commit pinned in `dependencies/tessera.lock.json`;
+the Engine archive does not contain the Tessera package, which a consumer
+obtains and links separately.
+
+Tessera packages from `v0.2.0` onward, including the locked `v0.2.0-rc.9`:
+
+- license Tessera's own code under MPL-2.0;
+- contain Tessera's own Mega Drive backend (`megadrive`), built with Moira
+  (MIT), the Z80 of floooh/chips (Zlib), and ymfm (BSD-3-Clause);
+- install the Tessera license, those three licenses, PicoSHA2 and nlohmann/json
+  licenses, the dependency inventory, and the source revision under
+  `share/tessera`;
+- contain no AGPL, GPL, or LGPL component. The ClownMDEmu, clown68000, and
+  clownz80 backends (AGPL-3.0) exist only as a local reference build in the
+  Tessera repository (`TESSERA_BUILD_CLOWN_REFERENCE`), which is never installed
+  or packaged. The native release workflow builds that reference
+  configuration only to generate test fixtures and replay evidence.
+
+The earlier packages `v0.1.0-mvp.1` and `v0.1.0-mvp.2` license Tessera's code
+under MIT and include ClownMDEmu, clown68000, and clownz80 static libraries
+under AGPL-3.0. A binary combining the Engine with one of those packages
+carries the AGPL-3.0 source obligations for the combined work. Engine
+`native-v0.1.0-rc.22` was built against `v0.1.0-mvp.2`; the distribution review
+for that combination is recorded in the Tessera repository
+(`docs/distribution-review.md`).
+
+Distributing an Engine binary with the Tessera provider requires keeping the
+Tessera package's notices and offering the corresponding MPL-2.0 source of both
+the Engine and Tessera at the exact revisions used. The native candidate's
+release notes link both source trees.
+
+The oracle formulas in `tests/support/tessera_fx01_oracle.*` are adapted from
+MIT-licensed Tessera sources, with their SHA-256 provenance in the file header.
+Their copyright and permission notice are kept in
+[third_party/tessera/LICENSE](../third_party/tessera/LICENSE). The doctest,
+PicoSHA2, and nlohmann/json headers used by the Tessera integration tests come
+from the Tessera checkout given in `AYTHER_TESSERA_TEST_SOURCE_DIR` and keep
+their notices there. These tests are validation-only and are not installed.
 
 ## Distributor checklist
 
@@ -94,41 +144,12 @@ Before publishing an artifact:
 1. identify every included source, binary, asset, font, codec, and data file;
 2. record its origin, exact version, license, copyright, and applicable notices;
 3. verify rights for names, logos, screenshots, recordings, and pack content;
-4. provide MPL-covered source in the manner required by MPL-2.0;
-5. exclude ROMs, BIOS files, private keys, and unauthorized cores or assets;
+4. provide MPL-covered source in the manner MPL-2.0 requires;
+5. exclude ROMs, BIOS files, private keys, trust material, and unauthorized
+   cores or assets;
 6. publish accurate warranty, support, privacy, export, and telemetry terms;
 7. have qualified counsel review unresolved jurisdiction-specific questions.
 
-The software is provided without warranty as stated in MPL-2.0. Early-development
-status creates additional technical risk and must remain visible in release and
+The software is provided without warranty, as stated in MPL-2.0. Its
+pre-release status adds technical risk that must remain visible in release and
 integration materials.
-
-## Integración opcional de Tessera
-
-El proveedor de T015–T018 enlaza el paquete instalado de AYTHER Tessera,
-con su build ID y prefijo explícitos. El código propio de Tessera es MPL-2.0
-desde el cambio de licencia; los paquetes `v0.1.0-mvp.1` y `v0.1.0-mvp.2`
-conservan MIT y su backend Mega Drive incluye bibliotecas estáticas
-ClownMDEmu, clown68000 y clownz80 bajo AGPL-3.0. Los paquetes posteriores no
-instalan esos componentes AGPL. El lock de fuente usado por CI es el SHA
-fijo declarado en `.github/workflows/ci.yml`. El paquete de Tessera instala
-licencias de los componentes Clown, PicoSHA2 y nlohmann/json, además de su
-inventario y avisos en `share/tessera`. Una distribución de Engine con ese
-proveedor requiere conservarlos y ofrecer el código fuente correspondiente
-de la combinación, con revisiones y scripts de construcción identificados.
-La revisión del artefacto final se registra en el repositorio Tessera bajo
-`docs/distribution-review.md`; un enlace CMake no resuelve por sí solo el
-alcance de AGPL ni las condiciones de MPL-2.0 para Engine.
-
-Las fórmulas de los oráculos de `tests/support/tessera_fx01_oracle.*` se adaptan
-de las fuentes MIT de Tessera, con sus SHA-256 de procedencia en el encabezado.
-Su copyright y permiso se conservan en [tercero Tessera](../third_party/tessera/LICENSE).
-Los headers de doctest/PicoSHA2/nlohmann utilizados por estos tests proceden de
-la copia fijada por `cmake/dependencies.lock.json` de Tessera; son dependencias
-solo de validación y conservan allí sus avisos originales. Los tests no se
-instalan como parte del producto Engine.
-
-Los paquetes locales ASAN son artefactos de desarrollo del toolchain declarado.
-La publicación y el cierre de licencias transitivas, fixtures y runtimes de
-la cadena completa continúan en T034 del MVP; esta integración no acredita
-Mega Drive, packs reales ni una release de distribución.

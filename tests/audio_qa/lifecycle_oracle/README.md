@@ -1,23 +1,34 @@
-# Oráculos del ciclo de vida — QA-026
+# Mixer lifecycle oracles
 
-RF-6, RF-8 y RF-15. El mixer de rc.9 se compila intacto como referencia y en una copia con hooks para cursor, cruce de bucle y eliminación por ventana. No se recalculan sus decisiones en el adaptador. Una entrada PCM sintética de ocho frames tiene región [2,6), offset 4 y ganancia 0,5; se suma al original constante 100.
+The Engine `v0.1.0-rc.9` mixer is compiled unchanged as the reference and as a
+copy with hooks for the cursor, loop crossings, window removal and voice ends.
+The adapter does not recompute any decision. Shared conventions are in the
+[audio QA overview](../README.md).
 
-loop conserva seis cruces 6→2 en muestras 2,6,10,14,18,22. window mantiene la voz en el cuadro 2 y la elimina en el 3 por end_frame=2, en el límite 20 de mezcla. Su posición final es 4; no hay aportes posteriores. lost omite solo el primer cruce, mantiene audio idéntico y devuelve 2. Los extremos de cursor del terminal indican posición final retenida, no una nueva reproducción activa.
+Base fixture: synthetic eight-frame PCM with loop region `[2, 6)`, offset 4 and
+gain 0.5, added to a constant original of 100. Results belong to the mixer's
+main timeline, not to an SDL capture or a real take.
 
-Desde Engine:
+| Case / control | Expected |
+|---|---|
+| `loop` | six crossings 6→2 at samples 2, 6, 10, 14, 18, 22 |
+| `window` | the voice stays in frame 2 and is removed in frame 3 by `end_frame = 2`, at mix boundary 20, final position 4, no later contribution |
+| `lost` | only the first crossing record is dropped; identical audio, returns 2 |
+| `replacement` / `replacement_lost` | two starts with the same key overlap for 56 frames; the second starts the fade of the earlier voice. Identities, cursor, effective gain per contribution and natural ends at 64 and 72 are kept, and the per-voice visit order is preserved even when sample bounds are not increasing. The control drops one end record and returns 2. |
+| `natural` / `natural_lost` | constant original 100, eight-frame asset, gain 0.5, start 4, 16-frame mix: `[4, 12)` holds original plus HD, the rest original only; the natural end keeps position 8 and boundary 12. Dropping that end invalidates the trace with identical PCM. |
+| `simultaneous` / `simultaneous_lost` | two voices share `end_frame = 1` and `cut_frame = 1`; only the first has an authored fade. The frame-2 tick visits voices 2→1: it cuts the second and starts the first's fade, which ends four samples later. Order is never reconstructed from timestamp proximity. A buffer of 32 tick contexts is kept; the control drops one cut. |
+
+At the end of a run, cursor extremes indicate the retained final position, not
+a new active playback.
 
 ```powershell
-cmake -S tests/audio_qa/lifecycle_oracle -B build/qa-026-lifecycle `
+cmake -S tests/audio_qa/lifecycle_oracle -B build/qa-lifecycle `
   -G 'Visual Studio 18 2026' -A x64 -T v145 `
-  '-DQA_ENGINE_REFERENCE_SOURCE=C:/Users/david/Workspaces/ayther/.qa-reference/audio-qa-initial-20260927/engine-source'
-cmake --build build/qa-026-lifecycle --config Release --parallel 4
-ctest --test-dir build/qa-026-lifecycle -C Release --output-on-failure
+  '-DQA_ENGINE_REFERENCE_SOURCE=<qa-reference>/engine-source'
+cmake --build build/qa-lifecycle --config Release --parallel 4
+ctest --test-dir build/qa-lifecycle -C Release --output-on-failure
 ```
 
-Límites: cuatro cuadros, hasta 72 frames de mezcla, dos ocurrencias, 32 eventos, 256 aportes y tres segundos por proceso. Hooks sin reserva ni disco; saturación/pérdida invalida el registro. El test compara estado y PCM con la referencia. Los resultados pertenecen al timeline principal del mixer, no a una captura SDL ni a una toma real.
-
-QA-027 (RF-7, RF-8, RF-15) añade replacement y replacement_lost. Dos arranques con la misma clave se solapan durante 56 frames; el segundo inicia el fade de la voz anterior. Se conservan identidades, cursor, ganancia efectiva por aporte y finales naturales en 64 y 72, sin juzgar el síntoma. El orden de visita por voces se conserva aunque sus límites de muestra no sean crecientes. El control negativo omite un terminal y devuelve 2 sin cambiar audio ni decisiones.
-
-QA-028 (RF-7, RF-10, RF-15) añade natural y natural_lost: original constante 100, asset de ocho frames, ganancia 0,5, inicio 4 y mezcla de 16 frames. El intervalo [4,12) contiene original+HD; los restantes contienen solo original. El terminal natural conserva posición 8 y frontera 12. La ausencia deliberada de ese terminal invalida la traza con PCM idéntico.
-
-QA-029 (RF-5, RF-8, RF-15) añade simultaneous y simultaneous_lost. Dos voces comparten end_frame=1 y cut_frame=1; solo la primera tiene fade autorado. El tick de cuadro 2 visita las voces 2→1: corta la segunda e inicia fade en la primera, conservando antes el contexto de todos los límites concurrentes. El fade termina cuatro muestras después. El orden efectivo no se reconstruye por proximidad de timestamps. Hay un buffer adicional de 32 contextos de tick; el control negativo pierde un corte y falla sin modificar PCM.
+Limits: four frames, up to 72 mix frames, two occurrences, 32 events and 256
+contributions. Saturation or loss invalidates the record. State and PCM are
+compared with the reference.

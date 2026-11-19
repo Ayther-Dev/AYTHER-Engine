@@ -2,136 +2,109 @@
 
 <img src="docs/assets/branding/ayther-engine-logo.svg" alt="AYTHER Engine" width="128">
 
-AYTHER Engine is the open-source runtime technology behind real-time audiovisual
-remastering for retro 2D games. It observes graphics, memory, and sound produced
-by an emulator, derives deterministic identities, and resolves those identities
-to replacement assets stored in a separate `.ay` content pack. The original ROM
-is not modified or redistributed.
+AYTHER Engine is the open-source engine behind real-time audiovisual remastering
+of retro 2D games. It observes the graphics, memory, and sound an emulator
+produces, derives deterministic identities from them, and resolves those
+identities to replacement assets stored in a separate `.ay` content pack. The
+original ROM is never modified or redistributed.
 
 > [!WARNING]
-> **Early-development software.** This repository has not published a stable
-> release. The Rust core, C ABI, native C++ engine, installable CMake package,
-> explicit pack trust policy, and reproducible pre-release automation are
-> present, but broader renderer/audio oracles and operational Hub keys remain.
-> Do not treat the current
-> API, ABI, file format, or security model as a production commitment.
+> **Pre-release software.** Engine `0.1.0` is published only as release
+> candidates. The API, ABI, pack format, and security model are not yet a
+> production commitment; see [Project status](docs/PROJECT_STATUS.md).
 
-## Current repository status
+## Status
 
-| Area | Status in this checkout | Evidence |
-|---|---|---|
-| `ayther_core` Rust library | Implemented | `core/`; 360 unit tests pass and one benchmark is ignored |
-| Typed Rust/C++ bridge | Implemented on the Rust side | `core/src/ffi.rs`; generated through `cxx` |
-| Legacy flat C ABI | Implemented, unstable | `core/src/lib.rs`; independent ABI revision currently returns `8` |
-| `.ay` pack VFS, validation, and signing | Production policy implemented | Manifest schema `2`; explicit scoped/expiring/revocable public-key registry; optimized builds reject the RFC test key |
-| C++ `ayther_engine` | Buildable, pre-release | `Ayther::engine` declares all 24 sources and links the manifest-mode SDL3/Vulkan stack, core, and ymfm |
-| C++/ABI/integration tests | Partial | One headless C++ ABI test is present; renderer, audio, and full integration suites are pending |
-| Installable SDK surface | Pre-release | `find_package(Ayther)` exposes `Ayther::core`, `Ayther::engine`, and `Ayther::ymfm`; VPX builds also expose `Ayther::vpx` |
-| Stable release | Not available | Reproducible signed pre-releases are automated; native, hardware, fixture, operational-key, and review gates stay open |
-
-The authoritative, date-stamped assessment is in
-[Project status](docs/PROJECT_STATUS.md). It deliberately distinguishes working
-code from specified but unavailable components and planned development work.
+| Area | State |
+|---|---|
+| Rust core (`ayther_core`) | Implemented: identities, substitution, packs, trust, scripting, patches, SoundFonts |
+| C++ engine (`Ayther::engine`) | Implemented: session, emulation providers, Vulkan renderer, SDL audio, rewind, takes |
+| Emulation providers | User-supplied libretro core (all builds); optional Tessera native provider for the Mega Drive (Windows x64) |
+| Installable package | `find_package(Ayther)` with `Ayther::core`, `Ayther::engine`, `Ayther::ymfm`, and `Ayther::vpx` in VPX builds |
+| Platforms | Windows and Linux x86_64, tested in CI |
+| Releases | Signed pre-releases; latest `v0.1.0-rc.28` and native candidate `native-v0.1.0-rc.28` |
+| Stable release | Not available; open blockers are listed in [Project status](docs/PROJECT_STATUS.md#release-blockers) |
 
 ## Architecture at a glance
 
-AYTHER Engine is designed as two tightly coupled implementation layers shipped
-from one repository:
-
 ```mermaid
 flowchart LR
-    Consumer[Runtime or authoring frontend] --> Engine["C++ ayther_engine<br/>session · emulator host · render · audio"]
+    Consumer[Runtime or authoring frontend] --> Engine["C++ ayther_engine<br/>session · providers · render · audio"]
     Engine --> Core["Rust ayther_core<br/>identity · packs · validation · scripting"]
     Pack[Signed .ay pack] --> Core
-    Rom[User-provided ROM] --> Emulator[User-provided libretro core]
-    Emulator --> Engine
+    Rom[User-provided ROM] --> Provider
+    Provider["Emulation provider<br/>libretro core or Tessera"] --> Engine
 ```
 
-`ayther_core` and the C++ engine have verified CMake targets and install
-contracts on Windows. See
-[Architecture](docs/ARCHITECTURE.md) for the data flow, module map, trust
-boundaries, and ownership rules.
+The session reads either provider through one internal observation interface,
+so identities and substitutions behave the same whichever emulator runs the
+game. See [Architecture](docs/ARCHITECTURE.md) for data flow, module map, and
+trust boundaries, and [Tessera native provider](docs/TESSERA_NATIVE.md) for the
+optional native core.
 
-## What the Rust core provides
+## Build and test
 
-- deterministic tile, sprite, pose, animation, background, and audio identities;
-- conditional HD substitution and RAM-anchored entity matching;
-- `.ay` archive loading, manifest/schema checks, integrity verification,
-  regional overlays, resolution tiers, and ranged reads;
-- structured pack compatibility and authorship findings;
-- a constrained Lua 5.4 environment with a per-frame instruction budget;
-- in-memory IPS/BPS patch application, without modifying the source ROM;
-- SoundFont normalization, trimming, synthesis, and instrument mapping;
-- a typed `cxx` bridge plus an older pointer-based C ABI.
-
-Detailed ownership is documented in [Core module reference](docs/ARCHITECTURE.md#core-module-map).
-
-## Build and test what exists today
-
-Install the pinned Rust toolchain from `rust-toolchain.toml`, then run:
+Install the toolchain described in the
+[development environment guide](docs/DEVELOPMENT_ENVIRONMENT.md). The Rust
+toolchain is pinned by `rust-toolchain.toml`.
 
 ```text
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --all-targets --locked
-cargo doc --workspace --no-deps --locked
+
+cmake --preset windows-native
+cmake --build --preset windows-native
+ctest --preset windows-native --output-on-failure
 ```
 
-The headless presets build the core and its C++ ABI oracle without native
-dependencies. The native presets build the complete 24-source engine through
-the pinned vcpkg manifest; `windows-native-vpx` adds the locally built VP9
-decoder. Linux and the release presets remain unverified. The
-[build, test, and release guide](docs/BUILD_TEST_RELEASE.md) records the exact
-commands and remaining gates. Toolchain installation details remain in the
-[development environment guide](docs/DEVELOPMENT_ENVIRONMENT.md).
+Headless presets build the core and its C++ ABI oracle without native
+dependencies; native presets build the complete engine through the pinned vcpkg
+manifest; `*-native-vpx` presets add the VP9 decoder. Linux presets mirror the
+Windows ones. All presets, release packaging, and CI gates are documented in
+[Build, test, and release](docs/BUILD_TEST_RELEASE.md).
 
 ## Security and content trust
 
 Treat packs, scripts, ROMs, patches, emulator cores, and media as untrusted
-input. Validation must happen before a pack becomes active. Debug builds allow
+input. Validation happens before a pack becomes active. Debug builds allow
 unsigned packs with a warning; release builds reject them and the public test
-key. Production hosts must supply the explicit trust registry documented in the
-security model; Hub's operational keys are not stored in this repository.
+key. Production hosts supply an explicit trust registry.
 
-Read [Pack and security model](docs/PACK_SECURITY_MODEL.md) before integrating
-the library, and report vulnerabilities privately as described in
+Read the [pack and security model](docs/PACK_SECURITY_MODEL.md) before
+integrating Engine, and report vulnerabilities privately as described in
 [SECURITY.md](SECURITY.md).
 
 ## Legal boundaries
 
 AYTHER Engine does not provide ROMs, BIOS images, commercial game assets, or
-libretro emulator cores. Users and pack authors are responsible for having the
-rights required for every input and distributed asset. AYTHER Lab is a separate
-proprietary product and is not part of this repository; AYTHER Runtime, Play,
-SDK, and Hub are separate components with their own repositories and release
-responsibilities.
+third-party emulator cores. Users and pack authors are responsible for having
+the rights required for every input and distributed asset. AYTHER Tessera,
+Runtime, Lab, Play CE, and Web are separate products with their own
+repositories, licenses, and releases.
 
-The source covered by this repository is licensed under MPL-2.0; dependencies
-retain their own licenses. The MPL does not grant trademark rights and does not
-license third-party game content. See [Legal and distribution boundaries](docs/LEGAL_AND_DISTRIBUTION.md),
+The source in this repository is licensed under MPL-2.0; dependencies keep their
+own licenses. The MPL grants no trademark rights and does not license
+third-party game content. See
+[Legal and distribution boundaries](docs/LEGAL_AND_DISTRIBUTION.md),
 [LICENSE](LICENSE), and [NOTICE.md](NOTICE.md).
 
 ## Documentation
 
-Start at the [documentation index](docs/README.md). The most useful entry points
-are:
+Start at the [documentation index](docs/README.md). Common entry points:
 
 - [Project status](docs/PROJECT_STATUS.md) — what works, what is missing, and
-  how release and protocol versions are governed;
-- [Architecture](docs/ARCHITECTURE.md) — components, data flow, dependencies,
-  and invariants;
-- [API and compatibility](docs/API_COMPATIBILITY.md) — Rust, CXX, C ABI, schema,
-  ownership, and stability rules;
-- [Pack and security model](docs/PACK_SECURITY_MODEL.md) — trust model and
-  hardening gaps;
-- [Build, test, and release](docs/BUILD_TEST_RELEASE.md) — reproducible commands
-  and release gates;
-- [Current release go/no-go](docs/RELEASE_GO_NO_GO_CURRENT.md) — dated decision
-  and the evidence required to permit a stable release;
-- [Release rollback](docs/RELEASE_ROLLBACK.md) — immutable-tag withdrawal,
-  consumer notification, and fix-forward procedure;
-- [Repository roadmap](docs/ROADMAP.md) — development work without speculative
-  product promises.
+  the release blockers;
+- [Architecture](docs/ARCHITECTURE.md) — components, providers, data flow, and
+  invariants;
+- [API and compatibility](docs/API_COMPATIBILITY.md) — API surfaces, version
+  axes, and stability rules;
+- [Tessera native provider](docs/TESSERA_NATIVE.md) — configuration, lock,
+  capabilities, packaging, and parity testing;
+- [Build, test, and release](docs/BUILD_TEST_RELEASE.md) — commands and release
+  gates;
+- [Support matrix](docs/SUPPORT_MATRIX.md) — tested platforms and toolchains;
+- [Changelog](CHANGELOG.md) — what changed in each release.
 
 ## Contributing
 

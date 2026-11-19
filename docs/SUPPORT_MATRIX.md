@@ -1,147 +1,117 @@
 # Support matrix
 
-> **Historical measurement (2026-08-30).** The results below describe commit
-> `846081e` and must not be interpreted as current CI evidence or a current
-> support promise. See [Project status](PROJECT_STATUS.md) and the latest
-> required CI run for current status.
+**Status:** pre-release; nothing here is a support commitment
 
-**Last measured:** 2026-08-30, at commit `846081e`.
+**Last reviewed:** 2026-11-19, against `main` at `6d1c2e8` (`v0.1.0-rc.28`)
 
-This matrix separates three things that are easy to blur together, because
-blurring them is how a support promise becomes untrue:
+This matrix records which configurations are built and tested, and where the
+evidence comes from. It uses three levels:
 
-- **Verified** — run on this checkout, with the result recorded below.
-- **CI-attempted** — a job in `.github/workflows/ci.yml` targets it, but the
-  job has not been observed passing. A configured job is not a passing job.
-- **Unverified** — nothing has measured it. Not a commitment.
+- **CI-verified** — a required job in `.github/workflows/ci.yml` or a release
+  workflow builds and tests the configuration, and the referenced run passed.
+- **Built, not tested** — produced or compiled, but no test run executes it.
+- **Unverified** — nothing measures it.
 
-Nothing here is a support commitment yet. `0.1.x` is pre-release; see
-[Project status](PROJECT_STATUS.md) for the open release blockers.
+`0.1.x` is pre-release; see [Project status](PROJECT_STATUS.md) for the open
+release blockers. For current results, read the latest required CI run rather
+than counts copied into documents.
 
-## Operating systems
+## Evidence
 
-| OS | Core | Engine | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| Windows 11 x86_64 | yes | yes | Verified | The per-preset results below, measured on this machine |
-| Linux x86_64 | yes | yes | CI-attempted, never green | The only CI run in this repository's history (`33339406053`) failed every Linux native job. `Headless (Linux)` passed; `native`, `native-vpx`, ASan, UBSan, and C++ coverage all failed to compile |
-| macOS | — | — | Unverified | No presets, no jobs, no commitment |
-| Mobile, WebAssembly, consoles | — | — | Unverified | Not a target of this repository |
+| Run | Scope | Result |
+|---|---|---|
+| [CI 44529951482](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/44529951482) | Full pull-request matrix for #62, the head of `v0.1.0-rc.28` | All required jobs passed; the opt-in GPU job was skipped |
+| [Release 44543445802](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/44543445802) | `v0.1.0-rc.28`: four packages built, consumed from a fresh runner, signed, published | Passed |
+| [Native release 44543445839](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/44543445839) | `native-v0.1.0-rc.28`: Windows VPX + Tessera package | Passed |
+| [Runtime integration 44553987318](https://github.com/Ayther-Dev/AYTHER-Engine/actions/runs/44553987318) | Pinned AYTHER Runtime built and tested against the published packages | Passed |
 
-## Architectures
+Pushes to `main` run a reduced job set; the full matrix runs on pull requests.
 
-| Architecture | Status | Evidence |
-| --- | --- | --- |
-| x86_64 | Verified on Windows; not yet green on Linux | Every preset and job targets `x86_64` |
-| aarch64 / ARM | Unverified | No preset, no job, and no cross-compilation has been attempted |
+## Operating systems and architectures
 
-There is no 32-bit target. The vendored VP9 decoder ships an `x86` import
-library, but nothing in this repository builds or tests a 32-bit configuration.
+| Platform | Core | Engine | Tessera provider | Status |
+|---|---|---|---|---|
+| Windows x86_64 | yes | yes | yes | CI-verified |
+| Linux x86_64 | yes | yes | no | CI-verified |
+| macOS | — | — | — | Unverified; no presets or jobs |
+| aarch64 / ARM, 32-bit x86 | — | — | — | Unverified; no presets or jobs |
+| Mobile, WebAssembly, consoles | — | — | — | Not a target |
 
-## Compilers and toolchain
+## CI configurations
 
-| Component | Verified version | Notes |
-| --- | --- | --- |
-| Clang (`clang-cl` driver) | 22.1.6, target `x86_64-pc-windows-msvc` | The Windows compiler for every preset |
-| Clang (`clang++` driver) | Not yet green | The Linux compiler for every preset; see the Linux row above |
-| rustc / cargo | 1.95.0 | Pinned by `rust-toolchain.toml` |
-| CMake | 4.3.3 | Presets require 3.21 or newer |
-| Ninja | 1.13.2 | The generator for every preset |
+| Configuration | Windows | Linux |
+|---|---|---|
+| Rust quality gates (fmt, clippy, tests, docs, audit) | CI-verified | CI-verified |
+| Headless (core + C++ ABI oracle) | CI-verified | CI-verified |
+| Native engine, VPX disabled, + package consumer | Built by the release workflow only | CI-verified |
+| Native engine, VPX enabled, + package consumer | CI-verified, including the Tessera provider tests | CI-verified |
+| ASan + UBSan | — | CI-verified |
+| Fuzz smoke | — | CI-verified |
+| Rust and C++ coverage gates | — | CI-verified ([Coverage policy](COVERAGE.md)) |
+| GPU oracles | Opt-in, skipped by default | Opt-in, skipped by default |
 
-MSVC's `cl.exe` is **not** supported. `CMakeLists.txt` warns when the compiler
-is not Clang. The warnings policy has an MSVC-style branch (`/W4 /WX`) because
-`clang-cl` sets `MSVC` in CMake; that branch has never been exercised with
-`cl.exe` itself, and claiming `cl.exe` support on the strength of it would be
-claiming something nobody has run.
+The release workflow builds, tests, packages, and consumes both variants on both
+platforms; see [Build, test, and release](BUILD_TEST_RELEASE.md).
+
+## Release packages
+
+| Package | Platforms | Tag | Contains Tessera |
+|---|---|---|---|
+| `ayther-engine` | Windows x86_64, Linux x86_64 | `v0.1.0-rc.N` | No |
+| `ayther-engine-vpx` | Windows x86_64, Linux x86_64 | `v0.1.0-rc.N` | No |
+| `ayther-engine-vpx-native` | Windows x86_64 | `native-v0.1.0-rc.N` | Yes ([Tessera native provider](TESSERA_NATIVE.md#release-packaging)) |
+
+Regular packages ship with SPDX SBOMs, a SHA-256 checksum file, Sigstore
+bundles, and SLSA provenance.
+
+## Toolchain
+
+| Component | Version | Notes |
+|---|---|---|
+| Clang, `clang-cl` driver (Windows) | LLVM 22.1.8 | Pinned by `tools/install_pinned_llvm.ps1` in CI and release jobs |
+| Clang, `clang++` driver (Linux) | Runner default | Not pinned |
+| Rust | 1.95.0 | Pinned by `rust-toolchain.toml` |
+| CMake | 3.21 or newer | Required by `CMakeLists.txt` and the presets |
+| Ninja | — | Generator for every preset |
+
+MSVC `cl.exe` is not supported; configure warns when the compiler is not Clang.
+The warnings policy has an MSVC-style branch because `clang-cl` sets `MSVC` in
+CMake; that branch has not been exercised with `cl.exe`.
 
 ## GPU backend
 
-| Backend | Status | Evidence |
-| --- | --- | --- |
-| Vulkan | Verified on one device | 8 of 8 GPU oracles passed on an NVIDIA GeForce RTX 3060 Laptop GPU, driver 616.224.0, Vulkan API 1.4.351 |
-| Vulkan on Linux / Mesa | Never executed | The `GPU (Linux, opt-in)` job is defined to run under `xvfb` with `mesa-vulkan-drivers`, but it is opt-in and has been skipped in every run so far |
-| Direct3D, Metal, OpenGL | Not implemented | The renderer is Vulkan-only |
+| Backend | Status |
+|---|---|
+| Vulkan | Implemented. GPU oracles run through the opt-in `GPU` job or the `*-native-gpu` presets; `tools/check_gpu_matrix.ps1` records the answering device and driver and fails when the suite is skipped |
+| Direct3D, Metal, OpenGL | Not implemented |
 
-One device is one device. A single NVIDIA laptop GPU is evidence that the
-oracles pass somewhere, not that the driver matrix is covered; AMD, Intel, and
-older drivers are unmeasured. The GPU jobs record the device and driver that
-answered and fail when the suite is skipped rather than run, so a green GPU job
-always names the hardware behind it.
+No hardware matrix is maintained. A GPU result is evidence for the recorded
+device and driver only.
 
-## VPX / VP9 configurations
+## VP9 (VPX)
 
-| Configuration | Status | Evidence |
-| --- | --- | --- |
-| Disabled (default) | Verified | `windows-native`: 46 of 46 CTests |
-| Windows, bundled libvpx | Verified | `windows-native-vpx`: 49 of 49 CTests, decoder built by `tools/build_libvpx.ps1` |
-| Linux, system libvpx | CI-attempted, never green | `linux-native-vpx` resolves `libvpx-dev` through `pkg-config` and nothing is bundled into the artifact, but the job has not yet passed |
+| Platform | Decoder source |
+|---|---|
+| Windows | libvpx built locally by `tools/build_libvpx.ps1` and bundled with its headers and notices |
+| Linux | System `libvpx` found through `pkg-config`; nothing is bundled |
 
-The two platforms provision the decoder differently on purpose, and it changes
-what ships: the Windows artifact carries the libvpx archive, headers, and
-notices, while the Linux one links the system library and carries none of them.
+## Emulation providers
 
-## Measured results
+| Provider | Systems | Status |
+|---|---|---|
+| libretro, AYTHER-aware core ([extension ABI](EMULATOR_EXTENSION_ABI.md) 1.10) | Mega Drive / Genesis is the system the observation model is built and tested for | CI-verified with the in-repo test core; real-core oracles need the locked Genesis Plus GX fork core |
+| libretro, stock core | Any libretro system | Loads and runs with reduced observation |
+| Tessera native | Mega Drive / Genesis | CI-verified on Windows x64 ([Tessera native provider](TESSERA_NATIVE.md)) |
 
-All from commit `846081e` on 2026-08-30, Windows 11 x86_64, clang-cl 22.1.6.
+## Tests that need external inputs
 
-Two columns, because they differ and the difference matters. *Developer
-machine* is this checkout, which has the fork emulator cores present in
-`third_party/cores/`. *Clean clone* is a fresh `git clone` with nothing
-supplied, which is what a new contributor and CI actually get.
+Some oracles need inputs this repository does not ship and report CTest skip
+code 77 without them: the Genesis Plus GX fork core named by
+`third_party/cores/core.lock`, Tessera fixtures, or GPU hardware. A skip is not a
+pass. The ABI oracles use the in-repo `tools/test_core` instead and always run.
 
-| Suite | Developer machine | Clean clone |
-| --- | --- | --- |
-| Rust (`cargo test --workspace --all-targets --locked`) | 400 passed, 1 ignored | same |
-| `windows-headless` | 3 of 3 | 3 of 3 |
-| `windows-native` | 46 passed, 0 failed | 42 passed, 0 failed, 4 skipped |
-| `windows-native-vpx` | 49 passed, 0 failed | not re-measured |
-| `windows-native-coverage` (unoptimised, `/Od`) | 46 passed, 0 failed | not re-measured |
-| `windows-native-gpu` | 8 of 8 | not re-measured |
-| Flat C FFI contract checks | 132 of 132 | 132 of 132 |
-| Line coverage, Rust | 75.24% (12,727 / 16,915) | — |
-| Line coverage, C++ | 62.00% (11,936 / 19,251) | — |
+## Known environment limits
 
-Zero tests fail in either column. Four skip on a clean clone.
-
-### The four that skip, and why
-
-`audio_mute`, `audio_output`, `render_output`, and `subsystem_routing` each
-hard-code a path to `third_party/cores/genesis_plus_gx_libretro_vram.dll`, a
-fork emulator core that `.gitignore` excludes and that a developer supplies
-themselves. Absent that file they return CTest's skip code 77.
-
-This is a gap in the tests, not a missing capability. Five oracles hard-code
-that path; the other two, `ayther_abi_smoke` and `abi_read_parity`, first
-consult `AYTHER_ABI_CORE`, which the build already points at the in-repo
-`ayther_test_core`, so they run everywhere. The same fallback has not been
-extended to these four. The test core does carry an `audio_mute_mask`, so the
-fallback is plausible rather than blocked, but whether it makes each assertion
-*meaningful* has not been established, and a test that runs without measuring
-anything would be worse than one that honestly skips.
-
-Until that is done, a clean-clone `windows-native` run is 42 passed and 4
-skipped. A skip is not an approval. `abi_negociacion`, which used to skip for
-this same reason, is the precedent for closing it: it now builds its core from
-source in `tools/test_core/`.
-
-## The state of Linux
-
-Linux is a target of this repository, not yet a supported one. Every Linux
-native job failed in the only CI run on record, all for the same reason:
-`src/ayther_renderer.cpp` used `std::fmod` and `std::lround` without including
-`<cmath>`. Windows compiles that because its standard library headers pull
-`<cmath>` in transitively; libstdc++ does not, so the same source was portable
-by accident.
-
-That specific defect is fixed — the include was added in `3acfdab` — but the
-fix has never been pushed or re-validated, so no Linux build has yet been
-observed succeeding. Until one is, treat every Linux row above as an intention
-backed by a configured job, not as evidence.
-
-## Deep paths on Windows
-
-A checkout whose path is long enough to push intermediate build artifacts past
-the 260-character limit fails to link with `LNK1104`, naming a Cargo build
-script it cannot open. This was hit at a path of roughly 250 characters. It is a
-Windows limit rather than a defect in this repository, but the failure names a
-missing `.exe` and reads like a toolchain problem, so it is recorded here: keep
-the checkout reasonably close to the drive root, or enable long paths.
+A Windows checkout deep enough to push build artifacts past the 260-character
+path limit fails to link with `LNK1104`, naming a Cargo build script. Keep the
+checkout near the drive root or enable long paths.

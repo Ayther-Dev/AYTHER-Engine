@@ -1,19 +1,34 @@
-# Oráculo de continuidad y disparo repetido — QA-025
+# Continuity and repeated-trigger oracle
 
-RF-5, RF-6 y RF-15. Se extraen de rc.9 la puerta de flanco del evento live, LiveInstance, hd_fired y la rama de gameplay de play_oneshot_asset_file. Las decisiones y la llamada a HdMixer::start permanecen originales. El mixer de referencia se compila sin cambios; la copia observada añade identidad y registro de muestras. No se sustituye la puerta por una decisión de anclaje supuesta.
+Checks the live event edge gate, `LiveInstance`, `hd_fired` and the gameplay
+branch of `play_oneshot_asset_file`, extracted from the Engine `v0.1.0-rc.9`
+reference. The decisions and the call to `HdMixer::start` are the original
+code. The reference mixer is compiled unchanged; the observed copy adds an
+identity and a sample record. Shared conventions are in the
+[audio QA overview](../README.md).
 
-Límite del adaptador: evento ya seleccionado con asset listo, sin ventana, audio/transport activos y sin bypass. Un proveedor de datos entrega PCM ya decodificado e inmutable: 128 frames S16 estéreo/44100, valor de cada sample 1000+37×índice. No se ejecuta la decodificación ni el detector. La rama de preview y la apertura de ventanas rechazan su uso en este fixture en lugar de simularlas.
+**Adapter boundary:** an event already selected, asset ready, no window, audio
+and transport active, no bypass. A data provider supplies immutable decoded
+PCM: 128 S16 stereo frames at 44100 Hz, sample value `1000 + 37 × index`.
+Decoding and the detector are not run. The preview branch and window opening
+reject use in this fixture instead of simulating it.
 
-keep mantiene el evento durante cuatro cuadros de 16 frames: un solo disparo y cursor continuo 0→64. repeat usa actividad [sí,sí,no,sí]: el flanco del cuadro 3 crea una nueva ocurrencia con la misma clave, posición 0→16; la anterior continúa 48→64 bajo el fade original. lost pierde exclusivamente el registro de la puerta del cuadro 3 y devuelve 2, conservando estado y audio. internal es A03: entrega a la rama histórica una asignación de secuencia con duración, asset listo y resultado de anclaje vacío; exige que el rechazo interno no cree `LiveInstance` ni voz. La referencia defectuosa falla antes de cualquier adaptación posterior.
-
-Desde Engine:
+| Case | Expected |
+|---|---|
+| `keep` | the event stays active for four frames of 16 samples: one trigger, continuous cursor 0→64 |
+| `repeat` | activity `[yes, yes, no, yes]`: the edge in frame 3 creates a new occurrence with the same key at 0→16; the previous one continues 48→64 under the original fade |
+| `lost` | only the gate record of frame 3 is dropped; returns 2 with state and audio unchanged |
+| `internal` | a sequence assignment with duration, ready asset and an empty anchoring result: the internal rejection creates neither a `LiveInstance` nor a voice |
 
 ```powershell
-cmake -S tests/audio_qa/continuity_oracle -B build/qa-025-continuity `
+cmake -S tests/audio_qa/continuity_oracle -B build/qa-continuity `
   -G 'Visual Studio 18 2026' -A x64 -T v145 `
-  '-DQA_ENGINE_REFERENCE_SOURCE=C:/Users/david/Workspaces/ayther/.qa-reference/audio-qa-initial-20260927/engine-source'
-cmake --build build/qa-025-continuity --config Release --parallel 4
-ctest --test-dir build/qa-025-continuity -C Release --output-on-failure
+  '-DQA_ENGINE_REFERENCE_SOURCE=<qa-reference>/engine-source'
+cmake --build build/qa-continuity --config Release --parallel 4
+ctest --test-dir build/qa-continuity -C Release --output-on-failure
 ```
 
-Límites: cuatro cuadros, 64 frames de mezcla, dos ocurrencias, ocho decisiones, 128 registros de muestras y tres segundos por proceso. Se guarda el orden real de aporte, no un orden inventado por identidad. Los hooks no asignan ni escriben; límites o pérdidas hacen incompleta la traza. Se comparan estado/entradas y PCM con la referencia, además de verificar posiciones y ganancias. Esto no acredita una sesión completa, la salida SDL ni la lógica de secuencias con ventana.
+Limits: four frames, 64 mix frames, two occurrences, eight decisions and 128
+sample records. The real contribution order is kept. State, inputs and PCM are
+compared with the reference, and positions and gains are verified. This does
+not cover a full session, SDL output or windowed sequence logic.

@@ -606,9 +606,9 @@ docs/ARCHITECTURE.md#session-and-renderer-boundary):
   timeline produce a FrameView  ----------------->    consume FrameView,
   render it
 
-Legacy audio output is owned by the session. The explicit Tessera provider
-exposes original PCM through borrowed native frames; device presentation is
-unavailable in that provider until its Runtime contract is integrated.
+Audio output is owned by the session on both providers. The Tessera provider
+also exposes its original 48 kHz PCM through borrowed native frames; with
+`enable_audio` the session resamples it to the player's 44.1 kHz.
 
 No-throw: construction and fallible operations return ayther::Result
 (§4.1.1); nothing throws across the FFI users. Opaque handles are held as
@@ -1112,8 +1112,8 @@ message. A frontend installs a sink and decides what happens. When nobody
 installs one, the built-in fallback writes to stderr; that fallback is the
 single place in the engine allowed to touch a console stream.
 
-Engine-internal header: not installed, so it must not appear in any public
-header.
+Installed (cmake/AytherPublicHeaders.txt) so a frontend can install its
+sink, but no other public header includes it: consumers opt in explicitly.
 
 **Declares:** `emit`, `Field`, `Record`, `set_min_severity`, `set_sink`, `uint8_t`, `Value`, `write`
 

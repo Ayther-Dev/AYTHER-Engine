@@ -3,23 +3,31 @@
 **Status:** operational procedure; not yet rehearsed against a published
 release candidate
 
-**Last reviewed:** 2026-08-31
+**Last reviewed:** 2026-11-19
 
 This runbook withdraws an AYTHER Engine release candidate or stable release
-after a defect is found. It applies to the GitHub release and the four Engine
-archives published by `.github/workflows/release.yml`. AYTHER Engine has no updater or
-package registry in this repository, so rollback means stopping new downloads,
-directing consumers to a known-good version, and publishing a corrected version.
-It cannot remove copies that consumers already downloaded.
+after a defect is found. It applies to:
+
+- the GitHub release and the four Engine archives published by
+  `.github/workflows/release.yml` under a `v*` tag; and
+- the native Tessera candidate published by
+  `.github/workflows/native-release.yml` under the matching `native-v*` tag.
+
+A defect in shared Engine code usually affects both, so assess them together.
+AYTHER Engine has no updater or package registry, so rollback means stopping
+new downloads, directing consumers to a known-good version, and publishing a
+corrected version. It cannot remove copies that consumers already downloaded.
 
 ## Invariants
 
-- Never move, delete, or recreate a `v*` tag. The tag ruleset is the audit
-  boundary and every affected tag remains attached to its original commit.
+- Never move, delete, or recreate a `v*` or `native-v*` tag. The
+  `Immutable release tags` ruleset enforces this for `v*`; for `native-v*` it
+  is policy only, because the ruleset does not cover those tags. Every affected
+  tag remains attached to its original commit.
 - Never replace assets under an existing tag. Checksums, Sigstore bundles,
   provenance, and SBOM attestations identify the original bytes.
 - Never reuse a version. A correction receives the next release or pre-release
-  version, such as `v0.1.0-rc.2` after withdrawing `v0.1.0-rc.1`.
+  version, such as `v0.1.0-rc.29` after withdrawing `v0.1.0-rc.28`.
 - Preserve evidence before removing public assets. A downloaded signature or
   attestation remains valid evidence that GitHub Actions produced those bytes;
   withdrawal does not cryptographically revoke copies already in circulation.
@@ -31,7 +39,7 @@ It cannot remove copies that consumers already downloaded.
 - The incident lead decides whether to withdraw and records the reason, impact,
   affected artifacts, and replacement plan.
 - A repository administrator or release maintainer withdraws the GitHub
-  release. The `v*` tag ruleset must not be bypassed.
+  release. The tag ruleset must not be bypassed.
 - A security maintainer owns disclosure when confidentiality, integrity,
   signature, dependency, or memory-safety issues are involved.
 - A required reviewer on the `release` environment approves any replacement
@@ -42,9 +50,14 @@ It cannot remove copies that consumers already downloaded.
 Withdraw a release when an artifact is unsafe, corrupt, legally
 redistributable only under different terms, incompatible with its advertised
 contract, or materially different from its SBOM, checksums, provenance, or
-release notes. A failed workflow before the publish job creates a release is
-not a rollback: reject or cancel the environment deployment, retain the tag and
-workflow logs, fix forward, and use a new version.
+release notes.
+
+A workflow that fails before the publish job creates a release is not a
+rollback: reject or cancel the environment deployment, retain the tag and
+workflow logs, fix forward, and use a new version. `v0.1.0-rc.26` and
+`v0.1.0-rc.27` are examples: both tags remain without a release, and
+`v0.1.0-rc.28` shipped their changes. A native candidate that is still a draft
+is withdrawn by leaving it unpublished.
 
 ## 1. Freeze and record
 
@@ -111,8 +124,11 @@ notice, not a complete withdrawal, because the assets remain downloadable.
 
 ## 4. Notify consumers
 
-Publish a notice through the release communication channels and notify AYTHER
-Runtime, SDK, Play, and Hub maintainers directly. The public notice must state:
+Publish a notice through the release communication channels and notify the
+maintainers of every repository that locks the Engine: AYTHER Runtime
+(`dependencies/ayther-engine*.lock.json`) and AYTHER Lab
+(`tools/dependencies-lock.json`) directly, and AYTHER Play CE through the
+Runtime it vendors. The public notice must state:
 
 - the affected tag and artifact families/platforms;
 - whether exploitation or data exposure is known, without disclosing unsafe

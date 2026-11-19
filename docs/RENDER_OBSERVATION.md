@@ -1,8 +1,8 @@
 # Render observation
 
-**Status:** implemented; contract 1.0
+**Status:** implemented; contract 1.1; `libretro` provider only
 
-**Last verified:** 2026-10-03
+**Last verified:** 2026-11-19
 
 The render observation tells a host, frame by frame, which sprite occurrences
 the Engine detected, which HD replacement claimed each of them, why an
@@ -11,10 +11,18 @@ whether the frame could be composed at all. Replay QA uses it to explain what
 appears on screen without reading Engine internals.
 
 The contract lives in the installed header `ayther/engine/render_observer.hpp`,
-namespace `ayther::engine::render_observation`. Its version
-(`contract_version`, currently 1.1; a 1.0 consumer is still served) is
-independent of the Engine release, the
-audio observation contract, the core ABI and the replay format.
+namespace `ayther::engine::render_observation`. Its version is
+`contract_version` (1.1); `supports()` accepts any 1.x consumer up to 1.1, so a
+1.0 consumer is still served. The version is independent of the Engine
+release, the audio observation contract, the core ABI and the replay format.
+
+## Provider support
+
+`Config::render_observer` is accepted only with
+`EmulationProvider::libretro`. A `tessera_native` session that sets it fails to
+create with `NativeStatus::unsupported_capability`; it does not fall back to
+libretro. The composition rules the observation reports are identical on both
+providers ([Replacement composition rules](REPLACEMENT_COMPOSITION.md)).
 
 ## Installing an observer
 
@@ -30,7 +38,7 @@ audio observation contract, the core ABI and the replay format.
    state of every replacement are then `unknown`.
 
 With no observer installed the Engine builds nothing and the `FrameView` is
-unchanged. `publish_render_observation` is a no-op in that case.
+unchanged; `publish_render_observation` is then a no-op.
 
 The callback runs synchronously on the session's thread. Every span and
 string view borrows producer storage for the duration of the call only:
@@ -39,18 +47,18 @@ consumers copy what they keep.
 ## What a frame reports
 
 `RenderFrameView` carries the frame position, its composability, the
-occurrences and the replacements.
+occurrences, the replacements and, from contract 1.1, the layers.
 
 ### Composability
 
 | Value | Meaning |
 | --- | --- |
 | `composable` | The frame is composed element by element. |
-| `raster_split` | Raster writes in mid-screen split the frame; it is presented with the originals only (R8). |
+| `raster_split` | Raster writes in mid-screen. When they can be placed on lines, HD is withdrawn only in `FrameView::raster_bands`; otherwise the whole frame shows the originals (R8). Raster writes that touch no line leave the frame `composable`. |
 | `fade` | The authoring dim of an authoring tool's animation view is on. Replacements are still drawn. |
-| `line_hscroll` | Per-line horizontal scroll. Since R8 the compositor draws the scroll bands, so the session reports such frames as `composable`; the value stays in the contract for producers that cannot. |
-| `column_vscroll` | Per-column vertical scroll, with the same treatment as `line_hscroll`. |
-| `other` | Any other reason that prevents composition, such as a frame that ends with the display off (VDP register 1, bit 6). |
+| `line_hscroll` | Per-line horizontal scroll. The session composes scroll bands and reports such frames as `composable`; the value remains for producers that cannot. |
+| `column_vscroll` | Per-column vertical scroll, treated like `line_hscroll`. |
+| `other` | Any other reason that prevents composition: an incomplete parsed-sprite capture, pending geometry, or a frame that ends with the display off (VDP register 1, bit 6). |
 
 See [Replacement composition rules](REPLACEMENT_COMPOSITION.md#r8-frames-that-cannot-be-composed)
 for what the renderer does with each value.
@@ -60,7 +68,8 @@ for what the renderer does with each value.
 Each `OccurrenceView` is a sprite occurrence of the frame. `OccurrenceId::index`
 is unique within the frame; the SAT slot and the link-chain position are kept
 for meaning but may repeat on some producers. It also carries the identity
-hash, the native screen rectangle and the VDP priority bit.
+hash (current sprite hash algorithm), the native screen rectangle and the VDP
+priority bit.
 
 | `status` | Meaning |
 | --- | --- |
@@ -71,7 +80,8 @@ hash, the native screen rectangle and the VDP priority bit.
 
 For `assigned_not_applied`, `not_applied_reason` is one of `texture_pending`,
 `texture_failed`, `frame_not_composable`, `member_hidden` or `hd_off`, or
-`unknown` when the Engine cannot tell. `pose` holds the assigned pose key.
+`unknown` when the Engine cannot tell. `pose` holds the assigned pose key. Both
+fields are `not_applicable` for other statuses.
 
 ### Replacements
 
@@ -86,20 +96,6 @@ and:
   per member, R2), `lane` (drawn in an HD lane) or `discarded`;
 - `texture` is `ready`, `pending` or `failed` at the end of that render.
 
-### Limits
-
-At most `max_occurrences` (256) occurrences and `max_replacements` (256)
-replacements are listed per frame. Above that the spans stop at the limit and
-`occurrences_total` and `replacements_total` keep the real count: an excess
-is reported, never truncated silently.
-
-## Aligning frames with audio
-
-`RenderFrameView::frame` carries the emulation frame. The audio observation
-reports the same frame's start on the device line as
-`audio_frame_output_boundary`, so a host can relate what it presented with
-when that frame's audio left the device.
-
 ### Layers and overlays (contract 1.1)
 
 `RenderFrameView::layers` lists the layers of the stack the frame was drawn
@@ -112,13 +108,28 @@ while a Cuadro is present, `gate_open` whether that Cuadro is present in this
 frame, and `drawn` whether its sheet was drawn. The list comes with the draw
 report and is empty without one.
 
+### Limits
+
+At most `max_occurrences` (256) occurrences and `max_replacements` (256)
+replacements are listed per frame. Above that the spans stop at the limit and
+`occurrences_total` and `replacements_total` keep the real count: an excess
+is reported, never truncated silently.
+
 ## Draw report
 
 `AytherRenderer::last_draw_report()` returns a `DrawReport` for the last
-`render()`: the emulation frame, whether HD was enabled, and one
-`ReplacementDraw` per sprite substitution, index-aligned with the frame's
-replacements. The spans stay valid until the next `render()`. With HD off,
-every replacement stays unapplied with the reason `hd_off`.
+`render()`: the emulation frame, whether HD was enabled, one `ReplacementDraw`
+per sprite substitution (index-aligned with the frame's replacements) and the
+layers of the stack. The spans stay valid until the next `render()`. With HD
+off, every replacement stays unapplied with the reason `hd_off`.
+
+## Aligning frames with audio
+
+`RenderFrameView::frame` carries the emulation frame. The audio observation
+reports the same frame's start on the device line as
+`audio_frame_output_boundary` (see [Audio observation](AUDIO_OBSERVATION.md)),
+so a host can relate what it presented with when that frame's audio left the
+device.
 
 ## Verification
 

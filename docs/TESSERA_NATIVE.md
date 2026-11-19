@@ -1,203 +1,295 @@
-# Consumo nativo de Tessera desde Engine
+# Tessera native provider
 
-La integración opcional consume un paquete **instalado** `Tessera::core` mediante
-su API C 1.1. `TesseraBackend` es privado; los encabezados públicos nativos de Engine no
-incluyen Tessera, libretro ni detalles de su implementación. La dirección de
-la dependencia es Engine → Tessera. El núcleo se sigue compilando por separado.
+**Status:** implemented, optional, off by default; Windows x64 only
 
-El sistema soportado es la **Mega Drive** (backend `megadrive` de Tessera). Con
-él, una ROM corre por la misma tubería de frames que con un core libretro y da
-las mismas identidades que gpgx: es la puerta G2 de la spec 008 (equivalencia de
-observación, `v0.2.0-rc.8`). Los backends sintéticos (`synthetic.*`) siguen
-existiendo para las pruebas del contrato.
+This is the authoritative guide to the Tessera integration: how to build Engine
+with it, which Tessera it accepts, how a host selects it, what works through it,
+how it is packaged, and how it is tested.
 
-## Configuración y selección
+[AYTHER Tessera](https://github.com/Ayther-Dev/AYTHER-Tessera) is AYTHER's own
+clean-room emulator core, developed and released from its own repository. Engine
+can use it as a **native emulation provider**, an alternative to loading a
+user-supplied libretro core. The supported native machine is the Sega Mega
+Drive / Genesis (Tessera backend `megadrive`). Tessera also ships synthetic
+backends (`synthetic.*`) that Engine uses for contract tests.
 
-Configurar Engine con `AYTHER_ENABLE_TESSERA=ON` y `Tessera_DIR` apuntando a
-`<prefijo>/lib/cmake/Tessera`. Se requiere Windows x64, ABI MSVC, herramientas
-14.51 o posteriores y CRT `/MD`. Engine y Tessera deben coincidir en la opción ASAN. Un paquete de diagnóstico requiere el mismo
-compilador y versión; sus pruebas copian el runtime ASAN local junto al binario.
-La opción desactivada mantiene el proveedor existente y stubs nativos que
-responden `unsupported_capability`. No hay descargas implícitas de Tessera.
+## How it fits
 
-### Versión exigida y lock
+- Engine depends on Tessera; Tessera does not depend on Engine. Engine links
+  only an **installed** `Tessera::core` package through the Tessera C API. It
+  never builds or downloads Tessera itself.
+- `TesseraBackend` is private to Engine. No installed Engine header includes a
+  Tessera, libretro, or backend header.
+- Engine reads every emulator through one internal `ObservationSource`
+  interface. `RetroRunner` implements it from a libretro core's
+  `ayther_interface_v1` descriptor ([emulator extension ABI](EMULATOR_EXTENSION_ABI.md)
+  1.10); `TesseraBackend` implements it from a native session over Tessera API
+  1.1, which exposes the same primitives. A `FrameView` is therefore built by the
+  same code from either provider.
+- With the native provider, a Mega Drive ROM runs through the same frame
+  pipeline as with a libretro core and yields the same identities as the
+  Genesis Plus GX reference core (see [Testing and parity](#testing-and-parity)).
 
-Engine exige un paquete que declare la **API de Tessera 1.1 o una 1.x posterior**
-(`Tessera_ABI_MAJOR`/`Tessera_ABI_MINOR` de `TesseraConfig.cmake`); un paquete
-1.0 se rechaza al configurar con `TESSERA_API_TOO_OLD`. La versión del paquete
-(`0.x`) no se restringe, porque los tags de Tessera avanzan por separado de la
-API. Además, `dependencies/tessera.lock.json` fija el Tessera exacto:
+See [Architecture](ARCHITECTURE.md#emulation-providers) for the provider layer
+in context.
 
-- `sourceCommit`, `api` y `package.version` siempre;
-- `release.tag` y `artifact.sha256` cuando Tessera publica un tag con esa API.
-  Mientras no exista, el lock es `unreleased` y fija un commit de `main`.
-  Hoy fija `v0.2.0-rc.9` (API 1.1, núcleo `megadrive`, región de work RAM
-  `0x1000`, la temporización de TP-209.2 y `AUDIO_MUTE`). G2 se aprobó con
-  `v0.2.0-rc.8`. `v0.2.0-rc.1` falló en CI antes de empaquetar y no tiene
-  release.
+## Build configuration
 
-`native-release.yml` lee el commit del lock para compilar Tessera; `ci.yml` lo
-fija como literal (`TESSERA_COMMIT`, para que el `ref` del checkout no derive de
-un archivo del repositorio) y un paso falla si difiere del lock, de modo que el
-lock y el workflow cambian juntos. La configuración compara el paquete instalado con el
-lock (`source.revision`, `version`, API); si no coincide falla con
-`TESSERA_LOCK_MISMATCH`. Para desarrollar contra otro Tessera, local y nunca en
-CI: `-DAYTHER_TESSERA_ALLOW_UNLOCKED=ON`. Las pruebas `ayther.package.tessera_lock.*`
-comprueban el lock y que el verificador rechaza un commit, versión, tag o API
-distintos. Para subir de versión se cambia el lock en el mismo PR que el código
-que lo necesita:
+| CMake variable | Default | Meaning |
+|---|---|---|
+| `AYTHER_ENABLE_TESSERA` | `OFF` | Build the native provider. Requires `AYTHER_BUILD_ENGINE` (`TESSERA_ENGINE_REQUIRED`) |
+| `Tessera_DIR` | — | `<prefix>/lib/cmake/Tessera` of an installed Tessera package |
+| `AYTHER_TESSERA_ALLOW_UNLOCKED` | `OFF` | Accept a package other than the locked one. Local development only; CI never sets it |
+| `AYTHER_TESSERA_TEST_SOURCE_DIR` | — | Tessera source checkout at the locked commit; required for the native tests (test-only headers and CLI fixtures) |
+| `AYTHER_TESSERA_TEST_FIXTURE_DIR` | `<source>/build/windows-dev/native-fixtures` | Native fixtures generated in the Tessera checkout; CTest never downloads them |
+| `AYTHER_TESSERA_PHASE3_EVIDENCE_DIR` | — | Optional Tessera Mega Drive replay evidence; enables `ayther.integration.tessera_checkpoint` |
 
 ```powershell
-cmake -DAYTHER_TESSERA_LOCK=dependencies/tessera.lock.json `
-      -DAYTHER_TESSERA_PREFIX=<prefijo Tessera> -P tools/check_tessera_lock.cmake
+cmake --preset windows-native-vpx `
+  -DAYTHER_ENABLE_TESSERA=ON `
+  "-DTessera_DIR=<tessera-prefix>/lib/cmake/Tessera"
 ```
+
+Platform constraints:
+
+- Tessera packages are built for Windows x64 with the MSVC ABI and the `/MD`
+  runtime; there is no Linux Tessera provider.
+- Engine and Tessera must agree on AddressSanitizer: a diagnostics (ASan)
+  Tessera package requires `AYTHER_ENABLE_ASAN=ON` and vice versa, or configure
+  fails.
+- No preset enables Tessera; pass the options explicitly.
+
+With `AYTHER_ENABLE_TESSERA=OFF` the libretro provider is unchanged, and the
+native entry points are stubs that return `NativeStatus::unsupported_capability`.
+
+## Version requirement and lock
+
+Configure accepts a package that declares **Tessera API 1.1 or a later 1.x**
+(`Tessera_ABI_MAJOR` / `Tessera_ABI_MINOR` in `TesseraConfig.cmake`). An older
+API fails with `TESSERA_API_TOO_OLD`. The package version (`0.x`) is not
+constrained, because Tessera release tags move independently of its API.
+
+On top of the API floor, [`dependencies/tessera.lock.json`](../dependencies/tessera.lock.json)
+pins the exact Tessera:
+
+| Field | Meaning |
+|---|---|
+| `sourceCommit` | Full Tessera commit the package is built from |
+| `api.major`, `api.minor` | API the package declares |
+| `package.version` | Package version |
+| `release.tag`, `release.status` | Release tag, or `unreleased` while the pinned commit has no tag |
+| `artifact.fileName`, `artifact.sha256` | Released package and its SHA-256 |
+
+The lock currently pins Tessera `v0.2.0-rc.9` (API 1.1). Configure compares the
+installed package (`source.revision`, version, API) with the lock and fails with
+`TESSERA_LOCK_MISMATCH` when they differ; other lock errors are
+`TESSERA_LOCK_MISSING`, `TESSERA_LOCK_INVALID`, and `TESSERA_LOCK_API`.
+
+CI uses the lock in two places:
+
+- `ci.yml` repeats the commit as the literal `TESSERA_COMMIT`, so the checkout
+  ref does not come from a repository file, and its *Verify the Tessera pin*
+  step fails when the literal and the lock differ.
+- `native-release.yml` reads the commit from the lock.
+
+### Bumping Tessera
+
+Change the lock in the same pull request as the code that needs the new
+Tessera:
+
+1. Update `sourceCommit`, `api`, `package.version`, `release.*`, and
+   `artifact.*` in `dependencies/tessera.lock.json`.
+2. Update `TESSERA_COMMIT` in `.github/workflows/ci.yml` to the same commit.
+3. Check an installed package against the lock:
+
+   ```powershell
+   cmake -DAYTHER_TESSERA_LOCK=dependencies/tessera.lock.json `
+         -DAYTHER_TESSERA_PREFIX=<tessera-prefix> -P tools/check_tessera_lock.cmake
+   ```
+
+4. Run the native test suite (below). The `ayther.package.tessera_lock.*` tests
+   check the lock itself and that the verifier rejects a different commit,
+   version, tag, or API.
+
+## Selecting the provider
+
+A host selects the provider per session:
 
 ```cpp
 ayther::AytherSession::Config configuration;
 configuration.provider = ayther::EmulationProvider::tessera_native;
-configuration.enable_audio = false;
-configuration.derive_core_pack = false;
-configuration.native_config = native_configuration;
+configuration.native_config = native_configuration; // engine::NativeConfig
 ayther::engine::NativeResult preparation;
 auto session = ayther::AytherSession::create(configuration, preparation);
-if (!session) { /* Preserve preparation.code/phase/frame_id/transaction. */ }
+if (!session) {
+  // Keep preparation.code, phase, frame_id, and transaction for diagnostics.
+}
 ```
 
-`native_configuration` identifica el backend y contiene bytes de contenido,
-configuración canónica y memoria persistente inicial. La configuración incluye
-el build ID enumerado por `NativeEmulation::backends`; la detección por bytes y
-su evidencia se consultan con `NativeEmulation::detect`. La sesión verifica la
-selección y expone sistema, capacidades e identidades mediante `info()`.
-Una selección inválida, contenido/configuración incompatibles o preparación
-fallida devuelven error; no cambian al proveedor libretro.
+`native_configuration` names the backend and carries the content bytes, the
+canonical configuration, and the initial persistent memory. The configuration
+includes the backend build ID enumerated by `NativeEmulation::backends`;
+content detection and its evidence come from `NativeEmulation::detect`. The
+session verifies the selection and reports system, capabilities, and identities
+through `info()`.
 
-### Sesión Mega Drive
+An invalid selection, incompatible content or configuration, or a failed
+preparation returns an error. Engine **never falls back** to the libretro
+provider.
 
-Para la Mega Drive, la configuración lleva el sistema 1
-(`TESSERA_SYSTEM_MEGA_DRIVE`), audio a 48 kHz y un mapa de dos mandos de doce
-controles (campo 6). `tools/parity_bench/native_config.h` y
-`tests/support/tessera_native_config.hpp` la construyen a partir de una ROM; la
-ROM se pasa como bytes (`content`), nunca por ruta.
+These `Config` options have no native counterpart and are rejected at creation
+with `unsupported_capability`: `patch_path`, `core_options`, `rom_path`, and the
+`audio_observer` and `render_observer` callbacks.
 
-El modo nativo se conduce de dos formas. `native_emulation()` es el driver
-tipado, con estados completos de controles y contexto de época/frame. Desde
-TP-301.3 (spec 008), `set_input()` y `step()` de la sesión también avanzan la
-máquina nativa por la tubería de frames (`produce_frame`), igual que con
-libretro. `set_input()` guarda el mando RetroPad de cada puerto. En cada
-`step()`, la sesión asigna todos los controles que declara el mapa de la
-configuración (campo 6), con el mapeo de gpgx: A=Y, B=B, C=A, más las
-direcciones y start. X, Y, Z y mode quedan sueltos. Si el avance falla,
-`step()` devuelve el código en `FrameView::native_result`.
+AYTHER Runtime exposes the same choice on its command line
+(`--provider tessera`); see the Runtime documentation.
 
-En la tubería, el frame de la máquina `megadrive` baja como RGB565, el formato
-que da gpgx, para que el hasher de tiles, el juez de sprites y la
-recomposición raster vean los mismos píxeles (TP-209.1). La observación (VRAM,
-CRAM, registros, VSRAM, sprites, escrituras de audio) sale de `TesseraBackend`
-como `ObservationSource`. La work RAM sale de la región `0x1000` de Tessera con
-el layout de `SYSTEM_RAM` de libretro (word-swapped): la sesión guarda un espejo
-que se relee tras cada avance, restore, reset o close, y `poke()` y los cheats
-del Engine (`add_cheat`) escriben con `write_control`, así que la escritura es
-estado de la máquina (los checkpoints la llevan). Los códigos de cheat del core
-(`cheat_set`) son de libretro y no existen en esta vía.
+### Mega Drive configuration
 
-### Qué funciona por la vía nativa
+A Mega Drive session uses system 1 (`TESSERA_SYSTEM_MEGA_DRIVE`), 48 kHz audio,
+and a map of two twelve-control pads (configuration field 6). The ROM is passed
+as bytes (`content`), never as a path. `tools/parity_bench/native_config.h` and
+`tests/support/tessera_native_config.hpp` build this configuration from a ROM
+and are the reference to copy.
 
-- **Packs:** `Config::pack_path`, `set_pack()` y `reload_pack()` cargan el pack
-  igual que con libretro; `validate_pack()` declara la plataforma `megadrive` y
-  el CRC32 de la ROM. Un pack horneado con gpgx se reproduce con Tessera y al
-  revés con el mismo multiconjunto de sustituciones por frame
-  (`parity_bench --cross-pack`, TP-210; `ayther.integration.parity_bench_cross_pack`).
-- **Identidades:** sprites, tiles, celdas de plano, atribución y eventos de
-  sonido salen iguales que con gpgx (`parity_bench dump --identities`, TP-209;
-  contrato en [IDENTITY_SPECIFICATION.md](IDENTITY_SPECIFICATION.md)).
-- **Fondos y Panorámicas:** el bg stitcher (`bg_capture`, `bg_bounds`,
-  `bg_cells`, `export_background_plane`) y el anclaje de una Panorámica
-  (`define_panorama`) dan lo mismo que con gpgx.
-- **Lua:** `load_script()`; `ayther.ram.*` lee el espejo de la work RAM y
-  `ayther.tiles.list()`/`ayther.sprites.list()` las ocurrencias del frame.
-- **Detector de audio en vivo:** `audio_live_active()` da las mismas voces y
-  firmas FM/PSG que con gpgx, frame a frame.
+### Driving a native session
 
-Fondos, Panorámicas, Lua y el detector los cubre `ayther.integration.tessera_native_subsystems`
-(TP-301.5) con una ROM sintética escrita en la prueba (`tools/common/synth_rom.h`):
-Tessera siempre y, si está el core del fork de `third_party/cores/core.lock` (o
-`AYTHER_PARITY_GPGX_CORE`), la misma serie con gpgx.
+There are two ways to advance the machine:
 
-- **Rewind:** `enable_rewind()` guarda una ventana de 10 s × fps de
-  checkpoints del driver (comprimidos con zstd; su tamaño varía de un frame a
-  otro) y `rewind_step()` los restaura con una traza vacía. Con la escena
-  sintética, 599 frames ocupan 1,18 veces la memoria de gpgx (límite 1,25).
-- **Tomas:** `record_start()` graba `.arp` con procedencia `tessera` y
-  keyframes cada 300 frames; `replay_seek()`, la captura por canal y el análisis
-  de tomas funcionan sobre ellas. `serialize_size()` da el tamaño de un
-  checkpoint y `unserialize()` lo restaura.
-- **Audio:** `enable_audio` abre el reproductor. El PCM nativo (48 kHz) se
-  remuestrea a los 44,1 kHz del reproductor con la fase arrastrada entre
-  frames, así que no hay costuras en el límite de un frame. `AUDIO_MUTE`
-  (desde rc.9) aísla cada canal: `capture_channel_pcm()` con la máscara de FM 1
-  da solo esa voz, como con gpgx.
+- **Session facade.** `set_input()` stores the RetroPad state of each port, and
+  `step()` advances the native machine through the normal frame pipeline
+  (`produce_frame`), exactly as with libretro. On each step the session assigns
+  every control the configuration's map declares, with the Genesis Plus GX
+  mapping: Mega Drive A, B, C ← RetroPad Y, B, A, plus the directions and Start.
+  Mega Drive X, Y, Z, and Mode stay released. If the advance fails, `step()`
+  reports the code in `FrameView::native_result`.
+- **Typed driver.** `native_emulation()` returns the `engine::NativeEmulation`
+  driver, which takes complete control states with epoch and frame context. See
+  [Typed driver: originals and ownership](#typed-driver-originals-and-ownership).
 
-`ayther.integration.tessera_native_state` (TP-302.1 a TP-302.3) cubre las tres
-con la misma escena; con gpgx presente compara la memoria del rewind.
+In the frame pipeline the `megadrive` frame is delivered as RGB565, the format
+Genesis Plus GX produces, so the tile hasher, sprite judge, and raster
+recomposition see the same pixels on both providers.
 
-### Qué no funciona todavía
+Work RAM comes from Tessera region `0x1000` in the libretro `SYSTEM_RAM` layout
+(word-swapped). The session keeps a mirror that it refreshes after each advance,
+restore, reset, or close. `poke()` and Engine cheats (`add_cheat`) write through
+`write_control`, so a write is machine state and checkpoints carry it. Core
+cheat codes (`cheat_set`) are a libretro feature and do not exist on this path.
 
-Estas opciones se rechazan al crear la sesión con `unsupported_capability`, sin
-cambiar de proveedor: `patch_path`, `core_options`, `rom_path` y los
-observadores `audio_observer` y `render_observer`.
+Hosts must keep every `NativeResult`: each later query has its own result. The
+`create` overload that takes a `NativeResult` preserves the context of a
+failure that produced no session. The facade's `reset()` delegates to the
+driver, and observer subscriptions are reapplied after a native reset.
 
-- **Enrutado de voces:** `set_voice_router()` no se activa en sesiones
-  nativas.
+## Capabilities
 
-Los clientes nativos deben conservar cada `NativeResult`: las consultas
-siguientes tienen su propio resultado. El overload de creación permite
-conservar también el contexto de un error sin sesión. `reset()` de la fachada
-delega al driver.
+| Capability | Native behavior |
+|---|---|
+| Packs | `Config::pack_path`, `set_pack()`, and `reload_pack()` work as with libretro; `validate_pack()` reports platform `megadrive` and the ROM CRC32. Packless sessions initialize their pack consumers too |
+| Substitutions | A pack baked on Genesis Plus GX plays on Tessera, and vice versa, with the same per-frame multiset of substitutions |
+| Identities | Sprites, tiles, plane cells, attribution, and sound events match Genesis Plus GX ([identity specification](IDENTITY_SPECIFICATION.md)) |
+| Backgrounds and panoramas | The background stitcher (`bg_capture`, `bg_bounds`, `bg_cells`, `export_background_plane`) and panorama anchoring (`define_panorama`) match Genesis Plus GX |
+| Lua | `load_script()` works; `ayther.ram.*` reads the work RAM mirror, `ayther.tiles.list()` and `ayther.sprites.list()` the frame's occurrences |
+| Live audio detector | `audio_live_active()` reports the same voices and FM/PSG signatures, frame by frame |
+| Rewind | `enable_rewind()` keeps a window of 10 s × fps of zstd-compressed driver checkpoints; `rewind_step()` restores them. Memory is tested to stay within 1.25× that of Genesis Plus GX |
+| Takes | `record_start()` writes `.arp` takes with emulation generation `tessera` and a keyframe every 300 frames; `replay_seek()`, per-channel capture, and take analysis work on them |
+| Checkpoints | `serialize_size()` and `unserialize()` use driver checkpoints |
+| Device audio | `enable_audio` opens the player; native 48 kHz PCM is resampled to the player's 44.1 kHz with phase carried across frames, so there are no seams at frame boundaries |
+| Channel mute | `AUDIO_MUTE` isolates each channel: `capture_channel_pcm()` with the FM 1 mask returns only that voice |
+| Not available | `patch_path`, `core_options`, `rom_path`, `audio_observer`, `render_observer` (rejected at creation) |
 
-## Originales y capturas del driver tipado
+## Typed driver: originals and ownership
 
-Después de un avance con el driver tipado, `native_frame()` refresca los
-préstamos originales sin copiar píxeles ni PCM. `pixel_encoding=rgba8` y
-`fb_format=-1` distinguen RGBA8 de los formatos libretro. `native_original`
-incluye PCM S16LE, frecuencia, canales, muestras, ticks e identidad reales; no
-se envía al reproductor legacy de 44,1 kHz. Con pack y la política de
-presentación confirmada, el frame se compone con las sustituciones del pack;
-si no, `native_original_reason` dice por qué se muestra el original
-(`no_pack`, `policy_unconfirmed`, `capture_lost`, `temporal_incomplete`, …).
+After an advance through the typed driver, `native_frame()` refreshes the
+borrowed originals without copying pixels or PCM:
 
-Los préstamos vencen al siguiente avance, reset, restore o cierre exitosos.
-Las operaciones fallidas conservan los originales; cuando no hay originales
-actuales la fachada devuelve una vista vacía con el resultado correspondiente.
-`NativeSnapshot` posee una referencia independiente y puede sobrevivir al cierre
-o destrucción de la sesión. Retener otra referencia antes de transferirla a otro
-lector; cada objeto envoltorio tiene un propietario. La memoria se libera por
-la API del módulo que la asignó. Las colas y presupuestos no se amplían.
+- `pixel_encoding = rgba8` and `fb_format = -1` distinguish RGBA8 from the
+  libretro formats.
+- `native_original` carries S16LE PCM with its real rate, channel count, sample
+  count, ticks, and identity. It is not sent to the 44.1 kHz device player.
+- With a pack and a confirmed presentation policy, the frame is composed with
+  the pack's substitutions. Otherwise `native_original_reason` says why the
+  original is shown (`no_pack`, `policy_unconfirmed`, `capture_lost`,
+  `temporal_incomplete`, and others in `NativeOriginalReason`).
 
-`CONTROL_PENDING`, `END_OF_TRACE`, confirmación y cancelación mantienen códigos,
-frame/época, transacción y causa; no dependen de que haya espacio en la cola de
-eventos. EOF pausa sin avanzar ni aplicar una pendiente. Los fallos de reset
-conservan la sesión y las capturas históricas.
+Ownership rules:
 
-## Validación local y costo
+- Borrowed originals expire at the next successful advance, reset, restore, or
+  close. Failed operations keep the current originals; with no current
+  originals the facade returns an empty view with the matching result.
+- `NativeSnapshot` holds an independent reference and may outlive the session.
+  Retain a further reference before handing one to another reader; each wrapper
+  object has a single owner.
+- Memory is released through the API of the module that allocated it. Queues
+  and budgets are never enlarged.
+- `CONTROL_PENDING`, `END_OF_TRACE`, confirmation, and cancellation keep their
+  code, frame and epoch, transaction, and cause, independently of event-queue
+  space. End of trace pauses without advancing or applying a pending control.
+  A failed reset keeps the session and its historical captures.
 
-Las pruebas se registran en el CTest existente. El checkout de Tessera se usa
-sólo para headers de pruebas fijados por su lock y fixtures de la CLI, mediante
-`AYTHER_TESSERA_TEST_SOURCE_DIR`; el producto enlaza el paquete instalado.
-`tessera_session_test` crea `AytherSession` y usa su driver público; el oráculo
-cerrado no llama a una segunda sesión C por detrás. La prueba de replay compara
-12 procesos nuevos de 3.000 frames con la CLI autónoma y fórmulas independientes.
+## Release packaging
 
-Las pruebas de la Mega Drive son `ayther.contract.tessera_observation_source`
-(observación), `ayther.integration.tessera_native_md` (FX-02 por la tubería de
-frames), `tessera_controls_test`, `tessera_pack_test` y
-`tessera_presentation_test` (FX-03 con pack), `tessera_native_subsystems`
-(fondos, Panorámicas, Lua y detector) y `parity_bench_cross_pack` (packs
-cruzados con gpgx). Las fixtures nativas (`AYTHER_TESSERA_TEST_FIXTURE_DIR`) se
-generan en el checkout de Tessera; CTest no las descarga.
+The regular release packages (`ayther-engine` and `ayther-engine-vpx`, tags
+`v0.1.0-rc.N`) do **not** contain the Tessera provider.
 
-Los costes registrados separan avance, consultas/encoding/hash de originales,
-observación y oráculo funcional, excluyendo preparación y escritura JSON.
-Son una línea base sintética de T018, no la aceptación de rendimiento T032.
-La integración CI reutiliza una sola entrada Windows existente y un SHA fijo de
-Tessera. No se crea una matriz ni un PR por fase. La ejecución remota queda
-pendiente del push coordinado; no se da por aprobada a partir del YAML.
+`.github/workflows/native-release.yml` builds a separate candidate for each tag
+`native-v0.1.0-rc.N`:
+
+- Windows x64, VPX enabled, Tessera built from the locked commit;
+- asset `ayther-engine-vpx-native-v0.1.0-rc.N-windows-x86_64.zip` plus
+  `CHECKSUMS.sha256`, with a build-provenance attestation;
+- created as a **draft** pre-release and published once AYTHER Runtime pins it.
+  A draft that Runtime never pinned stays a draft.
+
+Release mechanics shared with the regular packages are in
+[Build, test, and release](BUILD_TEST_RELEASE.md).
+
+## Testing and parity
+
+The native tests register in the normal CTest graph when
+`AYTHER_ENABLE_TESSERA=ON`. The product links the installed package; the Tessera
+source checkout supplies only test headers and CLI fixtures.
+
+| Test | Covers |
+|---|---|
+| `ayther.package.tessera_lock.*` | Lock format and verifier rejections |
+| `ayther.contract.tessera_observation_source` | `ObservationSource` over Tessera |
+| `ayther.integration.tessera_session_test` | `AytherSession` driven through its public typed driver |
+| `ayther.integration.tessera_native_replay` | Fresh-process replays compared with the standalone Tessera CLI |
+| `ayther.integration.tessera_native_md` | Mega Drive through the frame pipeline |
+| `ayther.integration.tessera_controls_test` | Control mapping |
+| `ayther.integration.tessera_pack_test`, `tessera_presentation_test` | Pack composition and presentation policy |
+| `ayther.integration.tessera_native_subsystems` | Backgrounds, panoramas, Lua, live audio detector |
+| `ayther.integration.tessera_native_state` | Rewind, takes, device audio, `AUDIO_MUTE` |
+| `ayther.integration.tessera_checkpoint` | Checkpoints against Tessera replay evidence (when supplied) |
+| `ayther.integration.parity_bench_cross_pack` | Packs baked on one provider and played on the other |
+
+`tessera_native_subsystems` and `tessera_native_state` run on a synthetic ROM
+written by the test (`tools/common/synth_rom.h`). When the Genesis Plus GX fork
+core named by `third_party/cores/core.lock` is available (or
+`AYTHER_PARITY_GPGX_CORE` points to it), they repeat the series on that core and
+compare. Some tests return CTest skip code 77 when an optional input, such as a
+Tessera backend or that core, is missing.
+
+In CI, the Windows native job builds and installs Tessera from the locked
+commit, generates its fixtures, configures Engine with the provider, and runs
+these tests; it also downloads the locked core, verified by SHA-256, for the
+cross-pack test.
+
+### Parity bench
+
+`tools/parity_bench` (`AYTHER_BUILD_PARITY_BENCH=ON`) compares the two providers.
+`parity_bench --help` lists the full syntax.
+
+| Subcommand | Purpose |
+|---|---|
+| `dump` | Write the `FrameView` dump of a session (`--provider libretro\|tessera_native`); `--identities` also writes canonical identities per segment |
+| `compare` | Compare two dumps; report the first divergence per subplane |
+| `check` | Strict exception accounting over a catalog of dumps: fails on a divergence no declared exception covers, and on a declared exception that no longer diverges |
+| `compare-identities` | Compare two identity files (exit 0 equal, 5 different) |
+| `cross-pack bake\|play\|compare` | Bake a signed pack from one provider's identities (`--shard K/N` splits large games), play it on either provider, and compare per-frame substitutions |
+| `trace-from-arp` | Convert a take's inputs to a Tessera trace |
+
+The Tessera repository publishes the exception registry that `check --registry`
+reads.

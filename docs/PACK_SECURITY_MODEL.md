@@ -2,7 +2,7 @@
 
 **Status:** container hardening and explicit production trust policy implemented
 
-**Last reviewed:** 2026-08-30
+**Last reviewed:** 2026-11-19
 
 An `.ay` pack is an untrusted ZIP container that supplies metadata and optional
 replacement assets. Passing validation means the bytes satisfy the implemented
@@ -25,10 +25,16 @@ The archive uses these security-relevant entries:
   raw `integrity.toml` bytes;
 - asset, locale, profile, script, and credit data referenced by the manifest.
 
-The highest implemented manifest schema is `2`. Compatibility results are
-graded as exact, warning-bearing, experimental, or incompatible; only an
-incompatible result blocks activation. A missing compatibility context can
-therefore yield an experimental result and must not be presented as verified.
+The highest implemented manifest schema is `2`; schema 2 readers ignore unknown
+tables. The optional `[emulator]` table is informational and never rejects a
+pack. The `[identity]` table declares the identity contract the pack was baked
+with, and validation rejects a pack whose `identity.contract` is newer than
+this build's (`IDENTITY_CONTRACT = 1`) with `pack.identity_contract_too_new`.
+
+Compatibility results are graded as exact, warning-bearing, experimental, or
+incompatible; only an incompatible result blocks activation. A missing
+compatibility context can therefore yield an experimental result and must not
+be presented as verified.
 
 ## Verification flow
 
@@ -39,7 +45,10 @@ therefore yield an experimental result and must not be presented as verified.
 4. Decode the signature envelope, resolve its key identifier in the explicit
    trust registry, enforce validity and revocation, then verify Ed25519 over the
    exact integrity-index bytes.
-5. Verify entry SHA-256 digests before treating content as trusted.
+5. Verify entry SHA-256 digests before treating content as trusted. A host can
+   verify every signed entry up front with `ayther_pack_verify_all()` (flat C
+   ABI revision 9), which streams each entry through a fixed-size buffer, before
+   it activates the pack.
 6. Authorize the authenticated manifest's `game_id` against the key scope.
 7. Apply manifest, system, profile, region, and tier compatibility rules.
 8. Activate the pack only if the caller's policy accepts the result.
@@ -124,9 +133,10 @@ Builder paths normalize backslashes to `/`; readers require that normalized form
 already be present because signatures authenticate exact name bytes. The policy
 rejects absolute and drive/stream-qualified paths, empty, `.` and `..` segments,
 duplicates, control characters, trailing-dot/space aliases, and Windows device
-names. Entry paths are restricted to printable ASCII during the pre-release
-format phase, eliminating Unicode-normalization ambiguity; localized labels stay
-in UTF-8 metadata.
+names. A path is at most 512 bytes and each segment at most 255 bytes. Entry
+paths are restricted to printable ASCII during the pre-release format phase,
+eliminating Unicode-normalization ambiguity; localized labels stay in UTF-8
+metadata.
 
 ## Lua sandbox
 
@@ -179,16 +189,29 @@ image ceiling, so the ceiling here is what actually decides.
 
 IPS and BPS patches are applied to an in-memory copy; the source ROM is not
 rewritten. Patch validity does not establish permission to use or distribute the
-underlying game. Emulator cores are native code and sit outside the pack
+underlying game. Libretro cores are native code and sit outside the pack
 sandbox: loading a core is equivalent to loading an untrusted dynamic library
-and requires a separate allowlist, provenance, and isolation policy.
+and requires a separate allowlist, provenance, and isolation policy. The core
+probe ([Core probe contract](CORE_PROBE_CONTRACT.md)) reports a verdict on a
+candidate library without loading a game; the contract describes how a host
+runs it out of process.
+The Tessera native provider is linked at build time from a package pinned by
+SHA-256 in `dependencies/tessera.lock.json`, not loaded at run time.
 
 ## Remaining operational controls
 
-- protected signing service with no private key in source or developer builds;
-- fuzzing and adversarial fixtures for ZIP, TOML, patches, media, scripts, and
-  all FFI entry points;
-- audit logging that distinguishes integrity, compatibility, and policy failure.
+Implemented: CI fuzzes the `packs`, `decoders`, and `ffi` targets for 30 seconds
+each on every pull request (`fuzz/fuzz_targets/`), and runs the CPU suite under
+AddressSanitizer and UndefinedBehaviorSanitizer.
+
+Not yet in place:
+
+- a protected signing service, with no private key in source or developer
+  builds, and an operated production registry;
+- long-running fuzzing and adversarial fixtures for TOML, patches, scripts,
+  and every FFI entry point beyond the smoke targets;
+- audit logging that distinguishes integrity, compatibility, and policy
+  failure.
 
 Security reports follow [SECURITY.md](../SECURITY.md). Content and distribution
 rights are defined separately in

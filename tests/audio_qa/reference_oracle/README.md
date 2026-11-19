@@ -1,18 +1,30 @@
-# Adaptador de decisión de referencia — QA-022
+# Live-resume reference decision
 
-RF-5 y RF-15. Invoca directamente live_resume_decide del header fijado de Engine rc.9. No copia su algoritmo ni introduce un motivo deducido. El caso viene de los archivos state.json e inputs.json definidos en QA-021; CTest verifica sus hashes y pasa argumentos separados, sin concatenación de shell. El límite uint64 se conserva como texto decimal JSON para evitar redondearlo a través de un número de coma flotante.
+Calls `live_resume_decide` directly from the pinned Engine `v0.1.0-rc.9`
+header. It does not copy the algorithm or introduce an inferred reason. Shared
+conventions are in the [audio QA overview](../README.md).
 
-La instancia de bucle tiene inicio 30, fin 180 y cut UINT64_MAX; se solicita reanudar en cuadro 120 a 60 FPS con duración conocida 3 s. La rama original devuelve restart y offset 1,5 s. Es una decisión lógica; no acredita todavía recreación efectiva del reproductor ni el motivo interno. Esos campos se conservan como no observados para QA-023.
+The case comes from `state.json` and `inputs.json` of the oracle fixture
+(`QA_ORACLE_FIXTURE`). CTest verifies their hashes and passes arguments
+separately, without shell concatenation. The `uint64` limit is kept as decimal
+JSON text so it is never rounded through a floating-point number.
 
-Desde Engine:
+The looping instance starts at 30, ends at 180 and has cut `UINT64_MAX`; resume
+is requested at frame 120, 60 FPS, known duration 3 s. The original branch
+returns `restart` with offset 1.5 s. This is a logical decision; it does not
+prove that the player was actually recreated, and the internal reason is kept
+as not observed (the [staging probe](../staging_probe/README.md) observes it).
 
 ```powershell
-cmake -S tests/audio_qa/reference_oracle -B build/qa-022-reference `
+cmake -S tests/audio_qa/reference_oracle -B build/qa-reference `
   -G 'Visual Studio 18 2026' -A x64 -T v145 `
-  '-DQA_ENGINE_REFERENCE_SOURCE=C:/Users/david/Workspaces/ayther/.qa-reference/audio-qa-initial-20260927/engine-source' `
-  '-DQA_ORACLE_FIXTURE=C:/Users/david/Workspaces/ayther/specs/001-AYTHER-bug-audio-qa/evidence/qa-021-oracle-definition'
-cmake --build build/qa-022-reference --config Release --parallel 4
-ctest --test-dir build/qa-022-reference -C Release --output-on-failure
+  '-DQA_ENGINE_REFERENCE_SOURCE=<qa-reference>/engine-source' `
+  '-DQA_ORACLE_FIXTURE=<oracle-fixture-directory>'
+cmake --build build/qa-reference --config Release --parallel 4
+ctest --test-dir build/qa-reference -C Release --output-on-failure
 ```
 
-Dos tests: decisión del fixture y rechazo de una entrada numérica con sufijo antes de crear resultado. Límites: una instancia, una operación, siete valores escalares y tres segundos por invocación. El resultado se escribe en un directorio nuevo; no reemplaza un archivo existente. No requiere SDL, core, ROM, red ni replay. La matriz completa y la congelación del oráculo siguen pendientes.
+Two tests: the fixture decision, and rejection of a numeric input with a suffix
+before any result is created. Limits: one instance, one operation, seven scalar
+values. The result is written to a new directory and never replaces an existing
+file. No SDL, core, ROM, network or replay is needed.

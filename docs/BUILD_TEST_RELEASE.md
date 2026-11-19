@@ -1,16 +1,19 @@
 # Build, test, and release
 
-**Status:** CI, reproducible Engine packaging, signing, and attestations implemented
+**Status:** CI, reproducible Engine packaging, signing, and attestations
+implemented; no stable release exists
 
-**Last verified:** 2026-08-30
+**Last verified:** 2026-11-19, against `v0.1.0-rc.28` (`6d1c2e8`)
 
-This guide separates commands that work in the current checkout from release
-gates that remain open. Tool installation is covered by
-[Development environment](DEVELOPMENT_ENVIRONMENT.md).
+This guide covers the commands that build and test the Engine, what CI runs on
+every pull request, and how release candidates are produced and verified. Tool
+installation is in [Development environment](DEVELOPMENT_ENVIRONMENT.md); the
+optional Tessera provider is in [Tessera native provider](TESSERA_NATIVE.md).
 
 > [!WARNING]
-> No stable or supported artifact exists. A green Rust suite or headless CMake
-> build is not sufficient evidence for an engine release.
+> Every published artifact is a pre-release. A green Rust suite or headless
+> CMake build is not sufficient evidence for an engine release; see
+> [Release gate](#release-gate).
 
 ## Rust quality gates
 
@@ -23,129 +26,62 @@ cargo test --workspace --all-targets --locked
 cargo doc --workspace --no-deps --locked
 ```
 
-Rust formatting, linting, documentation, and tests are required CI gates. An
-ignored benchmark is not a functional test failure, but must remain visible.
+All four are required CI gates on Windows and Linux. An ignored benchmark is not
+a functional test failure, but it must remain visible.
 
 ## Repository documentation and policy checks
 
-Run these checks after changing documentation, public comments, dependencies,
-or license metadata:
+Run these after changing documentation, public comments, dependencies, or
+license metadata:
 
 ```text
 pwsh tools/check_doc_references.ps1
 pwsh tools/dep_graph.ps1 -Check
-cmake -DAYTHER_REPO=. -P tools/check_license.cmake
 pwsh tools/gen_api_reference.ps1 -Check
+cmake -DAYTHER_REPO=. -P tools/check_license.cmake
+pwsh tools/gen_notice.ps1 -Check
 ```
 
 The documentation checker validates local Markdown links and `docs/...`
-references embedded in source, CMake, and PowerShell. The public API index and
-dependency graph are generated artifacts and must not be edited by hand.
+references embedded in source, CMake, and PowerShell. The public API index,
+dependency graph, and `NOTICE.md` are generated and must not be edited by hand.
 
-## Sanitizers, fuzzing, coverage, and static analysis
+Without a build directory, `gen_notice.ps1 -Check` verifies only the Rust crate
+section; this is what CI runs. To verify the vcpkg section as well, point it at
+a native build:
 
-These gates run on Linux with Clang. Each has a preset so a local run and CI
-execute the same configuration:
-
-```text
-cmake --preset linux-native-asan   && cmake --build --preset linux-native-asan
-ctest --preset linux-native-asan
-cmake --preset linux-native-ubsan  && cmake --build --preset linux-native-ubsan
-ctest --preset linux-native-ubsan
+```powershell
+pwsh tools/gen_notice.ps1 -BuildDir build/windows-native-vpx -Check
 ```
 
-CI uses `linux-native-sanitizers`, which enables both sanitizers in one build
-and runs the CPU suite once.
+## Configure presets
 
-Both sanitizer presets build `Debug`, compile with `-fno-sanitize-recover=all`,
-and run every CPU CTest; tests labelled `gpu` are excluded because the runners
-promise no Vulkan hardware. A finding aborts the process, so any report is a
-failure rather than a logged warning.
+`CMakePresets.json` is the single definition of every configuration. Each
+preset builds in `build/<preset>`. Replace `<platform>` with `windows` or
+`linux`.
 
-The Rust vulnerability gate and the fuzz smoke targets:
+| Preset | Build type | Purpose |
+|---|---|---|
+| `<platform>-headless` | RelWithDebInfo | Rust core, CXX bridge, and CPU/ABI tests; no native dependencies |
+| `<platform>-release` | Release | Optimized core-only build (not a published artifact) |
+| `<platform>-release-engine` | Release | Optimized complete engine; builds the `ayther-engine` release archive |
+| `<platform>-release-engine-vpx` | Release | The same with VP9; builds the `ayther-engine-vpx` archive |
+| `<platform>-native` | RelWithDebInfo | Complete engine for development, with `tools/parity_bench` |
+| `<platform>-native-vpx` | RelWithDebInfo | Complete engine with VP9 |
+| `<platform>-native-gpu` | RelWithDebInfo | Complete engine plus the Vulkan GPU oracles (`gpu` label only) |
+| `windows-native-coverage` | RelWithDebInfo + `/Od` | LLVM source coverage on Windows |
+| `linux-native-coverage` | Debug | LLVM source coverage on Linux (CPU and GPU suites) |
+| `linux-native-asan`, `linux-native-ubsan`, `linux-native-sanitizers` | Debug | AddressSanitizer, UndefinedBehaviorSanitizer, or both |
 
-```text
-cargo audit --deny warnings
-cargo +nightly fuzz run packs    fuzz/corpus/packs    -- -max_total_time=30
-cargo +nightly fuzz run decoders fuzz/corpus/decoders -- -max_total_time=30
-cargo +nightly fuzz run ffi      fuzz/corpus/ffi      -- -max_total_time=30
-```
+Every configure preset has matching build and test presets, plus
+`linux-native-coverage-gpu` for the GPU half of Linux coverage. Test presets
+for release, sanitizer, and coverage builds exclude the `gpu` label.
 
-`.cargo/audit.toml` holds the advisory exception list and is empty on purpose:
-an unlisted advisory fails the build. Each fuzz target is seeded from
-`fuzz/corpus/<target>` and CI keeps `fuzz/artifacts/<target>` when a target
-crashes.
+The Tessera provider is not enabled by any preset. It is added to a native or
+release-engine preset with `-DAYTHER_ENABLE_TESSERA=ON -DTessera_DIR=...`; see
+[Optional Tessera provider](#optional-tessera-provider).
 
-Coverage is gated per language — Rust through `cargo llvm-cov`, C++ through the
-`linux-native-coverage` preset and `tools/collect_cpp_coverage.sh`. Both publish
-LCOV, text, and annotated HTML artifacts (`coverage-rust`, `coverage-cpp`) and
-fail below the total or changed-line thresholds documented in
-[`COVERAGE.md`](COVERAGE.md).
-
-### Warnings
-
-First-party C++ compiles with warnings as errors: `/W4 /WX` on the MSVC-style
-driver, `-Wall -Wextra -Wpedantic -Werror` on the GNU-style one. Every
-first-party target is under that policy -- engine, tests, smoke tools, probes,
-the test emulator cores, and the release-content generator. There is no
-target-level opt-out for our own code, because a target-wide exemption also
-hides the NEXT warning, the one nobody meant to accept.
-
-Exactly two built targets sit outside it, both for the same reason -- the code
-is not ours to fix:
-
-| Target | Why |
-| --- | --- |
-| `ayther_ymfm` | Vendored Yamaha FM cores, maintained upstream |
-| `ayther_cxx` | Generated by cxxbridge from `core/src/ffi.rs` |
-
-External dependencies never mix with ours. vcpkg packages and the vendored
-`ymfm` headers are attached as SYSTEM includes (`-imsvc` / `-isystem`), so the
-compiler does not diagnose them at all, while first-party directories come in
-through plain `-I`. A warning that reaches the log is therefore ours by
-construction, not by filtering.
-
-Deprecated platform APIs are wrapped rather than suppressed. `ayther::file_open`
-in `ayther_file.h` and `ayther::env_get` in `ayther_env.h` are the sanctioned
-replacements for `fopen` and `getenv`; production and test code alike go through
-them. `_CRT_SECURE_NO_WARNINGS` is not defined anywhere in this repository.
-
-One category is suppressed on purpose, and only in three-line windows:
-`AYTHER_LEGACY_ABI_BEGIN` / `..._END` from `ayther_diagnostic.h`. The ABI parity
-oracles exist to prove the versioned reads still agree with the deprecated
-accessors they replaced, so they must call the deprecated accessors; the
-deprecation is aimed at production callers, not at the oracle guarding the
-replacement. Each use wraps the exact expression and says why. Anything else --
-an unused parameter, an ignored `[[nodiscard]]` -- gets fixed instead.
-
-Verified clean -- zero warnings and zero errors -- across every Windows preset:
-`windows-headless`, `windows-native`, `windows-native-vpx`, `windows-native-gpu`,
-`windows-native-coverage` (unoptimised, `/Od`), `windows-release`, and
-`windows-release-engine`. The Linux side of the policy is the stricter flag set
-of the two and is verified by CI rather than locally.
-
-A true `-DCMAKE_BUILD_TYPE=Debug` build COMPILES clean under this policy but
-does not LINK, for a reason unrelated to warnings: `CMAKE_MSVC_RUNTIME_LIBRARY`
-is pinned to the release CRT so that our objects match the Rust staticlib Cargo
-always builds in release, and vcpkg then offers debug-CRT libraries that
-mismatch that pin. That is why no preset configures Debug and why the coverage
-preset gets its unoptimised code from `/Od` on top of `RelWithDebInfo`. Making
-Debug link is a dependency-provisioning change, not a compiler-flag one.
-
-`clang-tidy` runs only over the translation units a change actually touches:
-
-```text
-bash tools/run_clang_tidy_changed.sh <base-revision> build/linux-native
-```
-
-`.clang-tidy` is the single definition of scope for CI, an IDE, and a local
-run. Analyzer, `bugprone-*`, ownership, virtual-destructor, and concurrency
-findings block; the C-style-cast sweep is reported without blocking so the
-existing pile stays visible without failing pull requests.
-
-## Headless native build
-
-Windows:
+## Headless build
 
 ```powershell
 cmake --preset windows-headless
@@ -154,12 +90,12 @@ ctest --preset windows-headless
 cmake --install build/windows-headless
 ```
 
-Linux uses the equivalent `linux-headless` names. These presets intentionally
-build only the Rust core, CXX bridge, flat-ABI test, and the no-asset SF2 FFI
-smoke. SDL3, Vulkan, ymfm, and libvpx are not required because
-`Ayther::engine` remains excluded unless `AYTHER_BUILD_ENGINE=ON`.
+Linux uses the `linux-headless` names. The headless presets build only the Rust
+core, the CXX bridge, and the tests that need no native dependencies.
+`Ayther::engine` is excluded unless `AYTHER_BUILD_ENGINE=ON`, so SDL3, Vulkan,
+ymfm, and libvpx are not required.
 
-## Complete native engine build
+## Complete native build
 
 Set `VCPKG_ROOT` as described in the development-environment guide, then run:
 
@@ -170,17 +106,13 @@ ctest --preset windows-native
 cmake --install build/windows-native --prefix install/windows-native
 ```
 
-This compiles all 24 explicit `ayther_engine` translation units plus the nine
-ymfm units and Rust core. The Windows workflow above passed on 2026-08-27 with
-Clang 22.1.6 and the pinned vcpkg baseline. Linux has not been verified in this
-checkout.
+For VP9 on Windows, first run `pwsh tools/build_libvpx.ps1`, then use the
+`windows-native-vpx` preset names. Linux uses `linux-native` and
+`linux-native-vpx`; the Linux VPX variant links the system libvpx through
+`pkg-config`.
 
-For VP9, first run `pwsh tools/build_libvpx.ps1`, then replace every preset and
-directory name above with `windows-native-vpx`. That configure/build/test/install
-path also passed on 2026-08-27.
-
-GPU oracles are opt-in and selected by their own preset. They synthesize their
-inputs and require a working Vulkan device, but no ROM or recording:
+GPU oracles are opt-in. They synthesize their inputs and need a working Vulkan
+device, but no ROM or recording:
 
 ```powershell
 cmake --preset windows-native-gpu
@@ -188,473 +120,462 @@ cmake --build --preset windows-native-gpu
 ctest --preset windows-native-gpu
 ```
 
-The test preset filters on the `gpu` label. All eight GPU tests passed on
-Windows on 2026-08-27. Linux uses the corresponding `linux-native-gpu` names
-and remains unverified.
+Run `ctest --preset <preset> -N` to list the registered tests of a
+configuration.
 
-Regenerate and verify the dependency notice against the exact vcpkg status
-selected by the native-VPX build:
+## Optional Tessera provider
+
+`AYTHER_ENABLE_TESSERA=ON` links an installed Tessera package (AYTHER's own
+emulator core) as a native provider behind `AytherSession`. The option is OFF
+by default and no preset enables it.
 
 ```powershell
-pwsh tools/gen_notice.ps1 -BuildDir build/windows-native-vpx
-pwsh tools/gen_notice.ps1 -BuildDir build/windows-native-vpx -Check
+cmake --preset windows-native-vpx `
+  -DAYTHER_ENABLE_TESSERA=ON `
+  "-DTessera_DIR=<tessera-prefix>/lib/cmake/Tessera"
 ```
 
-The check fails when the committed `NOTICE.md` differs from the generated
-inventory, so it belongs in the release pipeline after dependency resolution.
+Configure fails unless the package declares Tessera API 1.1 or a later 1.x and
+matches `dependencies/tessera.lock.json` (currently Tessera `v0.2.0-rc.9`).
+`AYTHER_TESSERA_ALLOW_UNLOCKED=ON` accepts another package for local
+development only; nothing built with it may be published.
+`tools/check_tessera_lock.cmake` implements the comparison and the
+`ayther.package.tessera_lock.*` tests cover it.
+
+The integration tests additionally need `AYTHER_TESSERA_TEST_SOURCE_DIR` (a
+Tessera checkout at the locked commit) and `AYTHER_TESSERA_TEST_FIXTURE_DIR`
+(fixtures generated locally from that checkout). Building Tessera, the
+fixtures, and the parity bench is documented in
+[Tessera native provider](TESSERA_NATIVE.md).
 
 ## What CTest proves
 
 The external-core oracles `audio_mute`, `audio_output`, `render_output`, and
-`subsystem_routing` resolve `AYTHER_ABI_CORE` first, then the `vram_file` filename
-in `third_party/cores/core.lock`. An invalid explicit path or malformed lock is a
-failure. Only an absent optional locked binary produces CTest skip code 77.
-An override is never silently replaced by a different binary.
+`subsystem_routing` resolve `AYTHER_ABI_CORE` first, then the `vram_file`
+filename in `third_party/cores/core.lock`. An invalid explicit path or a
+malformed lock is a failure. Only an absent optional locked binary produces
+CTest skip code 77, and an override is never silently replaced by another
+binary.
 
 Native CI captures the complete test log and runs
-`tools/check_core_test_results.ps1 -LogPath native-ctest.log`. The checker requires
-one result for each of these four tests and the six bundled-core tests:
-`abi_negociacion`, `abi_frame_delta`, `abi_multilayer`, `abi_lecturas`,
+`tools/check_core_test_results.ps1 -LogPath native-ctest.log`. The checker
+requires one result for each of those four tests and for the six bundled-core
+tests `abi_negociacion`, `abi_frame_delta`, `abi_multilayer`, `abi_lecturas`,
 `abi_escrituras`, and `e2e_determinismo`. The bundled-core tests must run even
-when the optional external core is absent. The checker also scans every other
-reported test, rejects failures, duplicate results, and unexplained skips, and
-reports which external-core paths were not exercised. Only the four
-external-core tests may skip, and only when their optional locked core is absent.
-Its deterministic contract test is `ayther.quality.core_test_results`.
+when the optional external core is absent. The checker also rejects failures,
+duplicate results, and unexplained skips anywhere in the log. Its own contract
+test is `ayther.quality.core_test_results`.
 
-`ayther.unit.plane_set_match_test` verifies cross-plane occurrence matching,
-partial visibility, and rejection of split or consumed members.
-`ayther.renderer.focus_layer_test` runs under `AYTHER_BUILD_GPU_TESTS` and checks
-pixel brightness and opacity for all four focus layers using a synthetic scene.
-Rust tier tests and the C++ pack API test verify selection using actual asset
-reads, including 1440p/2160p boundaries and missing-tier fallback.
+These suites do not prove complete symbol coverage, every emulator/game
+combination, thread safety, or behavior on platforms CI does not run.
 
-The headless preset registers two tests: `ayther.core.ffi` covers representative
-layout, handle, pack, script, identity, and audio entry points; `sf2_synth`
-covers the null-handle SoundFont contract without external assets.
+### The test emulator core
 
-The normal native preset registers 38 tests: 25 isolated engine unit/contract
-executables, the two core/FFI tests, ten integration smokes for ABI, audio,
-render output, subsystem routing, and voice routing, plus the installed-header
-closure guard. Tests that require an unshipped emulator core use CTest skip code
-77. The VPX preset adds three tests, and the GPU preset adds eight
-hardware-labelled tests. These suites do not prove complete symbol coverage,
-all emulator/game combinations, thread safety, or cross-platform behavior.
+`tools/test_core/` is a deterministic libretro core owned by this repository
+and built from source on both platforms. It emulates nothing: its output is a
+function of the ROM bytes, the frame number, and the input, which is what the
+ABI and determinism oracles need. It is built twice from one source:
+`ayther_test_core` exports the AYTHER extension entry point and
+`ayther_test_core_stock` does not, so both halves of the extension negotiation
+run on every checkout.
 
-## Installed package
+The parsed-sprite table it reports depends on the ROM and the slot, not on the
+frame. A libretro core is process-global, so the E-5 oracle's session and its
+control runner share one instance and step it alternately; a frame-varying
+table would compare two different frames. The cost is that this fixture cannot
+catch a stale published copy. Frame-varying signals live in RAM, video, and
+audio.
 
-The headless install produces the core archive and C header. A native install
-adds the engine and ymfm archives, the explicit engine-header allowlist,
-shaders, CMake exports, the project notices, and the exact vcpkg license files
-selected by that build. Renderer, audio implementation, libretro-host, and
-Vulkan-backend headers remain source-tree internals and are not installed.
-The VPX install also includes `vpxmd.lib`, headers, version, BSD license, patent
-grant, and authors.
+### End-to-end determinism
 
-A core-only consumer can use:
-
-```cmake
-find_package(Ayther REQUIRED)
-target_link_libraries(my_app PRIVATE Ayther::core)
-```
-
-An engine consumer declares the renderer dependencies in its own package-manager
-environment and uses:
-
-```cmake
-find_package(Ayther 0.1.0 CONFIG REQUIRED COMPONENTS engine)
-target_link_libraries(my_app PRIVATE Ayther::engine)
-```
-
-Los paquetes locales de una campaña QA se identifican como desarrollo y no
-usan el nombre, hash, firma ni procedencia de un release publicado. Además de
-la configuración CMake y las cabeceras de versión, llevan un manifiesto de
-contenido y metadatos que declaran `officialRelease: false`, la referencia base
-y la versión del contrato ejercitado. Un consumidor debe fijar el hash exacto
-de ese archivo y conservar separada su selección de cualquier lock de release.
-
-The native export also provides `Ayther::ymfm`; a VPX-enabled package provides
-`Ayther::vpx`. `tests/package_consumer/` compiles only the installed C facade,
-C++ session facade, and version header, then links and executes outside the
-producer tree. No frontend, renderer implementation, or generated CXX bridge
-headers are promised as public surfaces.
-
-## The test emulator core
-
-`abi_negociacion` used to return CTest's skip code on every clean checkout. Its
-positive half needed a core exporting `ayther_get_interface`, the only such core
-lived in another repository, and `/third_party/cores/*` is gitignored -- so CI
-measured the negotiation exactly never. A skipped test nobody can un-skip is a
-note, not coverage.
-
-`tools/test_core/` is that core, owned here and built from source on both
-platforms. It emulates nothing: it produces a deterministic function of the ROM
-bytes, the frame number, and the input, which is what an ABI oracle and a
-determinism oracle actually need. It is built twice from one source --
-`ayther_test_core` exports the ABI entry point and `ayther_test_core_stock` does
-not -- so both halves of "the negotiation is additive" run on cores this
-repository can ship.
-
-All five ABI oracles now execute rather than skip: negotiation, read parity,
-control writes, multilayer recomposition, and frame delta.
-
-One fixture choice is worth knowing about. The parsed-sprite table the core
-reports is a function of the ROM and the slot, NOT of the frame. A libretro core
-is process-global, so the E-5 oracle's session and its control runner share the
-one instance and step it alternately; a frame-varying table would compare two
-different frames and disagree for a reason about the harness rather than the
-engine. The cost is that this fixture cannot catch a stale published copy. The
-frame-varying signals live in RAM, video, and audio, which no two observers read
-alternately.
-
-## End-to-end determinism
-
-`tools/e2e_determinism/` runs the product rather than a seam: synthetic ROM,
-test core, signed pack, and a scripted input track go into a real session, and
-frames, audio, events, and work RAM come out hashed.
+`tools/e2e_determinism/` runs a synthetic ROM, the test core, a signed pack,
+and a scripted input track through a real session and hashes frames, audio,
+events, and work RAM.
 
 ```text
 ctest --preset windows-native -R e2e_determinismo
 ```
 
-It asserts two different things. RUN-TO-RUN, two sessions in one process must
-agree -- that catches nondeterminism from uninitialised memory, pointer values,
-iteration order, or time. RUN-TO-GOLDEN, the hashes must equal constants pinned
-in `tools/e2e_determinism/CMakeLists.txt` -- that is the half that catches a
-difference BETWEEN platforms, because two runs agreeing on one machine prove
-nothing about the other. CI running the same binary on Windows and on Linux is
-what turns those constants into a cross-platform claim.
+Two sessions in one process must agree (run-to-run), which catches
+nondeterminism from uninitialized memory, pointer values, iteration order, or
+time. Frames and audio must also equal constants pinned in
+`tools/e2e_determinism/CMakeLists.txt` (run-to-golden); CI running the same
+test on Windows and Linux turns those constants into a cross-platform claim.
+Events and work RAM are compared run-to-run only, because they change with the
+optimization level. Only integer data is hashed.
 
-Only integer data is hashed. A float that rounded differently on two targets
-would fail this test for a reason that has nothing to do with the engine.
+A mismatch against the pinned hashes is a finding, not a number to refresh:
+decide whether the engine, the test core, or a platform changed before
+re-pinning.
 
-A mismatch against the pinned hashes is a finding, not a number to refresh: it
-means the engine changed behaviour, the test core changed, or the platforms
-disagree, and which one it is has to be decided before re-pinning.
+### GPU matrix
 
-## GPU matrix
-
-The GPU jobs are opt-in, on Windows and on Linux with Mesa, and they run through
-`tools/check_gpu_matrix.ps1` rather than calling CTest directly:
+GPU jobs run through `tools/check_gpu_matrix.ps1` rather than calling CTest
+directly:
 
 ```text
 pwsh tools/check_gpu_matrix.ps1 -Preset windows-native-gpu
 pwsh tools/check_gpu_matrix.ps1 -Preset linux-native-gpu -Launcher 'xvfb-run --auto-servernum'
 ```
 
-The wrapper exists because the GPU oracles skip themselves when no Vulkan device
-answers, and a run that skipped all eight and exited 0 is indistinguishable, in
-a green tick, from one that rendered eight frames and compared them. So it
-**fails** when the suite was skipped rather than executed, when fewer tests ran
-than expected, or when no device was reported at all.
-
-It records which device and driver answered -- `vk_context` logs the device
+The GPU oracles skip themselves when no Vulkan device answers, so the wrapper
+**fails** when the suite was skipped instead of executed, when fewer tests ran
+than expected, or when no device was reported. `vk_context` logs the device
 name, type, vendor, driver version, and Vulkan API version on every context
-creation -- and writes a report naming anything omitted. The report is uploaded
-whether the job passed or failed, because it matters most on the run that went
-wrong.
+creation, and the wrapper writes a report that is uploaded whether the job
+passed or failed.
 
-## Release artifact scope
+## Compiler warnings and static analysis
 
-v0.1.x distributes **two Engine variants**, on Windows and Linux. The official
-set therefore contains exactly four ZIP archives:
+First-party C++ compiles with warnings as errors: `/W4 /WX` on the MSVC-style
+driver, `-Wall -Wextra -Wpedantic -Werror` on the GNU-style one. Every
+first-party target is under that policy, with no target-level opt-out. Two
+built targets are exempt because the code is not ours to fix:
 
-| Archive | Targets | Headers | Shaders | Native dependencies |
-|---|---|---|---|---|
-| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | the CMake-owned public header allowlist and vendored ymfm | compiled SPIR-V | SDL3, Vulkan, VMA, toml++, zstd |
-| `ayther-engine-vpx-<tag>-<platform>.zip` | the above plus `Ayther::vpx` | the above plus `vpx/` when bundled | compiled SPIR-V | the above plus libvpx |
+| Target | Why |
+|---|---|
+| `ayther_ymfm` | Vendored Yamaha FM cores, maintained upstream |
+| `ayther_cxx` | Generated by cxxbridge from `core/src/ffi.rs` |
 
-Windows builds and bundles libvpx through `tools/build_libvpx.ps1`, so the
-archive, headers, and notices ship inside the package. Linux links the system
-libvpx through `pkg-config` and ships none of it.
+vcpkg packages and the vendored `ymfm` headers are SYSTEM includes
+(`-imsvc` / `-isystem`), so a warning in the log is first-party by
+construction.
 
-Every official archive is a complete Engine package. That is not a convention;
-it is enforced in four places:
+Deprecated platform APIs are wrapped, not suppressed: `ayther::file_open`
+(`ayther_file.h`) and `ayther::env_get` (`ayther_env.h`) replace `fopen` and
+`getenv`, and `_CRT_SECURE_NO_WARNINGS` is defined nowhere. The only
+suppression is `AYTHER_LEGACY_ABI_BEGIN` / `..._END` from
+`ayther_diagnostic.h`, in three-line windows around the ABI parity oracles that
+must call the deprecated accessors they compare against.
 
-- `tools/check_release_payload.ps1` runs against the unpacked archive and
-  requires the Engine, Core, and ymfm archives, target export, public headers,
-  compiled shaders, and dependency notices.
+No preset configures a Windows `Debug` build. `CMAKE_MSVC_RUNTIME_LIBRARY` is
+pinned to the release CRT so first-party objects match the Rust staticlib,
+which Cargo always builds in release, and vcpkg's debug-CRT libraries would
+mismatch it. The coverage preset gets unoptimized code from `/Od` on top of
+`RelWithDebInfo` instead.
+
+Formatting and `clang-tidy` run only over the sources a change touches:
+
+```text
+bash tools/run_clang_tidy_changed.sh <base-revision> build/linux-native
+```
+
+CI runs this with clang-format 18 and clang-tidy 18 on Linux, and it checks the
+whole of every changed file. A newer local clang-format can disagree with
+version 18; format with 18 before pushing. `.clang-tidy` is the single
+definition of analysis scope. Analyzer, `bugprone-*`, ownership,
+virtual-destructor, and concurrency findings block; the C-style-cast sweep is
+reported without blocking.
+
+## Sanitizers, fuzzing, and coverage
+
+```text
+cmake --preset linux-native-asan   && cmake --build --preset linux-native-asan
+ctest --preset linux-native-asan
+cmake --preset linux-native-ubsan  && cmake --build --preset linux-native-ubsan
+ctest --preset linux-native-ubsan
+```
+
+CI uses `linux-native-sanitizers`, which enables both sanitizers in one build.
+Sanitizer builds compile with `-fno-sanitize-recover=all` and run every CPU
+test, so any report aborts the test.
+
+The Rust vulnerability gate and the fuzz smoke targets:
+
+```text
+cargo audit --deny warnings
+cargo audit --file fuzz/Cargo.lock --deny warnings
+cargo +nightly fuzz run packs    fuzz/corpus/packs    -- -max_total_time=30
+cargo +nightly fuzz run decoders fuzz/corpus/decoders -- -max_total_time=30
+cargo +nightly fuzz run ffi      fuzz/corpus/ffi      -- -max_total_time=30
+```
+
+`.cargo/audit.toml` holds the advisory exception list and is empty on purpose.
+CI pins `cargo-audit`, `cargo-fuzz`, and the fuzz nightly in the `env` block of
+`.github/workflows/ci.yml`. Each fuzz target is seeded from
+`fuzz/corpus/<target>`, and CI keeps `fuzz/artifacts/<target>` when a target
+crashes.
+
+Coverage is gated per language. Thresholds, scope, and local reproduction are
+in [Coverage policy](COVERAGE.md).
+
+## Installed package
+
+A native install contains the core, engine, and ymfm archives, the
+CMake-owned public header allowlist (`cmake/AytherPublicHeaders.txt`),
+compiled SPIR-V shaders, CMake exports, the project notices, and the vcpkg
+license files selected by that build. Renderer, audio implementation,
+libretro-host, and Vulkan-backend headers stay internal. A Windows VPX install
+also bundles `vpxmd.lib` with its headers, version, license, patent grant, and
+authors.
+
+An engine consumer declares the engine's native dependencies in its own package
+manager and uses:
+
+```cmake
+find_package(Ayther 0.1.0 CONFIG REQUIRED COMPONENTS engine)
+target_link_libraries(my_app PRIVATE Ayther::engine)
+```
+
+The package also exports `Ayther::core`, `Ayther::ymfm`, and, when VPX is
+enabled, `Ayther::vpx`. `tests/package_consumer/` compiles only the installed C
+facade, C++ session facade, and version header, then links and runs outside the
+producer tree. Consumer requirements are in
+[Development environment](DEVELOPMENT_ENVIRONMENT.md#consuming-an-installed-engine).
+
+Local packages built for a QA campaign are development artifacts. They do not
+use the name, hash, signature, or provenance of a published release; besides
+the CMake configuration and version headers they carry a content manifest and
+metadata declaring `officialRelease: false`, the base reference, and the
+contract version exercised. A consumer must pin the exact hash of such a file
+and keep that selection separate from any release lock.
+
+## CI
+
+`.github/workflows/ci.yml` runs on pull requests and manual dispatch. All
+mandatory jobs feed the `Required CI gate` job, the single status check the
+`main` ruleset requires.
+
+| Job | What it runs |
+|---|---|
+| Repository policy | component boundaries, documentation references, dependency graph, API index, license consistency, coverage-gate unit tests, and (on pull requests) commit boundaries |
+| Rust quality gates (Windows, Linux) | locked format, clippy, tests, docs, and `gen_notice.ps1 -Check`; `cargo audit` over both lockfiles on Linux |
+| Headless (Windows, Linux) | `*-headless` configure, build, test, install |
+| Linux native ASan + UBSan | `linux-native-sanitizers`, CPU tests |
+| Fuzz smoke | `packs`, `decoders`, and `ffi`, 30 seconds each |
+| Rust coverage gate | `cargo llvm-cov` and the Rust thresholds |
+| C++ coverage collection (Linux) | `linux-native-coverage` with clang 18, CPU suite and GPU suite on Mesa Lavapipe |
+| Native matrix | `linux-native`, `linux-native-vpx`, and `windows-native-vpx`: build, test, `check_core_test_results.ps1`, install, out-of-tree package consumer, incompatible-version rejection; clang-format and clang-tidy on changed sources (`linux-native`) |
+| C++ coverage gate | merges the Linux report with the Windows Tessera-native report and enforces the C++ thresholds |
+
+The Windows native job also builds Tessera from the commit in
+`dependencies/tessera.lock.json` (a step fails if `TESSERA_COMMIT` in
+`ci.yml` differs from the lock), generates the native fixtures, runs the
+Tessera integration and cross-pack parity tests with the locked gpgx core, and
+collects Windows coverage for the four `ayther.integration.tessera_*` tests.
+Linux jobs do not build Tessera.
+
+Every Windows job installs LLVM 22.1.8 with `tools/install_pinned_llvm.ps1`
+before configuring, because the runner image moves MSVC and LLVM independently
+and MSVC 14.52's STL refuses Clang older than 22. Raise the pin together with
+the local toolchain.
+
+A push to `main` and the weekly schedule do not rebuild or retest: `main`
+accepts a pull request only when its branch is up to date, so the merged tree
+is the one the pull request validated. There, the vcpkg jobs only configure
+(`WARM_ONLY`) to keep a vcpkg binary cache that every pull request restores.
+vcpkg binaries are cached per job and preset.
+
+The `GPU (Windows, opt-in)` and `GPU (Linux, opt-in)` jobs run only on a manual
+dispatch with `run_gpu_tests`, because hosted runners promise no Vulkan
+hardware. A skipped GPU job is an explicit omission, not a passing oracle.
+
+## Release artifacts
+
+A `v*` tag publishes **two Engine variants on Windows and Linux**, four ZIP
+archives in total:
+
+| Archive | Targets | Native dependencies |
+|---|---|---|
+| `ayther-engine-<tag>-<platform>.zip` | `Ayther::core`, `Ayther::engine`, `Ayther::ymfm` | SDL3, Vulkan, VMA, toml++, zstd |
+| `ayther-engine-vpx-<tag>-<platform>.zip` | the above plus `Ayther::vpx` | the above plus libvpx |
+
+Each archive is a complete Engine package with the public headers, compiled
+SPIR-V, CMake exports, and notices. Windows bundles libvpx built by
+`tools/build_libvpx.ps1`; Linux links the system libvpx and ships none of it.
+None of these archives contains the Tessera provider.
+
+The scope is enforced in four places:
+
+- `tools/check_release_payload.ps1` checks the unpacked archive for the Engine,
+  Core, and ymfm archives, target export, public headers, compiled shaders, and
+  dependency notices.
 - `tools/gen_release_sbom.ps1` takes the artifact family, so an SBOM cannot
-  describe the standard and VPX variants interchangeably.
-- `tools/gen_release_notes.ps1` writes the scope table into the release body,
-  directly from the same two variant names.
+  describe the two variants interchangeably.
+- `tools/gen_release_notes.ps1` writes the scope table into the release body.
 - `tools/finalize_release_assets.ps1` rejects a missing or extra release input
-  and writes `CHECKSUMS.sha256` over the four final ZIP files only.
+  and writes `CHECKSUMS.sha256` over the four final ZIPs only.
 
-Both variants pass through the same fresh-runner package gate.
-`tests/external_package_consumer` asks for `COMPONENTS engine`, links only
-`Ayther::engine`, and records every path-bearing property of every imported
-target visible after package discovery. Its own pinned vcpkg manifest supplies
-only the dependencies required by the installed Engine package.
+### Release workflow
 
-The independently versioned AYTHER Runtime is validated after a successful
-`Release` workflow by `.github/workflows/runtime-integration.yml`. The
-`workflow_run` trigger avoids GitHub's suppression of events emitted with
-`GITHUB_TOKEN`. This separate workflow consumes the signed, attested release
-archives but is deliberately not part of the release DAG: a Runtime repository
-or implementation failure cannot block an Engine release.
+`.github/workflows/release.yml` runs on a `v*` tag in four stages:
 
-The integration matrix uses the toolchains that Runtime's configure enforces
-and its own CI presets use: Ubuntu 24.04 with `clang++-18`, and
-`windows-2025-vs2026` with the Visual Studio 18 2026 generator and the `v145`
-toolset (multi-config, built and tested as `Release`).
+1. `validate` checks the version contract, refuses a workflow rerun or a tag
+   that already owns a GitHub release, runs the locked Rust gates, and proves
+   in optimized code that production trust opens packs and the development key
+   is rejected.
+2. `build` (four entries) configures a `*-release-engine` or
+   `*-release-engine-vpx` preset, builds, runs CTest, installs, emits the SPDX
+   2.3 SBOM, packages the install tree twice, requires byte-identical SHA-256
+   digests, and checks the payload of the unpacked ZIP.
+3. `attest` rejects any missing or extra input, writes `CHECKSUMS.sha256`,
+   creates a keyless Sigstore bundle for every asset (up to three attempts per
+   asset, each with fresh ephemeral keys), records SLSA build provenance and
+   signed SBOM attestations, and uploads one candidate artifact.
+4. `package-consumer` (four entries) downloads the candidate on a fresh runner,
+   verifies SHA-256, Sigstore, and GitHub provenance before extraction, and
+   builds and runs `tests/external_package_consumer` from `RUNNER_TEMP`.
+   `tools/check_external_consumer_paths.ps1` then fails the release if any
+   spelling of the producer workspace path appears in the consumer's cache or
+   imported-target report.
 
-The integration matrix runs Runtime's CTest suite on both platforms. On Linux
-it excludes only `probe_core`, whose negative fixture is explicitly the
-Windows-only `SDL3.dll`; the package configuration, build, and the remaining
-Runtime tests still run against the verified Linux Engine archive. The final
-path audit accepts an empty imported-target report as valid evidence and still
-rejects any reference to the trusted Engine tooling checkout.
+`publish` depends on all four consumers, is the only job with
+`contents: write`, waits on the protected `release` environment, and creates a
+GitHub **pre-release** from the already verified bytes without rebuilding or
+re-signing them. No long-lived signing key is used; OIDC credentials are
+short-lived.
+
+The build derives `SOURCE_DATE_EPOCH` from the tagged commit and remaps build
+paths. ZIP entry times use midnight of the preceding UTC date, so timezone
+conversion cannot make installed CMake files newer than a consumer build on
+the day of publication.
+
+A workflow that fails before `publish` creates no release. The tag stays, and
+the fix ships under a new tag (as `v0.1.0-rc.26` and `v0.1.0-rc.27` did before
+`v0.1.0-rc.28`).
+
+### Native Tessera candidates
+
+`.github/workflows/native-release.yml` runs on a `native-v0.1.0-rc.N` tag. On
+`windows-2025-vs2026` it builds Tessera from the commit in
+`dependencies/tessera.lock.json`, requires the installed Tessera package to
+report that commit with a clean tree, generates the native fixtures and replay
+evidence, builds and tests `windows-release-engine-vpx` with
+`AYTHER_ENABLE_TESSERA=ON`, checks the payload, packages twice, and records
+SLSA provenance. It publishes one archive,
+`ayther-engine-vpx-native-v0.1.0-rc.N-windows-x86_64.zip`, plus
+`CHECKSUMS.sha256`.
+
+The release is created as a **draft** pre-release. A maintainer publishes it
+once AYTHER Runtime pins its native lock to that candidate; a draft that is
+never pinned stays unpublished. The native tag is pushed for the same commit as
+the matching `v*` tag. Licensing of this combination is in
+[Legal and distribution boundaries](LEGAL_AND_DISTRIBUTION.md#optional-tessera-provider).
+
+### Runtime integration
+
+`.github/workflows/runtime-integration.yml` runs after a successful `Release`
+workflow (`workflow_run`) or by manual dispatch with an Engine tag and a
+Runtime commit. It is deliberately outside the release DAG: a Runtime failure
+cannot block an Engine release. It pins AYTHER Runtime by full commit SHA in
+the workflow file, downloads the published archives, verifies them, and runs
+Runtime's CTest suite on both platforms with the toolchains Runtime enforces:
+Ubuntu 24.04 with `clang++-18`, and `windows-2025-vs2026` with the Visual
+Studio 18 2026 generator and the `v145` toolset, built and tested as
+`Release`. On Linux it excludes only `probe_core`, whose negative fixture is
+the Windows-only `SDL3.dll`.
+
+If the Runtime repository is private, configure the least-privilege
+`AYTHER_RUNTIME_READ_TOKEN` Actions secret; otherwise the workflow uses its
+ordinary token. It has read-only contents and attestation permissions and
+cannot create or modify releases.
 
 ## Publishing a release candidate
 
 The version contract accepts a pre-release suffix. `CMakeLists.txt`,
-`include/ayther/ayther_version.h`, `Cargo.toml`, and `vcpkg.json` all carry the
-core `MAJOR.MINOR.PATCH`; `Cargo.toml` and `vcpkg.json` may additionally carry
-the full tag, because only those two understand SemVer pre-release.
+`include/ayther/ayther_version.h`, `Cargo.toml`, and `vcpkg.json` carry the core
+`MAJOR.MINOR.PATCH`; `Cargo.toml` and `vcpkg.json` may additionally carry the
+full tag.
 
 ```text
-pwsh tools/check_release_version.ps1 -Tag v0.1.0-rc.6
-git tag -a v0.1.0-rc.6 -m 'AYTHER v0.1.0-rc.6'
-git push origin v0.1.0-rc.6
+pwsh tools/check_release_version.ps1 -Tag v0.1.0-rc.N
+git tag -a v0.1.0-rc.N -m 'AYTHER v0.1.0-rc.N'
+git push origin v0.1.0-rc.N
+git tag -a native-v0.1.0-rc.N -m 'Engine native-v0.1.0-rc.N'
+git push origin native-v0.1.0-rc.N
 ```
 
-Pushing the tag is the only manual step; everything after it is the workflow.
-The publish job is gated on the `release` environment, so it waits for a
-reviewer before any candidate asset is uploaded to the public GitHub release.
-Signing and attestation happen earlier so the isolated consumer jobs can verify
-the exact bytes they test.
+Pushing the tags is the only manual step besides approving the `release`
+environment and publishing the native draft. The repository controls that make
+this a protected boundary are:
 
-Before the tag is pushed, a repository administrator must have configured:
+- the `release` environment with a branch policy and required reviewers;
+- the `Immutable release tags` ruleset, which blocks update and deletion of
+  `refs/tags/v*`;
+- the `Protect main` ruleset (pull request, strict `Required CI gate`, no
+  deletion or force push) and CODEOWNERS over `.github/workflows/` and the
+  release tools.
 
-- the `release` environment with required reviewers;
-- tag protection for `v*`, so the tag cannot be moved after publication;
-- branch protection and CODEOWNERS over `.github/workflows/`, so the release
-  mechanics cannot be changed without review.
+The immutable-tag ruleset does not cover `native-v*` tags.
 
-Without those controls the workflow mechanics alone are not a protected release
-boundary, and the resulting artifacts should not be treated as one.
-
-The current absence of required approving and Code Owner review is governed by
-the temporary
+Required approving and Code Owner review are currently disabled under the
+temporary
 [single-maintainer exception](GOVERNANCE_EXCEPTIONS.md#gov-2026-001-single-maintainer-code-owner-review).
-It keeps maintenance possible while only one eligible maintainer exists; it
-does not provide independent review and must not be cited as such in release
-evidence.
+It does not provide independent review and must not be cited as such in
+release evidence. The current decision is in
+[Release go / no-go](RELEASE_GO_NO_GO_CURRENT.md).
 
-If a published candidate must be withdrawn, follow the
-[release rollback runbook](RELEASE_ROLLBACK.md). Rollback never moves or deletes
-the protected tag and never replaces its signed assets: it preserves evidence,
-withdraws the GitHub release distribution, notifies consumers, and fixes
-forward under a new version.
+To withdraw a published candidate, follow the
+[release rollback runbook](RELEASE_ROLLBACK.md): keep the tag, preserve the
+evidence, withdraw the distribution, notify consumers, and fix forward under a
+new version.
 
-## Consuming a release candidate as a frontend
+## Verifying a release artifact
 
-The release workflow's minimal external consumer proves an artifact links and
-runs before publication. `tools/check_rc_consumer.ps1` remains the deeper,
-manually runnable session smoke:
-
-```text
-build/<preset>/bin/make_test_pack pack.ay trust.toml crc32:rc000001 rom.md
-pwsh tools/check_rc_consumer.ps1 -Prefix <unpacked-artifact>   -Core build/<preset>/bin/ayther_test_core.dll -Rom rom.md   -Pack pack.ay -TrustRegistry trust.toml
-```
-
-It configures and builds `tests/package_consumer` against an installed prefix,
-then has it create a session, open a **trusted** pack, step frames, and report
-what the renderer and the audio device did. The consumer prints basenames only,
-and the script refuses a report containing any absolute path into this
-repository -- such a path is both unreproducible for the reader and evidence
-that the package was consumed from the source tree rather than from an install.
-The script also refuses a prefix inside the checkout for the same reason.
-
-`tools/make_test_pack` produces the signed pack, its trust registry, and a
-synthetic ROM, so the release job depends on no external content. It has to be
-signed: an optimized build refuses an unsigned pack and refuses the development
-key, so signed content plus its registry is the only combination that opens.
-
-Anything that could not be exercised is reported as unavailable with a reason
-rather than omitted. A report that quietly dropped the audio device because
-there was none would read, later, exactly like one where audio worked.
-
-## Configuration matrix
-
-| Preset family | Intended role | Current confidence |
-|---|---|---|
-| `*-headless` | core, bridge, and CPU/ABI checks | Windows verified; Linux pending |
-| `*-release` | optimized core-only package (`ayther-core`) | Windows build/test/install/consume verified; Linux pending |
-| `*-release-engine` | optimized complete engine package (`ayther-engine`) | Windows build/test/install/package/consume verified; Linux pending |
-| `*-release-engine-vpx` | optimized complete engine with VP9 (`ayther-engine-vpx`) | Windows verified; Linux pending |
-| `*-native` | complete engine without VP9 | Windows build and 38 CTests verified; Linux pending |
-| `*-native-vpx` | complete engine with VP9 | Windows build/install/consume verified; decoder fixtures and Linux pending |
-| `*-native-gpu` | eight Vulkan GPU oracles | Windows 8/8 verified; Linux and broader GPU matrix pending |
-
-## CI expectations
-
-The checkout now includes `.github/workflows/ci.yml`. On pull requests and
-manual dispatches it runs repository-boundary checks, locked Rust
-format/lint/tests/docs on both Windows and Linux, documentation-reference and
-license consistency checks, dependency-notice verification, and the
-Windows/Linux headless sequence. The
-required native matrix additionally configures, builds, tests, and installs
-`linux-native`, `windows-native-vpx`, and `linux-native-vpx`; every matrix
-entry then configures, links, and executes `tests/package_consumer/` from
-outside the producer tree. Windows builds only the VPX variant, a superset of
-`windows-native`, whose package the release still builds and consumes. Pull
-requests additionally validate that individual commits do not mix the closed
-Lab boundary with FOSS paths. A push to `main` does not rebuild or retest:
-`main` accepts a pull request only when its branch is up to date, so the merged
-tree is the one the pull request already validated. There, and in a weekly
-scheduled run, the jobs that use vcpkg only configure (`WARM_ONLY`) so `main`
-keeps a vcpkg cache that every pull request can restore from its first push.
-
-Jobs that use vcpkg keep its built ports in the Actions cache
-(`VCPKG_BINARY_SOURCES` with the `files` provider), one cache per job and
-preset because system headers such as X11 change what a port builds without
-changing its ABI hash; vcpkg still rebuilds an outdated archive.
-
-Further jobs run on every pull request. `Linux native ASan + UBSan` builds
-the complete engine with both sanitizers and runs the CPU CTests, uploading
-`Testing/Temporary/LastTest.log` on failure. `Fuzz smoke` runs the `packs`,
-`decoders`, and `ffi` targets in one job for 30 seconds each against their
-seeded corpus and keeps any crash as an artifact. Its
-standalone workspace is pinned by `fuzz/Cargo.lock`. The Rust audit runs inside
-the `rust` job with a pinned `cargo-audit` and checks both lockfiles. Coverage is
-gated and published by `rust-coverage` and `cpp-coverage` as separate
-artifacts, and
-`clang-tidy` runs inside the `linux-native` matrix entry over the touched
-translation units only.
-
-Every mandatory job feeds the stable `Required CI gate` job, which fails unless
-all Rust, headless, sanitizer, fuzz, coverage, native, package-consumer, and
-repository-policy entries succeeded. A repository administrator must mark that
-single status check as required in the branch-protection rule for `main`; until
-that hosting-layer rule exists, the workflow mechanics alone do not block a
-merge.
-
-The `GPU (Windows, opt-in)` and `GPU (Linux, opt-in)` jobs are deliberately
-skipped in ordinary push and pull-request runs because GitHub-hosted runners do
-not promise the required Vulkan hardware. A manual dispatch exposes the boolean
-`run_gpu_tests` input; selecting it builds the `*-native-gpu` presets and runs
-only tests labelled `gpu` (Linux uses Mesa plus a virtual display). This is an
-explicit omission, not a successful GPU oracle.
-
-The tag-only `.github/workflows/release.yml` validates the version contract,
-refuses a workflow rerun or a tag that already owns a GitHub release, runs the
-locked Rust gates plus optimized production-trust acceptance tests, and then
-builds **four** artifacts: standard and VPX Engine variants on Windows and
-Linux.
-It derives `SOURCE_DATE_EPOCH` from the tagged commit, remaps build paths,
-packages each install tree twice, and requires byte-identical SHA-256 digests
-before publication. ZIP entry times use midnight on the preceding UTC date;
-this deterministic margin prevents timezone conversion from making installed
-CMake files newer than a consumer build on the day of publication.
-
-The release DAG has four explicit stages:
-
-1. `build` configures, builds, runs the Engine CTest suite, installs, emits the
-   SBOM, packages twice, compares both ZIPs byte-for-byte, unpacks the selected
-   ZIP, and checks its payload.
-2. `attest` runs only after all four builds. It downloads those job artifacts,
-   rejects any missing or extra input, creates `CHECKSUMS.sha256`, signs every
-   file, records SLSA provenance and SBOM attestations, and uploads one immutable
-   candidate artifact for the consumer jobs.
-3. `package-consumer` is a fresh four-entry Windows/Linux × standard/VPX
-   matrix. Each runner downloads the candidate, verifies SHA-256, Sigstore, and
-   GitHub provenance before extraction, then configures and runs the minimal
-   CMake consumer using its repository-owned dependency manifest.
-4. `publish` depends on the aggregate result of that four-entry matrix and is
-   the only job with `contents: write`. The protected `release` environment is
-   therefore reached only after every package consumer succeeds.
-
-The clean jobs copy the minimal consumer below `RUNNER_TEMP`; its CMake
-configure cannot use the Engine source checkout. After it runs,
-`tools/check_external_consumer_paths.ps1` scans its `CMakeCache.txt` and the
-generated report of imported-target properties. Any spelling of the producer
-`GITHUB_WORKSPACE` path, including Windows backslashes or case differences,
-fails the release.
-
-The post-publication Runtime integration pins Runtime by full commit SHA rather
-than reading a moving branch. That commit must exist in
-`Ayther-Dev/AYTHER-Runtime`. If that repository is private or internal,
-configure the least-privilege `AYTHER_RUNTIME_READ_TOKEN` Actions secret;
-otherwise the workflow falls back to its ordinary repository token.
-The workflow can also be dispatched manually with an Engine tag and Runtime
-SHA. It has read-only contents and attestation permissions, does not reference
-the protected `release` environment, and cannot create or modify releases.
-
-Each candidate carries an SPDX 2.3 SBOM generated from the locked Cargo graph
-and exact installed files. The attestation job computes SHA-256 only over the
-four final ZIPs, creates keyless Sigstore bundles for every asset, and attaches
-SLSA build provenance and signed SBOM attestations. The protected publish job
-uploads those already verified bytes without rebuilding or resigning them.
-Private signing keys and long-lived signing credentials are not used; OIDC
-credentials are short-lived.
-
-Repository administrators must configure the `release` environment with
-required reviewers, protect `v*` tags, and restrict workflow changes with
-CODEOWNERS/branch protection. Without those repository controls, the workflow
-mechanics alone are not a protected release boundary.
-
-`tools/verify_release_artifact.ps1` runs the release-engineering acceptance
-sequence -- download, checksum, Sigstore, provenance, unpack, payload check,
-and an out-of-tree consumer build:
+`tools/verify_release_artifact.ps1` runs the acceptance sequence: download,
+checksum, Sigstore, provenance, unpack, payload check, and an out-of-tree
+consumer build.
 
 ```text
-pwsh tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.6 -Product ayther-engine
+pwsh tools/verify_release_artifact.ps1 -Tag v0.1.0-rc.28 -Product ayther-engine
 ```
 
-A consumer verifies a downloaded archive with all three independent records:
+A consumer can verify a downloaded archive with the three independent records:
 
 ```text
 sha256sum --check CHECKSUMS.sha256
-gh attestation verify ayther-engine-v0.1.0-rc.6-linux-x86_64.zip \
+gh attestation verify ayther-engine-v0.1.0-rc.28-linux-x86_64.zip \
   --repo Ayther-Dev/AYTHER-Engine
 cosign verify-blob \
-  --bundle ayther-engine-v0.1.0-rc.6-linux-x86_64.zip.sigstore.json \
+  --bundle ayther-engine-v0.1.0-rc.28-linux-x86_64.zip.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github.com/Ayther-Dev/AYTHER-Engine/.github/workflows/release.yml@refs/tags/v[0-9].*$' \
-  ayther-engine-v0.1.0-rc.6-linux-x86_64.zip
+  ayther-engine-v0.1.0-rc.28-linux-x86_64.zip
 ```
 
-AYTHER Runtime's pinned `bootstrap_ayther_engine.ps1` is the consumer path: it
-downloads one of these four archives and `CHECKSUMS.sha256`, validates the
-locked and published SHA-256 values, verifies the GitHub SLSA attestation, and
-extracts the CMake prefix. It invokes neither Git nor submodules and requires no
-Engine checkout.
+Native candidates carry SHA-256 and SLSA provenance only; verify them with
+`sha256sum` and `gh attestation verify`.
 
-The physical GPU/driver matrix, real-emulator fixtures, and the remaining
-security review are still release blockers; automated publications
-remain marked as pre-releases.
+AYTHER Runtime's `bootstrap_ayther_engine.ps1` is the consumer path: it
+downloads one archive and `CHECKSUMS.sha256`, checks the locked and published
+SHA-256 values, verifies the SLSA attestation, and extracts the CMake prefix,
+without Git, submodules, or an Engine checkout.
 
-A release-capable pipeline must run on every supported platform and retain:
+### Consuming a candidate as a frontend
 
-- locked Rust formatting, lint, tests, and documentation;
-- C and C++ header compilation plus exhaustive ABI/layout checks;
-- headless emulator/session integration tests with legally distributable
-  fixtures;
-- renderer tests separated into deterministic CPU and GPU-required groups;
-- install, package discovery, link, and execution from outside the source tree;
-- dependency, license, vulnerability, secret, and artifact-content scans;
-- checksums and signatures generated only by protected release infrastructure.
+`tools/check_rc_consumer.ps1` is a deeper, manually run session smoke:
 
-Skipped tests must be reported as skipped. Missing hardware, ROMs, cores, or
-fixtures must never be represented as a passing oracle.
+```text
+build/<preset>/bin/make_test_pack pack.ay trust.toml crc32:rc000001 rom.md
+pwsh tools/check_rc_consumer.ps1 -Prefix <unpacked-artifact> -Core build/<preset>/bin/ayther_test_core.dll -Rom rom.md -Pack pack.ay -TrustRegistry trust.toml
+```
+
+It builds `tests/package_consumer` against an installed prefix, creates a
+session, opens a **trusted** pack, steps frames, and reports what the renderer
+and the audio device did. It refuses a prefix inside the checkout and a report
+containing an absolute path into the repository, either of which would mean the
+package was consumed from the source tree. `tools/make_test_pack` produces the
+signed pack, its trust registry, and a synthetic ROM; it must sign, because an
+optimized build refuses unsigned packs and the development key. Anything that
+could not be exercised is reported as unavailable with a reason, not omitted.
 
 ## Release gate
 
-Do not publish a stable build until all items in
-[Project status](PROJECT_STATUS.md#release-blockers) are closed and the following
-evidence is archived:
+No stable build is published until every item in
+[Project status](PROJECT_STATUS.md#release-blockers) is closed and the
+following evidence is archived:
 
 1. clean configure/build/test/install/consume logs for every supported platform;
 2. logs proving the release/protocol version contract and baselines agree;
-3. provisioned production registry and evidence that the documented rotation
-   and revocation procedure is exercised by the shipping host;
+3. a provisioned production trust registry and evidence that the documented
+   rotation and revocation procedure is exercised by the shipping host;
 4. complete transitive notices and source-offer obligations for shipped code;
-5. security review of pack parsing, paths, limits, scripting, FFI, and dynamic
-   library loading;
+5. a security review of pack parsing, paths, limits, scripting, FFI, and
+   dynamic library loading;
 6. release notes, checksums, provenance, the rehearsed
    [rollback procedure](RELEASE_ROLLBACK.md), and a supported version matrix.
 
-Release artifacts must not contain ROMs, BIOS images, commercial game assets,
-private keys, or emulator cores that the project is not authorized to ship.
+Skipped tests must be reported as skipped. Missing hardware, ROMs, cores, or
+fixtures must never be represented as a passing oracle. Release artifacts must
+not contain ROMs, BIOS images, commercial game assets, private keys, or
+emulator cores the project is not authorized to ship.
