@@ -328,12 +328,23 @@ jobs:
           $assets = Get-ChildItem -LiteralPath release-out -File |
             Where-Object Name -NotLike '*.sigstore.json' |
             Sort-Object Name
+          # Each attempt uses fresh ephemeral keys, so a retry never collides
+          # with an entry a timed-out attempt already wrote to Rekor (409).
           foreach ($asset in $assets) {
-            cosign sign-blob --yes `
-              --bundle "$($asset.FullName).sigstore.json" `
-              $asset.FullName
-            if ($LASTEXITCODE -ne 0) {
-              throw "Cosign failed for '$($asset.Name)'."
+            $bundle = "$($asset.FullName).sigstore.json"
+            $signed = $false
+            for ($attempt = 1; $attempt -le 3 -and -not $signed; $attempt++) {
+              Remove-Item -LiteralPath $bundle -ErrorAction SilentlyContinue
+              cosign sign-blob --yes --bundle $bundle $asset.FullName
+              if ($LASTEXITCODE -eq 0) {
+                $signed = $true
+              } elseif ($attempt -lt 3) {
+                Write-Warning "Cosign attempt $attempt failed for '$($asset.Name)'; retrying."
+                Start-Sleep -Seconds (15 * $attempt)
+              }
+            }
+            if (-not $signed) {
+              throw "Cosign failed for '$($asset.Name)' after 3 attempts."
             }
           }
 
