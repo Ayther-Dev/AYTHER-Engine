@@ -4099,11 +4099,17 @@ const FrameView &AytherSession::produce_frame() {
           //  las entidades de mayor rango — no se pisa.)
           const session::PlaneSetMatcher plane_set_matcher{
               std::span{im.plane_cells, npick}, sw, sh};
-          // Frecuencia por hash de ESTE frame — ordena las anclas.
-          std::unordered_map<uint64_t, uint32_t> freq;
-          freq.reserve(npick);
+          // Las celdas de ESTE frame por hash, en orden ascendente. Un
+          // ancla sólo puede caer en una celda de su mismo hash (match la
+          // descarta de entrada si no), así que cada ancla recorre su
+          // lista y no las npick celdas: el mismo orden y los mismos
+          // matches, sin sets × miembros × celdas llamadas por frame
+          // (29 ms de 40 en Golden Axe con su pack). El tamaño de la
+          // lista es la frecuencia que ordena las anclas.
+          std::unordered_map<uint64_t, std::vector<uint32_t>> cells_by_hash;
+          cells_by_hash.reserve(npick);
           for (uint32_t i = 0; i < npick; ++i)
-            ++freq[im.plane_cells[i].hash];
+            cells_by_hash[im.plane_cells[i].hash].push_back(i);
           std::unordered_set<uint64_t> matched_hashes;
           std::vector<uint32_t> matched_cell_indices;
           std::vector<uint32_t> order;
@@ -4160,15 +4166,21 @@ const FrameView &AytherSession::produce_frame() {
             for (uint32_t k = 0; k < (uint32_t)order.size(); ++k)
               order[k] = k;
             auto f = [&](uint32_t k) {
-              auto it = freq.find(def.members[k].hash);
-              return it == freq.end() ? 0u : it->second;
+              auto it = cells_by_hash.find(def.members[k].hash);
+              return it == cells_by_hash.end()
+                         ? 0u
+                         : static_cast<uint32_t>(it->second.size());
             };
             std::stable_sort(
                 order.begin(), order.end(),
                 [&](uint32_t a, uint32_t b) { return f(a) < f(b); });
             matched_origins.clear();
             for (const uint32_t anchor_member : order) {
-              for (uint32_t cell_index = 0; cell_index < npick; ++cell_index) {
+              const auto anchor_cells =
+                  cells_by_hash.find(def.members[anchor_member].hash);
+              if (anchor_cells == cells_by_hash.end())
+                continue;
+              for (const uint32_t cell_index : anchor_cells->second) {
                 const auto occurrence = plane_set_matcher.match(
                     def.members, anchor_member, cell_index, consumed,
                     matched_cell_indices);

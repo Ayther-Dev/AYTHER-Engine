@@ -168,6 +168,13 @@ and this project will adhere to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Packs with plane sets no longer stall the frame. Every anchor of every set
+  scanned all visible cells although only cells with the anchor's hash can
+  match; with the Golden Axe pack that took 29 ms of a 41 ms `produce_frame`
+  and the game ran at 20-60 fps with either provider. The cells are now
+  bucketed by hash once per frame and walked in the same order, so the
+  substitutions are byte-identical (`parity_bench cross-pack play`, 2590
+  frames, libretro and Tessera) and `produce_frame` drops to about 5 ms.
 - The caches derived from the audio events (sequence anchors, one-shot
   timbres) were keyed by the event count alone, so analysing another take
   with the same count kept the previous ones; any change of the events now
