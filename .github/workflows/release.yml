@@ -128,6 +128,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install the pinned LLVM for clang-cl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/install_pinned_llvm.ps1
+
       - name: Set deterministic native build flags
         shell: pwsh
         run: |
@@ -416,6 +421,11 @@ jobs:
         with:
           path: engine-gate
           persist-credentials: false
+
+      - name: Install the pinned LLVM for clang-cl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./engine-gate/tools/install_pinned_llvm.ps1
 
       - name: Move the consumer source outside the Engine workspace
         shell: pwsh

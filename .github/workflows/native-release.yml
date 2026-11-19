@@ -33,6 +33,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install the pinned LLVM for clang-cl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/install_pinned_llvm.ps1
+
       - name: Read the Tessera lock
         run: |
           # The candidate is built against the Tessera named in
