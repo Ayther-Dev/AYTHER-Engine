@@ -1,24 +1,21 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs>
-    <style>
-      .cls-1 {
-        fill: #2d2f33;
-      }
-
-      .cls-1, .cls-2 {
-        stroke-width: 0px;
-      }
-
-      .cls-2 {
-        fill: #ff7300;
-      }
-    </style>
-  </defs>
-  <g id="backgound">
-    <rect class="cls-1" width="1024" height="1024"/>
-  </g>
-  <g id="Logos">
-    <polygon class="cls-2" points="786.51 271 829.38 111 489.38 111 446.51 271 366.38 271 194.62 912 354.62 912 354.89 911 614.39 911 657.26 751 397.76 751 440.37 592 701.39 592 744.26 432 483.24 432 526.38 271 786.51 271"/>
-  </g>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 4267 4267" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:affinity="https://www.affinity.studio/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(1,0,0,1,-14400,0)">
+        <g id="Engine" transform="matrix(4.166667,0,0,4.166667,14400,0)">
+            <rect x="0" y="0" width="1024" height="1024" style="fill:none;"/>
+            <g id="backgound">
+            </g>
+            <g id="Palette">
+            </g>
+            <g id="Icons">
+            </g>
+            <g id="Logos">
+                <rect x="0" y="0" width="1024" height="1024" style="fill:rgb(45,47,51);"/>
+                <g transform="matrix(1,0,0,1,728.7332,680.1402)">
+                    <path d="M0,-336.28L29.973,-448.14L-253.368,-448.14L-283.341,-336.28L-343.36,-336.28L-463.439,111.86L-351.579,111.86L-351.392,111.161L-120.333,111.161L-90.36,-0.699L-321.419,-0.699L-291.633,-111.861L-59.509,-111.861L-29.536,-223.721L-261.66,-223.721L-231.5,-336.28L0,-336.28Z" style="fill:rgb(255,213,0);fill-rule:nonzero;"/>
+                </g>
+            </g>
+        </g>
+    </g>
 </svg>
