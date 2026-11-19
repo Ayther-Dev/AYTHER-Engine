@@ -96,6 +96,11 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v5
 
+      - name: Install the pinned LLVM for clang-cl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/install_pinned_llvm.ps1
+
       - name: Cache Cargo inputs and outputs
         uses: actions/cache@v4
         with:
@@ -157,6 +162,11 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+
+      - name: Install the pinned LLVM for clang-cl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/install_pinned_llvm.ps1
 
       - name: Cache Cargo inputs and outputs
         uses: actions/cache@v4
@@ -514,6 +524,11 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Install the pinned LLVM for clang-cl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/install_pinned_llvm.ps1
 
       - name: Verify the Tessera pin
         if: env.WARM_ONLY != 'true' && runner.os == 'Windows'
