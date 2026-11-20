@@ -371,26 +371,3 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
   This Source Code Form is "Incompatible With Secondary Licenses", as
   defined by the Mozilla Public License, v. 2.0.
-
---------------------------------------------------------------------------
-
-PROJECT NOTICE — SCOPE OF COVERED SOFTWARE
-
-Unless a file states different terms, the source files in this repository are
-Covered Software under MPL-2.0. This includes the Rust core, native engine
-source when present, public headers, build modules, project tests, tools, and
-source-form documentation.
-
-Third-party software and assets retain their own terms; see NOTICE.md and the
-license material distributed with each dependency. AYTHER Lab and the AYTHER
-Runtime, SDK, Play, and Hub products are separate works or services and are not
-licensed merely by this repository. ROMs, BIOS images, emulator cores, content
-packs, game assets, trademarks, service marks, and logos are not covered by
-MPL-2.0 unless their rights holder expressly says otherwise.
-
-The notice is centralized here as permitted by Exhibit A. Individual files may
-include additional accurate notices or controlling license terms.
-
-    This Source Code Form is subject to the terms of the Mozilla Public
-    License, v. 2.0. If a copy of the MPL was not distributed with this
-    file, You can obtain one at https://mozilla.org/MPL/2.0/.

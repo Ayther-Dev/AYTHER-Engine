@@ -15,7 +15,12 @@ separate `native-v0.1.0-rc.N` tags from the same commit; see
 
 ## [Unreleased]
 
-No changes since 0.1.0-rc.29.
+### Changed
+
+- `LICENSE` is the unmodified MPL-2.0 text, so license detectors (GitHub,
+  code-signing reviews) recognise it. The project notice on what the license
+  covers moved to the last section of `NOTICE.md`, which `tools/gen_notice.ps1`
+  now writes together with the Tessera provider notice it used to omit.
 
 ## [0.1.0-rc.29] - 2026-11-19
 

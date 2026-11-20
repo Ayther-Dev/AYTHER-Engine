@@ -32,7 +32,9 @@ integration point does not transfer license rights between products.
 
 This repository contains the open-source AYTHER Engine: Rust core code, native
 engine code, public headers, tests, tools, shaders, and Engine documentation.
-Its root `LICENSE` and file-level notices control covered files. References to
+Its root `LICENSE` (the unmodified MPL-2.0 text) and file-level notices control
+covered files; the project notice on what the license covers is the last
+section of `NOTICE.md`. References to
 other AYTHER products describe integration boundaries; they do not bring those
 products into this license or repository.
 
