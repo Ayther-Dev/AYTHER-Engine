@@ -1874,6 +1874,9 @@ impl PoseSetSubstitutor {
     ) -> (Vec<SpriteSub>, Vec<u32>) {
         let mut owners = vec![NO_OWNER; occs.len()];
         let mut subs = Vec::new();
+        if occs.is_empty() || (self.overrides.is_empty() && self.catalog.is_empty()) {
+            return (subs, owners);
+        }
         // Dims por hash desde el frame vivo (mismo hash = mismo gráfico = mismas
         // dims): los espejos EXACTOS por miembro las necesitan (abajo).
         let mut dims: HashMap<u64, (u8, u8)> = HashMap::new();
@@ -1885,7 +1888,14 @@ impl PoseSetSubstitutor {
         // a IGUAL evidencia la grande no debe perder miembros. Sort estable: a
         // igual cantidad, overrides (preview en vivo) siguen resolviendo antes
         // que el catálogo del pack.
-        let mut order: Vec<&PoseEntry> = self.overrides.iter().chain(self.catalog.iter()).collect();
+        // Pre-filtrar por hashes presentes en el frame actual (`dims`) evita
+        // ordenar e iterar miles de poses que no tienen ningún miembro en pantalla.
+        let mut order: Vec<&PoseEntry> = self
+            .overrides
+            .iter()
+            .chain(self.catalog.iter())
+            .filter(|p| !p.hashes.is_empty() && p.hashes.iter().any(|h| dims.contains_key(h)))
+            .collect();
         order.sort_by_key(|p| std::cmp::Reverse(p.hashes.len()));
         // ---- Fase 1: enumerar instancias candidatas (sin reclamar) ----
         struct Cand<'p> {
@@ -1907,7 +1917,7 @@ impl PoseSetSubstitutor {
         }
         let mut cands: Vec<Cand> = Vec::new();
         for &pose in &order {
-            if pose.hashes.is_empty() {
+            if pose.hashes.is_empty() || !pose.hashes.iter().any(|h| dims.contains_key(h)) {
                 continue;
             }
             if let Some(rel) = &pose.rel {
