@@ -765,6 +765,8 @@ struct AytherSession::Impl {
   // pose_sub cada frame ANTES del resolve y NUNCA se serializan. Con rel →
   // matching instanciado exacto. hd=true → su región limpia los sueltos.
   std::vector<AytherSession::PosePreview> preview_pose_overrides;
+  uint64_t preview_pose_gen = 1;
+  uint64_t pose_sub_synced_gen = 0;
   // Ocultado COMPUESTO por hash (Posar): A completo → B con estos hashes
   // suprimidos (slots de las occs de A) → base = B sólo en sus rects.
   std::unordered_set<uint64_t> hidden_sprite_hashes;
@@ -869,6 +871,16 @@ struct AytherSession::Impl {
   /// pack load): the sets are few, and this way the matcher never reads
   /// a stale order.
   std::vector<uint64_t> plane_set_order;
+  // Scratch buffers reutilizados por frame en produce_frame() para screens y
+  // plane_sets, evitando alocaciones/liberaciones en cada frame HD.
+  std::unordered_map<uint32_t, uint64_t> screen_now_scratch;
+  std::unordered_set<uint64_t> screen_present_scratch[3];
+  std::unordered_map<uint64_t, std::vector<uint32_t>> ps_cells_by_hash_scratch;
+  std::unordered_set<uint64_t> ps_matched_hashes_scratch;
+  std::vector<uint32_t> ps_matched_cell_indices_scratch;
+  std::vector<uint32_t> ps_order_scratch;
+  std::unordered_set<uint64_t> ps_matched_origins_scratch;
+  std::unordered_map<uint64_t, uint32_t> ps_seq_step_now_scratch;
   void rebuild_plane_set_order() {
     std::vector<session::PlaneSetOrderKey> keys;
     keys.reserve(plane_sets.size());
@@ -4166,6 +4178,7 @@ struct AytherSession::Impl {
     plane_sub.reset(ayther_tile_sub_new()); // Fase 2c
     sprite_sub.reset(ayther_sprite_sub_new());
     pose_sub.reset(ayther_pose_sub_new()); // CU-AN multi-sprite
+    pose_sub_synced_gen = 0;
     tween.reset(ayther_tween_new());       // CU-AN in-betweens
     audio_sub.reset(ayther_audio_sub_new());
     // : los clips de video se quedan con una FUENTE que apunta al pack, no

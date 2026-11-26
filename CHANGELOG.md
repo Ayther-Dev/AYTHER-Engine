@@ -15,8 +15,15 @@ separate `native-v0.1.0-rc.N` tags from the same commit; see
 
 ## [Unreleased]
 
+## [0.1.0-rc.30] - 2026-11-26
+
+Performance release for HD emulation and pose/plane-set resolution in `produce_frame()`, plus the updated project license/notice layout.
+
 ### Changed
 
+- `AytherSession::produce_frame()` now synchronizes live `preview_pose_overrides` into `PoseSetSubstitutor` only when `preview_pose_gen` changes instead of clearing and re-inserting every pose override on every frame.
+- `PoseSetSubstitutor::resolve_with_owners()` pre-filters pose entries against hashes present in the current frame before sorting or allocating layout/mirror vectors, and returns early when `occs` or catalogs are empty.
+- `AytherSession::produce_frame()` reuses persistent scratch containers on `Impl` for screen presence/exact matching and `plane_sets` resolution instead of allocating per frame.
 - `LICENSE` is the unmodified MPL-2.0 text, so license detectors (GitHub,
   code-signing reviews) recognise it. The project notice on what the license
   covers moved to the last section of `NOTICE.md`, which `tools/gen_notice.ps1`

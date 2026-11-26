@@ -3393,7 +3393,8 @@ const FrameView &AytherSession::produce_frame() {
         if (im.hd_enabled && !im.screens.empty()) {
           // Índice del frame: key(plano,col,fila) → hash. Uno solo
           // para todos los Cuadros declarados.
-          std::unordered_map<uint32_t, uint64_t> now;
+          auto &now = im.screen_now_scratch;
+          now.clear();
           now.reserve(npick);
           for (uint32_t i = 0; i < npick; ++i) {
             const PlaneCellHit &pc = im.plane_cells[i];
@@ -3429,7 +3430,9 @@ const FrameView &AytherSession::produce_frame() {
           // y el consumidor (gate de Acetato) tolera un frame suelto.
           im.screen_presence_n = 0;
           {
-            std::unordered_set<uint64_t> present[3];
+            auto &present = im.screen_present_scratch;
+            for (int p = 0; p < 3; ++p)
+              present[p].clear();
             for (uint32_t i = 0; i < npick; ++i) {
               const PlaneCellHit &pc = im.plane_cells[i];
               if (pc.plane > 2)
@@ -4106,20 +4109,25 @@ const FrameView &AytherSession::produce_frame() {
           // matches, sin sets × miembros × celdas llamadas por frame
           // (29 ms de 40 en Golden Axe con su pack). El tamaño de la
           // lista es la frecuencia que ordena las anclas.
-          std::unordered_map<uint64_t, std::vector<uint32_t>> cells_by_hash;
+          auto &cells_by_hash = im.ps_cells_by_hash_scratch;
+          cells_by_hash.clear();
           cells_by_hash.reserve(npick);
           for (uint32_t i = 0; i < npick; ++i)
             cells_by_hash[im.plane_cells[i].hash].push_back(i);
-          std::unordered_set<uint64_t> matched_hashes;
-          std::vector<uint32_t> matched_cell_indices;
-          std::vector<uint32_t> order;
-          std::unordered_set<uint64_t>
-              matched_origins; // Origins already emitted for this set.
+          auto &matched_hashes = im.ps_matched_hashes_scratch;
+          matched_hashes.clear();
+          auto &matched_cell_indices = im.ps_matched_cell_indices_scratch;
+          matched_cell_indices.clear();
+          auto &order = im.ps_order_scratch;
+          order.clear();
+          auto &matched_origins = im.ps_matched_origins_scratch;
+          matched_origins.clear();
           // ANIMACIÓN (): el paso vigente de cada secuencia se
           // resuelve UNA vez por frame y no por match — llamarlo
           // dentro del bucle re-anclaría el reloj tantas veces como
           // instancias haya en pantalla.
-          std::unordered_map<uint64_t, uint32_t> seq_step_now;
+          auto &seq_step_now = im.ps_seq_step_now_scratch;
+          seq_step_now.clear();
           if (!im.plane_seqs.empty())
             for (const auto &[qid, qd] : im.plane_seqs)
               (void)qd, seq_step_now.emplace(qid, UINT32_MAX);
@@ -4475,7 +4483,8 @@ const FrameView &AytherSession::produce_frame() {
   // Preview HD transitorio (Animar): re-inyectar las pose-overrides en vivo en
   // el pose_sub cada frame (clear + add) — se resuelven como pose-set más
   // abajo, con prioridad sobre el catálogo del pack, y NO se serializan.
-  if (im.pose_sub) {
+  if (im.pose_sub && im.pose_sub_synced_gen != im.preview_pose_gen) {
+    im.pose_sub_synced_gen = im.preview_pose_gen;
     ayther_pose_sub_clear_overrides(im.pose_sub.get());
     for (const auto &p : im.preview_pose_overrides) {
       const bool has_rel = p.rel_x.size() == p.hashes.size() &&
@@ -6216,6 +6225,7 @@ void AytherSession::set_pose_preview(const std::vector<PosePreview> &poses) {
   for (const auto &p : poses)
     if (!p.hashes.empty() && !p.asset.empty())
       impl_->preview_pose_overrides.push_back(p);
+  ++impl_->preview_pose_gen;
   // : acá se instanciaba el shadow core al alimentar poses. Con el
   // compose por supresión muerto desde R-5, esa copia del DLL (9,5 MB a
   // %TEMP%) y ese boot de un emulador entero se pagaban en cada carga de
@@ -9692,6 +9702,7 @@ AytherSession::replay_rebake_history_step(AytherRecording &rec,
   // app no produce entre chunks — muestra el loader de migración).
   const auto sv_overrides = std::move(im.preview_pose_overrides);
   im.preview_pose_overrides.clear();
+  ++im.preview_pose_gen;
   const bool sv_sup = im.suppress_any;
   im.suppress_any = false;
   const bool sv_tile = im.tile_suppress_any;
@@ -9721,6 +9732,7 @@ AytherSession::replay_rebake_history_step(AytherRecording &rec,
   im.replay_quiet = false;
 
   im.preview_pose_overrides = std::move(sv_overrides);
+  ++im.preview_pose_gen;
   im.suppress_any = sv_sup;
   im.tile_suppress_any = sv_tile;
   im.plane_tile_suppress_any = sv_pln;
